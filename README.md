@@ -21,6 +21,23 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+## Google prihlásenie (Firebase)
+
+1. Otvor [Firebase Console](https://console.firebase.google.com/) → projekt **staveto-mvp-5f251**
+2. **Project Settings** (ikona ozubeného kolesa) → **Your apps** → **Add app** → **Web** (</>)
+3. Skopíruj `firebaseConfig`, najmä `appId`
+4. Vytvor `.env.local` (skopíruj z `.env.local.example`) a doplň:
+   ```
+   NEXT_PUBLIC_FIREBASE_APP_ID=1:255961550157:web:xxxxx
+   ```
+5. **Authentication** → **Sign-in method** → **Google** → zapni
+6. **Authentication** → **Settings** → **Authorized domains** → pridaj:
+   - `app.staveto.com`
+   - `app.staveto.sk`
+   - `localhost`
+
+Pre Vercel: **Project Settings** → **Environment Variables** → pridaj `NEXT_PUBLIC_FIREBASE_APP_ID`.
+
 ## Deploy on Vercel
 
 1. Push the project to GitHub (or connect your repo).
