@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Plus, FileText, Loader2 } from "lucide-react";
+import { useI18n } from "@/i18n/I18nContext";
 import { buttonVariants } from "@/components/ui/button";
 import {
   Table,
@@ -24,6 +25,7 @@ const statusVariant: Record<string, "default" | "secondary" | "destructive" | "o
 };
 
 export default function EstimatesListPage() {
+  const { t } = useI18n();
   const [estimates, setEstimates] = useState<Estimate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +37,7 @@ export default function EstimatesListPage() {
         return res.json();
       })
       .then(setEstimates)
-      .catch(() => setError("Failed to load estimates"))
+      .catch(() => setError(t("estimates.loadError")))
       .finally(() => setLoading(false));
   }, []);
 
@@ -51,9 +53,9 @@ export default function EstimatesListPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Estimates</h1>
+          <h1 className="text-2xl font-semibold">{t("estimates.title")}</h1>
           <p className="text-muted-foreground mt-1">
-            Create and manage your quotes and estimates.
+            {t("estimates.subtitle")}
           </p>
         </div>
         <Link
@@ -61,7 +63,7 @@ export default function EstimatesListPage() {
           className={buttonVariants()}
         >
             <Plus className="size-4 mr-2" />
-            New Estimate
+            {t("estimates.new")}
         </Link>
       </div>
 
@@ -74,16 +76,16 @@ export default function EstimatesListPage() {
       {!error && estimates.length === 0 && (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 px-4">
           <FileText className="size-12 text-muted-foreground mb-4" />
-          <h3 className="text-lg font-medium">No estimates yet</h3>
+          <h3 className="text-lg font-medium">{t("estimates.noEstimates")}</h3>
           <p className="text-muted-foreground text-center mt-1 mb-4">
-            Create your first estimate to get started.
+            {t("estimates.createFirst")}
           </p>
           <Link
             href="/estimates/new"
             className={buttonVariants()}
           >
             <Plus className="size-4 mr-2" />
-            New Estimate
+            {t("estimates.new")}
           </Link>
         </div>
       )}
@@ -93,10 +95,10 @@ export default function EstimatesListPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Title</TableHead>
-                <TableHead>Client</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Total</TableHead>
+                <TableHead>{t("estimates.titleCol")}</TableHead>
+                <TableHead>{t("estimates.clientCol")}</TableHead>
+                <TableHead>{t("estimates.statusCol")}</TableHead>
+                <TableHead className="text-right">{t("estimates.totalCol")}</TableHead>
                 <TableHead className="w-[80px]"></TableHead>
               </TableRow>
             </TableHeader>
@@ -125,7 +127,7 @@ export default function EstimatesListPage() {
                       href={`/estimates/${est.id}`}
                       className={buttonVariants({ variant: "ghost", size: "sm" })}
                     >
-                      View
+                      {t("estimates.view")}
                     </Link>
                   </TableCell>
                 </TableRow>

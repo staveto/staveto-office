@@ -1,5 +1,6 @@
 import { initializeApp, getApps, type FirebaseApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, type User } from "firebase/auth";
+import { getFunctions, httpsCallable } from "firebase/functions";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? "AIzaSyAmvsgGQRE3x9W4vaREZo3rcbRO_Qy0eYI",
@@ -40,6 +41,19 @@ export async function logout(): Promise<void> {
   if (auth) {
     await signOut(auth);
   }
+}
+
+const REGION = "europe-west1";
+
+export function getCallable<T = unknown, R = unknown>(name: string) {
+  return async (data: T): Promise<{ data: R }> => {
+    const app = getApp();
+    if (!app) throw new Error("Firebase nie je nakonfigurovaný");
+    const functions = getFunctions(app, REGION);
+    const fn = httpsCallable<T, R>(functions, name);
+    const result = await fn(data);
+    return result as { data: R };
+  };
 }
 
 export { onAuthStateChanged };
