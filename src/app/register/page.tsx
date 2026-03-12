@@ -18,14 +18,15 @@ const COLORS = {
   google: "#4285F4",
 };
 
-function LoginForm() {
+function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") ?? "/app";
-  const { user, loading, signIn, signUpWithGoogle } = useAuth();
+  const { user, loading, signUp, signUpWithGoogle } = useAuth();
   const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [submitLoading, setSubmitLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,12 +37,12 @@ function LoginForm() {
     }
   }, [user, loading, router, next]);
 
-  async function handleEmailSignIn(e: React.FormEvent) {
+  async function handleEmailSignUp(e: React.FormEvent) {
     e.preventDefault();
     setSubmitLoading(true);
     setError(null);
     try {
-      await signIn(email, password);
+      await signUp(email, password, displayName.trim() || undefined);
       router.push(next);
       router.refresh();
     } catch (err) {
@@ -94,7 +95,7 @@ function LoginForm() {
         className="text-4xl font-bold text-center mb-6"
         style={{ color: COLORS.textOnDark }}
       >
-        {t("login.title")}
+        Create account
       </h1>
 
       <div className="w-full max-w-sm space-y-4">
@@ -104,7 +105,20 @@ function LoginForm() {
           </div>
         )}
 
-        <form onSubmit={handleEmailSignIn} className="space-y-4">
+        <form onSubmit={handleEmailSignUp} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="displayName" className="text-white/90">
+              Display name
+            </Label>
+            <Input
+              id="displayName"
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder="Your name"
+              className="bg-white/10 border-white/30 text-white placeholder:text-white/50"
+            />
+          </div>
           <div className="space-y-2">
             <Label htmlFor="email" className="text-white/90">
               Email
@@ -130,6 +144,7 @@ function LoginForm() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               required
+              minLength={6}
               className="bg-white/10 border-white/30 text-white placeholder:text-white/50"
             />
           </div>
@@ -142,7 +157,7 @@ function LoginForm() {
             {submitLoading ? (
               <Loader2 className="size-5 animate-spin" />
             ) : (
-              t("login.title")
+              "Create account"
             )}
           </Button>
         </form>
@@ -177,13 +192,13 @@ function LoginForm() {
         </Button>
 
         <p className="text-center text-sm text-white/80">
-          Don&apos;t have an account?{" "}
+          Already have an account?{" "}
           <Link
-            href={`/register${next !== "/app" ? `?next=${encodeURIComponent(next)}` : ""}`}
+            href={`/login${next !== "/app" ? `?next=${encodeURIComponent(next)}` : ""}`}
             className="font-medium underline hover:text-white"
             style={{ color: COLORS.primary }}
           >
-            Sign up
+            Sign in
           </Link>
         </p>
       </div>
@@ -191,7 +206,7 @@ function LoginForm() {
   );
 }
 
-export default function LoginPage() {
+export default function RegisterPage() {
   return (
     <Suspense
       fallback={
@@ -203,7 +218,7 @@ export default function LoginPage() {
         </div>
       }
     >
-      <LoginForm />
+      <RegisterForm />
     </Suspense>
   );
 }

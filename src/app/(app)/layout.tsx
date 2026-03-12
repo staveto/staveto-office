@@ -1,5 +1,5 @@
-import { AppLayout } from "@/components/layout/AppLayout";
 import { AuthGuard } from "@/components/layout/AuthGuard";
+import { ConditionalAppLayout } from "@/components/layout/ConditionalAppLayout";
 
 export default function AppShellLayout({
   children,
@@ -8,7 +8,7 @@ export default function AppShellLayout({
 }) {
   return (
     <AuthGuard>
-      <AppLayout>{children}</AppLayout>
+      <ConditionalAppLayout>{children}</ConditionalAppLayout>
     </AuthGuard>
   );
 }
