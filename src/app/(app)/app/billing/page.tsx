@@ -10,8 +10,8 @@ import {
 } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nContext";
-import { useAuth } from "@/context/AuthContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
+import { isCompanyWorkspaceType } from "@/types/workspace";
 import { getOrganization } from "@/lib/organizations";
 import { listOrgMembers } from "@/lib/organizations";
 import { CreditCard, Loader2, AlertTriangle, Mail } from "lucide-react";
@@ -26,7 +26,6 @@ function toTimestampMs(raw: unknown): number | null {
 
 export default function BillingPage() {
   const { t } = useI18n();
-  const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,18 +37,27 @@ export default function BillingPage() {
   } | null>(null);
   const [seatsUsed, setSeatsUsed] = useState(0);
 
-  const isTeam = activeWorkspace?.type === "team";
-  const orgId = isTeam ? activeWorkspace?.id : null;
+  const isTeam = isCompanyWorkspaceType(activeWorkspace?.type);
+  const orgId = isTeam ? (activeWorkspace?.orgId ?? activeWorkspace?.id ?? null) : null;
+
+  const [nowMs] = useState(() => Date.now());
 
   useEffect(() => {
-    if (!orgId) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    Promise.all([getOrganization(orgId), listOrgMembers(orgId)])
-      .then(([orgSnap, members]) => {
+    let cancelled = false;
+
+    void (async () => {
+      if (!orgId) {
+        if (!cancelled) setLoading(false);
+        return;
+      }
+      setLoading(true);
+      setError(null);
+      try {
+        const [orgSnap, members] = await Promise.all([
+          getOrganization(orgId),
+          listOrgMembers(orgId),
+        ]);
+        if (cancelled) return;
         if (orgSnap) {
           setOrg({
             name: orgSnap.name,
@@ -61,15 +69,20 @@ export default function BillingPage() {
           setOrg(null);
         }
         setSeatsUsed(members.filter((m) => m.status === "active").length);
-      })
-      .catch((e) => {
+      } catch (e) {
+        if (cancelled) return;
         setError(e instanceof Error ? e.message : "Failed to load");
         setOrg(null);
-      })
-      .finally(() => setLoading(false));
-  }, [orgId]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
 
-  const trialExpired = org?.trialEndsAt ? org.trialEndsAt < Date.now() : false;
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId]);
+  const trialExpired = org?.trialEndsAt ? org.trialEndsAt < nowMs : false;
   const atSeatLimit = org ? seatsUsed >= org.seatLimit : false;
 
   if (!isTeam) {

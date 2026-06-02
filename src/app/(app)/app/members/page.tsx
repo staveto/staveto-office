@@ -36,6 +36,7 @@ import { Badge } from "@/components/ui/badge";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/context/AuthContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
+import { isCompanyWorkspaceType } from "@/types/workspace";
 import {
   getOrganization,
   listOrgMembers,
@@ -67,8 +68,8 @@ export default function MembersPage() {
   const [actioning, setActioning] = useState<string | null>(null);
 
   const isAdmin = memberRole === "admin";
-  const isTeam = activeWorkspace?.type === "team";
-  const orgId = activeWorkspace?.type === "team" ? activeWorkspace.id : null;
+  const isTeam = isCompanyWorkspaceType(activeWorkspace?.type);
+  const orgId = isTeam ? (activeWorkspace?.orgId ?? activeWorkspace?.id ?? null) : null;
 
   const load = async () => {
     if (!orgId) {

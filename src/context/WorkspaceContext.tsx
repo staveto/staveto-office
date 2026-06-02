@@ -1,80 +1,255 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+} from "react";
+import type { ActiveWorkspace } from "@/types/workspace";
 import type { Workspace, WorkspaceMember } from "@/lib/workspace-types";
+import { toLegacyWorkspace, fromLegacyWorkspace } from "@/lib/workspace-types";
 import { useAuth } from "@/context/AuthContext";
-import { getUserOrgMemberships } from "@/lib/organizations";
+import {
+  loadAvailableWorkspaces,
+  persistActiveWorkspaceId,
+  readPersistedWorkspaceId,
+  resolveActiveWorkspaceWithReason,
+  markExplicitPersonalWorkspace,
+  clearExplicitPersonalWorkspace,
+  logWorkspaceResolveDebug,
+} from "@/services/workspace/workspaceService";
+import { toLegacyMemberRole } from "@/permissions/roles";
+import type { WorkspaceRole } from "@/types/workspace";
+import {
+  getTenantFromWindow,
+  resolveTenantWorkspace,
+  type TenantFromHostname,
+  type TenantResolveStatus,
+} from "@/services/tenant/tenantResolver";
+
+export type WorkspaceTenantState = {
+  mode: TenantFromHostname["mode"];
+  slug?: string;
+  status: TenantResolveStatus;
+  organizationName?: string;
+};
 
 type WorkspaceContextValue = {
-  activeWorkspace: Workspace | null;
-  memberRole: WorkspaceMember["role"] | null;
-  setActiveWorkspace: (ws: Workspace | null) => void;
+  activeWorkspace: ActiveWorkspace | null;
+  availableWorkspaces: ActiveWorkspace[];
   workspaces: Workspace[];
+  legacyActiveWorkspace: Workspace | null;
+  memberRole: WorkspaceMember["role"] | null;
+  workspaceRole: WorkspaceRole | null;
+  tenant: WorkspaceTenantState | null;
+  setActiveWorkspace: (ws: Workspace | ActiveWorkspace | null) => void;
 };
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
-const PERSONAL_WORKSPACE: Workspace = {
-  id: "personal",
-  name: "Personal",
-  type: "personal",
-};
+function isActiveWorkspace(ws: Workspace | ActiveWorkspace): ws is ActiveWorkspace {
+  return ws.type === "personal" || ws.type === "company";
+}
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([PERSONAL_WORKSPACE]);
-  const [rolesMap, setRolesMap] = useState<Record<string, WorkspaceMember["role"]>>({});
-  const [activeWorkspace, setActiveWorkspaceState] = useState<Workspace | null>(PERSONAL_WORKSPACE);
+  const { user, profile } = useAuth();
+  const [availableWorkspaces, setAvailableWorkspaces] = useState<ActiveWorkspace[]>([]);
+  const [activeWorkspace, setActiveWorkspaceState] = useState<ActiveWorkspace | null>(null);
+  const [tenant, setTenant] = useState<WorkspaceTenantState | null>(null);
+  const [hostTenant] = useState<TenantFromHostname>(() =>
+    typeof window !== "undefined"
+      ? getTenantFromWindow()
+      : { mode: "app", hostname: "localhost" }
+  );
 
   useEffect(() => {
-    if (!user?.id) {
-      setWorkspaces([PERSONAL_WORKSPACE]);
-      setActiveWorkspaceState(PERSONAL_WORKSPACE);
-      setRolesMap({});
-      return;
-    }
-    getUserOrgMemberships(user.id).then((memberships) => {
-      const teamWorkspaces: Workspace[] = memberships.map((m) => ({
-        id: m.orgId,
-        name: m.orgName,
-        type: "team" as const,
-      }));
-      const roles: Record<string, WorkspaceMember["role"]> = {};
-      for (const m of memberships) {
-        roles[m.orgId] = m.role;
-      }
-      setRolesMap(roles);
-      setWorkspaces([PERSONAL_WORKSPACE, ...teamWorkspaces]);
-      setActiveWorkspaceState((current) => {
-        if (!current) return PERSONAL_WORKSPACE;
-        if (current.type === "personal") return PERSONAL_WORKSPACE;
-        const found = teamWorkspaces.find((w) => w.id === current.id);
-        return found ?? PERSONAL_WORKSPACE;
-      });
-    });
-  }, [user?.id]);
+    let cancelled = false;
 
-  const memberRole =
-    activeWorkspace?.type === "team" && activeWorkspace?.id
-      ? rolesMap[activeWorkspace.id] ?? "member"
+    void (async () => {
+      if (!user?.id) {
+        if (cancelled) return;
+        setAvailableWorkspaces([]);
+        setActiveWorkspaceState(null);
+        if (hostTenant.mode === "tenant" && hostTenant.slug) {
+          setTenant({ mode: "tenant", slug: hostTenant.slug, status: "app" });
+        } else {
+          setTenant({ mode: "app", status: "app" });
+        }
+        return;
+      }
+
+      try {
+        const list = await loadAvailableWorkspaces({
+          id: user.id,
+          email: user.email,
+          name: user.name,
+        });
+
+        if (cancelled) return;
+
+        setAvailableWorkspaces(list);
+
+        if (hostTenant.mode === "tenant" && hostTenant.slug) {
+          const resolution = await resolveTenantWorkspace(hostTenant.hostname, user.id);
+
+          if (cancelled) return;
+
+          if (resolution.status === "not_found") {
+            setTenant({
+              mode: "tenant",
+              slug: hostTenant.slug,
+              status: "not_found",
+            });
+            setActiveWorkspaceState(null);
+            return;
+          }
+
+          if (resolution.status === "access_denied") {
+            setTenant({
+              mode: "tenant",
+              slug: hostTenant.slug,
+              status: "access_denied",
+              organizationName: resolution.organization?.name,
+            });
+            setActiveWorkspaceState(null);
+            return;
+          }
+
+          if (resolution.status === "resolved" && resolution.workspace) {
+            setTenant({
+              mode: "tenant",
+              slug: hostTenant.slug,
+              status: "resolved",
+              organizationName: resolution.organization?.name,
+            });
+            setActiveWorkspaceState(resolution.workspace);
+            persistActiveWorkspaceId(resolution.workspace.id);
+            return;
+          }
+        }
+
+        setTenant({ mode: "app", status: "app" });
+        const persistedId = readPersistedWorkspaceId();
+        const { workspace: resolved, reason } = resolveActiveWorkspaceWithReason(list, {
+          tenantMode: false,
+          persistedId,
+          profileWorkspaceId: profile?.onboarding?.activeWorkspaceId,
+          profileBusinessOrgId: profile?.activeBusinessOrgId,
+        });
+        setActiveWorkspaceState(resolved);
+        persistActiveWorkspaceId(resolved.id);
+        if (resolved.type === "company") {
+          clearExplicitPersonalWorkspace();
+        }
+        logWorkspaceResolveDebug({
+          available: list,
+          active: resolved,
+          reason,
+          persistedId,
+        });
+      } catch {
+        if (cancelled) return;
+        const personal = listFallbackPersonal(user);
+        setAvailableWorkspaces([personal]);
+        setActiveWorkspaceState(personal);
+        setTenant(
+          hostTenant.mode === "tenant" && hostTenant.slug
+            ? { mode: "tenant", slug: hostTenant.slug, status: "not_found" }
+            : { mode: "app", status: "app" }
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    user?.id,
+    user?.email,
+    user?.name,
+    profile?.onboarding?.activeWorkspaceId,
+    profile?.activeBusinessOrgId,
+    hostTenant.mode,
+    hostTenant.slug,
+    hostTenant.hostname,
+  ]);
+
+  const legacyWorkspaces = useMemo(
+    () => availableWorkspaces.map(toLegacyWorkspace),
+    [availableWorkspaces]
+  );
+
+  const legacyActiveWorkspace = useMemo(
+    () => (activeWorkspace ? toLegacyWorkspace(activeWorkspace) : null),
+    [activeWorkspace]
+  );
+
+  const workspaceRole = activeWorkspace?.role ?? null;
+
+  const memberRole: WorkspaceMember["role"] | null = workspaceRole
+    ? toLegacyMemberRole(workspaceRole)
+    : activeWorkspace?.type === "personal"
+      ? "admin"
       : "member";
 
-  const setActiveWorkspace = useCallback((ws: Workspace | null) => {
-    setActiveWorkspaceState(ws);
-  }, []);
+  const setActiveWorkspace = useCallback(
+    (ws: Workspace | ActiveWorkspace | null) => {
+      if (tenant?.mode === "tenant" && tenant.status === "resolved") {
+        return;
+      }
+      if (!ws) {
+        setActiveWorkspaceState(null);
+        return;
+      }
+
+      const next = isActiveWorkspace(ws)
+        ? ws
+        : fromLegacyWorkspace(ws, user?.id ?? "", activeWorkspace?.role ?? "manager");
+
+      setActiveWorkspaceState(next);
+      persistActiveWorkspaceId(next.id);
+      if (next.type === "personal") {
+        markExplicitPersonalWorkspace();
+      } else {
+        clearExplicitPersonalWorkspace();
+      }
+    },
+    [user?.id, activeWorkspace?.role, tenant]
+  );
+
+  const value: WorkspaceContextValue = {
+    activeWorkspace,
+    availableWorkspaces,
+    workspaces: legacyWorkspaces,
+    legacyActiveWorkspace,
+    memberRole,
+    workspaceRole,
+    tenant,
+    setActiveWorkspace,
+  };
 
   return (
-    <WorkspaceContext.Provider
-      value={{
-        activeWorkspace,
-        memberRole,
-        setActiveWorkspace,
-        workspaces,
-      }}
-    >
-      {children}
-    </WorkspaceContext.Provider>
+    <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>
   );
+}
+
+function listFallbackPersonal(user: {
+  id: string;
+  email?: string;
+  name?: string;
+}): ActiveWorkspace {
+  return {
+    id: "personal",
+    type: "personal",
+    name: user.name?.trim() || "Personal",
+    role: "owner",
+    source: "personal",
+    ownerId: user.id,
+    legacyId: "personal",
+  };
 }
 
 export function useWorkspace() {

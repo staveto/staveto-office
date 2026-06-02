@@ -15,7 +15,8 @@ import {
 export type OrgPlan = "TEAM_5" | "TEAM_15" | "TEAM_30";
 
 export type OrgMemberRole = "admin" | "member";
-export type OrgMemberStatus = "active" | "invited" | "removed";
+/** Mobile + web member status values. */
+export type OrgMemberStatus = "active" | "invited" | "removed" | string;
 
 export type Organization = {
   name: string;
@@ -24,6 +25,23 @@ export type Organization = {
   plan: OrgPlan;
   createdAt: unknown;
   trialEndsAt?: unknown;
+  /** Optional tenant subdomain (Monday-style). */
+  slug?: string;
+  domain?: string;
+  subdomainEnabled?: boolean;
+  slugUpdatedAt?: unknown;
+  slugUpdatedBy?: string;
+  /** Mobile-aligned org lifecycle (read-only optional fields). */
+  status?: string;
+  businessEnabled?: boolean;
+  planCode?: string;
+};
+
+export type OrgMembership = {
+  orgId: string;
+  orgName: string;
+  /** Raw role from Firestore (mobile: owner|admin|manager|…, web legacy: admin|member). */
+  role: string;
 };
 
 export type OrgMember = {
@@ -154,23 +172,93 @@ export async function getOrganization(orgId: string): Promise<Organization | nul
   return snap.exists() ? (snap.data() as Organization) : null;
 }
 
-export async function getUserOrgMemberships(uid: string): Promise<{ orgId: string; orgName: string; role: OrgMemberRole }[]> {
+/**
+ * Firestore project rules require `organizations/{orgId}/members/{uid}`.
+ * Legacy orgs may only have `ownerUid` — heal so list/read queries succeed.
+ */
+export async function ensureOrgMemberForOwner(orgId: string, uid: string): Promise<void> {
+  const db = getFirestoreInstance();
+  if (!db) return;
+
+  const org = await getOrganization(orgId);
+  if (!org || org.ownerUid !== uid) return;
+
+  const memberRef = doc(db, "organizations", orgId, "members", uid);
+  const memberSnap = await getDoc(memberRef);
+  if (memberSnap.exists()) return;
+
+  try {
+    await setDoc(
+      memberRef,
+      {
+        role: "admin",
+        status: "active",
+        createdAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  } catch {
+    /* Rules may block write — rules update still required */
+  }
+}
+
+/** Member is usable when active; mobile docs may omit `status`. */
+export function isOrgMemberActive(member: Pick<OrgMember, "status">): boolean {
+  const status = member.status?.toLowerCase?.() ?? member.status;
+  if (!status) return true;
+  if (status === "removed" || status === "invited") return false;
+  return status === "active";
+}
+
+const INACTIVE_ORG_STATUSES = new Set(["canceled", "cancelled", "disabled", "suspended", "deleted"]);
+
+/** Organization is available for company workspace (mobile-aligned, additive fields). */
+export function isOrganizationEligible(org: Organization | null): boolean {
+  if (!org) return false;
+  if (org.businessEnabled === false) return false;
+  const status = org.status?.toLowerCase?.() ?? org.status;
+  if (status && INACTIVE_ORG_STATUSES.has(status)) return false;
+  if (
+    status &&
+    status !== "active" &&
+    status !== "trialing" &&
+    status !== "trial"
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export async function getUserOrgMemberships(uid: string): Promise<OrgMembership[]> {
   const db = getFirestoreInstance();
   if (!db) return [];
   const orgsSnap = await getDocs(collection(db, "organizations"));
-  const result: { orgId: string; orgName: string; role: OrgMemberRole }[] = [];
+  const result: OrgMembership[] = [];
   for (const orgDoc of orgsSnap.docs) {
+    const org = orgDoc.data() as Organization;
+    if (!isOrganizationEligible(org)) continue;
+
     const memberSnap = await getDoc(doc(db, "organizations", orgDoc.id, "members", uid));
     if (memberSnap.exists()) {
       const member = memberSnap.data() as OrgMember;
-      if (member.status === "active") {
-        const org = orgDoc.data() as Organization;
-        result.push({
-          orgId: orgDoc.id,
-          orgName: org.name,
-          role: member.role,
-        });
-      }
+      if (!isOrgMemberActive(member)) continue;
+      const isOwner = org.ownerUid === uid;
+      const role = isOwner ? "owner" : String(member.role ?? "member");
+      result.push({
+        orgId: orgDoc.id,
+        orgName: org.name?.trim() || "Firma",
+        role,
+      });
+      continue;
+    }
+
+    if (org.ownerUid === uid) {
+      await ensureOrgMemberForOwner(orgDoc.id, uid);
+      result.push({
+        orgId: orgDoc.id,
+        orgName: org.name?.trim() || "Firma",
+        role: "owner",
+      });
     }
   }
   return result;

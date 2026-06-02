@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Plus, Trash2, Loader2 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -33,6 +33,7 @@ import {
 import { formatMoney } from "@/lib/format";
 import { computeItemTotal, computeEstimateTotals } from "@/lib/estimateUtils";
 import type { EstimateStatus } from "@/lib/types";
+import { getProject, listProjectQuoteDraftItems } from "@/lib/projects";
 
 const STATUSES: EstimateStatus[] = ["draft", "sent", "approved", "rejected"];
 const DEFAULT_UNIT = "ks";
@@ -46,6 +47,10 @@ interface LineItem {
 
 export default function NewEstimatePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectId = searchParams.get("projectId");
+  const [prefillLoading, setPrefillLoading] = useState(!!projectId);
+  const [prefillSource, setPrefillSource] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [title, setTitle] = useState("");
@@ -57,6 +62,48 @@ export default function NewEstimatePage() {
   const [items, setItems] = useState<LineItem[]>([
     { name: "", qty: 1, unit: DEFAULT_UNIT, unitPrice: 0 },
   ]);
+
+  useEffect(() => {
+    if (!projectId) {
+      setPrefillLoading(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const [project, quoteItems] = await Promise.all([
+          getProject(projectId),
+          listProjectQuoteDraftItems(projectId),
+        ]);
+        if (cancelled || !project) return;
+        setTitle(project.name || "");
+        setClientName(project.customerName || "");
+        setClientEmail(project.customerEmail || "");
+        if (project.quoteDraftVatPercent != null) {
+          setVatPercent(project.quoteDraftVatPercent);
+        }
+        if (project.quoteDraftNotes) setNotes(project.quoteDraftNotes);
+        if (quoteItems.length > 0) {
+          setItems(
+            quoteItems.map((row) => ({
+              name: row.name,
+              qty: row.qty,
+              unit: row.unit,
+              unitPrice: row.unitPrice,
+            }))
+          );
+        }
+        setPrefillSource(project.name || projectId);
+      } catch {
+        /* keep empty form */
+      } finally {
+        if (!cancelled) setPrefillLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
 
   const itemsWithTotals = items.map((item) => ({
     ...item,
@@ -151,7 +198,28 @@ export default function NewEstimatePage() {
         </div>
       </div>
 
+      {prefillSource && (
+        <div className="rounded-lg border bg-muted/40 px-4 py-3 text-sm">
+          Loaded from draft job: <strong>{prefillSource}</strong>
+          {projectId && (
+            <>
+              {" "}
+              ·{" "}
+              <Link href={`/app/projects/${projectId}`} className="text-[#1D376A] hover:underline">
+                Back to draft
+              </Link>
+            </>
+          )}
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-6">
+        {prefillLoading && (
+          <p className="text-sm text-muted-foreground flex items-center gap-2">
+            <Loader2 className="size-4 animate-spin" />
+            Loading draft quote lines…
+          </p>
+        )}
         {errors.submit && (
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
             {errors.submit}

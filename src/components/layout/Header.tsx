@@ -8,12 +8,13 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { useI18n } from "@/i18n/I18nContext";
+import { isCompanyWorkspaceType } from "@/types/workspace";
 
 const PAGE_TITLES: Record<string, string> = {
   "/": "nav.overview",
-  "/app": "nav.overview",
+  "/app": "dashboard.title",
   "/app/quotes": "nav.quotes",
-  "/app/projects/new": "projects.newProject",
+  "/app/projects/new": "projects.new.title",
   "/app/projects": "nav.projects",
   "/app/members": "nav.members",
   "/app/billing": "nav.billing",
@@ -47,7 +48,21 @@ export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
-  const pageTitleKey = getPageTitle(pathname);
+  let pageTitleKey = getPageTitle(pathname);
+  if (activeWorkspace) {
+    if (pathname === "/app") {
+      pageTitleKey = isCompanyWorkspaceType(activeWorkspace.type)
+        ? "dashboard.title"
+        : "dashboard.titlePersonal";
+    } else if (
+      pathname === "/app/projects" ||
+      pathname.startsWith("/app/projects/")
+    ) {
+      pageTitleKey = isCompanyWorkspaceType(activeWorkspace.type)
+        ? "nav.projects"
+        : "nav.projectsPersonal";
+    }
+  }
   const initials = user?.name
     ? user.name
         .split(" ")
@@ -90,7 +105,7 @@ export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
           type="button"
           onClick={onMenuClick}
           className="flex size-9 items-center justify-center rounded-lg text-foreground hover:bg-black/5 md:hidden"
-          aria-label={sidebarOpen ? "Close menu" : "Open menu"}
+          aria-label={sidebarOpen ? t("header.closeMenu") : t("header.openMenu")}
           aria-expanded={sidebarOpen}
         >
           <Menu className="size-5" />
@@ -109,9 +124,13 @@ export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
             className="flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-muted"
             aria-haspopup="listbox"
             aria-expanded={workspaceOpen}
-            aria-label="Switch workspace"
+            aria-label={t("header.switchWorkspace")}
           >
-            <span>{activeWorkspace?.name ?? "Personal"}</span>
+            <span>
+              {activeWorkspace?.name === "Personal" || activeWorkspace?.id === "personal"
+                ? t("workspace.personalShort")
+                : (activeWorkspace?.name ?? t("workspace.personalShort"))}
+            </span>
             <ChevronDown className="size-4 text-muted-foreground" />
           </button>
           {workspaceOpen && (
@@ -150,7 +169,7 @@ export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
             className="flex size-9 items-center justify-center rounded-full bg-[#1D376A] text-sm font-medium text-white"
             aria-haspopup="menu"
             aria-expanded={userMenuOpen}
-            aria-label="User menu"
+            aria-label={t("header.userMenu")}
           >
             {initials}
           </button>
@@ -166,7 +185,7 @@ export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
                 role="menuitem"
               >
                 <User className="size-4" />
-                Profile
+                {t("header.profile")}
               </Link>
               <button
                 type="button"

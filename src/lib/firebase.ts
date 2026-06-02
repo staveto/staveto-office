@@ -30,6 +30,13 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
+import {
+  getStorage,
+  ref,
+  uploadBytes,
+  getDownloadURL,
+  type FirebaseStorage,
+} from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? "",
@@ -65,6 +72,13 @@ export function getFirestoreInstance() {
   const app = getApp();
   return app ? getFirestore(app) : null;
 }
+
+export function getStorageInstance(): FirebaseStorage | null {
+  const app = getApp();
+  return app ? getStorage(app) : null;
+}
+
+export { ref, uploadBytes, getDownloadURL };
 
 export const auth = { get: getAuthInstance };
 export const db = { get: getFirestoreInstance };

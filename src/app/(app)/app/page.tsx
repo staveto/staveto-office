@@ -1,45 +1,229 @@
 "use client";
 
-import Link from "next/link";
-import { FileText, Plus } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+
+import { useEffect, useState } from "react";
+
+import {
+
+  DashboardHeroSkeleton,
+
+  CompanyDashboardView,
+
+  PersonalDashboardView,
+
+} from "@/components/dashboard";
+
 import { useI18n } from "@/i18n/I18nContext";
+
+import { useAuth } from "@/context/AuthContext";
+
 import { useWorkspace } from "@/context/WorkspaceContext";
 
-export default function OverviewPage() {
-  const { t } = useI18n();
-  const { activeWorkspace } = useWorkspace();
+import { isCompanyWorkspaceMode } from "@/lib/workspaceProduct";
+
+import { isCompanyWorkspaceType } from "@/types/workspace";
+
+import {
+
+  fetchDashboardStats,
+
+  type DashboardStats,
+
+} from "@/lib/dashboardStats";
+
+
+
+const EMPTY_STATS: DashboardStats = {
+
+  projectsCount: null,
+
+  estimatesCount: null,
+
+  recentJobs: [],
+
+  activeJobsCount: 0,
+
+  draftJobsCount: 0,
+
+  waitingCustomerCount: 0,
+
+  activeJobs: [],
+
+  draftJobs: [],
+
+  quotesCount: null,
+
+  quotesAwaitingCount: 0,
+
+  quotesAwaiting: [],
+
+  teamCount: null,
+  delayedJobsCount: 0,
+  delayedJobs: [],
+};
+
+
+
+function DashboardSkeleton() {
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">{t("dashboard.title")}</h1>
-        <p className="text-muted-foreground mt-1">
-          {t("dashboard.subtitle")} {activeWorkspace && `(${activeWorkspace.name})`}
-        </p>
+
+    <div className="space-y-5 animate-pulse max-w-6xl">
+
+      <DashboardHeroSkeleton />
+
+      <div className="flex gap-2 overflow-hidden">
+
+        {Array.from({ length: 5 }).map((_, i) => (
+
+          <div key={i} className="h-14 min-w-[9.5rem] flex-1 rounded-lg bg-muted" />
+
+        ))}
+
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">{t("dashboard.estimates")}</CardTitle>
-            <FileText className="size-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold">—</p>
-            <p className="text-xs text-muted-foreground">
-              {t("dashboard.createManage")}
-            </p>
-            <Link
-              href="/estimates/new"
-              className="mt-4 flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-            >
-              <Plus className="size-4" />
-              {t("dashboard.newEstimate")}
-            </Link>
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 lg:grid-cols-2">
+
+        <div className="h-32 rounded-xl bg-muted" />
+
+        <div className="h-48 rounded-xl bg-muted" />
+
       </div>
+
     </div>
+
   );
+
 }
+
+
+
+export default function OverviewPage() {
+
+  const { t } = useI18n();
+
+  const { user, profile } = useAuth();
+
+  const { activeWorkspace, availableWorkspaces } = useWorkspace();
+
+  const [statsLoading, setStatsLoading] = useState(true);
+
+  const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
+
+
+
+  useEffect(() => {
+
+    if (!user?.id || !activeWorkspace) return;
+
+
+
+    let cancelled = false;
+
+
+
+    void (async () => {
+
+      setStatsLoading(true);
+
+      try {
+
+        const data = await fetchDashboardStats(activeWorkspace, user.id);
+
+        if (cancelled) return;
+
+        setStats(data);
+
+      } finally {
+
+        if (!cancelled) setStatsLoading(false);
+
+      }
+
+    })();
+
+
+
+    return () => {
+
+      cancelled = true;
+
+    };
+
+  }, [user?.id, activeWorkspace]);
+
+
+
+  const displayName =
+
+    profile?.firstName?.trim() ||
+
+    user?.firstName?.trim() ||
+
+    user?.name?.split(" ")[0]?.trim() ||
+
+    t("nav.account");
+
+
+
+  const isCompany = isCompanyWorkspaceMode(activeWorkspace);
+
+  const hasCompanyWorkspace = availableWorkspaces.some((w) =>
+
+    isCompanyWorkspaceType(w.type)
+
+  );
+
+
+
+  if (!user || !activeWorkspace) {
+
+    return <DashboardSkeleton />;
+
+  }
+
+
+
+  if (isCompany) {
+
+    return (
+
+      <CompanyDashboardView
+
+        activeWorkspace={activeWorkspace}
+
+        displayName={displayName}
+
+        stats={stats}
+
+        statsLoading={statsLoading}
+
+      />
+
+    );
+
+  }
+
+
+
+  return (
+
+    <PersonalDashboardView
+
+      activeWorkspace={activeWorkspace}
+
+      displayName={displayName}
+
+      stats={stats}
+
+      statsLoading={statsLoading}
+
+      showCreateCompany={!hasCompanyWorkspace}
+
+    />
+
+  );
+
+}
+

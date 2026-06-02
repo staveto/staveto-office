@@ -73,17 +73,25 @@ function mapFirebaseUser(fb: FirebaseUser): User {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<AuthState>({
+  const [state, setState] = useState<AuthState>(() => ({
     user: null,
     profile: null,
-    loading: true,
-  });
+    loading: !!getAuthInstance(),
+  }));
 
   const loadUserAndProfile = async (fb: FirebaseUser) => {
-    const [profile, billing] = await Promise.all([
-      getUserProfile(fb.uid),
-      fetchBillingStatus(fb.uid),
-    ]);
+    let profile: UserProfile | null = null;
+    let billing: BillingStatus | null = null;
+
+    try {
+      [profile, billing] = await Promise.all([
+        getUserProfile(fb.uid),
+        fetchBillingStatus(fb.uid),
+      ]);
+    } catch {
+      // Firestore rules or network — keep session, avoid crashing the app shell
+    }
+
     const displayName = profile?.displayName ?? fb.displayName ?? undefined;
     const name = displayName ?? (profile?.firstName && profile?.lastName
       ? `${profile.firstName} ${profile.lastName}`.trim()
@@ -114,16 +122,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const auth = getAuthInstance();
-    if (!auth) {
-      setState((s) => ({ ...s, loading: false }));
-      return;
-    }
+    if (!auth) return;
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
       if (!fbUser) {
         setState({ user: null, profile: null, loading: false });
         return;
       }
-      await ensureUserProfile(fbUser.uid, fbUser.email ?? "", fbUser.displayName ?? undefined);
+      try {
+        await ensureUserProfile(
+          fbUser.uid,
+          fbUser.email ?? "",
+          fbUser.displayName ?? undefined
+        );
+      } catch {
+        // Profile bootstrap may fail under strict rules; sign-in can still proceed
+      }
       await loadUserAndProfile(fbUser);
     });
     return () => unsubscribe();

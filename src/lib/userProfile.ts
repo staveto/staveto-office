@@ -1,4 +1,4 @@
-import { getFirestoreInstance, doc, getDoc, setDoc, updateDoc, serverTimestamp } from "./firebase";
+import { getFirestoreInstance, doc, getDoc, setDoc, serverTimestamp } from "./firebase";
 
 export type UserProfile = {
   displayName?: string;
@@ -8,6 +8,8 @@ export type UserProfile = {
   lastName?: string;
   createdAt?: unknown;
   updatedAt?: unknown;
+  /** Mobile BusinessContext hint (optional on users/{uid}). */
+  activeBusinessOrgId?: string;
   onboarding?: {
     purpose?: string;
     role?: string;
@@ -15,6 +17,11 @@ export type UserProfile = {
     inviteEmails?: { email: string; role: string }[];
     completed?: boolean;
     completedAt?: unknown;
+    source?: "web" | "mobile" | string;
+    usageType?: "personal" | "company";
+    selectedFeatures?: string[];
+    activeWorkspaceId?: string;
+    activeWorkspaceType?: "personal" | "company";
   };
 };
 

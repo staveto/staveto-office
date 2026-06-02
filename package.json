@@ -6,7 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "firebase": "firebase",
+    "firebase:login": "firebase login --reauth",
+    "firebase:secret": "firebase functions:secrets:set GEMINI_API_KEY",
+    "firebase:deploy": "firebase deploy --only functions:generateProjectDraft,functions:updateProjectDraftWithAI,functions:createProjectFromDraft,firestore:rules,storage",
+    "functions:build": "npm run build --prefix functions"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",
@@ -23,6 +28,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "firebase-tools": "^15.18.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

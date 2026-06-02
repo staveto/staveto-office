@@ -22,7 +22,6 @@ import { Badge } from "@/components/ui/badge";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/context/AuthContext";
 import {
-  getProject,
   listProjectTasks,
   listProjectExpenses,
   createTask,
@@ -54,6 +53,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { ArrowLeft, CheckCircle2, Circle, Loader2, Plus, Pencil, Trash2 } from "lucide-react";
+import { isDraftJob } from "@/lib/projectLifecycle";
+import { DraftJobWorkspace } from "@/components/jobs/DraftJobWorkspace";
+import { JobLifecycleBadge } from "@/components/jobs/JobLifecycleBadge";
+import { WorkTypeBadge } from "@/components/jobs/WorkTypeBadge";
 
 const EXPENSE_CATEGORIES: ExpenseCategory[] = ["MATERIAL", "WORK", "OTHER", "TRAVEL"];
 
@@ -118,6 +121,13 @@ export default function ProjectDetailPage() {
           return;
         }
         setProject(p);
+        const draft = isDraftJob(p);
+        if (draft) {
+          setTasks([]);
+          setExpenses([]);
+          setLoading(false);
+          return;
+        }
         setTasksError(null);
         setExpensesError(null);
         try {
@@ -309,7 +319,7 @@ export default function ProjectDetailPage() {
           className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
-          {t("nav.projects")}
+          {t("projects.titleJobs")}
         </Link>
         <ProjectDetailSkeleton />
       </div>
@@ -324,7 +334,7 @@ export default function ProjectDetailPage() {
           className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="size-4" />
-          {t("nav.projects")}
+          {t("projects.titleJobs")}
         </Link>
         <Card className="border-destructive/50">
           <CardContent className="py-8">
@@ -339,6 +349,8 @@ export default function ProjectDetailPage() {
       </div>
     );
   }
+
+  const showDraft = isDraftJob(project);
 
   const tabs: { id: TabId; label: string }[] = [
     { id: "overview", label: t("projects.tabOverview") },
@@ -355,18 +367,33 @@ export default function ProjectDetailPage() {
             className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-2"
           >
             <ArrowLeft className="size-4" />
-            {t("nav.projects")}
+            {t("projects.titleJobs")}
           </Link>
+          <p className="text-xs text-muted-foreground uppercase tracking-wide">
+            {t("projects.jobDetailLabel")}
+          </p>
           <h1 className="text-xl font-semibold">{project.name || t("projects.noName")}</h1>
-          {project.addressText && (
-            <p className="text-sm text-muted-foreground mt-1">{project.addressText}</p>
+          {(project.addressText || project.city) && (
+            <p className="text-sm text-muted-foreground mt-1">
+              {[project.addressText, project.city].filter(Boolean).join(", ")}
+            </p>
           )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 justify-end">
+          <WorkTypeBadge project={project} />
+          <JobLifecycleBadge project={project} />
         </div>
       </div>
 
-      {project.projectType && (
-        <Badge variant="secondary">{project.projectType}</Badge>
-      )}
+      {showDraft && user?.id ? (
+        <DraftJobWorkspace
+          project={project}
+          userId={user.id}
+          onProjectUpdated={setProject}
+        />
+      ) : (
+        <>
+      <WorkTypeBadge project={project} />
 
       <div className="flex gap-2 border-b">
         {tabs.map((tab) => (
@@ -688,6 +715,8 @@ export default function ProjectDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+        </>
+      )}
     </div>
   );
 }

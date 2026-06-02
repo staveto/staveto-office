@@ -21,7 +21,7 @@ const COLORS = {
 function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") ?? "/app";
+  const next = searchParams.get("next") ?? "/onboarding";
   const { user, loading, signUp, signUpWithGoogle } = useAuth();
   const { t } = useI18n();
   const [email, setEmail] = useState("");

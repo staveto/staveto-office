@@ -1,147 +1,232 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/context/AuthContext";
-import { upsertUserProfile, completeOnboarding } from "@/lib/userProfile";
-import {
-  getOrCreateUserOrg,
-  createInvite,
-  getUserOrgMemberships,
-} from "@/lib/organizations";
-import { Button } from "@/components/ui/button";
+import { useAuth, isOnboardingCompleted } from "@/context/AuthContext";
+import { useI18n } from "@/i18n/I18nContext";
+import { OnboardingStepShell } from "@/components/onboarding/OnboardingStepShell";
+import { OnboardingOptionCard } from "@/components/onboarding/OnboardingOptionCard";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, ChevronLeft, ChevronRight, Plus, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Loader2, User, Building2, PlusCircle, Link2 } from "lucide-react";
+import {
+  savePersonalProfile,
+  createCompanyForOnboarding,
+  finishOnboarding,
+  getPersonalActiveWorkspaceId,
+  ONBOARDING_FEATURE_IDS,
+  type OnboardingUsageType,
+  type OnboardingRole,
+  type OnboardingFeature,
+} from "@/services/onboarding";
 
 const COLORS = {
   background: "#1D376A",
-  primary: "#e06737",
-  textOnDark: "#ffffff",
 };
 
-const PURPOSE_OPTIONS = [
-  { value: "work", label: "Work" },
-  { value: "personal", label: "Personal" },
-  { value: "school", label: "School" },
-  { value: "nonprofits", label: "Nonprofits" },
-];
+const TOTAL_STEPS = 6;
 
-const ROLE_OPTIONS = [
-  { value: "craftsman", label: "Craftsman" },
-  { value: "manager", label: "Manager" },
-  { value: "accountant", label: "Accountant" },
-  { value: "other", label: "Other" },
-];
+const ROLE_VALUES: OnboardingRole[] = ["craftsman", "manager", "accountant", "other"];
 
-const TEAM_SIZE_OPTIONS = [
-  { value: "only_me", label: "Only me" },
-  { value: "2_5", label: "2–5" },
-  { value: "6_10", label: "6–10" },
-  { value: "11_15", label: "11–15" },
-  { value: "16_25", label: "16–25" },
-  { value: "26_50", label: "26–50" },
-  { value: "51_100", label: "51–100" },
-  { value: "101_500", label: "101–500" },
-];
-
-type InviteRow = { email: string; role: "admin" | "member" };
+type CompanySetupMode = "choose" | "create" | "join";
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const { user, loading, refreshUser } = useAuth();
-  const [step, setStep] = useState(1);
-  const [purpose, setPurpose] = useState<string>("");
-  const [role, setRole] = useState<string>("");
-  const [teamSize, setTeamSize] = useState<string>("");
-  const [invites, setInvites] = useState<InviteRow[]>([{ email: "", role: "member" }]);
-  const [saving, setSaving] = useState(false);
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const { t } = useI18n();
+  const { user, profile, loading, refreshUser } = useAuth();
 
-  const saveStep = async (onboardingData: Partial<{ purpose: string; role: string; teamSize: string; inviteEmails: InviteRow[] }>) => {
-    if (!user?.id) return;
-    setSaving(true);
-    try {
-      await upsertUserProfile(user.id, {
-        onboarding: {
-          purpose: onboardingData.purpose ?? purpose,
-          role: onboardingData.role ?? role,
-          teamSize: onboardingData.teamSize ?? teamSize,
-          inviteEmails: onboardingData.inviteEmails,
-        },
-      });
-    } finally {
-      setSaving(false);
+  const [step, setStep] = useState(1);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [role, setRole] = useState<OnboardingRole | "">("");
+
+  const [usageType, setUsageType] = useState<OnboardingUsageType | "">("");
+  const [companyMode, setCompanyMode] = useState<CompanySetupMode>("choose");
+  const [companyName, setCompanyName] = useState("");
+  const [inviteToken, setInviteToken] = useState("");
+  const [createdOrgId, setCreatedOrgId] = useState<string | null>(null);
+
+  const [selectedFeatures, setSelectedFeatures] = useState<OnboardingFeature[]>([]);
+
+  useEffect(() => {
+    if (!loading && profile && isOnboardingCompleted(profile)) {
+      router.replace("/app");
     }
+  }, [loading, profile, router]);
+
+  useEffect(() => {
+    if (profile?.firstName) setFirstName((v) => v || profile.firstName || "");
+    if (profile?.lastName) setLastName((v) => v || profile.lastName || "");
+    const savedRole = profile?.onboarding?.role;
+    if (savedRole && ROLE_VALUES.includes(savedRole as OnboardingRole)) {
+      setRole(savedRole as OnboardingRole);
+    }
+    const savedUsage = profile?.onboarding?.usageType;
+    if (savedUsage === "personal" || savedUsage === "company") {
+      setUsageType(savedUsage);
+    }
+    const savedFeatures = profile?.onboarding?.selectedFeatures;
+    if (savedFeatures?.length) {
+      setSelectedFeatures(
+        savedFeatures.filter((f): f is OnboardingFeature =>
+          ONBOARDING_FEATURE_IDS.includes(f as OnboardingFeature)
+        )
+      );
+    }
+  }, [profile]);
+
+  const toggleFeature = (id: OnboardingFeature) => {
+    setSelectedFeatures((prev) =>
+      prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id]
+    );
+  };
+
+  const handleBack = () => {
+    setError(null);
+    if (step === 4 && usageType === "company") {
+      if (companyMode === "create" || companyMode === "join") {
+        setCompanyMode("choose");
+        return;
+      }
+    }
+    setStep((s) => Math.max(1, s - 1));
   };
 
   const handleNext = async () => {
-    if (step === 1 && purpose) {
-      await saveStep({ purpose });
+    if (!user?.id) return;
+    setError(null);
+
+    if (step === 1) {
       setStep(2);
-    } else if (step === 2 && role) {
-      await saveStep({ purpose, role });
-      setStep(3);
-    } else if (step === 3 && teamSize) {
-      await saveStep({ purpose, role, teamSize });
-      setStep(4);
-    } else if (step === 4) {
-      const inviteEmails = invites.filter((r) => r.email.trim()).map((r) => ({ email: r.email.trim(), role: r.role }));
-      await saveStep({ purpose, role, teamSize, inviteEmails });
-      if (teamSize !== "only_me" && user?.id && user?.email && inviteEmails.length > 0) {
-        const orgId = await getOrCreateUserOrg(user.id, user.email);
-        if (orgId) {
-          let firstToken: string | null = null;
-          for (const inv of inviteEmails) {
-            const { token } = await createInvite(orgId, inv.email, inv.role as "admin" | "member", user.id);
-            if (!firstToken) firstToken = token;
-          }
-          if (firstToken && typeof window !== "undefined") {
-            const base = window.location.origin;
-            setInviteLink(`${base}/join?token=${firstToken}`);
-          }
-        }
+      return;
+    }
+
+    if (step === 2) {
+      if (!firstName.trim() || !lastName.trim() || !role) {
+        setError(t("onboarding.error.required"));
+        return;
       }
-      setStep(5);
-    } else if (step === 5) {
       setSaving(true);
       try {
-        await completeOnboarding(user!.id);
+        await savePersonalProfile(user.id, {
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          role,
+        });
+        setStep(3);
+      } catch {
+        setError(t("onboarding.error.save"));
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    if (step === 3) {
+      if (!usageType) {
+        setError(t("onboarding.error.required"));
+        return;
+      }
+      setCompanyMode("choose");
+      setStep(4);
+      return;
+    }
+
+    if (step === 4) {
+      if (usageType === "personal") {
+        setStep(5);
+        return;
+      }
+
+      if (companyMode === "choose") {
+        setError(t("onboarding.error.required"));
+        return;
+      }
+
+      if (companyMode === "join") {
+        const token = inviteToken.trim();
+        if (token) {
+          router.push(`/join?token=${encodeURIComponent(token)}`);
+          return;
+        }
+        setError(t("onboarding.error.required"));
+        return;
+      }
+
+      if (companyMode === "create") {
+        if (!companyName.trim()) {
+          setError(t("onboarding.error.required"));
+          return;
+        }
+        setSaving(true);
+        try {
+          const orgId = await createCompanyForOnboarding(user.id, companyName.trim());
+          setCreatedOrgId(orgId);
+          setStep(5);
+        } catch {
+          setError(t("onboarding.error.save"));
+        } finally {
+          setSaving(false);
+        }
+        return;
+      }
+      return;
+    }
+
+    if (step === 5) {
+      setStep(6);
+      return;
+    }
+
+    if (step === 6) {
+      setSaving(true);
+      try {
+        let activeWorkspaceId = getPersonalActiveWorkspaceId();
+        let activeWorkspaceType: "personal" | "company" = "personal";
+
+        if (usageType === "company" && createdOrgId) {
+          activeWorkspaceId = createdOrgId;
+          activeWorkspaceType = "company";
+        }
+
+        await finishOnboarding(user.id, {
+          usageType: usageType as OnboardingUsageType,
+          selectedFeatures,
+          activeWorkspaceId,
+          activeWorkspaceType,
+        });
         await refreshUser();
         router.push("/app");
+      } catch {
+        setError(t("onboarding.error.save"));
       } finally {
         setSaving(false);
       }
     }
   };
 
-  const handleBack = () => {
-    setStep((s) => Math.max(1, s - 1));
-  };
-
-  const addInviteRow = () => {
-    setInvites((prev) => [...prev, { email: "", role: "member" }]);
-  };
-
-  const removeInviteRow = (i: number) => {
-    setInvites((prev) => prev.filter((_, idx) => idx !== i));
-  };
-
-  const updateInvite = (i: number, field: keyof InviteRow, value: string) => {
-    setInvites((prev) => {
-      const next = [...prev];
-      next[i] = { ...next[i], [field]: value };
-      return next;
-    });
+  const canProceedStep4 = (): boolean => {
+    if (usageType === "personal") return true;
+    if (companyMode === "choose") return false;
+    if (companyMode === "join") return !!inviteToken.trim();
+    if (companyMode === "create") return !!companyName.trim();
+    return false;
   };
 
   const canProceed =
-    (step === 1 && purpose) ||
-    (step === 2 && role) ||
-    (step === 3 && teamSize) ||
-    step === 4 ||
-    step === 5;
+    step === 1 ||
+    (step === 2 && !!firstName.trim() && !!lastName.trim() && !!role) ||
+    (step === 3 && !!usageType) ||
+    (step === 4 && canProceedStep4()) ||
+    step === 5 ||
+    step === 6;
+
+  const nextLabel =
+    step === 6 ? t("onboarding.finish") : step === 4 && companyMode === "join" ? t("onboarding.join.openLink") : t("onboarding.next");
 
   if (loading || !user) {
     return (
@@ -154,166 +239,233 @@ export default function OnboardingPage() {
     );
   }
 
+  if (profile && isOnboardingCompleted(profile)) {
+    return null;
+  }
+
+  const renderStepContent = () => {
+    switch (step) {
+      case 1:
+        return (
+          <p className="text-muted-foreground text-sm leading-relaxed">
+            {t("onboarding.step.welcome.subtitle")}
+          </p>
+        );
+
+      case 2:
+        return (
+          <>
+            <div className="space-y-2">
+              <Label htmlFor="firstName">{t("onboarding.firstName")}</Label>
+              <Input
+                id="firstName"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                autoComplete="given-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="lastName">{t("onboarding.lastName")}</Label>
+              <Input
+                id="lastName"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
+                autoComplete="family-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>{t("onboarding.role.title")}</Label>
+              <div className="flex flex-wrap gap-2">
+                {ROLE_VALUES.map((r) => (
+                  <Button
+                    key={r}
+                    type="button"
+                    size="sm"
+                    variant={role === r ? "default" : "outline"}
+                    onClick={() => setRole(r)}
+                    style={role === r ? { backgroundColor: "#e06737" } : undefined}
+                  >
+                    {t(`onboarding.role.${r}`)}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </>
+        );
+
+      case 3:
+        return (
+          <div className="space-y-3">
+            <OnboardingOptionCard
+              title={t("onboarding.usage.personal.title")}
+              description={t("onboarding.usage.personal.description")}
+              selected={usageType === "personal"}
+              onClick={() => setUsageType("personal")}
+              icon={User}
+            />
+            <OnboardingOptionCard
+              title={t("onboarding.usage.company.title")}
+              description={t("onboarding.usage.company.description")}
+              selected={usageType === "company"}
+              onClick={() => setUsageType("company")}
+              icon={Building2}
+            />
+          </div>
+        );
+
+      case 4:
+        if (usageType === "personal") {
+          return (
+            <p className="text-sm text-muted-foreground">
+              {t("onboarding.step.personal.subtitle")}
+            </p>
+          );
+        }
+        if (companyMode === "choose") {
+          return (
+            <div className="space-y-3">
+              <OnboardingOptionCard
+                title={t("onboarding.company.create.title")}
+                description={t("onboarding.company.create.description")}
+                selected={false}
+                onClick={() => setCompanyMode("create")}
+                icon={PlusCircle}
+              />
+              <OnboardingOptionCard
+                title={t("onboarding.company.join.title")}
+                description={t("onboarding.company.join.description")}
+                selected={false}
+                onClick={() => setCompanyMode("join")}
+                icon={Link2}
+              />
+            </div>
+          );
+        }
+        if (companyMode === "create") {
+          return (
+            <div className="space-y-2">
+              <Label htmlFor="companyName">{t("onboarding.companyName")}</Label>
+              <Input
+                id="companyName"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                placeholder={t("onboarding.companyName.placeholder")}
+              />
+            </div>
+          );
+        }
+        return (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">{t("onboarding.step.companyJoin.subtitle")}</p>
+            <div className="space-y-2">
+              <Label htmlFor="inviteToken">{t("onboarding.join.tokenLabel")}</Label>
+              <Input
+                id="inviteToken"
+                value={inviteToken}
+                onChange={(e) => setInviteToken(e.target.value)}
+                placeholder={t("onboarding.join.tokenPlaceholder")}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">{t("onboarding.join.hint")}</p>
+          </div>
+        );
+
+      case 5:
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {ONBOARDING_FEATURE_IDS.map((id) => (
+              <label
+                key={id}
+                className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 cursor-pointer hover:border-[#e06737]/40"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedFeatures.includes(id)}
+                  onChange={() => toggleFeature(id)}
+                  className="accent-[#e06737]"
+                />
+                <span className="text-sm">{t(`onboarding.feature.${id}`)}</span>
+              </label>
+            ))}
+          </div>
+        );
+
+      case 6:
+        return (
+          <p className="text-sm text-muted-foreground">{t("onboarding.step.done.subtitle")}</p>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  const stepTitle = (): string => {
+    switch (step) {
+      case 1:
+        return t("onboarding.step.welcome.title");
+      case 2:
+        return t("onboarding.step.profile.title");
+      case 3:
+        return t("onboarding.step.usage.title");
+      case 4:
+        if (usageType === "personal") return t("onboarding.step.workspace.title");
+        if (companyMode === "create") return t("onboarding.company.create.title");
+        if (companyMode === "join") return t("onboarding.company.join.title");
+        return t("onboarding.step.workspace.title");
+      case 5:
+        return t("onboarding.step.features.title");
+      case 6:
+        return t("onboarding.step.done.title");
+      default:
+        return "";
+    }
+  };
+
+  const stepSubtitle = (): string | undefined => {
+    switch (step) {
+      case 2:
+        return t("onboarding.step.profile.subtitle");
+      case 3:
+        return t("onboarding.step.usage.subtitle");
+      case 4:
+        if (usageType === "personal") return t("onboarding.step.personal.subtitle");
+        if (companyMode === "choose") return t("onboarding.step.companyChoose.subtitle");
+        if (companyMode === "create") return t("onboarding.step.companyCreate.subtitle");
+        return undefined;
+      case 5:
+        return t("onboarding.step.features.subtitle");
+      default:
+        return step === 1 ? undefined : undefined;
+    }
+  };
+
+  const shellShowBack = step > 1;
+
   return (
     <div
       className="min-h-screen flex flex-col md:flex-row"
       style={{ backgroundColor: COLORS.background }}
     >
-      {/* Left: Form */}
       <div className="flex-1 flex flex-col justify-center p-6 md:p-12">
-        <Card className="max-w-md w-full bg-white/95">
-          <CardHeader>
-            <CardTitle className="text-xl">
-              {step === 1 && "What brings you here?"}
-              {step === 2 && "What best describes your current role?"}
-              {step === 3 && "How many people are on your team?"}
-              {step === 4 && "Who else is on your team?"}
-              {step === 5 && "You're all set!"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {step === 1 && (
-              <div className="flex flex-wrap gap-2">
-                {PURPOSE_OPTIONS.map((opt) => (
-                  <Button
-                    key={opt.value}
-                    type="button"
-                    variant={purpose === opt.value ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setPurpose(opt.value)}
-                    style={purpose === opt.value ? { backgroundColor: COLORS.primary } : undefined}
-                  >
-                    {opt.label}
-                  </Button>
-                ))}
-              </div>
-            )}
-            {step === 2 && (
-              <div className="flex flex-wrap gap-2">
-                {ROLE_OPTIONS.map((opt) => (
-                  <Button
-                    key={opt.value}
-                    type="button"
-                    variant={role === opt.value ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setRole(opt.value)}
-                    style={role === opt.value ? { backgroundColor: COLORS.primary } : undefined}
-                  >
-                    {opt.label}
-                  </Button>
-                ))}
-              </div>
-            )}
-            {step === 3 && (
-              <div className="flex flex-wrap gap-2">
-                {TEAM_SIZE_OPTIONS.map((opt) => (
-                  <Button
-                    key={opt.value}
-                    type="button"
-                    variant={teamSize === opt.value ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setTeamSize(opt.value)}
-                    style={teamSize === opt.value ? { backgroundColor: COLORS.primary } : undefined}
-                  >
-                    {opt.label}
-                  </Button>
-                ))}
-              </div>
-            )}
-            {step === 4 && (
-              <div className="space-y-3">
-                {invites.map((row, i) => (
-                  <div key={i} className="flex gap-2 items-center">
-                    <Input
-                      type="email"
-                      placeholder="email@example.com"
-                      value={row.email}
-                      onChange={(e) => updateInvite(i, "email", e.target.value)}
-                      className="flex-1"
-                    />
-                    <select
-                      value={row.role}
-                      onChange={(e) => updateInvite(i, "role", e.target.value)}
-                      className="h-9 rounded-lg border border-input px-2 text-sm"
-                    >
-                      <option value="member">Member</option>
-                      <option value="admin">Admin</option>
-                    </select>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => removeInviteRow(i)}
-                      disabled={invites.length <= 1}
-                    >
-                      <Trash2 className="size-4" />
-                    </Button>
-                  </div>
-                ))}
-                <Button type="button" variant="outline" size="sm" onClick={addInviteRow}>
-                  <Plus className="size-4 mr-1" />
-                  Add member
-                </Button>
-              </div>
-            )}
-            {step === 5 && (
-              <div className="space-y-3">
-                <p className="text-muted-foreground">
-                  Welcome to Staveto. Click Finish to go to your dashboard.
-                </p>
-                {inviteLink && (
-                  <div className="space-y-2">
-                    <Label>Invite link (share with your team)</Label>
-                    <div className="flex gap-2">
-                      <Input readOnly value={inviteLink} className="font-mono text-sm" />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          navigator.clipboard.writeText(inviteLink);
-                        }}
-                      >
-                        Copy
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </CardContent>
-          <CardFooter className="flex justify-between">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={handleBack}
-              disabled={step <= 1 || saving}
-            >
-              <ChevronLeft className="size-4 mr-1" />
-              Back
-            </Button>
-            <Button
-              type="button"
-              onClick={handleNext}
-              disabled={!canProceed || saving}
-              style={{ backgroundColor: COLORS.primary }}
-            >
-              {saving ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : step === 5 ? (
-                "Finish"
-              ) : (
-                <>
-                  Continue
-                  <ChevronRight className="size-4 ml-1" />
-                </>
-              )}
-            </Button>
-          </CardFooter>
-        </Card>
+        <OnboardingStepShell
+          step={step}
+          totalSteps={TOTAL_STEPS}
+          title={stepTitle()}
+          subtitle={stepSubtitle()}
+          onBack={shellShowBack ? handleBack : undefined}
+          backLabel={t("onboarding.back")}
+          onNext={handleNext}
+          nextLabel={nextLabel}
+          canProceed={canProceed}
+          saving={saving}
+          showBack={shellShowBack}
+        >
+          {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          {renderStepContent()}
+        </OnboardingStepShell>
       </div>
 
-      {/* Right: Illustration placeholder - hidden on small screens */}
       <div className="hidden md:flex flex-1 items-center justify-center p-12">
         <div
           className="w-full max-w-md aspect-square rounded-2xl flex items-center justify-center"
@@ -324,6 +476,7 @@ export default function OnboardingPage() {
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
+            aria-hidden
           >
             <path
               strokeLinecap="round"

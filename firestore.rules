@@ -1,0 +1,130 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOrgMember(orgId) {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid))
+        || get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid
+      );
+    }
+
+    function canReadProject() {
+      return isSignedIn() && (
+        resource.data.ownerId == request.auth.uid
+        || (resource.data.orgId != null && isOrgMember(resource.data.orgId))
+      );
+    }
+
+    function projectData(projectId) {
+      return get(/databases/$(database)/documents/projects/$(projectId)).data;
+    }
+
+    function canAccessProjectId(projectId) {
+      let p = projectData(projectId);
+      return isSignedIn() && (
+        p.ownerId == request.auth.uid
+        || (p.orgId != null && isOrgMember(p.orgId))
+      );
+    }
+
+    function canAccessWorkspace(workspaceId) {
+      return isSignedIn() && (
+        workspaceId == request.auth.uid
+        || isOrgMember(workspaceId)
+      );
+    }
+
+    match /users/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /organizations/{orgId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn()
+        && get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid;
+
+      match /members/{memberId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn();
+        allow update, delete: if isSignedIn()
+          && get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid;
+      }
+    }
+
+    match /invites/{inviteId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn()
+        && resource.data.invitedByUid == request.auth.uid;
+    }
+
+    match /projects/{projectId} {
+      allow read: if canReadProject();
+      allow create: if isSignedIn();
+      allow update, delete: if canReadProject();
+
+      match /tasks/{taskId} {
+        allow read, write: if canAccessProjectId(projectId);
+      }
+
+      match /expenses/{expenseId} {
+        allow read, write: if canAccessProjectId(projectId);
+      }
+
+      match /quoteItems/{itemId} {
+        allow read, write: if canAccessProjectId(projectId);
+      }
+
+      match /materials/{materialId} {
+        allow read, write: if canAccessProjectId(projectId);
+      }
+    }
+
+    match /quotes/{quoteId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /customers/{customerId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /workspaces/{workspaceId} {
+      allow read: if canAccessWorkspace(workspaceId);
+
+      match /projectDrafts/{draftId} {
+        allow read, write: if canAccessWorkspace(workspaceId);
+      }
+
+      match /aiDraftFiles/{fileId} {
+        allow read, write: if canAccessWorkspace(workspaceId);
+      }
+
+      match /projects/{projectId} {
+        allow read, write: if canAccessWorkspace(workspaceId);
+
+        match /tasks/{taskId} {
+          allow read, write: if canAccessWorkspace(workspaceId);
+        }
+
+        match /materials/{materialId} {
+          allow read, write: if canAccessWorkspace(workspaceId);
+        }
+      }
+
+      match /customers/{customerId} {
+        allow read, write: if canAccessWorkspace(workspaceId);
+      }
+
+      match /documents/{documentId} {
+        allow read, write: if canAccessWorkspace(workspaceId);
+      }
+    }
+  }
+}

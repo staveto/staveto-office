@@ -51,6 +51,13 @@ export default function EstimatesListPage() {
 
   return (
     <div className="space-y-6">
+      <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm">
+        {t("quotes.legacyBanner")}{" "}
+        <Link href="/app/quotes" className="font-medium text-[#1D376A] hover:underline">
+          {t("quotes.legacyBannerLink")}
+        </Link>
+      </div>
+
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold">{t("estimates.title")}</h1>

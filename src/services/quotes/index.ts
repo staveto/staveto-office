@@ -1,0 +1,15 @@
+export {
+  createQuoteFromProject,
+  createStandaloneQuote,
+  saveQuote,
+  setQuoteStatus,
+  removeQuote,
+  listQuotesForWorkspace,
+  getQuote,
+  hasQuoteAccess,
+  toLegacyWorkspace,
+  type QuoteDoc,
+  type QuoteStatus,
+  type CreateQuoteInput,
+  type UpdateQuoteInput,
+} from "./quoteService";

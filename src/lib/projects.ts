@@ -20,6 +20,10 @@ import {
   Timestamp,
 } from "./firebase";
 import type { Workspace } from "./workspace-types";
+import type { ActiveWorkspace } from "@/types/workspace";
+import { getProjectWorkspaceWriteFields } from "@/services/workspace/workspaceService";
+import { ensureOrgMemberForOwner } from "@/lib/organizations";
+import { fromLegacyWorkspace } from "./workspace-types";
 
 /** Thrown when a Firestore index is required but missing. */
 export class FirestoreIndexError extends Error {
@@ -32,10 +36,43 @@ export class FirestoreIndexError extends Error {
   }
 }
 
+import type {
+  ProjectPhase,
+  ProjectLifecycleStatus,
+  ProjectSalesStatus,
+  ProjectQuoteStatus,
+  JobSource,
+} from "./projectLifecycle";
+import type { WorkType } from "./workTypes";
+export type { WorkType } from "./workTypes";
+export { getProjectWorkType, isWorkType } from "./workTypes";
+import { isDraftJob } from "./projectLifecycle";
+import type {
+  QuoteDraftItemCategory,
+  QuoteDraftItemDoc,
+  QuoteDraftItemInput,
+} from "./quoteDraftItems";
+export type {
+  QuoteDraftItemCategory,
+  QuoteDraftItemDoc,
+  QuoteDraftItemInput,
+} from "./quoteDraftItems";
+
+export type {
+  ProjectPhase,
+  ProjectLifecycleStatus,
+  ProjectSalesStatus,
+  ProjectQuoteStatus,
+  JobSource,
+} from "./projectLifecycle";
+
 export type ProjectDoc = {
   id: string;
   name: string;
+  /** Mobile-aligned work type enum (see `workTypes.ts`). */
   projectType?: string;
+  /** Optional alias; prefer `projectType` on write. */
+  workType?: WorkType;
   addressText?: string;
   city?: string;
   countryCode?: string;
@@ -48,6 +85,22 @@ export type ProjectDoc = {
   updatedAt?: string;
   sharedWithCount?: number;
   isSharedToMe?: boolean;
+  phase?: ProjectPhase;
+  lifecycleStatus?: ProjectLifecycleStatus;
+  salesStatus?: ProjectSalesStatus;
+  quoteStatus?: ProjectQuoteStatus;
+  customerId?: string;
+  customerRequest?: string;
+  customerName?: string;
+  customerEmail?: string;
+  customerPhone?: string;
+  internalNote?: string;
+  source?: JobSource;
+  convertedAt?: string;
+  acceptedQuoteId?: string;
+  /** Draft quote prep — optional, ignored by mobile until supported */
+  quoteDraftVatPercent?: number;
+  quoteDraftNotes?: string;
 };
 
 export type TaskDoc = {
@@ -82,7 +135,7 @@ export type ExpenseDoc = {
   updatedAt?: string;
 };
 
-function toProjectDoc(id: string, data: Record<string, unknown>): ProjectDoc {
+export function toProjectDoc(id: string, data: Record<string, unknown>): ProjectDoc {
   const toStr = (raw: unknown): string | undefined => {
     if (!raw) return undefined;
     if (typeof raw === "string") return raw;
@@ -95,6 +148,7 @@ function toProjectDoc(id: string, data: Record<string, unknown>): ProjectDoc {
     id,
     name: (data.name as string) ?? "",
     projectType: data.projectType as string | undefined,
+    workType: data.workType as WorkType | undefined,
     addressText: (data.addressText as string) || undefined,
     city: (data.city as string) || undefined,
     countryCode: (data.countryCode as string) || undefined,
@@ -107,7 +161,72 @@ function toProjectDoc(id: string, data: Record<string, unknown>): ProjectDoc {
     updatedAt: toStr(data.updatedAt),
     sharedWithCount: typeof data.sharedWithCount === "number" ? data.sharedWithCount : undefined,
     isSharedToMe: !!data.isSharedToMe,
+    phase: data.phase as ProjectPhase | undefined,
+    lifecycleStatus: data.lifecycleStatus as ProjectLifecycleStatus | undefined,
+    salesStatus: data.salesStatus as ProjectSalesStatus | undefined,
+    quoteStatus: data.quoteStatus as ProjectQuoteStatus | undefined,
+    customerId: (data.customerId as string) || undefined,
+    customerRequest: (data.customerRequest as string) || undefined,
+    customerName: (data.customerName as string) || undefined,
+    customerEmail: (data.customerEmail as string) || undefined,
+    internalNote: (data.internalNote as string) || undefined,
+    customerPhone: (data.customerPhone as string) || undefined,
+    source: data.source as JobSource | undefined,
+    convertedAt: toStr(data.convertedAt),
+    acceptedQuoteId: (data.acceptedQuoteId as string) || undefined,
+    quoteDraftVatPercent:
+      typeof data.quoteDraftVatPercent === "number" ? data.quoteDraftVatPercent : undefined,
+    quoteDraftNotes: (data.quoteDraftNotes as string) || undefined,
   };
+}
+
+function toQuoteDraftItemDoc(
+  id: string,
+  projectId: string,
+  data: Record<string, unknown>
+): QuoteDraftItemDoc {
+  const toStr = (raw: unknown): string | undefined => {
+    if (!raw) return undefined;
+    if (typeof raw === "string") return raw;
+    if (typeof raw === "object" && raw !== null && "toDate" in raw) {
+      return (raw as { toDate: () => Date }).toDate().toISOString();
+    }
+    return undefined;
+  };
+  const category = data.category === "work" ? "work" : "material";
+  return {
+    id,
+    projectId,
+    category,
+    name: (data.name as string) ?? "",
+    qty: typeof data.qty === "number" ? data.qty : 1,
+    unit: (data.unit as string) || "ks",
+    unitPrice: typeof data.unitPrice === "number" ? data.unitPrice : 0,
+    note: (data.note as string) || undefined,
+    createdAt: toStr(data.createdAt),
+    updatedAt: toStr(data.updatedAt),
+  };
+}
+
+async function assertDraftJobForQuoteItems(projectId: string): Promise<ProjectDoc> {
+  const project = await getProject(projectId);
+  if (!project || !isDraftJob(project)) {
+    throw new Error("Quote items can only be edited on draft jobs");
+  }
+  return project;
+}
+
+async function touchQuoteDraftProjectMeta(projectId: string, itemCount: number): Promise<void> {
+  const db = getFirestoreInstance();
+  if (!db) return;
+  const update: Record<string, unknown> = {
+    updatedAt: serverTimestamp(),
+    quoteStatus: "draft",
+  };
+  if (itemCount > 0) {
+    update.lifecycleStatus = "quote_drafted";
+  }
+  await updateDoc(doc(db, "projects", projectId), update);
 }
 
 function toTaskDoc(id: string, projectId: string, data: Record<string, unknown>): TaskDoc {
@@ -171,47 +290,111 @@ function wrapIndexError(e: unknown, indexFields: string): never {
   throw e;
 }
 
+export function isFirebasePermissionDenied(e: unknown): boolean {
+  const err = e as { code?: string; message?: string };
+  return (
+    err?.code === "permission-denied" ||
+    (typeof err?.message === "string" &&
+      err.message.toLowerCase().includes("insufficient permissions"))
+  );
+}
+
+function resolveListScope(
+  workspace: Workspace | ActiveWorkspace,
+  uid: string
+): { mode: "personal" } | { mode: "team"; orgId: string } {
+  if (isNormalizedActiveWorkspace(workspace)) {
+    if (workspace.type === "personal") return { mode: "personal" };
+    return { mode: "team", orgId: workspace.orgId ?? workspace.id };
+  }
+  if (workspace.type === "personal") return { mode: "personal" };
+  return { mode: "team", orgId: workspace.id };
+}
+
+async function runProjectsQuery(
+  projectsRef: ReturnType<typeof collection>,
+  scope: { mode: "personal"; uid: string } | { mode: "team"; orgId: string },
+  options?: { withOrderBy?: boolean }
+): Promise<ProjectDoc[]> {
+  const withOrderBy = options?.withOrderBy !== false;
+  let q;
+  if (scope.mode === "personal") {
+    q = withOrderBy
+      ? query(
+          projectsRef,
+          where("ownerId", "==", scope.uid),
+          orderBy("updatedAt", "desc"),
+          limit(50)
+        )
+      : query(projectsRef, where("ownerId", "==", scope.uid), limit(50));
+  } else {
+    q = withOrderBy
+      ? query(
+          projectsRef,
+          where("orgId", "==", scope.orgId),
+          orderBy("updatedAt", "desc"),
+          limit(50)
+        )
+      : query(projectsRef, where("orgId", "==", scope.orgId), limit(50));
+  }
+  const snap = await getDocs(q);
+  return snap.docs
+    .map((d) => toProjectDoc(d.id, d.data() as Record<string, unknown>))
+    .filter((p) => !p.archivedAt);
+}
+
 /**
  * List projects for the active workspace.
  * Uses indexed query: ownerId/orgId + orderBy(updatedAt desc) + limit(50).
  */
 export async function listProjectsForWorkspace(
-  workspace: Workspace,
+  workspace: Workspace | ActiveWorkspace,
   uid: string
 ): Promise<ProjectDoc[]> {
   const db = getFirestoreInstance();
   if (!db) return [];
 
+  const scope = resolveListScope(workspace, uid);
   const projectsRef = collection(db, "projects");
-  let q;
+
+  if (scope.mode === "team") {
+    await ensureOrgMemberForOwner(scope.orgId, uid);
+  }
+
+  const queryScope =
+    scope.mode === "personal"
+      ? ({ mode: "personal" as const, uid })
+      : ({ mode: "team" as const, orgId: scope.orgId });
+
+  const indexHint =
+    scope.mode === "personal"
+      ? "projects: ownerId (Asc), updatedAt (Desc)"
+      : "projects: orgId (Asc), updatedAt (Desc)";
 
   try {
-    if (workspace.type === "personal") {
-      q = query(
-        projectsRef,
-        where("ownerId", "==", uid),
-        orderBy("updatedAt", "desc"),
-        limit(50)
-      );
-    } else {
-      q = query(
-        projectsRef,
-        where("orgId", "==", workspace.id),
-        orderBy("updatedAt", "desc"),
-        limit(50)
-      );
-    }
-    const snap = await getDocs(q);
-    return snap.docs
-      .map((d) => toProjectDoc(d.id, d.data() as Record<string, unknown>))
-      .filter((p) => !p.archivedAt);
+    return await runProjectsQuery(projectsRef, queryScope, { withOrderBy: true });
   } catch (e) {
-    wrapIndexError(
-      e,
-      workspace.type === "personal"
-        ? "projects: ownerId (Asc), updatedAt (Desc)"
-        : "projects: orgId (Asc), updatedAt (Desc)"
-    );
+    if (isFirebasePermissionDenied(e) && scope.mode === "team") {
+      await ensureOrgMemberForOwner(scope.orgId, uid);
+      try {
+        return await runProjectsQuery(projectsRef, queryScope, { withOrderBy: true });
+      } catch (retryErr) {
+        if (!isFirebasePermissionDenied(retryErr)) {
+          wrapIndexError(retryErr, indexHint);
+        }
+        try {
+          return await runProjectsQuery(projectsRef, queryScope, { withOrderBy: false });
+        } catch (fallbackErr) {
+          if (isFirebasePermissionDenied(fallbackErr)) {
+            throw new Error(
+              "Missing or insufficient permissions. Deploy Firestore rules from firestore.rules (see docs/FIRESTORE_RULES_NOTES.md)."
+            );
+          }
+          wrapIndexError(fallbackErr, indexHint);
+        }
+      }
+    }
+    wrapIndexError(e, indexHint);
   }
 }
 
@@ -232,8 +415,27 @@ export async function getProject(projectId: string): Promise<ProjectDoc | null> 
  * Personal: ownerId=uid, workspaceType=personal, workspaceId=uid
  * Team: orgId=activeOrgId, workspaceType=team, workspaceId=orgId
  */
+export function isNormalizedActiveWorkspace(
+  workspace: Workspace | ActiveWorkspace
+): workspace is ActiveWorkspace {
+  return (
+    "source" in workspace &&
+    (workspace.source === "personal" || workspace.source === "organization")
+  );
+}
+
+function toActiveWorkspaceForWrite(
+  workspace: Workspace | ActiveWorkspace,
+  uid: string
+): ActiveWorkspace {
+  if (isNormalizedActiveWorkspace(workspace)) {
+    return workspace;
+  }
+  return fromLegacyWorkspace(workspace, uid);
+}
+
 export async function createProject(
-  workspace: Workspace,
+  workspace: Workspace | ActiveWorkspace,
   uid: string,
   data: { name: string; addressText?: string; city?: string }
 ): Promise<string> {
@@ -243,21 +445,16 @@ export async function createProject(
   const name = data.name?.trim();
   if (!name) throw new Error("Project name is required");
 
+  const active = toActiveWorkspaceForWrite(workspace, uid);
   const projectData: Record<string, unknown> = {
     name,
+    phase: "delivery",
+    lifecycleStatus: "in_progress",
+    quoteStatus: "none",
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
+    ...getProjectWorkspaceWriteFields(active, uid),
   };
-
-  if (workspace.type === "personal") {
-    projectData.ownerId = uid;
-    projectData.workspaceType = "personal";
-    projectData.workspaceId = uid;
-  } else {
-    projectData.orgId = workspace.id;
-    projectData.workspaceType = "team";
-    projectData.workspaceId = workspace.id;
-  }
 
   if (data.addressText?.trim()) projectData.addressText = data.addressText.trim();
   if (data.city?.trim()) projectData.city = data.city.trim();
@@ -446,6 +643,108 @@ export async function updateTaskStatus(
 }
 
 /**
+ * List quote draft line items (materials + work) for a draft zákazka.
+ * No composite index — sorted in memory.
+ */
+export async function listProjectQuoteDraftItems(
+  projectId: string
+): Promise<QuoteDraftItemDoc[]> {
+  const db = getFirestoreInstance();
+  if (!db) return [];
+
+  const itemsRef = collection(db, "projects", projectId, "quoteItems");
+  const snap = await getDocs(itemsRef);
+  const categoryOrder: Record<QuoteDraftItemCategory, number> = { material: 0, work: 1 };
+  return snap.docs
+    .map((d) => toQuoteDraftItemDoc(d.id, projectId, d.data() as Record<string, unknown>))
+    .sort((a, b) => {
+      const cat = categoryOrder[a.category] - categoryOrder[b.category];
+      if (cat !== 0) return cat;
+      const ta = a.createdAt ?? "";
+      const tb = b.createdAt ?? "";
+      return ta.localeCompare(tb);
+    });
+}
+
+export async function createQuoteDraftItem(
+  projectId: string,
+  input: QuoteDraftItemInput
+): Promise<string> {
+  const db = getFirestoreInstance();
+  if (!db) throw new Error("Firestore not configured");
+
+  await assertDraftJobForQuoteItems(projectId);
+
+  const name = input.name?.trim();
+  if (!name) throw new Error("Item name is required");
+
+  const qty = typeof input.qty === "number" && input.qty > 0 ? input.qty : 1;
+  const unitPrice = typeof input.unitPrice === "number" && input.unitPrice >= 0 ? input.unitPrice : 0;
+  const unit = input.unit?.trim() || "ks";
+  const category: QuoteDraftItemCategory = input.category === "work" ? "work" : "material";
+
+  const ref = await addDoc(collection(db, "projects", projectId, "quoteItems"), {
+    category,
+    name,
+    qty,
+    unit,
+    unitPrice,
+    note: input.note?.trim() || null,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  const items = await listProjectQuoteDraftItems(projectId);
+  await touchQuoteDraftProjectMeta(projectId, items.length);
+  return ref.id;
+}
+
+export async function updateQuoteDraftItem(
+  projectId: string,
+  itemId: string,
+  data: Partial<QuoteDraftItemInput>
+): Promise<void> {
+  const db = getFirestoreInstance();
+  if (!db) throw new Error("Firestore not configured");
+
+  await assertDraftJobForQuoteItems(projectId);
+
+  const ref = doc(db, "projects", projectId, "quoteItems", itemId);
+  const update: Record<string, unknown> = { updatedAt: serverTimestamp() };
+
+  if (data.name !== undefined) {
+    const trimmed = data.name.trim();
+    if (!trimmed) throw new Error("Item name is required");
+    update.name = trimmed;
+  }
+  if (data.qty !== undefined) update.qty = data.qty > 0 ? data.qty : 1;
+  if (data.unit !== undefined) update.unit = data.unit.trim() || "ks";
+  if (data.unitPrice !== undefined) update.unitPrice = data.unitPrice >= 0 ? data.unitPrice : 0;
+  if (data.category !== undefined) {
+    update.category = data.category === "work" ? "work" : "material";
+  }
+  if (data.note !== undefined) update.note = data.note.trim() || null;
+
+  await updateDoc(ref, update);
+  await updateProjectUpdatedAt(projectId);
+}
+
+export async function deleteQuoteDraftItem(
+  projectId: string,
+  itemId: string
+): Promise<void> {
+  const db = getFirestoreInstance();
+  if (!db) throw new Error("Firestore not configured");
+
+  await assertDraftJobForQuoteItems(projectId);
+
+  await deleteDoc(doc(db, "projects", projectId, "quoteItems", itemId));
+  const items = await listProjectQuoteDraftItems(projectId);
+  await touchQuoteDraftProjectMeta(projectId, items.length);
+  await updateProjectUpdatedAt(projectId);
+}
+
+/**
  * Check if user has access to project.
  * Personal: ownerId == uid
  * Team: project.orgId set and organizations/{orgId}/members/{uid} exists
@@ -462,11 +761,16 @@ export async function hasProjectAccess(
   if (project.orgId) {
     const db = getFirestoreInstance();
     if (!db) return { allowed: false, project };
+    const orgSnap = await getDoc(doc(db, "organizations", project.orgId));
+    if (orgSnap.exists()) {
+      const org = orgSnap.data() as { ownerUid?: string };
+      if (org.ownerUid === uid) return { allowed: true, project };
+    }
     const memberRef = doc(db, "organizations", project.orgId, "members", uid);
     const memberSnap = await getDoc(memberRef);
     if (memberSnap.exists()) {
       const member = memberSnap.data() as { status?: string };
-      if (member.status === "active") return { allowed: true, project };
+      if (!member.status || member.status === "active") return { allowed: true, project };
     }
   }
 

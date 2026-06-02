@@ -4,7 +4,8 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getInviteByToken, acceptInvite } from "@/lib/organizations";
-import { completeOnboarding } from "@/lib/userProfile";
+import { finishOnboardingAfterJoin } from "@/services/onboarding";
+import { useI18n } from "@/i18n/I18nContext";
 import { Loader2 } from "lucide-react";
 
 const COLORS = {
@@ -18,6 +19,7 @@ function JoinHandler() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
   const { user, loading, refreshUser } = useAuth();
+  const { t } = useI18n();
   const [status, setStatus] = useState<"redirect" | "processing" | "done" | "error">("redirect");
 
   useEffect(() => {
@@ -31,16 +33,16 @@ function JoinHandler() {
       router.replace(`/login?next=${next}`);
       return;
     }
-    setStatus("processing");
-    (async () => {
+    void (async () => {
+      setStatus("processing");
       try {
         const invite = await getInviteByToken(token);
         if (!invite) {
           setStatus("error");
           return;
         }
-        await acceptInvite(invite.id, user.id, user.email ?? "");
-        await completeOnboarding(user.id);
+        const orgId = await acceptInvite(invite.id, user.id, user.email ?? "");
+        await finishOnboardingAfterJoin(user.id, orgId);
         await refreshUser();
         setStatus("done");
         router.replace("/app");
@@ -62,7 +64,7 @@ function JoinHandler() {
       >
         <Loader2 className="size-8 animate-spin text-white mb-4" />
         <p style={{ color: COLORS.textOnDark }}>
-          {loading ? "Loading..." : "Joining workspace..."}
+          {loading ? t("join.loading") : t("join.processing")}
         </p>
       </div>
     );
@@ -74,14 +76,14 @@ function JoinHandler() {
         className="min-h-screen flex flex-col items-center justify-center p-6"
         style={{ backgroundColor: COLORS.background }}
       >
-        <p className="text-red-300 mb-4">Invalid or expired invite link.</p>
+        <p className="text-red-300 mb-4">{t("join.error")}</p>
         <button
           type="button"
           onClick={() => router.push("/app")}
           className="px-4 py-2 rounded-lg font-medium"
           style={{ backgroundColor: COLORS.primary, color: COLORS.textOnDark }}
         >
-          Go to app
+          {t("join.goToApp")}
         </button>
       </div>
     );

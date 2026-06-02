@@ -2,29 +2,37 @@
 
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
-import { cn } from "@/lib/utils";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
+import { CompanyContextBar } from "./CompanyContextBar";
+import { TenantGate } from "@/components/tenant/TenantGate";
+import { cn } from "@/lib/utils";
+import { SidebarLayoutProvider, useSidebarLayout } from "@/context/SidebarLayoutContext";
 
-export function AppLayout({ children }: { children: React.ReactNode }) {
+function AppLayoutInner({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [sidebarCollapsed] = useState(false);
   const pathname = usePathname();
+  const { widthPx, setExpanded } = useSidebarLayout();
+  const isNewJobFlow = pathname.startsWith("/app/projects/new");
 
   useEffect(() => {
-    setSidebarOpen(false);
+    queueMicrotask(() => setSidebarOpen(false));
   }, [pathname]);
+
+  useEffect(() => {
+    if (isNewJobFlow) setExpanded(false);
+  }, [isNewJobFlow, setExpanded]);
 
   return (
     <div className="flex min-h-screen bg-background">
-      {/* Desktop sidebar - hidden on mobile when closed */}
       <div
         className={cn(
-          "hidden md:block shrink-0",
-          sidebarCollapsed ? "w-16" : "w-56"
+          "hidden md:block sticky top-0 z-40 h-screen shrink-0 overflow-visible transition-[width,opacity] duration-200 ease-out",
+          isNewJobFlow && "opacity-70"
         )}
+        style={{ width: widthPx }}
       >
-        <Sidebar collapsed={sidebarCollapsed} isMobile={false} />
+        <Sidebar isMobile={false} />
       </div>
 
       {/* Mobile sidebar overlay */}
@@ -50,10 +58,21 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           onMenuClick={() => setSidebarOpen((o) => !o)}
           sidebarOpen={sidebarOpen}
         />
+        <CompanyContextBar />
         <main className="flex-1 overflow-auto p-4 md:p-6">
-          <div className="mx-auto max-w-6xl">{children}</div>
+          <div className="mx-auto max-w-6xl">
+            <TenantGate>{children}</TenantGate>
+          </div>
         </main>
       </div>
     </div>
+  );
+}
+
+export function AppLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <SidebarLayoutProvider>
+      <AppLayoutInner>{children}</AppLayoutInner>
+    </SidebarLayoutProvider>
   );
 }
