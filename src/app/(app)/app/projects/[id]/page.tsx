@@ -57,6 +57,8 @@ import { isDraftJob } from "@/lib/projectLifecycle";
 import { DraftJobWorkspace } from "@/components/jobs/DraftJobWorkspace";
 import { JobLifecycleBadge } from "@/components/jobs/JobLifecycleBadge";
 import { WorkTypeBadge } from "@/components/jobs/WorkTypeBadge";
+import { ProjectOwnershipBadge } from "@/components/projects/ProjectOwnershipBadge";
+import { ProjectOwnershipMeta } from "@/components/projects/ProjectOwnershipMeta";
 
 const EXPENSE_CATEGORIES: ExpenseCategory[] = ["MATERIAL", "WORK", "OTHER", "TRAVEL"];
 
@@ -373,6 +375,7 @@ export default function ProjectDetailPage() {
             {t("projects.jobDetailLabel")}
           </p>
           <h1 className="text-xl font-semibold">{project.name || t("projects.noName")}</h1>
+          <ProjectOwnershipMeta project={project} className="mt-2" />
           {(project.addressText || project.city) && (
             <p className="text-sm text-muted-foreground mt-1">
               {[project.addressText, project.city].filter(Boolean).join(", ")}
@@ -380,6 +383,7 @@ export default function ProjectDetailPage() {
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2 justify-end">
+          <ProjectOwnershipBadge project={project} />
           <WorkTypeBadge project={project} />
           <JobLifecycleBadge project={project} />
         </div>
@@ -418,7 +422,8 @@ export default function ProjectDetailPage() {
           <CardHeader>
             <CardTitle className="text-base">{t("projects.tabOverview")}</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            <ProjectOwnershipMeta project={project} variant="panel" />
             <div className="grid gap-4 sm:grid-cols-2">
               <div>
                 <p className="text-sm text-muted-foreground">{t("projects.tabTasks")}</p>

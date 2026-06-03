@@ -4,7 +4,14 @@ import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/I18nContext";
 
-export type NewJobStepId = "type" | "contact" | "method" | "concept";
+export type NewJobStepId =
+  | "type"
+  | "contact"
+  | "method"
+  | "manual-details"
+  | "ai-brief"
+  | "ai-review"
+  | "concept";
 
 type Step = { id: NewJobStepId; label: string; done: boolean };
 

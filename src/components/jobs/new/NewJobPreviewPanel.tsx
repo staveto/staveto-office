@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nContext";
 import { cn } from "@/lib/utils";
 import { nj } from "./newJobFormStyles";
-import type { CreationMethod } from "./newJobWizardTypes";
 import type { NewJobStepId } from "./NewJobStepper";
 
 type Props = {
@@ -19,7 +18,8 @@ type Props = {
   showSubmit: boolean;
 };
 
-const NEXT_STEP_KEYS = ["next1", "next2", "next3"] as const;
+const DEFAULT_NEXT_KEYS = ["next1", "next2", "next3"] as const;
+const AI_REVIEW_NEXT_KEYS = ["nextAiReview1", "nextAiReview2", "nextAiReview3"] as const;
 
 function nextStepHighlightIndex(activeStep: NewJobStepId): number {
   switch (activeStep) {
@@ -28,11 +28,20 @@ function nextStepHighlightIndex(activeStep: NewJobStepId): number {
     case "contact":
       return 1;
     case "method":
+    case "manual-details":
+    case "ai-brief":
+      return 2;
+    case "ai-review":
+      return 0;
     case "concept":
       return 2;
     default:
       return 0;
   }
+}
+
+function nextStepKeys(activeStep: NewJobStepId): readonly string[] {
+  return activeStep === "ai-review" ? AI_REVIEW_NEXT_KEYS : DEFAULT_NEXT_KEYS;
 }
 
 export function NewJobPreviewPanel({
@@ -47,6 +56,7 @@ export function NewJobPreviewPanel({
 }: Props) {
   const { t } = useI18n();
   const highlightIdx = nextStepHighlightIndex(activeStep);
+  const stepKeys = nextStepKeys(activeStep);
 
   return (
     <div className={nj.previewPanel}>
@@ -84,7 +94,7 @@ export function NewJobPreviewPanel({
           {t("projects.new.preview.nextHeading")}
         </p>
         <ol className="space-y-3" role="list">
-          {NEXT_STEP_KEYS.map((key, index) => {
+          {stepKeys.map((key, index) => {
             const highlighted = index === highlightIdx;
             return (
               <li

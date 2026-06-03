@@ -12,6 +12,7 @@ type SidebarFlyoutProps = {
   section: NavSectionConfig;
   sectionLabel: string;
   pathname: string;
+  search: string;
   comingSoonLabel: string;
   isPersonalWorkspace: boolean;
   canManage: boolean;
@@ -26,6 +27,7 @@ export function SidebarFlyout({
   section,
   sectionLabel,
   pathname,
+  search,
   comingSoonLabel,
   isPersonalWorkspace,
   canManage,
@@ -66,7 +68,7 @@ export function SidebarFlyout({
               item={item}
               label={t(item.labelKey)}
               comingSoonLabel={comingSoonLabel}
-              isActive={isItemActive(pathname, item)}
+              isActive={isItemActive(pathname, item, search)}
               variant="flyout"
               onNavigate={onNavigate}
               onLogout={onLogout}

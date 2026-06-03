@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
@@ -12,6 +11,7 @@ import {
   SIDEBAR_NAV_SECTIONS,
   filterNavSections,
   getActiveSectionId,
+  getNavSectionLabelKey,
   isItemActive,
 } from "@/lib/sidebarNavigation";
 import { canManageCompanyOperations } from "@/lib/workspaceProduct";
@@ -19,6 +19,7 @@ import { IconSidebarItem } from "./IconSidebarItem";
 import { ExpandedSidebarNav } from "./ExpandedSidebarNav";
 import { SidebarFooter } from "./SidebarFooter";
 import { SidebarExpandButton } from "./SidebarExpandButton";
+import { SidebarBrand } from "./SidebarBrand";
 
 type IconSidebarProps = {
   onNavigate?: () => void;
@@ -26,12 +27,14 @@ type IconSidebarProps = {
 
 export function IconSidebar({ onNavigate }: IconSidebarProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const search = searchParams.toString() ? `?${searchParams.toString()}` : "";
   const { logout } = useAuth();
   const { activeWorkspace } = useWorkspace();
   const { t } = useI18n();
   const { expanded } = useSidebarLayout();
 
-  const activeSectionId = getActiveSectionId(pathname);
+  const activeSectionId = getActiveSectionId(pathname, SIDEBAR_NAV_SECTIONS, search);
   const [openSectionId, setOpenSectionId] = useState<string | null>(null);
 
   const isPersonalWorkspace = activeWorkspace?.type === "personal";
@@ -88,30 +91,7 @@ export function IconSidebar({ onNavigate }: IconSidebarProps) {
           expanded ? "gap-2 px-3" : "justify-between px-2"
         )}
       >
-        <Link
-          href="/app"
-          onClick={onNavigate}
-          className={cn(
-            "flex min-w-0 items-center text-white no-underline transition-transform duration-200 hover:scale-[1.02]",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e06737]/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[#132743]",
-            expanded ? "flex-1 gap-2 rounded-md" : "size-9 justify-center rounded-lg bg-[#e06737] text-xs font-bold"
-          )}
-          aria-label={t("app.brand")}
-        >
-          <span
-            className={cn(
-              "flex shrink-0 items-center justify-center rounded-lg bg-[#e06737] font-bold text-white",
-              expanded ? "size-8 text-xs" : "size-full text-xs"
-            )}
-          >
-            S
-          </span>
-          {expanded ? (
-            <span className="truncate text-sm font-semibold tracking-tight">
-              STAVETO<span className="text-[#e06737]">.</span>
-            </span>
-          ) : null}
-        </Link>
+        <SidebarBrand expanded={expanded} onNavigate={onNavigate} />
         <SidebarExpandButton collapsed={!expanded} variant="icon" />
       </div>
 
@@ -120,6 +100,7 @@ export function IconSidebar({ onNavigate }: IconSidebarProps) {
           <div className="flex h-full min-h-0 flex-col">
             <ExpandedSidebarNav
             pathname={pathname}
+            search={search}
             isPersonalWorkspace={isPersonalWorkspace}
             canManage={canManage}
             comingSoonLabel={comingSoonLabel}
@@ -132,7 +113,7 @@ export function IconSidebar({ onNavigate }: IconSidebarProps) {
           <div className="flex flex-col gap-1 overflow-visible py-3">
             {navSections.map((section) => {
               const isSectionActive = section.items.some((item) =>
-                isItemActive(pathname, item)
+                isItemActive(pathname, item, search)
               );
               const isOpen = openSectionId === section.id;
 
@@ -140,8 +121,9 @@ export function IconSidebar({ onNavigate }: IconSidebarProps) {
                 <IconSidebarItem
                   key={section.id}
                   section={section}
-                  sectionLabel={t(section.labelKey)}
+                  sectionLabel={t(getNavSectionLabelKey(section, isPersonalWorkspace))}
                   pathname={pathname}
+                  search={search}
                   comingSoonLabel={comingSoonLabel}
                   isPersonalWorkspace={isPersonalWorkspace}
                   canManage={canManage}

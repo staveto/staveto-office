@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
-import { CompanyContextBar } from "./CompanyContextBar";
 import { TenantGate } from "@/components/tenant/TenantGate";
 import { cn } from "@/lib/utils";
 import { SidebarLayoutProvider, useSidebarLayout } from "@/context/SidebarLayoutContext";
@@ -58,7 +57,6 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
           onMenuClick={() => setSidebarOpen((o) => !o)}
           sidebarOpen={sidebarOpen}
         />
-        <CompanyContextBar />
         <main className="flex-1 overflow-auto p-4 md:p-6">
           <div className="mx-auto max-w-6xl">
             <TenantGate>{children}</TenantGate>

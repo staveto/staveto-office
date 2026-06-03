@@ -1,7 +1,7 @@
 /**
  * Workspace bridge service — organizations + personal, no `workspaces/` migration.
  */
-import { getUserOrgMemberships, getOrganization } from "@/lib/organizations";
+import { getUserOrgMemberships, getOrganization, isDefaultCompanyRole } from "@/lib/organizations";
 import type { ActiveWorkspace, WorkspaceMember, WorkspaceUser } from "@/types/workspace";
 import type { WorkspaceRole } from "@/types/workspace";
 import {
@@ -12,14 +12,8 @@ import {
 const PERSONAL_WORKSPACE_ID = "personal";
 const DEFAULT_PERSONAL_NAME = "Personal";
 
-const COMPANY_ROLE_PRIORITY: WorkspaceRole[] = [
-  "owner",
-  "admin",
-  "manager",
-  "accountant",
-  "worker",
-  "client",
-];
+/** Default company workspace: mobile owner / admin / manager only. */
+const DEFAULT_COMPANY_ROLE_PRIORITY: WorkspaceRole[] = ["owner", "admin", "manager"];
 
 export function getPersonalWorkspace(user: WorkspaceUser): ActiveWorkspace {
   const displayName =
@@ -35,6 +29,7 @@ export function getPersonalWorkspace(user: WorkspaceUser): ActiveWorkspace {
     source: "personal",
     ownerId: user.id,
     legacyId: PERSONAL_WORKSPACE_ID,
+    mobileWorkspaceKind: "personal",
   };
 }
 
@@ -58,11 +53,15 @@ export function normalizeOrganizationToWorkspace(
     orgId,
     ownerId: options?.ownerUid,
     legacyId: orgId,
+    mobileWorkspaceKind: "business",
   };
 }
 
-export async function getOrganizationWorkspaces(userId: string): Promise<ActiveWorkspace[]> {
-  const memberships = await getUserOrgMemberships(userId);
+export async function getOrganizationWorkspaces(
+  userId: string,
+  orgIdHints?: string[]
+): Promise<ActiveWorkspace[]> {
+  const memberships = await getUserOrgMemberships(userId, { orgIdHints });
   const workspaces: ActiveWorkspace[] = [];
 
   for (const m of memberships) {
@@ -83,7 +82,7 @@ export async function loadAvailableWorkspaces(user: WorkspaceUser): Promise<Acti
   let organizations: ActiveWorkspace[] = [];
 
   try {
-    organizations = await getOrganizationWorkspaces(user.id);
+    organizations = await getOrganizationWorkspaces(user.id, user.orgIdHints);
   } catch {
     organizations = [];
   }
@@ -105,13 +104,12 @@ export type ResolveWorkspaceOptions = {
 
 export type WorkspaceResolveReason =
   | "tenant"
-  | "persisted"
+  | "persisted-valid"
+  | "preferred-business"
   | "explicit-personal"
   | "profile-org"
   | "profile-business-org"
-  | "default-company"
-  | "default-personal"
-  | "fallback";
+  | "fallback-personal";
 
 export type ResolvedWorkspace = {
   workspace: ActiveWorkspace;
@@ -137,12 +135,13 @@ export function pickDefaultCompanyWorkspace(
   const companies = available.filter((w) => w.type === "company");
   if (companies.length === 0) return null;
 
-  for (const role of COMPANY_ROLE_PRIORITY) {
+  for (const role of DEFAULT_COMPANY_ROLE_PRIORITY) {
     const match = companies.find((w) => w.role === role);
     if (match) return match;
   }
 
-  return companies[0] ?? null;
+  const managerial = companies.filter((w) => isDefaultCompanyRole(w.role));
+  return managerial[0] ?? null;
 }
 
 export function hasCompanyWorkspaces(available: ActiveWorkspace[]): boolean {
@@ -177,15 +176,16 @@ export function resolveActiveWorkspaceWithReason(
   const explicitPersonal = hasExplicitPersonalWorkspace();
 
   if (persisted) {
-    if (persisted.type === "personal" && defaultCompany && !explicitPersonal) {
-      if (defaultCompany) {
-        return { workspace: defaultCompany, reason: "default-company" };
+    if (persisted.type === "personal") {
+      if (explicitPersonal) {
+        return { workspace: persisted, reason: "explicit-personal" };
       }
+      if (defaultCompany) {
+        return { workspace: defaultCompany, reason: "preferred-business" };
+      }
+      return { workspace: persisted, reason: "persisted-valid" };
     }
-    return {
-      workspace: persisted,
-      reason: persisted.type === "personal" && explicitPersonal ? "explicit-personal" : "persisted",
-    };
+    return { workspace: persisted, reason: "persisted-valid" };
   }
 
   const profileOrg = findWorkspaceById(available, options?.profileWorkspaceId);
@@ -198,19 +198,15 @@ export function resolveActiveWorkspaceWithReason(
     return { workspace: businessOrg, reason: "profile-business-org" };
   }
 
-  if (profileOrg?.type === "personal" && defaultCompany) {
-    return { workspace: defaultCompany, reason: "default-company" };
-  }
-
   if (defaultCompany) {
-    return { workspace: defaultCompany, reason: "default-company" };
+    return { workspace: defaultCompany, reason: "preferred-business" };
   }
 
   if (profileOrg) {
     return { workspace: profileOrg, reason: "profile-org" };
   }
 
-  return { workspace: personal, reason: "default-personal" };
+  return { workspace: personal, reason: "fallback-personal" };
 }
 
 export function getWorkspaceDisplayName(workspace: ActiveWorkspace): string {
@@ -309,16 +305,21 @@ export function logWorkspaceResolveDebug(payload: {
 }): void {
   if (process.env.NODE_ENV !== "development") return;
   console.debug("[staveto workspace]", {
-    reason: payload.reason,
-    activeId: payload.active.id,
-    activeType: payload.active.type,
-    activeName: payload.active.name,
+    selectedReason: payload.reason,
+    activeWorkspace: {
+      id: payload.active.id,
+      type: payload.active.type,
+      name: payload.active.name,
+      role: payload.active.role,
+      mobileWorkspaceKind: payload.active.mobileWorkspaceKind,
+    },
     persistedId: payload.persistedId,
-    available: payload.available.map((w) => ({
+    availableWorkspaces: payload.available.map((w) => ({
       id: w.id,
       type: w.type,
       name: w.name,
       role: w.role,
+      mobileWorkspaceKind: w.mobileWorkspaceKind,
     })),
   });
 }

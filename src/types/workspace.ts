@@ -28,6 +28,8 @@ export interface ActiveWorkspace {
   orgId?: string;
   /** Stable id used before normalization (e.g. `"personal"`). */
   legacyId?: string;
+  /** Mirrors mobile BusinessContext workspace (not a Firestore collection). */
+  mobileWorkspaceKind?: "personal" | "business";
 }
 
 export interface WorkspaceMember {
@@ -43,6 +45,8 @@ export type WorkspaceUser = {
   id: string;
   email?: string;
   name?: string;
+  /** Org ids from profile (e.g. activeBusinessOrgId) when collection listing is denied. */
+  orgIdHints?: string[];
 };
 
 export function isCompanyWorkspaceType(

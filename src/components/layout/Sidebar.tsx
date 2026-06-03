@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/I18nContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
@@ -9,6 +8,9 @@ import { usePathname } from "next/navigation";
 import { IconSidebar } from "./sidebar/IconSidebar";
 import { MobileSidebarNav } from "./sidebar/MobileSidebarNav";
 import { SidebarFooter } from "./sidebar/SidebarFooter";
+import { SidebarBrand } from "./sidebar/SidebarBrand";
+import { ActiveCompanyContextSelector } from "./ActiveCompanyContextSelector";
+import { UserProfileMenu } from "./UserProfileMenu";
 import { canManageCompanyOperations } from "@/lib/workspaceProduct";
 
 interface SidebarProps {
@@ -45,20 +47,9 @@ export function Sidebar({ onClose, isMobile = false }: SidebarProps) {
         aria-label={t("sidebar.ariaLabel")}
       >
         <div className="flex h-14 shrink-0 items-center gap-2 border-b border-white/10 px-4">
-          <Link
-            href="/app"
-            onClick={onClose}
-            className="flex items-center gap-2 text-white no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e06737]/60 rounded-md"
-            aria-label={t("app.brand")}
-          >
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[#e06737] text-xs font-bold">
-              S
-            </span>
-            <span className="text-sm font-semibold tracking-tight">
-              STAVETO<span className="text-[#e06737]">.</span>
-            </span>
-          </Link>
+          <SidebarBrand expanded onNavigate={onClose} />
         </div>
+        <ActiveCompanyContextSelector variant="drawer" />
         <MobileSidebarNav
           pathname={pathname}
           isPersonalWorkspace={isPersonalWorkspace}
@@ -68,6 +59,7 @@ export function Sidebar({ onClose, isMobile = false }: SidebarProps) {
           onNavigate={onClose}
           onLogout={handleLogout}
         />
+        <UserProfileMenu variant="drawer" onNavigate={onClose} />
         <SidebarFooter collapsed={false} showLayoutToggle={false} />
       </aside>
     );

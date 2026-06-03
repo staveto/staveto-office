@@ -82,10 +82,20 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
+        const profileOrgHint = profile?.activeBusinessOrgId?.trim();
+        const onboardingOrgHint =
+          profile?.onboarding?.activeWorkspaceId &&
+          profile.onboarding.activeWorkspaceId !== "personal"
+            ? profile.onboarding.activeWorkspaceId.trim()
+            : undefined;
+
         const list = await loadAvailableWorkspaces({
           id: user.id,
           email: user.email,
           name: user.name,
+          orgIdHints: [profileOrgHint, onboardingOrgHint].filter(
+            (id): id is string => !!id
+          ),
         });
 
         if (cancelled) return;
@@ -133,12 +143,16 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
         setTenant({ mode: "app", status: "app" });
         const persistedId = readPersistedWorkspaceId();
-        const { workspace: resolved, reason } = resolveActiveWorkspaceWithReason(list, {
-          tenantMode: false,
+        const resolveOptions = {
+          tenantMode: false as const,
           persistedId,
           profileWorkspaceId: profile?.onboarding?.activeWorkspaceId,
           profileBusinessOrgId: profile?.activeBusinessOrgId,
-        });
+        };
+        const { workspace: resolved, reason } = resolveActiveWorkspaceWithReason(
+          list,
+          resolveOptions
+        );
         setActiveWorkspaceState(resolved);
         persistActiveWorkspaceId(resolved.id);
         if (resolved.type === "company") {

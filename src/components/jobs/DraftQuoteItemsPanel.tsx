@@ -74,68 +74,129 @@ function CategoryTable({
   category,
   items,
   projectId,
-  busy,
-  onReload,
-  setBusy,
+  rowActionBusy,
+  onItemsChanged,
+  onReloadSilent,
+  setRowActionBusy,
   setError,
 }: {
   category: QuoteDraftItemCategory;
   items: QuoteDraftItemDoc[];
   projectId: string;
-  busy: boolean;
-  onReload: () => void;
-  setBusy: (v: boolean) => void;
+  rowActionBusy: boolean;
+  onItemsChanged: (itemId: string, patch: Partial<QuoteDraftItemDoc>) => void;
+  onReloadSilent: () => Promise<void>;
+  setRowActionBusy: (v: boolean) => void;
   setError: (v: string | null) => void;
 }) {
   const { t } = useI18n();
   const [rows, setRows] = useState<Record<string, RowDraft>>({});
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const dirtyIds = useRef<Set<string>>(new Set());
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
 
   useEffect(() => {
-    const next: Record<string, RowDraft> = {};
-    for (const item of items) {
-      next[item.id] = toRowDraft(item);
-    }
-    setRows(next);
+    setRows((prev) => {
+      const next = { ...prev };
+      const serverIds = new Set(items.map((i) => i.id));
+
+      for (const id of Object.keys(next)) {
+        if (!serverIds.has(id)) {
+          delete next[id];
+          dirtyIds.current.delete(id);
+        }
+      }
+
+      for (const item of items) {
+        if (!prev[item.id]) {
+          next[item.id] = toRowDraft(item);
+          continue;
+        }
+        if (!dirtyIds.current.has(item.id)) {
+          next[item.id] = toRowDraft(item);
+        }
+      }
+
+      return next;
+    });
   }, [items]);
 
-  const scheduleSave = useCallback(
-    (itemId: string, draft: RowDraft) => {
-      if (saveTimers.current[itemId]) clearTimeout(saveTimers.current[itemId]);
-      saveTimers.current[itemId] = setTimeout(async () => {
-        setBusy(true);
-        setError(null);
-        try {
-          await updateQuoteDraftItem(projectId, itemId, {
-            category,
-            name: draft.name,
-            qty: draft.qty,
-            unit: draft.unit,
-            unitPrice: draft.unitPrice,
-            note: draft.note || undefined,
-          });
-          onReload();
-        } catch (e) {
-          setError(e instanceof Error ? e.message : t("projects.draft.quoteItem.saveError"));
-        } finally {
-          setBusy(false);
-        }
-      }, 700);
+  const persistRow = useCallback(
+    async (itemId: string, draft: RowDraft) => {
+      const trimmedName = draft.name.trim();
+      if (!trimmedName) return;
+
+      setError(null);
+      try {
+        await updateQuoteDraftItem(projectId, itemId, {
+          category,
+          name: trimmedName,
+          qty: draft.qty,
+          unit: draft.unit,
+          unitPrice: draft.unitPrice,
+          note: draft.note || undefined,
+        });
+        dirtyIds.current.delete(itemId);
+        onItemsChanged(itemId, {
+          name: trimmedName,
+          qty: draft.qty,
+          unit: draft.unit,
+          unitPrice: draft.unitPrice,
+          note: draft.note || undefined,
+        });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : t("projects.draft.quoteItem.saveError"));
+      }
     },
-    [category, projectId, onReload, setBusy, setError, t]
+    [category, projectId, onItemsChanged, setError, t]
   );
 
-  const patchRow = (itemId: string, patch: Partial<RowDraft>) => {
+  const scheduleSave = useCallback(
+    (itemId: string, draft: RowDraft, delayMs = 900) => {
+      if (saveTimers.current[itemId]) clearTimeout(saveTimers.current[itemId]);
+      saveTimers.current[itemId] = setTimeout(() => {
+        delete saveTimers.current[itemId];
+        void persistRow(itemId, draft);
+      }, delayMs);
+    },
+    [persistRow]
+  );
+
+  const flushSave = useCallback(
+    (itemId: string) => {
+      if (saveTimers.current[itemId]) {
+        clearTimeout(saveTimers.current[itemId]);
+        delete saveTimers.current[itemId];
+      }
+      const draft = rowsRef.current[itemId];
+      if (draft) void persistRow(itemId, draft);
+    },
+    [persistRow]
+  );
+
+  const patchRow = (itemId: string, patch: Partial<RowDraft>, opts?: { debounce?: boolean }) => {
+    dirtyIds.current.add(itemId);
     setRows((prev) => {
       const base = prev[itemId] ?? { name: "", qty: 1, unit: "ks", unitPrice: 0, note: "" };
       const next = { ...base, ...patch };
-      scheduleSave(itemId, next);
-      return { ...prev, [itemId]: next };
+      const updated = { ...prev, [itemId]: next };
+      rowsRef.current = updated;
+      onItemsChanged(itemId, {
+        name: next.name,
+        qty: next.qty,
+        unit: next.unit,
+        unitPrice: next.unitPrice,
+      });
+      if (opts?.debounce !== false) {
+        scheduleSave(itemId, next);
+      }
+      return updated;
     });
   };
 
   const handleAdd = async () => {
-    setBusy(true);
+    setRowActionBusy(true);
     setError(null);
     try {
       await createQuoteDraftItem(projectId, {
@@ -145,24 +206,30 @@ function CategoryTable({
         unit: "ks",
         unitPrice: 0,
       });
-      onReload();
+      await onReloadSilent();
     } catch (e) {
       setError(e instanceof Error ? e.message : t("projects.draft.quoteItem.saveError"));
     } finally {
-      setBusy(false);
+      setRowActionBusy(false);
     }
   };
 
   const handleDelete = async (itemId: string) => {
-    setBusy(true);
+    if (saveTimers.current[itemId]) {
+      clearTimeout(saveTimers.current[itemId]);
+      delete saveTimers.current[itemId];
+    }
+    dirtyIds.current.delete(itemId);
+
+    setRowActionBusy(true);
     setError(null);
     try {
       await deleteQuoteDraftItem(projectId, itemId);
-      onReload();
+      await onReloadSilent();
     } catch (e) {
       setError(e instanceof Error ? e.message : t("projects.draft.quoteItem.saveError"));
     } finally {
-      setBusy(false);
+      setRowActionBusy(false);
     }
   };
 
@@ -179,7 +246,7 @@ function CategoryTable({
           type="button"
           variant="outline"
           size="sm"
-          disabled={busy}
+          disabled={rowActionBusy}
           onClick={handleAdd}
         >
           <Plus className="size-4 mr-1" />
@@ -213,8 +280,8 @@ function CategoryTable({
                     <TableCell>
                       <Input
                         value={row.name}
-                        disabled={busy}
                         onChange={(e) => patchRow(item.id, { name: e.target.value })}
+                        onBlur={() => flushSave(item.id)}
                         className="h-8 min-w-[140px]"
                       />
                     </TableCell>
@@ -224,18 +291,20 @@ function CategoryTable({
                         min={0}
                         step="0.01"
                         value={row.qty}
-                        disabled={busy}
                         onChange={(e) =>
                           patchRow(item.id, { qty: parseFloat(e.target.value) || 0 })
                         }
+                        onBlur={() => flushSave(item.id)}
                         className="h-8"
                       />
                     </TableCell>
                     <TableCell>
                       <Select
                         value={row.unit}
-                        disabled={busy}
-                        onValueChange={(v) => patchRow(item.id, { unit: v ?? row.unit })}
+                        onValueChange={(v) => {
+                          patchRow(item.id, { unit: v ?? row.unit }, { debounce: false });
+                          flushSave(item.id);
+                        }}
                       >
                         <SelectTrigger className="h-8">
                           <SelectValue />
@@ -255,12 +324,12 @@ function CategoryTable({
                         min={0}
                         step="0.01"
                         value={row.unitPrice}
-                        disabled={busy}
                         onChange={(e) =>
                           patchRow(item.id, {
                             unitPrice: parseFloat(e.target.value) || 0,
                           })
                         }
+                        onBlur={() => flushSave(item.id)}
                         className="h-8"
                       />
                     </TableCell>
@@ -273,7 +342,7 @@ function CategoryTable({
                         variant="ghost"
                         size="icon"
                         className="size-8"
-                        disabled={busy}
+                        disabled={rowActionBusy}
                         onClick={() => handleDelete(item.id)}
                         aria-label={t("common.delete")}
                       >
@@ -301,24 +370,37 @@ export function DraftQuoteItemsPanel({
   const { activeWorkspace } = useWorkspace();
   const [items, setItems] = useState<QuoteDraftItemDoc[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
+  const [rowActionBusy, setRowActionBusy] = useState(false);
   const [creatingQuote, setCreatingQuote] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [vatPercent, setVatPercent] = useState(project.quoteDraftVatPercent ?? 20);
   const [notes, setNotes] = useState(project.quoteDraftNotes ?? "");
   const metaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const list = await listProjectQuoteDraftItems(project.id);
-      setItems(list);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("projects.draft.quoteItem.loadError"));
-    } finally {
-      setLoading(false);
-    }
-  }, [project.id, t]);
+  const load = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!opts?.silent) setLoading(true);
+      try {
+        const list = await listProjectQuoteDraftItems(project.id);
+        setItems(list);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : t("projects.draft.quoteItem.loadError"));
+      } finally {
+        if (!opts?.silent) setLoading(false);
+      }
+    },
+    [project.id, t]
+  );
+
+  const loadSilent = useCallback(async () => {
+    await load({ silent: true });
+  }, [load]);
+
+  const handleItemChanged = useCallback((itemId: string, patch: Partial<QuoteDraftItemDoc>) => {
+    setItems((prev) =>
+      prev.map((item) => (item.id === itemId ? { ...item, ...patch } : item))
+    );
+  }, []);
 
   useEffect(() => {
     void load();
@@ -346,7 +428,6 @@ export function DraftQuoteItemsPanel({
   const scheduleMetaSave = (vat: number, noteText: string) => {
     if (metaTimer.current) clearTimeout(metaTimer.current);
     metaTimer.current = setTimeout(async () => {
-      setBusy(true);
       setError(null);
       try {
         const updated = await updateDraftJobFields(project.id, {
@@ -356,8 +437,6 @@ export function DraftQuoteItemsPanel({
         onProjectUpdated(updated);
       } catch (e) {
         setError(e instanceof Error ? e.message : t("projects.draft.quoteItem.saveError"));
-      } finally {
-        setBusy(false);
       }
     }, 800);
   };
@@ -396,18 +475,20 @@ export function DraftQuoteItemsPanel({
               category="material"
               items={materials}
               projectId={project.id}
-              busy={busy}
-              onReload={load}
-              setBusy={setBusy}
+              rowActionBusy={rowActionBusy}
+              onItemsChanged={handleItemChanged}
+              onReloadSilent={loadSilent}
+              setRowActionBusy={setRowActionBusy}
               setError={setError}
             />
             <CategoryTable
               category="work"
               items={workItems}
               projectId={project.id}
-              busy={busy}
-              onReload={load}
-              setBusy={setBusy}
+              rowActionBusy={rowActionBusy}
+              onItemsChanged={handleItemChanged}
+              onReloadSilent={loadSilent}
+              setRowActionBusy={setRowActionBusy}
               setError={setError}
             />
 
@@ -420,7 +501,6 @@ export function DraftQuoteItemsPanel({
                   min={0}
                   max={100}
                   value={vatPercent}
-                  disabled={busy}
                   onChange={(e) => {
                     const v = parseFloat(e.target.value);
                     const next = Number.isFinite(v) ? v : 0;
@@ -435,7 +515,6 @@ export function DraftQuoteItemsPanel({
                 <Textarea
                   id="quote-notes"
                   value={notes}
-                  disabled={busy}
                   rows={2}
                   placeholder={t("projects.draft.quoteItem.notesPlaceholder")}
                   onChange={(e) => {

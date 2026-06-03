@@ -73,6 +73,14 @@ export async function isOrganizationMember(
   const db = getFirestoreInstance();
   if (!db) return { member: false };
 
+  const orgSnap = await getDoc(doc(db, "organizations", orgId));
+  if (orgSnap.exists()) {
+    const org = orgSnap.data() as Organization;
+    if (org.ownerUid === uid) {
+      return { member: true, role: "admin" };
+    }
+  }
+
   const memberSnap = await getDoc(doc(db, "organizations", orgId, "members", uid));
   if (!memberSnap.exists()) return { member: false };
 

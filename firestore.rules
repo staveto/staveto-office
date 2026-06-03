@@ -13,6 +13,17 @@ service cloud.firestore {
       );
     }
 
+    function canManageOrganization(orgId) {
+      let org = get(/databases/$(database)/documents/organizations/$(orgId)).data;
+      return isSignedIn() && (
+        org.ownerUid == request.auth.uid
+        || (
+          exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid))
+          && get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data.role in ['admin', 'owner', 'manager']
+        )
+      );
+    }
+
     function canReadProject() {
       return isSignedIn() && (
         resource.data.ownerId == request.auth.uid
@@ -46,8 +57,7 @@ service cloud.firestore {
     match /organizations/{orgId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn();
-      allow update, delete: if isSignedIn()
-        && get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid;
+      allow update, delete: if canManageOrganization(orgId);
 
       match /members/{memberId} {
         allow read: if isSignedIn();
@@ -83,6 +93,10 @@ service cloud.firestore {
       }
 
       match /materials/{materialId} {
+        allow read, write: if canAccessProjectId(projectId);
+      }
+
+      match /documents/{documentId} {
         allow read, write: if canAccessProjectId(projectId);
       }
     }

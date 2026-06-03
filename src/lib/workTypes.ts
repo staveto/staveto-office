@@ -1,7 +1,6 @@
 /**
- * Work / project types — aligned with Staveto mobile app.
- * Stored on Firestore `projects.projectType` (canonical).
- * Optional legacy/read alias: `workType` (same enum values).
+ * Job archetypes (UI + `jobArchetype` on Firestore) — aligned with Staveto mobile `NewJobArchetype`.
+ * Engine fields on create: `projectType` = BUILD | TRADE, granular `workType`, optional `jobWorkflowKind`.
  */
 import type { LucideIcon } from "lucide-react";
 import {
@@ -41,11 +40,75 @@ export function isWorkType(value: string | undefined | null): value is WorkType 
   return !!value && WORK_TYPE_SET.has(value);
 }
 
-/** Resolve type from project document fields (mobile uses projectType). */
+export type EngineProjectType = "BUILD" | "TRADE";
+
+export type EngineWorkType =
+  | "NEW_BUILD"
+  | "RENOVATION"
+  | "INSTALLATION"
+  | "SERVICE"
+  | "REPAIR"
+  | "DELIVERY";
+
+export type JobWorkflowKind = "SERVICE" | "STANDARD";
+
+/** Mobile `resolveInternalProjectTypeFromArchetype`. */
+export function resolveEngineProjectTypeFromArchetype(archetype: WorkType): EngineProjectType {
+  if (archetype === "large_construction_project" || archetype === "own_build") return "BUILD";
+  return "TRADE";
+}
+
+/** Mobile `resolveJobWorkflowKindFromArchetype`. */
+export function resolveJobWorkflowKindFromArchetype(
+  archetype: WorkType
+): JobWorkflowKind | undefined {
+  return archetype === "service_inspection" ? "SERVICE" : undefined;
+}
+
+/** Default granular `workType` when user picks an archetype card (mobile engine). */
+export function resolveEngineWorkTypeFromArchetype(archetype: WorkType): EngineWorkType {
+  switch (archetype) {
+    case "large_construction_project":
+    case "own_build":
+      return "NEW_BUILD";
+    case "service_inspection":
+      return "SERVICE";
+    case "customer_job":
+    case "internal_project":
+    default:
+      return "REPAIR";
+  }
+}
+
+export type ArchetypeFirestoreFields = {
+  projectType: EngineProjectType;
+  workType: EngineWorkType;
+  jobArchetype: WorkType;
+  jobWorkflowKind?: JobWorkflowKind;
+};
+
+/** Map wizard archetype → mobile-compatible Firestore fields (additive; no schema break). */
+export function mapArchetypeToFirestoreFields(archetype: WorkType): ArchetypeFirestoreFields {
+  const projectType = resolveEngineProjectTypeFromArchetype(archetype);
+  const workType = resolveEngineWorkTypeFromArchetype(archetype);
+  const jobWorkflowKind = resolveJobWorkflowKindFromArchetype(archetype);
+  return {
+    projectType,
+    workType,
+    jobArchetype: archetype,
+    ...(jobWorkflowKind ? { jobWorkflowKind } : {}),
+  };
+}
+
+/** Resolve UI archetype from project document (dual-read legacy web rows). */
 export function getProjectWorkType(project: {
   projectType?: string;
   workType?: string;
+  jobArchetype?: string;
 }): WorkType | undefined {
+  if (project.jobArchetype && isWorkType(project.jobArchetype)) {
+    return project.jobArchetype;
+  }
   if (isWorkType(project.projectType)) return project.projectType;
   if (isWorkType(project.workType)) return project.workType;
   return undefined;

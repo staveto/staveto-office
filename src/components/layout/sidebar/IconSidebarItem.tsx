@@ -10,6 +10,7 @@ type IconSidebarItemProps = {
   section: NavSectionConfig;
   sectionLabel: string;
   pathname: string;
+  search: string;
   comingSoonLabel: string;
   isPersonalWorkspace: boolean;
   canManage: boolean;
@@ -26,6 +27,7 @@ export function IconSidebarItem({
   section,
   sectionLabel,
   pathname,
+  search,
   comingSoonLabel,
   isPersonalWorkspace,
   canManage,
@@ -109,6 +111,7 @@ export function IconSidebarItem({
         section={section}
         sectionLabel={sectionLabel}
         pathname={pathname}
+        search={search}
         comingSoonLabel={comingSoonLabel}
         isPersonalWorkspace={isPersonalWorkspace}
         canManage={canManage}

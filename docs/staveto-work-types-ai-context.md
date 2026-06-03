@@ -6,10 +6,12 @@
 
 | Concept | Firestore field | Notes |
 |---------|-----------------|-------|
-| Work type enum | `projectType` | **Canonical** — same string values as Staveto mobile |
-| Alias (read-only) | `workType` | Optional; web reads if present, writes use `projectType` only |
+| UI archetype (wizard) | `jobArchetype` | Same values as mobile `NewJobArchetype` |
+| Engine type | `projectType` | `BUILD` or `TRADE` |
+| Granular work | `workType` | e.g. `NEW_BUILD`, `SERVICE`, `REPAIR` |
+| Service jobs | `jobWorkflowKind` | `SERVICE` when archetype is `service_inspection` |
 
-Do **not** duplicate both fields on create. Legacy projects without `projectType` continue to work.
+On create, write all mapped fields; use `getProjectWorkType()` for dual-read (legacy rows may still store archetype in `projectType`).
 
 ### Enum values (`WorkType`)
 
@@ -48,5 +50,5 @@ All AI outputs remain **draft-only**; manager confirms before quotes are sent or
 ## Related code
 
 - `src/lib/workTypes.ts` — enum, helpers
-- `src/services/projects/projectService.ts` — `createDraftJob` writes `projectType`
+- `src/services/projects/projectService.ts` — `createDraftJob` maps archetype → BUILD/TRADE + `jobArchetype`
 - `src/components/jobs/WorkTypeBadge.tsx` — list/detail badges

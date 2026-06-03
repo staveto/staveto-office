@@ -5,19 +5,15 @@ import { Paperclip, X, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nContext";
 import { cn } from "@/lib/utils";
-import {
-  createAiUploadSessionId,
-  uploadAiDraftFile,
-  type UploadedAiDraftFile,
-} from "@/services/ai/aiDraftFiles";
+import type { UploadedAiDraftFile } from "@/services/ai/aiDraftFiles";
+import { uploadProjectDocument } from "@/services/projects/projectDocuments";
 import type { ActiveWorkspace } from "@/types/workspace";
 import { nj } from "./newJobFormStyles";
 
 type Props = {
   workspace: ActiveWorkspace;
   userId: string;
-  sessionId: string;
-  onSessionId: (id: string) => void;
+  onEnsureProject: () => Promise<string>;
   files: UploadedAiDraftFile[];
   onFilesChange: (files: UploadedAiDraftFile[]) => void;
   disabled?: boolean;
@@ -26,8 +22,7 @@ type Props = {
 export function AiDraftFileUpload({
   workspace,
   userId,
-  sessionId,
-  onSessionId,
+  onEnsureProject,
   files,
   onFilesChange,
   disabled,
@@ -41,13 +36,12 @@ export function AiDraftFileUpload({
     if (!list?.length || disabled) return;
     setError(null);
     setUploading(true);
-    const sid = sessionId || createAiUploadSessionId();
-    if (!sessionId) onSessionId(sid);
 
     const added: UploadedAiDraftFile[] = [];
     try {
+      const projectId = await onEnsureProject();
       for (const file of Array.from(list)) {
-        const uploaded = await uploadAiDraftFile(workspace, userId, sid, file);
+        const uploaded = await uploadProjectDocument(projectId, workspace, userId, file);
         added.push(uploaded);
       }
       onFilesChange([...files, ...added]);

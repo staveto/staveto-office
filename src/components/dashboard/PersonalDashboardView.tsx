@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import {
   FolderKanban,
   FileText,
@@ -20,6 +21,7 @@ import { useI18n } from "@/i18n/I18nContext";
 import type { ActiveWorkspace } from "@/types/workspace";
 import type { DashboardStats } from "@/lib/dashboardStats";
 import { getDashboardNextStep } from "@/lib/workspaceProduct";
+import { COMPANY_REGISTRATION_ROUTE } from "@/services/onboarding";
 
 type PersonalDashboardViewProps = {
   activeWorkspace: ActiveWorkspace;
@@ -27,6 +29,8 @@ type PersonalDashboardViewProps = {
   stats: DashboardStats;
   statsLoading: boolean;
   showCreateCompany: boolean;
+  pendingCompanyBanner?: ReactNode;
+  companySwitchPrompt?: ReactNode;
 };
 
 export function PersonalDashboardView({
@@ -35,6 +39,8 @@ export function PersonalDashboardView({
   stats,
   statsLoading,
   showCreateCompany,
+  pendingCompanyBanner,
+  companySwitchPrompt,
 }: PersonalDashboardViewProps) {
   const { t } = useI18n();
   const comingSoonLabel = t("dashboard.comingSoon");
@@ -60,6 +66,10 @@ export function PersonalDashboardView({
         estimatesCount={stats.quotesCount ?? stats.estimatesCount}
         statsLoading={statsLoading}
       />
+
+      {pendingCompanyBanner}
+
+      {companySwitchPrompt}
 
       <div
         className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-thin"
@@ -114,7 +124,7 @@ export function PersonalDashboardView({
             <CompactActionButton
               label={t("dashboard.hero.createCompany")}
               icon={Building2}
-              href="/onboarding"
+              href={COMPANY_REGISTRATION_ROUTE}
             />
           ) : null}
           <CompactActionButton

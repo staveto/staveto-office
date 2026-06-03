@@ -10,5 +10,18 @@ service firebase.storage {
       allow write: if isSignedIn()
         && request.resource.size < 25 * 1024 * 1024;
     }
+
+    match /projects/{projectId}/documents/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+        && request.resource.size < 25 * 1024 * 1024;
+    }
+
+    match /organizations/{orgId}/profile/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+        && request.resource.size < 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
   }
 }

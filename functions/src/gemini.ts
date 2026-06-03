@@ -20,6 +20,45 @@ function getApiKey(): string {
   return key;
 }
 
+export function isGeminiQuotaError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    msg.includes("429") ||
+    msg.includes("too many requests") ||
+    msg.includes("quota exceeded") ||
+    msg.includes("resource_exhausted")
+  );
+}
+
+function parseRetryDelayMs(err: unknown): number {
+  const msg = err instanceof Error ? err.message : String(err);
+  const secondsMatch = msg.match(/retry in ([\d.]+)s/i);
+  if (secondsMatch) {
+    return Math.ceil(parseFloat(secondsMatch[1]) * 1000) + 500;
+  }
+  return 15000;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runWithQuotaRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (!isGeminiQuotaError(err) || attempt === maxAttempts - 1) {
+        throw err;
+      }
+      await sleep(parseRetryDelayMs(err));
+    }
+  }
+  throw lastErr;
+}
+
 function languageLabel(lang: "sk" | "de" | "en"): string {
   if (lang === "de") return "German (formal Sie, Swiss spelling with ss not ß)";
   if (lang === "en") return "English";
@@ -40,10 +79,11 @@ export async function generateDraftWithGemini(
     },
   });
 
-  const run = async (prompt: string) => {
-    const result = await model.generateContent(prompt);
-    return result.response.text();
-  };
+  const run = async (prompt: string) =>
+    runWithQuotaRetry(async () => {
+      const result = await model.generateContent(prompt);
+      return result.response.text();
+    });
 
   let text = await run(userPrompt);
   try {

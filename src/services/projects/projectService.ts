@@ -24,7 +24,7 @@ import type {
   ProjectPhase,
 } from "@/lib/projectLifecycle";
 import type { WorkType } from "@/lib/workTypes";
-import { isWorkType } from "@/lib/workTypes";
+import { isWorkType, mapArchetypeToFirestoreFields } from "@/lib/workTypes";
 
 export type CreateDraftJobInput = {
   workType: WorkType;
@@ -65,9 +65,13 @@ export async function createDraftJob(
   if (!name) throw new Error("Job name is required");
 
   const active = toActiveWorkspaceForWrite(workspace, uid);
+  const engine = mapArchetypeToFirestoreFields(input.workType);
   const projectData: Record<string, unknown> = {
     name,
-    projectType: input.workType,
+    projectType: engine.projectType,
+    workType: engine.workType,
+    jobArchetype: engine.jobArchetype,
+    ...(engine.jobWorkflowKind ? { jobWorkflowKind: engine.jobWorkflowKind } : {}),
     phase: "sales" satisfies ProjectPhase,
     lifecycleStatus: "new_request" satisfies ProjectLifecycleStatus,
     salesStatus: "draft" satisfies ProjectSalesStatus,

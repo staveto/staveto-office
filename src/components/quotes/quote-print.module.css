@@ -1,0 +1,438 @@
+.page {
+  min-height: 100vh;
+  background: #e8edf3;
+  padding: 1.5rem 1rem 2.5rem;
+}
+
+.toolbar {
+  max-width: 210mm;
+  margin: 0 auto 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.toolbarActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.sheet {
+  max-width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto;
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 4px 24px rgba(15, 42, 77, 0.12);
+  padding: 18mm 16mm 16mm;
+  position: relative;
+  font-size: 11pt;
+  line-height: 1.45;
+}
+
+.draftWatermark {
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-24deg);
+  font-size: 4.5rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: rgba(29, 55, 106, 0.06);
+  pointer-events: none;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.draftBadge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(224, 103, 55, 0.12);
+  color: #c95a30;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 3px solid #1d376a;
+  margin-bottom: 1rem;
+}
+
+.logoArea {
+  min-width: 0;
+  flex: 1;
+}
+
+.companyLogo {
+  max-height: 56px;
+  max-width: 180px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+
+.brand {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1d376a;
+  letter-spacing: -0.02em;
+}
+
+.brandAccent {
+  color: #e06737;
+}
+
+.supplierBlock {
+  text-align: right;
+  font-size: 0.8rem;
+  color: #475569;
+  min-width: 0;
+  max-width: 52%;
+}
+
+.supplierName {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1d376a;
+  margin-bottom: 0.35rem;
+}
+
+.contactLines {
+  margin-top: 0.35rem;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.titleAccent {
+  flex: 1;
+  height: 3px;
+  background: linear-gradient(90deg, #e06737 0%, rgba(224, 103, 55, 0.15) 100%);
+  border-radius: 2px;
+}
+
+.docTitle {
+  font-size: 1.55rem;
+  font-weight: 700;
+  color: #1d376a;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.metaGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem 1.5rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.9rem;
+  background: #f6f8fb;
+  border-radius: 0.5rem;
+}
+
+.subjectBlock {
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid #e2e8f0;
+  border-left: 4px solid #1d376a;
+  border-radius: 0.5rem;
+}
+
+.subjectTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1d376a;
+  margin: 0;
+}
+
+.subjectProject {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.partiesGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.clientBlock,
+.supplierCard {
+  padding: 0.75rem 0.9rem;
+  background: #f6f8fb;
+  border-radius: 0.5rem;
+}
+
+.clientBlock {
+  border-left: 3px solid #e06737;
+}
+
+.supplierCard {
+  border-left: 3px solid #1d376a;
+}
+
+.detailLine {
+  margin: 0.15rem 0 0;
+  font-size: 0.85rem;
+  color: #475569;
+}
+
+.metaBlock {
+  font-size: 0.85rem;
+}
+
+.metaLabel {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 0.15rem;
+}
+
+.metaValue {
+  color: #0f172a;
+}
+
+.metaHint {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.sectionTitle {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #64748b;
+  margin: 0 0 0.35rem;
+}
+
+.clientBlock {
+  margin-bottom: 0;
+}
+
+.clientName {
+  font-weight: 600;
+  color: #1d376a;
+  margin: 0;
+}
+
+.categoryHeading {
+  margin: 1rem 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #1d376a;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  margin-bottom: 0.25rem;
+}
+
+.table th {
+  text-align: left;
+  padding: 0.45rem 0.35rem;
+  border-bottom: 1px solid #cbd5e1;
+  color: #475569;
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.table td {
+  padding: 0.4rem 0.35rem;
+  border-bottom: 1px solid #e2e8f0;
+  vertical-align: top;
+}
+
+.colNum {
+  width: 2rem;
+  text-align: center;
+  color: #64748b;
+}
+
+.colQty,
+.colUnit,
+.colPrice,
+.colTotal {
+  white-space: nowrap;
+}
+
+.colQty {
+  width: 4.5rem;
+  text-align: right;
+}
+
+.colUnit {
+  width: 3rem;
+}
+
+.colPrice,
+.colTotal {
+  width: 5.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.colType {
+  width: 4.5rem;
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.totals {
+  margin-top: 1.25rem;
+  margin-left: auto;
+  width: min(100%, 16rem);
+  font-size: 0.88rem;
+}
+
+.totalsRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.25rem 0;
+}
+
+.totalsRowGrand {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.25rem 0;
+  margin-top: 0.35rem;
+  padding-top: 0.5rem;
+  border-top: 2px solid #1d376a;
+  font-weight: 700;
+  font-size: 1rem;
+  color: #1d376a;
+}
+
+.notes {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.82rem;
+  color: #475569;
+}
+
+.notesTitle {
+  font-weight: 600;
+  color: #1d376a;
+  margin-bottom: 0.35rem;
+}
+
+.notesBody {
+  white-space: pre-wrap;
+  margin: 0 0 0.75rem;
+}
+
+.footer {
+  margin-top: 2rem;
+  padding-top: 0.75rem;
+  border-top: 2px solid #1d376a;
+  font-size: 0.75rem;
+  color: #64748b;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.footerRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+}
+
+.footerMain {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.footerDate {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.footerLabel {
+  font-weight: 600;
+  color: #1d376a;
+}
+
+.stavetoBranding {
+  text-align: center;
+  font-size: 0.62rem;
+  line-height: 1.45;
+  color: #94a3b8;
+}
+
+.stavetoBranding p {
+  margin: 0;
+}
+
+@media print {
+  .partiesGrid {
+    break-inside: avoid;
+  }
+
+  .footer {
+    break-inside: avoid;
+  }
+}
+
+@media print {
+  .page {
+    background: #ffffff;
+    padding: 0;
+  }
+
+  .noPrint {
+    display: none !important;
+  }
+
+  .sheet {
+    box-shadow: none;
+    max-width: none;
+    min-height: auto;
+    padding: 0;
+    margin: 0;
+  }
+
+  .draftWatermark {
+    color: rgba(29, 55, 106, 0.05);
+  }
+}
+
+@page {
+  size: A4;
+  margin: 14mm 12mm;
+}

@@ -243,12 +243,12 @@ export default function QuoteDetailPage() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" size="sm" disabled title={t("dashboard.comingSoon")}>
+          <Link
+            href={`/app/quotes/${id}/print`}
+            className={buttonVariants({ variant: "outline", size: "sm" })}
+          >
             {t("projects.draft.exportPdf")}
-            <span className="ml-1 text-[10px] uppercase text-muted-foreground">
-              {t("dashboard.comingSoon")}
-            </span>
-          </Button>
+          </Link>
           <Button
             type="button"
             variant="outline"

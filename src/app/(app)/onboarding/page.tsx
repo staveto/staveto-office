@@ -8,49 +8,33 @@ import { OnboardingStepShell } from "@/components/onboarding/OnboardingStepShell
 import { OnboardingOptionCard } from "@/components/onboarding/OnboardingOptionCard";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { Loader2, User, Building2, PlusCircle, Link2 } from "lucide-react";
+import { Loader2, Building2, Link2, User } from "lucide-react";
 import {
-  savePersonalProfile,
-  createCompanyForOnboarding,
-  finishOnboarding,
-  getPersonalActiveWorkspaceId,
-  ONBOARDING_FEATURE_IDS,
-  type OnboardingUsageType,
-  type OnboardingRole,
-  type OnboardingFeature,
+  completeCompanyOwnerOnboarding,
+  completePersonalOnboarding,
+  completeWorkerJoinIntent,
+  type OnboardingPath,
 } from "@/services/onboarding";
 
 const COLORS = {
   background: "#1D376A",
 };
 
-const TOTAL_STEPS = 6;
-
-const ROLE_VALUES: OnboardingRole[] = ["craftsman", "manager", "accountant", "other"];
-
-type CompanySetupMode = "choose" | "create" | "join";
+type OnboardingStep = "choose" | "details";
 
 export default function OnboardingPage() {
   const router = useRouter();
   const { t } = useI18n();
   const { user, profile, loading, refreshUser } = useAuth();
 
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState<OnboardingStep>("choose");
+  const [path, setPath] = useState<OnboardingPath>("company_owner");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [role, setRole] = useState<OnboardingRole | "">("");
-
-  const [usageType, setUsageType] = useState<OnboardingUsageType | "">("");
-  const [companyMode, setCompanyMode] = useState<CompanySetupMode>("choose");
-  const [companyName, setCompanyName] = useState("");
   const [inviteToken, setInviteToken] = useState("");
-  const [createdOrgId, setCreatedOrgId] = useState<string | null>(null);
-
-  const [selectedFeatures, setSelectedFeatures] = useState<OnboardingFeature[]>([]);
 
   useEffect(() => {
     if (!loading && profile && isOnboardingCompleted(profile)) {
@@ -61,172 +45,90 @@ export default function OnboardingPage() {
   useEffect(() => {
     if (profile?.firstName) setFirstName((v) => v || profile.firstName || "");
     if (profile?.lastName) setLastName((v) => v || profile.lastName || "");
-    const savedRole = profile?.onboarding?.role;
-    if (savedRole && ROLE_VALUES.includes(savedRole as OnboardingRole)) {
-      setRole(savedRole as OnboardingRole);
-    }
-    const savedUsage = profile?.onboarding?.usageType;
-    if (savedUsage === "personal" || savedUsage === "company") {
-      setUsageType(savedUsage);
-    }
-    const savedFeatures = profile?.onboarding?.selectedFeatures;
-    if (savedFeatures?.length) {
-      setSelectedFeatures(
-        savedFeatures.filter((f): f is OnboardingFeature =>
-          ONBOARDING_FEATURE_IDS.includes(f as OnboardingFeature)
-        )
-      );
-    }
   }, [profile]);
-
-  const toggleFeature = (id: OnboardingFeature) => {
-    setSelectedFeatures((prev) =>
-      prev.includes(id) ? prev.filter((f) => f !== id) : [...prev, id]
-    );
-  };
 
   const handleBack = () => {
     setError(null);
-    if (step === 4 && usageType === "company") {
-      if (companyMode === "create" || companyMode === "join") {
-        setCompanyMode("choose");
-        return;
-      }
+    if (step === "details") {
+      setStep("choose");
     }
-    setStep((s) => Math.max(1, s - 1));
   };
 
-  const handleNext = async () => {
+  const handleChooseContinue = () => {
+    setError(null);
+    if (path === "worker_join") {
+      setStep("details");
+      return;
+    }
+    if (path === "company_owner" || path === "personal") {
+      const hasName = !!(profile?.firstName?.trim() && profile?.lastName?.trim());
+      if (hasName) {
+        void handleFinish(path);
+        return;
+      }
+      setStep("details");
+    }
+  };
+
+  const handleFinish = async (selectedPath: OnboardingPath = path) => {
     if (!user?.id) return;
     setError(null);
+    setSaving(true);
 
-    if (step === 1) {
-      setStep(2);
-      return;
-    }
+    const minimal = {
+      firstName: firstName.trim() || undefined,
+      lastName: lastName.trim() || undefined,
+    };
 
-    if (step === 2) {
-      if (!firstName.trim() || !lastName.trim() || !role) {
-        setError(t("onboarding.error.required"));
-        return;
-      }
-      setSaving(true);
-      try {
-        await savePersonalProfile(user.id, {
-          firstName: firstName.trim(),
-          lastName: lastName.trim(),
-          role,
-        });
-        setStep(3);
-      } catch {
-        setError(t("onboarding.error.save"));
-      } finally {
-        setSaving(false);
-      }
-      return;
-    }
-
-    if (step === 3) {
-      if (!usageType) {
-        setError(t("onboarding.error.required"));
-        return;
-      }
-      setCompanyMode("choose");
-      setStep(4);
-      return;
-    }
-
-    if (step === 4) {
-      if (usageType === "personal") {
-        setStep(5);
-        return;
-      }
-
-      if (companyMode === "choose") {
-        setError(t("onboarding.error.required"));
-        return;
-      }
-
-      if (companyMode === "join") {
-        const token = inviteToken.trim();
-        if (token) {
-          router.push(`/join?token=${encodeURIComponent(token)}`);
-          return;
-        }
-        setError(t("onboarding.error.required"));
-        return;
-      }
-
-      if (companyMode === "create") {
-        if (!companyName.trim()) {
-          setError(t("onboarding.error.required"));
-          return;
-        }
-        setSaving(true);
-        try {
-          const orgId = await createCompanyForOnboarding(user.id, companyName.trim());
-          setCreatedOrgId(orgId);
-          setStep(5);
-        } catch {
-          setError(t("onboarding.error.save"));
-        } finally {
-          setSaving(false);
-        }
-        return;
-      }
-      return;
-    }
-
-    if (step === 5) {
-      setStep(6);
-      return;
-    }
-
-    if (step === 6) {
-      setSaving(true);
-      try {
-        let activeWorkspaceId = getPersonalActiveWorkspaceId();
-        let activeWorkspaceType: "personal" | "company" = "personal";
-
-        if (usageType === "company" && createdOrgId) {
-          activeWorkspaceId = createdOrgId;
-          activeWorkspaceType = "company";
-        }
-
-        await finishOnboarding(user.id, {
-          usageType: usageType as OnboardingUsageType,
-          selectedFeatures,
-          activeWorkspaceId,
-          activeWorkspaceType,
-        });
+    try {
+      if (selectedPath === "company_owner") {
+        await completeCompanyOwnerOnboarding(user.id, minimal);
         await refreshUser();
         router.push("/app");
-      } catch {
-        setError(t("onboarding.error.save"));
-      } finally {
-        setSaving(false);
+        return;
       }
+
+      if (selectedPath === "personal") {
+        await completePersonalOnboarding(user.id, minimal);
+        await refreshUser();
+        router.push("/app");
+        return;
+      }
+
+      if (selectedPath === "worker_join") {
+        const token = inviteToken.trim();
+        if (!token) {
+          setError(t("onboarding.error.required"));
+          setSaving(false);
+          return;
+        }
+        await completeWorkerJoinIntent(user.id);
+        router.push(`/join?token=${encodeURIComponent(token)}`);
+      }
+    } catch {
+      setError(t("onboarding.error.save"));
+      setSaving(false);
     }
   };
 
-  const canProceedStep4 = (): boolean => {
-    if (usageType === "personal") return true;
-    if (companyMode === "choose") return false;
-    if (companyMode === "join") return !!inviteToken.trim();
-    if (companyMode === "create") return !!companyName.trim();
-    return false;
+  const totalSteps = path === "worker_join" ? 2 : 2;
+  const currentStep = step === "choose" ? 1 : 2;
+
+  const nextLabel = (): string => {
+    if (step === "choose") {
+      if (path === "company_owner") return t("onboarding.path.companyOwner.cta");
+      if (path === "worker_join") return t("onboarding.path.workerJoin.cta");
+      return t("onboarding.path.personal.cta");
+    }
+    if (path === "worker_join") return t("onboarding.join.openLink");
+    if (path === "company_owner") return t("onboarding.path.companyOwner.cta");
+    return t("onboarding.path.personal.cta");
   };
 
   const canProceed =
-    step === 1 ||
-    (step === 2 && !!firstName.trim() && !!lastName.trim() && !!role) ||
-    (step === 3 && !!usageType) ||
-    (step === 4 && canProceedStep4()) ||
-    step === 5 ||
-    step === 6;
-
-  const nextLabel =
-    step === 6 ? t("onboarding.finish") : step === 4 && companyMode === "join" ? t("onboarding.join.openLink") : t("onboarding.next");
+    step === "choose" ||
+    (step === "details" && path === "worker_join" && !!inviteToken.trim()) ||
+    (step === "details" && (path === "company_owner" || path === "personal"));
 
   if (loading || !user) {
     return (
@@ -243,204 +145,104 @@ export default function OnboardingPage() {
     return null;
   }
 
-  const renderStepContent = () => {
-    switch (step) {
-      case 1:
-        return (
-          <p className="text-muted-foreground text-sm leading-relaxed">
-            {t("onboarding.step.welcome.subtitle")}
+  const renderContent = () => {
+    if (step === "choose") {
+      return (
+        <div className="space-y-3">
+          <OnboardingOptionCard
+            title={t("onboarding.path.companyOwner.title")}
+            description={t("onboarding.path.companyOwner.description")}
+            selected={path === "company_owner"}
+            recommended
+            onClick={() => setPath("company_owner")}
+            icon={Building2}
+          />
+          <OnboardingOptionCard
+            title={t("onboarding.path.workerJoin.title")}
+            description={t("onboarding.path.workerJoin.description")}
+            selected={path === "worker_join"}
+            onClick={() => setPath("worker_join")}
+            icon={Link2}
+          />
+          <OnboardingOptionCard
+            title={t("onboarding.path.personal.title")}
+            description={t("onboarding.path.personal.description")}
+            selected={path === "personal"}
+            onClick={() => setPath("personal")}
+            icon={User}
+          />
+        </div>
+      );
+    }
+
+    if (path === "worker_join") {
+      return (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            {t("onboarding.step.companyJoin.subtitle")}
           </p>
-        );
-
-      case 2:
-        return (
-          <>
-            <div className="space-y-2">
-              <Label htmlFor="firstName">{t("onboarding.firstName")}</Label>
-              <Input
-                id="firstName"
-                value={firstName}
-                onChange={(e) => setFirstName(e.target.value)}
-                autoComplete="given-name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="lastName">{t("onboarding.lastName")}</Label>
-              <Input
-                id="lastName"
-                value={lastName}
-                onChange={(e) => setLastName(e.target.value)}
-                autoComplete="family-name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>{t("onboarding.role.title")}</Label>
-              <div className="flex flex-wrap gap-2">
-                {ROLE_VALUES.map((r) => (
-                  <Button
-                    key={r}
-                    type="button"
-                    size="sm"
-                    variant={role === r ? "default" : "outline"}
-                    onClick={() => setRole(r)}
-                    style={role === r ? { backgroundColor: "#e06737" } : undefined}
-                  >
-                    {t(`onboarding.role.${r}`)}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          </>
-        );
-
-      case 3:
-        return (
-          <div className="space-y-3">
-            <OnboardingOptionCard
-              title={t("onboarding.usage.personal.title")}
-              description={t("onboarding.usage.personal.description")}
-              selected={usageType === "personal"}
-              onClick={() => setUsageType("personal")}
-              icon={User}
-            />
-            <OnboardingOptionCard
-              title={t("onboarding.usage.company.title")}
-              description={t("onboarding.usage.company.description")}
-              selected={usageType === "company"}
-              onClick={() => setUsageType("company")}
-              icon={Building2}
+          <div className="space-y-2">
+            <Label htmlFor="inviteToken">{t("onboarding.join.tokenLabel")}</Label>
+            <Input
+              id="inviteToken"
+              value={inviteToken}
+              onChange={(e) => setInviteToken(e.target.value)}
+              placeholder={t("onboarding.join.tokenPlaceholder")}
+              autoFocus
             />
           </div>
-        );
-
-      case 4:
-        if (usageType === "personal") {
-          return (
-            <p className="text-sm text-muted-foreground">
-              {t("onboarding.step.personal.subtitle")}
-            </p>
-          );
-        }
-        if (companyMode === "choose") {
-          return (
-            <div className="space-y-3">
-              <OnboardingOptionCard
-                title={t("onboarding.company.create.title")}
-                description={t("onboarding.company.create.description")}
-                selected={false}
-                onClick={() => setCompanyMode("create")}
-                icon={PlusCircle}
-              />
-              <OnboardingOptionCard
-                title={t("onboarding.company.join.title")}
-                description={t("onboarding.company.join.description")}
-                selected={false}
-                onClick={() => setCompanyMode("join")}
-                icon={Link2}
-              />
-            </div>
-          );
-        }
-        if (companyMode === "create") {
-          return (
-            <div className="space-y-2">
-              <Label htmlFor="companyName">{t("onboarding.companyName")}</Label>
-              <Input
-                id="companyName"
-                value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
-                placeholder={t("onboarding.companyName.placeholder")}
-              />
-            </div>
-          );
-        }
-        return (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">{t("onboarding.step.companyJoin.subtitle")}</p>
-            <div className="space-y-2">
-              <Label htmlFor="inviteToken">{t("onboarding.join.tokenLabel")}</Label>
-              <Input
-                id="inviteToken"
-                value={inviteToken}
-                onChange={(e) => setInviteToken(e.target.value)}
-                placeholder={t("onboarding.join.tokenPlaceholder")}
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">{t("onboarding.join.hint")}</p>
-          </div>
-        );
-
-      case 5:
-        return (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {ONBOARDING_FEATURE_IDS.map((id) => (
-              <label
-                key={id}
-                className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 cursor-pointer hover:border-[#e06737]/40"
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedFeatures.includes(id)}
-                  onChange={() => toggleFeature(id)}
-                  className="accent-[#e06737]"
-                />
-                <span className="text-sm">{t(`onboarding.feature.${id}`)}</span>
-              </label>
-            ))}
-          </div>
-        );
-
-      case 6:
-        return (
-          <p className="text-sm text-muted-foreground">{t("onboarding.step.done.subtitle")}</p>
-        );
-
-      default:
-        return null;
+          <p className="text-xs text-muted-foreground">{t("onboarding.join.hint")}</p>
+        </div>
+      );
     }
+
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          {t("onboarding.step.minimalProfile.subtitle")}
+        </p>
+        <div className="space-y-2">
+          <Label htmlFor="firstName">{t("onboarding.firstName")}</Label>
+          <Input
+            id="firstName"
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+            autoComplete="given-name"
+            placeholder={t("onboarding.firstName.optionalHint")}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="lastName">{t("onboarding.lastName")}</Label>
+          <Input
+            id="lastName"
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
+            autoComplete="family-name"
+            placeholder={t("onboarding.lastName.optionalHint")}
+          />
+        </div>
+        {path === "company_owner" ? (
+          <p className="rounded-lg border border-[#1D376A]/15 bg-[#1D376A]/[0.04] px-3 py-2 text-xs text-muted-foreground">
+            {t("onboarding.path.companyOwner.nextStepHint")}
+          </p>
+        ) : null}
+      </div>
+    );
   };
 
-  const stepTitle = (): string => {
-    switch (step) {
-      case 1:
-        return t("onboarding.step.welcome.title");
-      case 2:
-        return t("onboarding.step.profile.title");
-      case 3:
-        return t("onboarding.step.usage.title");
-      case 4:
-        if (usageType === "personal") return t("onboarding.step.workspace.title");
-        if (companyMode === "create") return t("onboarding.company.create.title");
-        if (companyMode === "join") return t("onboarding.company.join.title");
-        return t("onboarding.step.workspace.title");
-      case 5:
-        return t("onboarding.step.features.title");
-      case 6:
-        return t("onboarding.step.done.title");
-      default:
-        return "";
-    }
-  };
+  const title =
+    step === "choose"
+      ? t("onboarding.step.welcome.title")
+      : path === "worker_join"
+        ? t("onboarding.path.workerJoin.title")
+        : t("onboarding.step.minimalProfile.title");
 
-  const stepSubtitle = (): string | undefined => {
-    switch (step) {
-      case 2:
-        return t("onboarding.step.profile.subtitle");
-      case 3:
-        return t("onboarding.step.usage.subtitle");
-      case 4:
-        if (usageType === "personal") return t("onboarding.step.personal.subtitle");
-        if (companyMode === "choose") return t("onboarding.step.companyChoose.subtitle");
-        if (companyMode === "create") return t("onboarding.step.companyCreate.subtitle");
-        return undefined;
-      case 5:
-        return t("onboarding.step.features.subtitle");
-      default:
-        return step === 1 ? undefined : undefined;
-    }
-  };
-
-  const shellShowBack = step > 1;
+  const subtitle =
+    step === "choose"
+      ? t("onboarding.step.welcome.subtitle")
+      : path === "worker_join"
+        ? undefined
+        : t("onboarding.step.minimalProfile.subtitle");
 
   return (
     <div
@@ -449,42 +251,42 @@ export default function OnboardingPage() {
     >
       <div className="flex-1 flex flex-col justify-center p-6 md:p-12">
         <OnboardingStepShell
-          step={step}
-          totalSteps={TOTAL_STEPS}
-          title={stepTitle()}
-          subtitle={stepSubtitle()}
-          onBack={shellShowBack ? handleBack : undefined}
+          step={currentStep}
+          totalSteps={totalSteps}
+          title={title}
+          subtitle={subtitle}
+          onBack={step === "details" ? handleBack : undefined}
           backLabel={t("onboarding.back")}
-          onNext={handleNext}
-          nextLabel={nextLabel}
+          onNext={step === "choose" ? handleChooseContinue : () => handleFinish()}
+          nextLabel={nextLabel()}
           canProceed={canProceed}
           saving={saving}
-          showBack={shellShowBack}
+          showBack={step === "details"}
         >
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          {renderStepContent()}
+          {renderContent()}
         </OnboardingStepShell>
+        {step === "choose" ? (
+          <p className="mx-auto mt-4 max-w-lg text-center text-xs text-white/50">
+            {t("onboarding.legalHint")}
+          </p>
+        ) : null}
       </div>
 
       <div className="hidden md:flex flex-1 items-center justify-center p-12">
         <div
-          className="w-full max-w-md aspect-square rounded-2xl flex items-center justify-center"
-          style={{ backgroundColor: "rgba(224, 103, 55, 0.2)" }}
+          className="w-full max-w-md space-y-4 rounded-2xl p-8"
+          style={{ backgroundColor: "rgba(224, 103, 55, 0.15)" }}
         >
-          <svg
-            className="w-1/2 h-1/2 text-white/40"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            aria-hidden
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={1.5}
-              d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-            />
-          </svg>
+          <Building2 className="size-12 text-white/50" aria-hidden />
+          <p className="text-sm leading-relaxed text-white/70">
+            {t("onboarding.sidePanel.tagline")}
+          </p>
+          {step === "choose" && path === "company_owner" ? (
+            <p className="text-xs font-medium uppercase tracking-wider text-white/40">
+              {t("onboarding.path.companyOwner.recommended")}
+            </p>
+          ) : null}
         </div>
       </div>
     </div>

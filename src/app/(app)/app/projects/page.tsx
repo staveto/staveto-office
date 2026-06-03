@@ -35,8 +35,10 @@ import { JobLifecycleBadge } from "@/components/jobs/JobLifecycleBadge";
 import { JobSourceBadge } from "@/components/jobs/JobSourceBadge";
 import { WorkTypeBadge } from "@/components/jobs/WorkTypeBadge";
 import { cn } from "@/lib/utils";
-import { FolderKanban, RefreshCw, Search, Plus } from "lucide-react";
-import { useWorkspaceProduct } from "@/hooks/useWorkspaceProduct";
+import { FolderKanban, RefreshCw, Search, Plus, List, Map } from "lucide-react";
+import { ProjectsMapPanel } from "@/components/projects/ProjectsMapPanel";
+import { ProjectsWorkspaceContextBanner } from "@/components/projects/ProjectsWorkspaceContextBanner";
+import { ProjectOwnershipBadge } from "@/components/projects/ProjectOwnershipBadge";
 
 const FILTERS: ProjectListFilter[] = [
   "all",
@@ -64,7 +66,6 @@ export default function ProjectsPage() {
   const { t } = useI18n();
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
-  const { isCompany, companyName } = useWorkspaceProduct();
   const searchParams = useSearchParams();
   const [projects, setProjects] = useState<ProjectDoc[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,6 +73,7 @@ export default function ProjectsPage() {
   const [accessDenied, setAccessDenied] = useState(false);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<ProjectListFilter>("all");
+  const [view, setView] = useState<"list" | "map">("list");
 
   useEffect(() => {
     const param = searchParams.get("filter");
@@ -183,13 +185,9 @@ export default function ProjectsPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+        <div className="space-y-2">
           <h2 className="text-xl font-semibold">{t("projects.titleJobs")}</h2>
-          {isCompany && companyName ? (
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t("projects.companyContext", { company: companyName })}
-            </p>
-          ) : null}
+          <ProjectsWorkspaceContextBanner />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[12rem] sm:w-64">
@@ -215,27 +213,64 @@ export default function ProjectsPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label={t("projects.titleJobs")}>
-        {FILTERS.map((f) => (
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap gap-2" role="tablist" aria-label={t("projects.titleJobs")}>
+          {FILTERS.map((f) => (
+            <Button
+              key={f}
+              type="button"
+              size="sm"
+              variant={filter === f ? "secondary" : "outline"}
+              role="tab"
+              aria-selected={filter === f}
+              onClick={() => setFilter(f)}
+              className={cn(
+                filter === f && "border-[#1D376A]/30 bg-[#1D376A]/8 text-[#1D376A]"
+              )}
+            >
+              {t(`projects.filter.${f}`)}
+            </Button>
+          ))}
+        </div>
+
+        <div
+          className="inline-flex rounded-lg border border-border p-0.5"
+          role="tablist"
+          aria-label={t("projects.viewMode")}
+        >
           <Button
-            key={f}
             type="button"
             size="sm"
-            variant={filter === f ? "secondary" : "outline"}
+            variant={view === "list" ? "secondary" : "ghost"}
             role="tab"
-            aria-selected={filter === f}
-            onClick={() => setFilter(f)}
-            className={cn(
-              filter === f && "border-[#1D376A]/30 bg-[#1D376A]/8 text-[#1D376A]"
-            )}
+            aria-selected={view === "list"}
+            onClick={() => setView("list")}
+            className={cn(view === "list" && "bg-background shadow-sm")}
           >
-            {t(`projects.filter.${f}`)}
+            <List className="size-4 mr-1.5" aria-hidden />
+            {t("projects.viewList")}
           </Button>
-        ))}
+          <Button
+            type="button"
+            size="sm"
+            variant={view === "map" ? "secondary" : "ghost"}
+            role="tab"
+            aria-selected={view === "map"}
+            onClick={() => setView("map")}
+            className={cn(view === "map" && "bg-background shadow-sm")}
+          >
+            <Map className="size-4 mr-1.5" aria-hidden />
+            {t("projects.viewMap")}
+          </Button>
+        </div>
       </div>
 
       {loading ? (
-        <ProjectsTableSkeleton />
+        view === "map" ? (
+          <ProjectsMapPanel projects={[]} t={t} />
+        ) : (
+          <ProjectsTableSkeleton />
+        )
       ) : error ? (
         <Card>
           <CardContent className="py-6">
@@ -261,6 +296,15 @@ export default function ProjectsPage() {
             </div>
           </CardContent>
         </Card>
+      ) : view === "map" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t("projects.map.title")}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ProjectsMapPanel projects={filteredProjects} t={t} />
+          </CardContent>
+        </Card>
       ) : (
         <Card>
           <CardHeader>
@@ -273,6 +317,9 @@ export default function ProjectsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>{t("projects.nameCol")}</TableHead>
+                  <TableHead className="hidden md:table-cell">
+                    {t("projects.ownership.listCol")}
+                  </TableHead>
                   <TableHead className="hidden md:table-cell">
                     {t("projects.customerCol")}
                   </TableHead>
@@ -290,12 +337,18 @@ export default function ProjectsPage() {
                 {filteredProjects.map((p) => (
                   <TableRow key={p.id}>
                     <TableCell>
-                      <Link
-                        href={`/app/projects/${p.id}`}
-                        className="font-medium text-[#1D376A] hover:text-[#e06737] hover:underline"
-                      >
-                        {p.name || t("projects.noName")}
-                      </Link>
+                      <div className="space-y-1.5">
+                        <Link
+                          href={`/app/projects/${p.id}`}
+                          className="font-medium text-[#1D376A] hover:text-[#e06737] hover:underline"
+                        >
+                          {p.name || t("projects.noName")}
+                        </Link>
+                        <ProjectOwnershipBadge project={p} className="md:hidden" />
+                      </div>
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      <ProjectOwnershipBadge project={p} />
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
                       {p.customerName || "—"}

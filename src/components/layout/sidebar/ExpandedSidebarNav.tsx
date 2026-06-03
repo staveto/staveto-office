@@ -1,18 +1,22 @@
 "use client";
 
-import Link from "next/link";
-import { cn } from "@/lib/utils";
+import { useEffect, useMemo, useState } from "react";
 import {
   SIDEBAR_NAV_SECTIONS,
   SIDEBAR_LATER_ITEMS,
   filterNavSections,
-  isItemActive,
   filterNavItems,
+  getActiveSectionId,
+  getNavSectionLabelKey,
+  isItemActive,
+  sectionShowsSubnav,
 } from "@/lib/sidebarNavigation";
+import { SidebarSection } from "./SidebarSection";
 import { SidebarSubItem } from "./SidebarSubItem";
 
 type ExpandedSidebarNavProps = {
   pathname: string;
+  search: string;
   isPersonalWorkspace: boolean;
   canManage: boolean;
   comingSoonLabel: string;
@@ -23,6 +27,7 @@ type ExpandedSidebarNavProps = {
 
 export function ExpandedSidebarNav({
   pathname,
+  search,
   isPersonalWorkspace,
   canManage,
   comingSoonLabel,
@@ -32,52 +37,89 @@ export function ExpandedSidebarNav({
 }: ExpandedSidebarNavProps) {
   const filterOpts = { isPersonalWorkspace, canManage };
   const sections = filterNavSections(SIDEBAR_NAV_SECTIONS, filterOpts);
+  const activeSectionId = getActiveSectionId(pathname, SIDEBAR_NAV_SECTIONS, search);
+
+  const defaultExpanded = useMemo(() => {
+    const ids = new Set<string>();
+    for (const section of sections) {
+      if (sectionShowsSubnav(section, filterOpts)) ids.add(section.id);
+    }
+    if (activeSectionId) ids.add(activeSectionId);
+    return ids;
+  }, [sections, activeSectionId, isPersonalWorkspace, canManage]);
+
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(defaultExpanded);
+
+  useEffect(() => {
+    if (activeSectionId) {
+      setExpandedIds((prev) => new Set([...prev, activeSectionId]));
+    }
+  }, [activeSectionId]);
+
+  const toggleSection = (sectionId: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(sectionId)) next.delete(sectionId);
+      else next.add(sectionId);
+      return next;
+    });
+  };
 
   return (
     <nav className="flex flex-col px-2 py-3 min-h-0" aria-label={t("sidebar.ariaLabel")}>
-      <ul className="space-y-0.5" role="list">
-        {sections.flatMap((section) => {
+      <div className="space-y-1">
+        {sections.map((section) => {
           const items = filterNavItems(section.items, filterOpts);
-          const Icon = section.icon;
-          const primary = items.find((item) => item.href && !item.comingSoon && !item.action);
+          const isSectionActive =
+            activeSectionId === section.id ||
+            items.some((item) => isItemActive(pathname, item, search));
 
-          if (primary?.href && items.filter((i) => i.href && !i.comingSoon).length === 1) {
-            const active = isItemActive(pathname, primary);
+          if (!sectionShowsSubnav(section, filterOpts)) {
+            const primary = items.find((item) => item.href && !item.comingSoon && !item.action);
+            if (!primary?.href) return null;
             return (
-              <li key={section.id}>
-                <Link
-                  href={primary.href}
-                  onClick={() => onNavigate?.()}
-                  className={cn(
-                    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-[15px] font-medium transition-colors",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e06737]/50",
-                    active
-                      ? "bg-white/12 text-white border-l-2 border-[#e06737] pl-[calc(0.75rem-2px)]"
-                      : "text-white/85 hover:bg-white/8 hover:text-white border-l-2 border-transparent"
-                  )}
-                  aria-current={active ? "page" : undefined}
-                >
-                  <Icon className={cn("size-5 shrink-0", active ? "text-[#e06737]" : "text-white/60")} aria-hidden />
-                  <span className="truncate">{t(primary.labelKey)}</span>
-                </Link>
-              </li>
+              <SidebarSection
+                key={section.id}
+                section={section}
+                sectionLabel={t(getNavSectionLabelKey(section, isPersonalWorkspace))}
+                comingSoonLabel={comingSoonLabel}
+                t={t}
+                pathname={pathname}
+                search={search}
+                isExpanded={false}
+                isSectionActive={isSectionActive}
+                collapsed={false}
+                isPersonalWorkspace={isPersonalWorkspace}
+                canManage={canManage}
+                flatSingleLink
+                onToggle={() => undefined}
+                onNavigate={onNavigate}
+                onLogout={onLogout}
+              />
             );
           }
 
-          return items.map((item) => (
-            <SidebarSubItem
-              key={item.id}
-              item={item}
-              label={t(item.labelKey)}
+          return (
+            <SidebarSection
+              key={section.id}
+              section={section}
+              sectionLabel={t(getNavSectionLabelKey(section, isPersonalWorkspace))}
               comingSoonLabel={comingSoonLabel}
-              isActive={isItemActive(pathname, item)}
-              variant="inline"
+              t={t}
+              pathname={pathname}
+              search={search}
+              isExpanded={expandedIds.has(section.id)}
+              isSectionActive={isSectionActive}
+              collapsed={false}
+              isPersonalWorkspace={isPersonalWorkspace}
+              canManage={canManage}
+              onToggle={() => toggleSection(section.id)}
               onNavigate={onNavigate}
               onLogout={onLogout}
             />
-          ));
+          );
         })}
-      </ul>
+      </div>
 
       <div className="mt-auto pt-4 border-t border-white/10">
         <p className="px-3 pb-2 text-[11px] font-medium uppercase tracking-wider text-white/35">

@@ -9,8 +9,11 @@
     "lint": "eslint",
     "firebase": "firebase",
     "firebase:login": "firebase login --reauth",
+    "firebase:login:no-localhost": "firebase login --reauth --no-localhost",
+    "firebase:login:workaround": "powershell -ExecutionPolicy Bypass -File scripts/firebase-login-attest-workaround.ps1",
     "firebase:secret": "firebase functions:secrets:set GEMINI_API_KEY",
     "firebase:deploy": "firebase deploy --only functions:generateProjectDraft,functions:updateProjectDraftWithAI,functions:createProjectFromDraft,firestore:rules,storage",
+    "firebase:deploy:functions": "firebase deploy --only functions:generateProjectDraft,functions:updateProjectDraftWithAI,functions:createProjectFromDraft",
     "functions:build": "npm run build --prefix functions"
   },
   "dependencies": {
@@ -18,23 +21,26 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "firebase": "^12.10.0",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.577.0",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-leaflet": "^5.0.0",
     "shadcn": "^4.0.5",
     "tailwind-merge": "^3.5.0",
     "tw-animate-css": "^1.4.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "firebase-tools": "^15.18.0",
     "@tailwindcss/postcss": "^4",
+    "@types/leaflet": "^1.9.21",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "firebase-tools": "^15.18.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

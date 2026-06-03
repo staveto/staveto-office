@@ -21,6 +21,7 @@ import {
   updateDoc,
   deleteDoc,
   collection,
+  collectionGroup,
   query,
   where,
   getDocs,
@@ -139,5 +140,22 @@ export function getCallable<T = unknown, R = unknown>(name: string) {
   };
 }
 
-export { onAuthStateChanged, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, collection, query, where, getDocs, orderBy, limit, serverTimestamp, Timestamp };
+export {
+  onAuthStateChanged,
+  doc,
+  getDoc,
+  setDoc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  collection,
+  collectionGroup,
+  query,
+  where,
+  getDocs,
+  orderBy,
+  limit,
+  serverTimestamp,
+  Timestamp,
+};
 export type { User };

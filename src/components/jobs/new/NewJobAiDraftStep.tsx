@@ -95,6 +95,8 @@ export function NewJobAiDraftStep({ workspace, userId, context, onProjectCreated
         setError(t("projects.new.ai.errorPermission"));
       } else if (kind === "not_configured") {
         setError(t("projects.new.ai.errorNotConfigured"));
+      } else if (kind === "quota") {
+        setError(t("projects.new.ai.errorQuota"));
       } else {
         setError(t("projects.new.ai.errorGenerate"));
       }

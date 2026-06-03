@@ -2,6 +2,7 @@ import * as admin from "firebase-admin";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { draftLanguageSchema, projectDraftSchema, type ProjectDraftPayload } from "./draftSchema";
 import { extractFileText, loadDraftFiles } from "./files";
+import { mapArchetypeToFirestoreFields } from "./projectArchetype";
 import {
   assertProjectCreatePermission,
   assertWorkspaceAccess,
@@ -17,34 +18,46 @@ if (!admin.apps.length) {
 const db = admin.firestore();
 const bucket = admin.storage().bucket();
 
-const generateInputSchema = z.object({
-  workspaceId: z.string(),
-  companyId: z.string().optional(),
-  userId: z.string(),
-  jobType: z.string(),
-  contactMode: z.enum(["existing", "new", "none"]),
-  contactId: z.string().optional(),
-  newContact: z
+/** Callable clients may send `null` for omitted fields; normalize before validation. */
+function nullishToOptional<T extends z.ZodTypeAny>(schema: T) {
+  return z.preprocess((val) => (val === null ? undefined : val), schema);
+}
+
+const optionalString = nullishToOptional(z.string().optional());
+const optionalStringArray = nullishToOptional(z.array(z.string()).optional());
+
+const newContactSchema = nullishToOptional(
+  z
     .object({
       type: z.enum(["person", "company"]),
       name: z.string(),
-      email: z.string().optional(),
-      phone: z.string().optional(),
-      address: z.string().optional(),
-      ico: z.string().optional(),
-      dic: z.string().optional(),
-      vatId: z.string().optional(),
+      email: optionalString,
+      phone: optionalString,
+      address: optionalString,
+      ico: optionalString,
+      dic: optionalString,
+      vatId: optionalString,
     })
-    .optional(),
+    .optional()
+);
+
+const generateInputSchema = z.object({
+  workspaceId: z.string(),
+  companyId: optionalString,
+  userId: z.string(),
+  jobType: z.string(),
+  contactMode: z.enum(["existing", "new", "none"]),
+  contactId: optionalString,
+  newContact: newContactSchema,
   description: z.string().min(1),
-  location: z.string().optional(),
+  location: optionalString,
   language: draftLanguageSchema,
-  attachedFileIds: z.array(z.string()).optional(),
+  attachedFileIds: optionalStringArray,
 });
 
 const updateInputSchema = z.object({
   workspaceId: z.string(),
-  companyId: z.string().optional(),
+  companyId: optionalString,
   draftId: z.string(),
   userMessage: z.string().min(1),
   language: draftLanguageSchema,
@@ -52,7 +65,7 @@ const updateInputSchema = z.object({
 
 const createInputSchema = z.object({
   workspaceId: z.string(),
-  companyId: z.string().optional(),
+  companyId: optionalString,
   draftId: z.string(),
 });
 
@@ -363,9 +376,14 @@ export async function handleCreateProjectFromDraft(
     customerId = null;
   }
 
+  const jobTypeRaw = stored.jobType ?? draft.projectType;
+  const engine = mapArchetypeToFirestoreFields(String(jobTypeRaw ?? ""));
   const projectRef = await db.collection("projects").add({
     name: draft.projectTitle,
-    projectType: stored.jobType ?? draft.projectType,
+    projectType: engine?.projectType ?? "TRADE",
+    workType: engine?.workType ?? "REPAIR",
+    ...(engine?.jobArchetype ? { jobArchetype: engine.jobArchetype } : {}),
+    ...(engine?.jobWorkflowKind ? { jobWorkflowKind: engine.jobWorkflowKind } : {}),
     phase: "sales",
     lifecycleStatus: "new_request",
     salesStatus: "draft",

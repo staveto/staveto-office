@@ -21,9 +21,13 @@ import type { ActiveWorkspace } from "@/types/workspace";
 import { isCompanyWorkspaceType } from "@/types/workspace";
 import {
   getOrganization,
+  isOrgMemberActive,
   listOrgMembers,
   type Organization,
 } from "@/lib/organizations";
+import { readOrganizationProfile, type OrganizationProfile } from "@/lib/organizationProfile";
+import { CompanyLogo } from "@/components/branding/CompanyLogo";
+import { COMPANY_REGISTRATION_ROUTE } from "@/services/onboarding";
 
 export type DashboardWorkspaceHeroProps = {
   activeWorkspace: ActiveWorkspace;
@@ -53,18 +57,21 @@ function getGreetingKey(hour: number): "morning" | "day" | "evening" {
 
 type CompanyHeroData = {
   org: Organization | null;
+  profile: OrganizationProfile | null;
   teamCount: number | null;
   loading: boolean;
 };
 
 function useCompanyHeroData(orgId: string | undefined): CompanyHeroData {
   const [org, setOrg] = useState<Organization | null>(null);
+  const [profile, setProfile] = useState<OrganizationProfile | null>(null);
   const [teamCount, setTeamCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(!!orgId);
 
   useEffect(() => {
     if (!orgId) {
       setOrg(null);
+      setProfile(null);
       setTeamCount(null);
       setLoading(false);
       return;
@@ -75,14 +82,22 @@ function useCompanyHeroData(orgId: string | undefined): CompanyHeroData {
 
     void (async () => {
       try {
-        const [orgDoc, members] = await Promise.all([
+        const [orgDoc, orgProfile, members] = await Promise.all([
           getOrganization(orgId),
+          readOrganizationProfile(orgId),
           listOrgMembers(orgId),
         ]);
         if (cancelled) return;
         setOrg(orgDoc);
-        const active = members.filter((m) => m.status === "active").length;
+        setProfile(orgProfile?.profile ?? null);
+        const active = members.filter((m) => isOrgMemberActive(m)).length;
         setTeamCount(active);
+      } catch {
+        if (!cancelled) {
+          setOrg(null);
+          setProfile(null);
+          setTeamCount(null);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -93,7 +108,7 @@ function useCompanyHeroData(orgId: string | undefined): CompanyHeroData {
     };
   }, [orgId]);
 
-  return { org, teamCount, loading };
+  return { org, profile, teamCount, loading };
 }
 
 function HeroBadge({
@@ -127,10 +142,14 @@ function CompanyHeroCard({
   statsLoading,
 }: DashboardWorkspaceHeroProps) {
   const { t } = useI18n();
-  const { org, teamCount, loading: orgLoading } = useCompanyHeroData(activeWorkspace.orgId);
+  const { org, profile, teamCount, loading: orgLoading } = useCompanyHeroData(activeWorkspace.orgId);
   const [nowMs] = useState(() => Date.now());
 
-  const companyName = activeWorkspace.name?.trim() || t("dashboard.hero.companyFallback");
+  const companyName =
+    profile?.legalName?.trim() ||
+    activeWorkspace.name?.trim() ||
+    t("dashboard.hero.companyFallback");
+  const logoUrl = profile?.logoUrl;
   const greetingKey = getGreetingKey(new Date().getHours());
 
   const trialEnd = parseTrialEnd(org?.trialEndsAt);
@@ -204,6 +223,14 @@ function CompanyHeroCard({
       <div className="relative px-4 py-5 sm:px-6 sm:py-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1 space-y-4">
+            <div className="flex items-start gap-4">
+              <CompanyLogo
+                logoUrl={logoUrl}
+                alt={companyName}
+                size="hero"
+                className="shrink-0"
+              />
+              <div className="min-w-0 flex-1 space-y-4">
             <div className="space-y-1">
               <p className="text-sm text-muted-foreground">
                 {t(`dashboard.hero.greeting.${greetingKey}`, { name: firstName })}
@@ -222,9 +249,11 @@ function CompanyHeroCard({
             </div>
 
             <div className="space-y-2 border-t border-[#1D376A]/10 pt-4">
-              <h1 className="text-2xl font-semibold tracking-tight text-[#1D376A] sm:text-3xl">
-                {companyName}
-              </h1>
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-2xl font-semibold tracking-tight text-[#1D376A] sm:text-3xl">
+                  {companyName}
+                </h1>
+              </div>
               <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
                 {t("dashboard.hero.companyTagline")}
               </p>
@@ -256,6 +285,8 @@ function CompanyHeroCard({
               <Settings className="size-4 mr-1.5" aria-hidden />
               {t("dashboard.hero.editCompanyProfile")}
             </Link>
+              </div>
+            </div>
           </div>
 
           <div className="flex shrink-0 flex-col gap-2 sm:min-w-[12rem] lg:items-stretch">
@@ -377,7 +408,7 @@ function PersonalHeroCard({
             </Link>
             {!hasCompany ? (
               <Link
-                href="/onboarding"
+                href={COMPANY_REGISTRATION_ROUTE}
                 className={cn(buttonVariants({ variant: "ghost", size: "default" }), "justify-center")}
               >
                 <Building2 className="size-4 mr-2" aria-hidden />

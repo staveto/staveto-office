@@ -69,10 +69,13 @@ export type {
 export type ProjectDoc = {
   id: string;
   name: string;
-  /** Mobile-aligned work type enum (see `workTypes.ts`). */
+  /** Engine type: BUILD | TRADE (mobile storage). */
   projectType?: string;
-  /** Optional alias; prefer `projectType` on write. */
-  workType?: WorkType;
+  /** Granular engine work type (NEW_BUILD, REPAIR, SERVICE, …). */
+  workType?: string;
+  /** UI archetype from new-job wizard (mobile NewJobArchetype). */
+  jobArchetype?: string;
+  jobWorkflowKind?: string;
   addressText?: string;
   city?: string;
   countryCode?: string;
@@ -101,6 +104,8 @@ export type ProjectDoc = {
   /** Draft quote prep — optional, ignored by mobile until supported */
   quoteDraftVatPercent?: number;
   quoteDraftNotes?: string;
+  /** Mobile: crew assigned to job (read-only on web). */
+  assignedMemberIds?: string[];
 };
 
 export type TaskDoc = {
@@ -148,7 +153,9 @@ export function toProjectDoc(id: string, data: Record<string, unknown>): Project
     id,
     name: (data.name as string) ?? "",
     projectType: data.projectType as string | undefined,
-    workType: data.workType as WorkType | undefined,
+    workType: data.workType as string | undefined,
+    jobArchetype: data.jobArchetype as string | undefined,
+    jobWorkflowKind: data.jobWorkflowKind as string | undefined,
     addressText: (data.addressText as string) || undefined,
     city: (data.city as string) || undefined,
     countryCode: (data.countryCode as string) || undefined,
@@ -177,6 +184,9 @@ export function toProjectDoc(id: string, data: Record<string, unknown>): Project
     quoteDraftVatPercent:
       typeof data.quoteDraftVatPercent === "number" ? data.quoteDraftVatPercent : undefined,
     quoteDraftNotes: (data.quoteDraftNotes as string) || undefined,
+    assignedMemberIds: Array.isArray(data.assignedMemberIds)
+      ? (data.assignedMemberIds as string[]).filter((id) => typeof id === "string" && id.length > 0)
+      : undefined,
   };
 }
 
@@ -623,6 +633,27 @@ export async function deleteExpense(projectId: string, expenseId: string): Promi
   const ref = doc(db, "projects", projectId, "expenses", expenseId);
   await deleteDoc(ref);
   await updateProjectUpdatedAt(projectId);
+}
+
+/** Update task due date (YYYY-MM-DD). Mobile-compatible field. */
+export async function updateTaskDueDate(
+  projectId: string,
+  taskId: string,
+  dueDate: string
+): Promise<void> {
+  const db = getFirestoreInstance();
+  if (!db) throw new Error("Firestore not configured");
+
+  const trimmed = dueDate?.trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    throw new Error("Invalid due date");
+  }
+
+  const ref = doc(db, "projects", projectId, "tasks", taskId);
+  await updateDoc(ref, {
+    dueDate: trimmed,
+    updatedAt: serverTimestamp(),
+  });
 }
 
 /** Toggle task status between DONE and OPEN. */

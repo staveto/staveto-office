@@ -7,6 +7,7 @@ type OnboardingOptionCardProps = {
   title: string;
   description?: string;
   selected?: boolean;
+  recommended?: boolean;
   onClick: () => void;
   icon?: LucideIcon;
 };
@@ -15,6 +16,7 @@ export function OnboardingOptionCard({
   title,
   description,
   selected = false,
+  recommended = false,
   onClick,
   icon: Icon,
 }: OnboardingOptionCardProps) {
@@ -25,8 +27,10 @@ export function OnboardingOptionCard({
       className={cn(
         "w-full rounded-xl border-2 p-4 text-left transition-colors",
         selected
-          ? "border-[#e06737] bg-[#e06737]/5"
-          : "border-border bg-background hover:border-[#e06737]/40"
+          ? "border-[#e06737] bg-[#e06737]/5 ring-1 ring-[#e06737]/20"
+          : recommended
+            ? "border-[#1D376A]/25 bg-[#1D376A]/[0.03] hover:border-[#e06737]/50"
+            : "border-border bg-background hover:border-[#e06737]/40"
       )}
     >
       <div className="flex items-start gap-3">

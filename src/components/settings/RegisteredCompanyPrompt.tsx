@@ -43,6 +43,7 @@ export function RegisteredCompanyPrompt() {
         </Button>
         <Link
           href="/app"
+          onClick={() => setActiveWorkspace(companyWorkspace)}
           className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "inline-flex")}
         >
           {t("settings.registeredCompany.openOverview")}

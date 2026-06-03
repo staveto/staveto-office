@@ -1,301 +1,398 @@
-# Web alignment plan (from mobile source of truth)
+# Plán zosúladenia webu (Manager) s mobilnou aplikáciou
 
-**Document purpose:** Actionable plan for **staveto-office** (Manager Web) to align with the Staveto mobile app without breaking Firestore data or mobile clients.  
-**Status:** Planning only — no implementation in the task that created this document.  
-**Last reviewed:** 2026-06-03  
+**Účel:** Akčný plán pre **staveto-office** — čo zmeniť, čo ponechať a čo nerobiť, bez breaking zmien Firebase schémy v tejto fáze dokumentácie.
 
-**Prerequisite reading:** [`mobile-source-of-truth-analysis.md`](./mobile-source-of-truth-analysis.md)
+**Prerekvizita:** [`mobile-source-of-truth-analysis.md`](./mobile-source-of-truth-analysis.md)
 
----
+**Stav:** Iba dokumentácia — implementácia nasleduje podľa priorít nižšie.
 
-## 1. What web must change
-
-| Priority | Change | Why |
-|----------|--------|-----|
-| P0 | **Stop treating `projectType` as archetype storage** | Mobile persists `BUILD` \| `TRADE` in `projectType`; archetypes are UI-layer |
-| P0 | **On draft create, map archetype → `projectType` + `workType` + `jobWorkflowKind`** | Same rules as `resolveInternalProjectTypeFromArchetype` / `resolveJobWorkflowKindFromArchetype` in mobile |
-| P0 | **Persist archetype in a dedicated optional field** (e.g. `jobArchetype`) unless mobile confirms another name | Keeps AI/context without corrupting engine field |
-| P1 | **Organization reads** — surface `status`, `businessEnabled`, `planCode`, `seatsLimit`, `seatsUsed`, trial dates | Match Business gating on mobile |
-| P1 | **Plan copy & billing UX** — user labels **Free / Solo / Business**; map `personal_pro` + RevenueCat `pro` → **Solo**; org `planCode` → **Business**; read-only Solo IAP on web | Do not sell Solo on web; do not treat Solo as Business |
-| P1 | **Member roles** — read/display `owner`, `admin`, `manager`, `worker`, `viewer`; map legacy web `member` → `viewer` on read | Parity with `organizations/.../members` |
-| P2 | **Company creation** — align with Business org provisioning (CF + `ownerUid`, server-only fields) | Web `createOrganization` with `TEAM_5` is a simplified subset |
-| P2 | **Update [`staveto-work-types-ai-context.md`](./staveto-work-types-ai-context.md)** | Document correct field mapping after P0 |
-| P3 | **Quotes labeling** — treat Firestore `quotes` as Manager interim; no claim of mobile parity | Avoid false sync expectations |
+**Posledná revízia:** 2026-06-02
 
 ---
 
-## 1.1 Corrected plan naming and billing ownership
+## 1. Executive summary
 
-| Program | User-facing (web) | Internal code | Who sells it | Web responsibility |
-|---------|-------------------|---------------|--------------|-------------------|
-| Free | **Free** | `free` | — | Show limits; no paywall |
-| Solo | **Solo** (mobile may say “Staveto Pro”) | `personal_pro`, entitlement **`pro`**, `users.subscription` | **Apple / Google** via mobile **RevenueCat** | **Read status only** (`getBillingStatus`, profile fields); link user to mobile app for purchase/manage |
-| Business | **Business** | `business` + org `planCode` | B2B order / activation flow | Company registration separate from Solo; gate team workspace on org `status` + `businessEnabled` |
+Mobilná aplikácia je **zdroj pravdy** pre organizácie, role, ukladanie `projectType` (`BUILD` | `TRADE`), `workType` a capability model (Free / Solo / Business). Manager Web už má silný **draft zákazky** flow, nemčinu, AI callables a interim `quotes` — ale musí **prestať vynášať paralelný workspace model** a **opraviť zápis typov projektu**, inak mobil číta webové záznamy ako neplatné.
 
-**Web must:**
-
-- Treat **Solo as a paid personal plan**, not onboarding-only and not Business.
-- **Not** create or manage Apple/Google subscriptions in the browser.
-- **Not** block personal jobs when user has Solo (`personal_pro`).
-- **Not** grant Business team features from Solo alone.
-- Allow **Business owner** to create/manage org workspace when Business licence is active.
-
-**Onboarding disambiguation:** Step “personal / company” is a **usage path**; it does not set billing tier. A user on the personal path can be Free or Solo depending on entitlement.
+Najbližšia implementačná priorita: **zosúladiť web workspace / business kontext s mobilným `BusinessContext` a `activeBusinessOrgId`**, bez migrácie schémy a bez novej kolekcie `workspaces/`.
 
 ---
 
-## 2. What web should keep
+## 2. What web must change
 
-- **Draft-first zákazka flow** — `phase: sales`, lifecycle on `projects`, convert to delivery; mobile can ignore until filtered.
-- **`projects/{id}/quoteItems`** — pre-quote line prep; additive subcollection.
-- **Firestore `quotes` collection** — internal Manager quotes until shared contract; link via `projectId`, `acceptedQuoteId`.
-- **Workspace bridge** — `ownerId` / `orgId` on projects; **no** `workspaces/` collection.
-- **Existing active projects** — `createProject` / delivery UI; legacy rows without sales fields.
-- **SK-first UX** — zákazka, koncept, cenová ponuka, realizácia terminology.
-- **Placeholder AI / email / PDF / Storage** — clear “čoskoro” messaging.
-- **Legacy `/estimates`** — keep working with banner pointing to `/app/quotes` until deprecation decision.
-
----
-
-## 3. What web should not implement yet
-
-- Real **AI generation** (only context fields + copy)
-- **Email** send/ingest, **PDF** export, **invoice** modules
-- **Document/photo upload** (Storage) without mobile rules + paths
-- **Calendar**, **attendance**, **reports** at mobile depth
-- **New top-level collections** beyond agreed additive (`jobArchetype`, etc.)
-- **Data migration scripts** that rewrite all historical `projects` in bulk
-- **Forcing mobile** to show web draft jobs before mobile team adds filters
-- **Replacing** mobile `materials` with web-only structures without import story
+| Priorita | Zmena | Dôvod |
+|----------|-------|-------|
+| **P0** | Workspace resolution — firemný workspace default pre owner/admin/manager s aktívnou org | Produktové pravidlo; dnes často „Osobný prehľad“ |
+| **P0** | Načítanie členstiev `organizations/{orgId}/members` kde `userId == uid` | Rovnaký zdroj ako mobil |
+| **P0** | `activeBusinessOrgId` — čítať z profilu / persistovanej voľby; nie zamieňať s `AuthContext.orgId` | Mobilná invarianta |
+| **P0** | Zápis projektu: archetyp → `projectType` (`BUILD`\|`TRADE`) + `workType` + `jobWorkflowKind` | Web dnes ukladá archetyp do `projectType` |
+| **P1** | UI plány: **Free / Solo / Business**; Solo = `personal_pro`, nie Business | Billing ownership |
+| **P1** | Org read: `status`, `businessEnabled`, `planCode`, `seatsLimit`, `seatsUsed` | Business gating |
+| **P1** | Role: `owner`, `admin`, `manager`, `worker`, `viewer` | Parita s mobilom |
+| **P2** | Aktualizovať [`staveto-work-types-ai-context.md`](./staveto-work-types-ai-context.md) po P0 zápise typov | Dokumentačná konzistencia |
 
 ---
 
-## 4. Exact fields / enums to reuse
+## 3. What web should keep
 
-### Plans — user-facing vs internal (corrected)
-
-| User-facing (web UI) | Internal `PlanType` / signals | Notes |
-|----------------------|-------------------------------|--------|
-| **Free** | `free` | Default personal tier |
-| **Solo** | `personal_pro` | Plus RevenueCat **`pro`**, `users.subscription`, `billingIsPro`, `hasPersonalProEntitlement`, `getBillingStatus` |
-| **Business** | `business` | Requires active org + `businessEnabled` + membership |
-
-**Do not** show internal `personal_pro` or “Pro” as the primary Manager label if product standard is **Solo** — map in a single display layer.
-
-### B2B `planCode` (on `organizations` — server-written, Business only)
-
-`business_starter` \| `business_team` \| `business_company`
-
-Not used for Free or Solo.
-
-### Onboarding usage path (not billing tier)
-
-| Code term | Meaning |
-|-----------|---------|
-| `solo` / personal branch in onboarding | Personal **workspace** setup |
-| `join_company` / company branch | Organization path |
-
-`PrimaryUsageMode`: `build` \| `trade` — product preference, not plan.
-
-### Job archetype (UI — store in optional `jobArchetype` recommended)
-
-`service_inspection` \| `customer_job` \| `large_construction_project` \| `own_build` \| `internal_project`
-
-### Firestore `projects.projectType` (storage — mobile engine)
-
-`BUILD` \| `TRADE` (legacy: `MANAGEMENT`, `RESIDENTIAL`, `MAINTENANCE`, …)
-
-### Firestore `projects.workType` (storage)
-
-| Engine | Values |
-|--------|--------|
-| BUILD | `NEW_BUILD`, `RENOVATION`, `INSTALLATION`, `SERVICE` |
-| TRADE | `INSTALLATION`, `REPAIR`, `RENOVATION`, `DELIVERY` |
-
-### `projects.jobWorkflowKind`
-
-`STANDARD` \| `SERVICE` (set for `service_inspection` archetype)
-
-### Organization
-
-| Field | Use |
-|-------|-----|
-| `ownerUid` | Owner (not `ownerId` on org doc) |
-| `status` | Read-only on web client |
-| `businessEnabled` | Read-only on web client |
-| `seatsLimit`, `seatsUsed` | Read-only |
-| `planCode`, `billingPeriod` | Read-only |
-| `trialStartedAt`, `trialEndsAt` | Read |
-| `activeBusinessOrderId` | Read |
-
-### Org member `role`
-
-`owner` \| `admin` \| `manager` \| `worker` \| `viewer`
-
-### Web draft sales fields (keep — mobile may ignore)
-
-`phase`, `lifecycleStatus`, `salesStatus`, `quoteStatus`, `customerRequest`, `customerName`, `customerEmail`, `customerPhone`, `source`, `convertedAt`, `acceptedQuoteId`, `quoteDraftVatPercent`, `quoteDraftNotes`
+- **Draft-first zákazka** — `phase: sales`, lifecycle, konverzia do realizácie (mobil môže ignorovať, kým nefiltruje).
+- **`projects/{id}/quoteItems`** — aditívna príprava riadkov ponuky.
+- **Top-level `quotes`** — interný Manager MVP, kým neexistuje mobilný kontrakt.
+- **Most medzi workspace a projektom** — `ownerId` / `orgId` na `projects`; žiadna root kolekcia `workspaces/`.
+- **Existujúce aktívne projekty** a delivery UI.
+- **SK / DE / EN i18n** a terminológia zákazka / koncept / ponuka.
+- **Staveto AI callables** (`generateProjectDraft`, …) s workspace key = `uid` | `orgId`.
+- **Legacy `/estimates`** s bannerom smerom na `/app/quotes`, kým produkt nerozhodne.
+- **Osobný workspace** a prepínač workspace — vždy dostupný.
 
 ---
 
-## 5. Migration-safe steps
+## 4. What web must stop doing
 
-1. **Read path (immediate, no migration)**  
-   - `getProjectWorkType()` / badges: prefer `jobArchetype` if present; else if `projectType` matches archetype enum, treat as archetype; else treat `projectType` as BUILD/TRADE for engine display.  
-   - Legacy web drafts remain visible.
-
-2. **Write path (forward-only)**  
-   - `createDraftJob`: set `jobArchetype`, `projectType` (BUILD/TRADE), `workType` (default sensible per archetype), `jobWorkflowKind` when needed.  
-   - Do **not** write archetype strings into `projectType` for new docs.
-
-3. **Optional backfill (later, explicit approval)**  
-   - Batch script: for docs where `projectType` ∈ archetype set, copy to `jobArchetype` and recompute BUILD/TRADE — **not** in current scope.
-
-4. **Quotes**  
-   - No migration from in-memory estimates to Firestore required for mobile; keep separate until product unifies.
-
-5. **Organizations**  
-   - Web orgs with `plan: TEAM_5` coexist with mobile `planCode`; read both; do not delete `plan` until CF migration defined.
+- **Nevytvárať** kolekciu `workspaces/{id}` ako hlavný model firmy.
+- **Nepoužívať** `AuthContext.orgId` / `users.uid` ako ID firemnej organizácie.
+- **Nezapisovať** archetyp (`service_inspection`, …) do poľa `projects.projectType`.
+- **Nepredávať** Solo (Apple/Google) v prehliadači.
+- **Neoznačovať** Solo ako Business plán ani onboarding vetvu „solo“ ako paid tier.
+- **Nevynucovať** globálnu migráciu všetkých historických `projects`.
+- **Nepropagovať** Firestore `quotes` ako synchronizovaný modul s mobilom.
+- **Nevymýšľať** backend ponúk, kým mobil + functions nemajú zdieľaný kontrakt.
+- **Nezobrazovať** desiatky „DEMNÄCHST“ badge v hlavnej navigácii — skryť alebo utlumit (UX).
 
 ---
 
-## 6. Priority order
+## 5. Exact data model alignment
 
-| Order | Item |
-|-------|------|
-| 1 | Project type write alignment (`jobArchetype` + BUILD/TRADE + `workType`) |
-| 2 | Read/display alignment (badges, detail, list) |
-| 3 | Docs update (`staveto-work-types-ai-context.md`) |
-| 4 | Organization/Business read model in web billing & members |
-| 5 | Plan naming & billing UX — Free/Solo/Business labels, read-only Solo, Business registration |
-| 6 | Quotes — document interim status; avoid mobile list pollution |
-| 7 | Materials — import story on convert draft → active |
-| 8 | Roles & permissions UI expansion |
-| 9 | AI prompts wired to archetype + engine fields (still draft-only) |
+### Organizácie
 
----
+| Koncept | Mobil | Web cieľ |
+|---------|-------|----------|
+| Root | `organizations/{orgId}` | Rovnaké |
+| Členovia | `organizations/{orgId}/members/{memberId}` | Rovnaké |
+| Vlastník | `ownerUid` | Rovnaké |
+| Role | `owner`, `admin`, `manager`, `worker`, `viewer` | Čítať + zobrazovať; mapovať legacy `member` → `viewer` |
+| Plán firmy | `planCode`: `business_starter`, `business_team`, `business_company` | Read-only z klienta |
+| Stav | `status`, `businessEnabled` | Read-only; gating UI |
 
-## 7. Business workspace alignment
+### Projekty
 
-- **Personal workspace** = `ownerId` on projects (mobile solo).  
-- **Team workspace** = `organizations/{orgId}` + `orgId` on projects; web “team” maps to mobile `workspaceType: team|business`.  
-- **Do not** create `workspaces/` collection.  
-- **Do not** use `AuthContext.orgId` pattern from mobile in web — web uses `WorkspaceContext` + `ActiveWorkspace`; ensure team workspace id = **organization id**, not user uid.  
-- **Business gating UI** should read `organization.status` and `businessEnabled` before showing team features (mirror mobile capability `business` tier).  
-- **Company creation** on web should converge on same post-conditions as mobile Business registration (order + activation), not only local `addDoc(organizations)`.
+| Pole | Mobil hodnota | Web zápis (po zosúladení) |
+|------|---------------|---------------------------|
+| `projectType` | `BUILD` \| `TRADE` | Vždy engine typ |
+| `workType` | `NEW_BUILD`, `RENOVATION`, … | Podľa engine |
+| `jobArchetype` (navrhované) | voliteľné | `service_inspection`, `customer_job`, … |
+| `jobWorkflowKind` | `STANDARD` \| `SERVICE` | Pre `service_inspection` → `SERVICE` |
+| `ownerId` | uid | Osobný workspace |
+| `orgId` | org id | Firemný workspace |
 
----
+### Archetypy (UI) — presné reťazce
 
-## 8. Project / work type alignment
+`service_inspection` | `customer_job` | `large_construction_project` | `own_build` | `internal_project`
 
-### Target create payload (web draft)
+### Plány (capability)
 
-```text
-jobArchetype: <NewJobArchetype>   // new optional field
-projectType: BUILD | TRADE        // mobile storage
-workType: <default for archetype> // e.g. SERVICE for inspection TRADE
-jobWorkflowKind: SERVICE?         // when service_inspection
-phase: sales
-lifecycleStatus: new_request
-salesStatus: draft
-quoteStatus: none
-// + customer, address, workspace fields
-```
-
-### Default `workType` suggestions (product defaults until user picks in wizard)
-
-| Archetype | `projectType` | Suggested `workType` | `jobWorkflowKind` |
-|-----------|---------------|----------------------|-------------------|
-| `service_inspection` | `TRADE` | `SERVICE` | `SERVICE` |
-| `customer_job` | `TRADE` | `INSTALLATION` | — |
-| `large_construction_project` | `BUILD` | `NEW_BUILD` | — |
-| `own_build` | `BUILD` | `RENOVATION` | — |
-| `internal_project` | `TRADE` | `INSTALLATION` | — |
-
-(Defaults can be refined with product — document in code comments.)
-
-### UI
-
-- Keep five-card archetype picker on **Nová zákazka** (already matches mobile `NewJobArchetype`).  
-- Badge shows **archetype** label (SK), not raw `BUILD`/`TRADE`, for managers.  
-- Optional advanced row: show engine type (“Stavba” / “Obchod”) for power users later.
+`free` | `personal_pro` | `business`
 
 ---
 
-## 9. Plans / subscription alignment
+## 6. Business workspace alignment
 
-| Web must | Web must not |
-|----------|----------------|
-| Show **Free**, **Solo**, **Business** in subscription/billing UI | Invent separate “Solo Business” or “Pro plan” SKUs on web checkout |
-| Map **Solo** from `personal_pro` / `pro` entitlement / `getBillingStatus` | Treat Solo as the same as Business |
-| Map **Business** from org `planCode` + `status` + `businessEnabled` | Use org `TEAM_5` as customer-facing plan name |
-| Read `users.subscription`, callable **`getBillingStatus`**, capability inputs | Implement Apple/Google IAP or RevenueCat purchase on web |
-| Explain Solo purchase/manage via **mobile app** (App Store / Play) | Block personal workspace or personal jobs without Business |
-| Separate **company registration** from Solo upgrade | Write server-only org fields (`status`, `businessEnabled`, seats) from client |
+**Mobil:**
 
-### Capability expectations
+- `BusinessContext.activeBusinessOrgId` — vybraná firma.
+- Projekty firmy: `projects.orgId == activeBusinessOrgId`.
+- `AuthContext.orgId` zostáva **uid** (solo namespace).
 
-| User state | Personal workspace | Team / Business workspace |
-|------------|-------------------|---------------------------|
-| Free | Baseline personal features; limits | No Business surface |
-| Solo (`personal_pro`) | Personal Pro features (`canUsePersonalProFeatures`, etc.) | No team features unless Business org also active |
-| Business (active org) | Personal tier still from Solo/Free separately | Team features per role + org licence |
+**Web (cieľ):**
+
+1. Po prihlásení načítať všetky org, kde existuje `organizations/{orgId}/members/{uid}` s aktívnym členstvom (vrátane owner bez member doc — inferovať z `ownerUid`).
+2. Ak používateľ má aspoň jednu **eligible** org (status active/trialing/trial + `businessEnabled` + rola owner/admin/manager), **predvolene** otvoriť firemný workspace — ak nie je explicitná voľba „osobný režim“.
+3. Persistovať voľbu v `profile.onboarding.activeWorkspaceId` alebo ekvivalent — v súlade s mobilným `activeBusinessOrgId` (bez duplicitného významu).
+4. Firemný dashboard = default pre owner/admin/manager; worker/viewer podľa oprávnení.
+
+**Bez:** migrácie dát, novej kolekcie, zmeny mobilných dokumentov.
 
 ---
 
-## 10. AI / materials / quotes alignment
+## 7. Personal / Solo / Pro alignment
 
-### AI
+| Program | Web UI | Interné | Nákup |
+|---------|--------|---------|-------|
+| Free | Free | `free` | — |
+| Solo | Solo (mobil môže „Pro“) | `personal_pro`, entitlement `pro` | **Len mobile** RevenueCat |
+| Business | Business | `business` + org `planCode` | B2B registrácia |
 
-- **Now:** Placeholder copy; store `jobArchetype` + engine fields for future `getNewJobArchetypeAiContextHint`-equivalent on web.  
-- **Later:** Server/agent uses same hints; manager confirms; no auto-send quote.
+**Web musí:**
 
-### Materials
-
-- **Draft prep:** `projects/{id}/quoteItems` (web).  
-- **Execution:** mobile `projects/{id}/materials`.  
-- **On convert to active:** plan one-way copy/import from `quoteItems` → `materials` (future task).
-
-### Quotes
-
-- **Defer** mobile parity.  
-- **Keep** web `quotes` for Manager workflow; link `projectId`, sync `acceptedQuoteId` on accept.  
-- **Do not** show web quotes in mobile app.  
-- **Deprecate** in-memory `/estimates` when Firestore quotes cover all office needs.
+- Čítať `getBillingStatus`, `users.subscription`, `billingIsPro`.
+- CTA: spravovať Solo v mobilnej aplikácii.
+- **Neblokovať** osobné zákazky pri Solo.
+- **Negrantovať** tímové Business funkcie bez active org.
 
 ---
 
-## 11. Risks
+## 8. Project archetype alignment
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| Continued archetype-in-`projectType` writes | Mobile engine breaks / mislabels jobs | P0 write fix |
-| Web org create without CF | Drift vs `businessEnabled` / `status` | Read-only gating + later CF alignment |
-| Managers confuse `quoteItems` vs `materials` | Double entry | SK copy + convert import later |
-| Two quote UIs | Data loss / wrong store | Single primary nav + legacy banner |
-| Role downgrade on map | Wrong permissions | Read-only mapping; no mass writes |
+Pri vytváraní zákazky (web wizard):
 
----
+1. Používateľ vyberie **archetyp** (5 kariet — už v UI).
+2. Server / klient pred zápisom zavolá rovnakú logiku ako mobil `resolveInternalProjectTypeFromArchetype` / `resolveJobWorkflowKindFromArchetype`.
+3. Do Firestore:
+   - `projectType`: `BUILD` alebo `TRADE`
+   - `workType`: vhodný default (napr. `SERVICE` pre servis)
+   - `jobWorkflowKind`: podľa archetypu
+   - voliteľne `jobArchetype`: pôvodný archetyp pre AI a UI
 
-## 12. Next recommended implementation step
-
-**Recommended sequence** (documentation-only order; implement in small PRs):
-
-1. **P0 — Project persistence** (see below) — `jobArchetype` + BUILD/TRADE + `workType`.
-2. **P1 — Plan display layer** — single helper `resolveUserPlanLabel()` → Free \| Solo \| Business from `getBillingStatus` + org; update `/subscription`, billing sidebar, i18n; Solo CTA “manage in mobile app”.
-3. **P1 — Business gating** — read org `status`, `businessEnabled`, `planCode` on team workspace; do not conflate with Solo.
-
-**P0 project persistence** (single focused PR):
-
-1. Add optional `jobArchetype` on `ProjectDoc` and `createDraftJob` (Firestore additive).  
-2. Set `projectType` to `BUILD` or `TRADE` using mobile mapping functions (port logic to `src/lib/workTypes.ts`).  
-3. Set default `workType` and `jobWorkflowKind` per archetype.  
-4. Update `WorkTypeBadge` to read `jobArchetype` first; fallback for legacy rows still storing archetype in `projectType`.  
-5. Update [`staveto-work-types-ai-context.md`](./staveto-work-types-ai-context.md) to describe three-layer model.  
-6. No bulk migration; no AI/PDF/email.
-
-**Do not start** Business CF rewiring or shared quotes schema in the same PR — keep scope narrow.
+**Dual-read:** existujúce dokumenty s archetypom v `projectType` — načítať cez `getProjectWorkType()` / fallback.
 
 ---
 
-*End of web alignment plan.*
+## 9. Materials and AI alignment
+
+| Oblasť | Mobil | Web |
+|--------|-------|-----|
+| Materiál na stavbe | `projects/.../materials` | Neimplementovať náhradu |
+| Návrh ponuky | dokument / UX | `quoteItems` |
+| AI štruktúra projektu | `generateProjectStructure`, … | `generateProjectDraft`, … (office CF) |
+| Kontext archetypu | `getNewJobArchetypeAiContextHint` | Posielať rovnaké enumy v promptoch |
+
+Web AI: draft v `workspaces/{key}/projectDrafts` — **key** = `uid` alebo `orgId`, nie nová root kolekcia workspace entít.
+
+---
+
+## 10. Quotes / estimates caution
+
+- Mobil: **žiadna** kolekcia `quotes`.
+- Web: `quotes/{id}` + `/api/estimates` (legacy) — **Manager interim**.
+- UI môže pripravovať ponuku (`quoteItems`, koncept), ale:
+  - **nepredpokladať** export do mobilu,
+  - **nepredpokladať** rovnaké status enumy,
+  - označiť v internej dokumentácii ako „dočasné, až do shared contract“.
+
+---
+
+## 11. Recommended implementation order
+
+| Fáza | Obsah |
+|------|--------|
+| **1** | Workspace + `activeBusinessOrgId` + default company dashboard |
+| **2** | Zápis `BUILD`/`TRADE` + `workType` + dual-read |
+| **3** | Org billing polia + Free/Solo/Business copy |
+| **4** | Role na `/app/members` |
+| **5** | Doladenie AI draft paths podľa workspace key |
+| **6** | Quotes — dokumentácia + UI disclaimers |
+| **7** | Materiály — až po dohode importu do `materials` |
+
+---
+
+## 12. Risk checklist
+
+| Riziko | Mitigácia |
+|--------|-----------|
+| Mobil zobrazí web draft s nesprávnym `projectType` | Fáza 2 + dual-read; filter `phase: sales` na mobile neskôr |
+| Prepis `projectType` archetypom poškodí engine | Forward write len `BUILD`/`TRADE` |
+| Zápis do server-only org polí | Rules + read-only v UI |
+| Dva quote systémy na webe | Banner na `/estimates` |
+| Solo používateľ bez firmy vidí „Vytvoriť firmu“ nesprávne | Workspace P0 |
+| `workspaces/` kolekcia | Nikdy nepridať |
+| IAM / CF AI | Už nasadené; rules aktuálne |
+
+---
+
+## 13. Next immediate implementation prompt
+
+**Ďalšia implementácia by mala byť:**
+
+> Align web workspace/business context with mobile BusinessContext and activeBusinessOrgId.
+
+### Implementation summary (bez migrácie schémy)
+
+1. **Inspect** current web `WorkspaceContext`, `workspaceService`, `organizations.ts` — ako sa skladá zoznam workspace a default.
+2. **Add or adapt** BusinessContext-like logic v rámci existujúceho contextu (nemusí byť 1:1 názov súboru, ale rovnaká sémantika):
+   - `activeBusinessOrgId` — ID vybranej firmy alebo `null` pre osobný režim.
+   - `AuthContext` / firebase user uid **nie** ako org id firmy.
+3. **Load** `organizations/{orgId}/members` kde `userId == uid` (a owner fallback cez `ownerUid`).
+4. **Select** `activeBusinessOrgId` ak používateľ má aktívnu eligible firmu a nezvolil explicitne osobný režim.
+5. **Keep** personal workspace vždy dostupný v prepínači.
+6. **Company dashboard** (`CompanyDashboardView`) = default pre `owner` / `admin` / `manager` pri active org.
+7. **No** schema migration, **no** new Firestore collections.
+
+### Acceptance criteria
+
+- Majiteľ registrovanej firmy po prihlásení vidí firemný prehľad, nie „Osobný prehľad“ + „Vytvoriť firmu“.
+- Prepínač workspace stále funguje (osobný ↔ firma).
+- Projekty sa filtrujú podľa `orgId` / `ownerId` konzistentne s mobilom.
+- Mobilné dokumenty org/members zostanú nezmenené.
+
+---
+
+## 14. Implementačná poznámka (workspace / business, 2026-06-02)
+
+### Čo bolo zosúladené
+
+- Načítanie firemných workspace z `organizations/{orgId}` + `members/{memberId}` (žiadna kolekcia `workspaces/`).
+- Členstvá: primárne `collectionGroup("members")` s `userId == uid`, fallback sken `organizations` + `members/{uid}` + `where("userId","==",uid)` v podkolekcii.
+- `ownerUid` → rola `owner`; mobilné roly `owner|admin|manager|worker|viewer` (+ legacy `admin`/`member` → mapované v `permissions/roles`).
+- `ActiveWorkspace` pre firmu: `type: "company"`, `mobileWorkspaceKind: "business"`, `source: "organization"`.
+- Výber aktívneho workspace: `sessionStorage` `staveto.activeWorkspaceId`; explicitný osobný režim cez `staveto.explicitPersonalWorkspace` po prepnutí v UI.
+- Ak je uložené `personal` ale používateľ má eligible firmu a neoznačil explicitný personal → `preferred-business` (predvolená firma pre owner/admin/manager).
+- Dev log: `[staveto workspace]` s `selectedReason`, `availableWorkspaces`, `activeWorkspace`.
+
+### Detekcia aktívnej firmy
+
+Org je v prepínači, ak:
+
+- členstvo je aktívne (`status` chýba alebo `active`; nie `invited`/`removed`), alebo používateľ je `ownerUid`;
+- org nie je v stave `canceled`/`disabled`/…;
+- `businessEnabled === true`, alebo `status` active/trialing, alebo owner, alebo `pending_payment` + rola owner/admin/manager.
+
+### Oprava permission-denied (runtime overlay)
+
+- Odstránený `getDocs(collection("organizations"))` (na produkcii s mobilnými rules zlyhá).
+- Fallback: `users/{uid}.activeBusinessOrgId` + priame čítanie `organizations/{orgId}`.
+- `getOrganization` / `listOrgMembers` / hero fetch: permission-denied sa nepropaguje ako runtime error.
+
+### `/app/projects/new` (wizard zákazky, 2026-06-02)
+
+- UI karty ukladajú archetyp presne: `service_inspection`, `customer_job`, `large_construction_project`, `own_build`, `internal_project` (lokalizované labely v DE/SK/EN).
+- Zápis do `projects` (manuál / kópia / AI callable): `projectType` = `BUILD`|`TRADE`, granulárny `workType`, voliteľný `jobWorkflowKind`, `jobArchetype` = archetyp.
+- Mapovanie ako mobil: BUILD ← veľký projekt / eigenbau; TRADE + `SERVICE` ← servis; ostatné TRADE.
+- Vždy predajná fáza: `phase: sales`, `lifecycleStatus: new_request`, `salesStatus: draft`, `quoteStatus: none` — žiadny aktívny delivery job z wizardu.
+- Dual-read: staré riadky s archetypom v `projectType` cez `getProjectWorkType()`.
+
+### Čo zostáva
+
+- Registrácia firmy na webe, billing UI, sync `users/{uid}.activeBusinessOrgId` pri prepnutí (voliteľné).
+- Fázy 3–7 z tohto dokumentu (quotes, materiály, …).
+
+---
+
+## 15. AI project creation alignment
+
+**Zdroj pravdy:** [`mobile-ai-project-creation-source-of-truth.md`](./mobile-ai-project-creation-source-of-truth.md)
+
+### Produktová zásada
+
+- Web AI **nie je** generický chatbot ako prvá funkcia.
+- AI je **asistent na štruktúru projektu** vnútri flow **Nová zákazka** (`/app/projects/new`).
+- Používateľ najprv zvolí **archetyp**, potom **kontakt/kontext**, potom **AI alebo manuál** (kópia projektu nie je súčasťou mobile-aligned shellu).
+- Pri AI zadá **popis** a môže neskôr priložiť **dokumenty / fotky**.
+- AI vráti **editovateľný návrh** (fázy, úlohy, voliteľné materiálové návrhy).
+- Používateľ môže **upraviť**, **refinovať fázu/úlohu**, alebo **regenerovať** celý návrh.
+- **Projekt sa uloží až po potvrdení** — nie pri prvom generate.
+
+### Technická parita (mobil)
+
+| Požiadavka | Detail |
+|------------|--------|
+| Callables | `generateProjectStructure`, `refineGeneratedProjectNode`, `createProjectFromAiPlan` |
+| Región | `europe-west1` |
+| Schéma | `AiProjectPlan` (`projectTitle`, `category`, `scope`, `summary`, `uiMode`, `phases`, `tasks`, voliteľné `materialSuggestions`) |
+| Draft pred confirm | Len **klientsky stav** (`AiProjectDraft`), nie Firestore `projects/` |
+| Prílohy | Storage `users/{uid}/aiProjectDrafts/{draftId}/documents/{fileName}` → `documentStoragePaths` |
+| Po confirm | Backend create + web/mobil post-patch |
+
+### Čo web pri implementácii nesmie
+
+- Ukladať AI výstup do `projects/` pred confirm.
+- Posielať e-maily, vytvárať ani odosielať ponuky automaticky z AI kroku.
+- Vytvárať faktúry alebo kalendárové udalosti z draftu.
+- Pridávať novú root kolekciu (napr. `aiChats/`).
+- Posielať `orgId` do AI callables namiesto stamp po vytvorení.
+
+### Business a materiály
+
+- **Business org:** `activeBusinessOrgId` sa **nestampuje v AI callables**; po `createProjectFromAiPlan` mobil volá `stampBusinessTeamProject` — web má rovnako.
+- **Materiály:** AI návrhy sú **suggestions**; backend ich pri create typicky nezapisuje — klient uloží vybrané až po confirm (`createMaterialSuggestionsBatch` / web ekvivalent).
+- **Dokumenty:** Viazané na projekt **až po confirm**; predtým len draft Storage cesty pre kontext modelu.
+
+### Súčasný stav webu (2026-06-02)
+
+- Wizard `/app/projects/new` má **mobile-aligned AI creation shell** (archetyp → kontakt → AI/manuál → brief/review alebo manuálne detaily → potvrdenie).
+- Komponenty: `AiCreationMethodStep`, `AiDraftBriefStep`, `AiDraftReviewPanel`, `AiDraftPhaseCard`, `AiDraftTaskList`.
+- **Žiadny generický AI chatbot** v tomto flow; draft zostáva v **klientskom stave** (`AiProjectDraftLocal`) až do confirm.
+- **Firestore `projects/` sa nevytvára** pri AI generate — len pri manuálnom `createDraftJob` alebo po `createProjectFromAiPlan` (keď sú mobilné callables zapnuté).
+- Mobilné callables (`generateProjectStructure`, `refineGeneratedProjectNode`, `createProjectFromAiPlan`) sú v `src/services/ai/mobileAiProjectService.ts` a sú **defaultne vypnuté** (`NEXT_PUBLIC_MOBILE_AI_CALLABLES=1` až po E2E overení → inak review placeholder + „Pokračovať manuálne“).
+- **Interim office AI** (`generateProjectDraft`, `createProjectFromDraft`, …) **nie je** použitý v `/app/projects/new`; nie je zdroj pravdy.
+- Manuálna vetva: `createDraftJob` s `phase: sales`, `lifecycleStatus: new_request`, `salesStatus: draft`, `quoteStatus: none` — bez zmeny.
+- Cieľ ďalšej implementácie: E2E zapnutie mobilných callables, `refineGeneratedProjectNode`, upload príloh, sales-draft parita po `createProjectFromAiPlan` — **bez zmeny Firebase schémy** (aditívne polia OK).
+
+### Odporúčané poradie
+
+1. Nasadenie a test 3 mobilných callables z web klienta (auth + region).
+2. Review UI v kroku `concept` (nie okamžitý redirect po generate).
+3. `createProjectFromAiPlan` na confirm + post-patch (contact, org, docs, materials, sales draft polia).
+4. Deprecate office-only draft callables až po E2E parite.
+
+---
+
+## Company user management alignment
+
+**Implemented (web `/app/members`):**
+
+| Topic | Behavior |
+|-------|----------|
+| Source of truth for owner | `organizations/{orgId}.ownerUid` — always wins over member doc role |
+| Team list | `organizations/{orgId}/members/{memberId}` + UI synthetic owner row when owner doc missing |
+| Synthetic owner row | UI-only; no Firestore write unless existing `ensureOrgMemberForOwner` runs elsewhere |
+| Canonical roles | `owner`, `admin`, `manager`, `worker`, `viewer` (mobile) |
+| Legacy web mapping | Firestore `admin` → admin; Firestore `member` → **viewer** in team UI (workspace resolution still maps `member` → manager elsewhere — unchanged) |
+| Invite backend | Unchanged: `admin` \| `member` on `invites` / accept; labels shown as Administrátor / Iba náhľad |
+| Permissions (UI) | Owner + admin can invite and manage roles; manager/worker/viewer read-only |
+| Owner protection | Owner row cannot be removed or role-changed in UI |
+| Personal workspace | Message + switch to company workspace; no team list |
+| Code | `src/lib/companyRoles.ts`, `src/components/members/*` |
+
+**Firestore rules (unchanged):** member create/update/delete on `members/` restricted to org `ownerUid`; org update via `canManageOrganization` (owner or admin/manager member doc).
+
+**Still needs full parity later:** mobile role writes (`manager`, `worker`, `viewer`) from web invite UI; seat billing; role-based route guards using `permissions/roles.ts` globally.
+
+---
+
+## Account vs company context UX
+
+**Implemented (web header + mobile drawer, 2026-06-02):**
+
+| Koncept | Správanie |
+|---------|-----------|
+| Používateľ | Identita — avatar + **Profil používateľa** v pravom hornom rohu (oddelené od firmy) |
+| Firma | **Primárny pracovný kontext** — pill v hlavičke: logo, názov firmy, štítok „Firemný priestor“ |
+| Osobný priestor | **Sekundárny** — v prepínači firiem pod sekciou „Osobný priestor“ + pomocník „Súkromné projekty mimo firmy“ |
+| Viac firiem | Klik na pill → „Prepnúť firmu“ + zoznam firiem |
+| Osobný priestor aktívny | Pill „Osobný priestor“ + CTA „Prepnúť na firmu“ (ak existuje firma) |
+| Sidebar brand | Pri firme: logo/názov firmy; pri osobnom: „Osobný priestor“ |
+| Mobile drawer | Kontext firmy hore, navigácia, profil používateľa dole |
+
+**Pravidlá copy / UX:**
+
+- Nepoužívať „workspace“, „orgId“, „ownerId“ v UI hlavičky.
+- **Nepresentovať** používateľa a firmu ako dve rovnocenné záložky alebo dva „svety“.
+- Používateľ pracuje **vo firme**; osobný priestor je súkromná oblasť mimo tímu.
+- **Bez zmeny** Firebase schémy, workspace resolution, auth ani business workspace selection — len layout/copy.
+
+**Kód:** `ActiveCompanyContextSelector`, `UserProfileMenu`, `Header`, `Sidebar` (mobile drawer).
+
+---
+
+## Company-first web onboarding
+
+**Implemented (web `/onboarding`, 2026-06-02):**
+
+| Topic | Behavior |
+|-------|----------|
+| Product model | B2B Manager-first — profile is not the product goal |
+| First screen | Three paths: **Mám firmu** (recommended), **Pracujem pre firmu**, **Pracujem sám** |
+| Company owner | Minimal optional name → onboarding complete → `/app` + CTA to register company (no org created in onboarding) |
+| Worker join | Invite token → existing `/join?token=` flow → company active after accept |
+| Personal / solo | Minimal optional name → personal workspace → `/app` |
+| Business registration | Separate from onboarding — placeholder CTA on dashboard/settings; no billing or plan activation |
+| Personal workspace | Remains available as secondary path |
+| Completion gate | `onboarding.completed` **and** top-level `onboardingCompletedAt` (mobile-aligned, additive) |
+| Legacy fields | All existing `onboarding.*` fields preserved; completed users not re-onboarded |
+| Removed from flow | Role picker, feature interests, inline company creation, 6-step profile wizard |
+
+**Code:** `src/app/(app)/onboarding/page.tsx`, `src/services/onboarding/onboardingService.ts`, `PendingCompanyRegistrationBanner`, `CompanyRegistrationPlaceholder`.
+
+---
+
+*Koniec plánu zosúladenia webu.*

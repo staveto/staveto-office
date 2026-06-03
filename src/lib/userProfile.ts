@@ -10,6 +10,8 @@ export type UserProfile = {
   updatedAt?: unknown;
   /** Mobile BusinessContext hint (optional on users/{uid}). */
   activeBusinessOrgId?: string;
+  /** Mobile-aligned completion marker (optional top-level field). */
+  onboardingCompletedAt?: unknown;
   onboarding?: {
     purpose?: string;
     role?: string;
@@ -51,6 +53,12 @@ export async function upsertUserProfile(
   if (data.displayName !== undefined) update.displayName = data.displayName;
   if (data.firstName !== undefined) update.firstName = data.firstName;
   if (data.lastName !== undefined) update.lastName = data.lastName;
+  if (data.activeBusinessOrgId !== undefined) {
+    update.activeBusinessOrgId = data.activeBusinessOrgId;
+  }
+  if (data.onboardingCompletedAt !== undefined) {
+    update.onboardingCompletedAt = data.onboardingCompletedAt;
+  }
   if (data.onboarding) {
     const existingOnb = (existing.onboarding as Record<string, unknown>) ?? {};
     const onb = data.onboarding as Record<string, unknown>;
@@ -86,7 +94,9 @@ export async function ensureUserProfile(
 }
 
 export function isOnboardingCompleted(profile: UserProfile | null): boolean {
-  return !!profile?.onboarding?.completed;
+  return (
+    !!profile?.onboarding?.completed || !!profile?.onboardingCompletedAt
+  );
 }
 
 export async function completeOnboarding(uid: string): Promise<void> {
@@ -99,6 +109,7 @@ export async function completeOnboarding(uid: string): Promise<void> {
     ref,
     {
       ...existing,
+      onboardingCompletedAt: serverTimestamp(),
       onboarding: {
         ...existing.onboarding,
         completed: true,
