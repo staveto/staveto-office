@@ -10,6 +10,7 @@ import {
 import {
   readOrganizationProfile,
   writeOrganizationProfile,
+  patchOrganizationProfileFields,
   type OrganizationProfile,
   type OrganizationProfileInput,
   type OrganizationPrintInfo,
@@ -48,13 +49,20 @@ export async function loadCompanyProfile(orgId: string): Promise<OrganizationPri
   return readOrganizationProfile(orgId);
 }
 
+export async function canEditCompanyProfile(
+  orgId: string,
+  uid: string
+): Promise<boolean> {
+  const membership = await isOrganizationMember(orgId, uid);
+  return membership.member && membership.role === "admin";
+}
+
 export async function saveCompanyProfile(
   orgId: string,
   userId: string,
   input: OrganizationProfileInput
 ): Promise<void> {
-  const membership = await isOrganizationMember(orgId, userId);
-  if (!membership.member) {
+  if (!(await canEditCompanyProfile(orgId, userId))) {
     throw new Error("COMPANY_PROFILE_ACCESS_DENIED");
   }
 
@@ -67,8 +75,7 @@ export async function uploadCompanyLogo(
   file: File,
   currentProfile: OrganizationProfile | null
 ): Promise<{ logoUrl: string; logoStoragePath: string }> {
-  const membership = await isOrganizationMember(orgId, userId);
-  if (!membership.member) {
+  if (!(await canEditCompanyProfile(orgId, userId))) {
     throw new Error("COMPANY_PROFILE_ACCESS_DENIED");
   }
 
@@ -89,7 +96,7 @@ export async function uploadCompanyLogo(
   await uploadBytes(storageRef, file, { contentType: mimeType });
   const logoUrl = await getDownloadURL(storageRef);
 
-  await writeOrganizationProfile(orgId, {
+  await patchOrganizationProfileFields(orgId, {
     ...(currentProfile ?? {}),
     logoUrl,
     logoStoragePath: storagePath,

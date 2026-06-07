@@ -143,7 +143,7 @@ export function CompanyProfileSettings() {
   }
 
   return (
-    <Card>
+    <Card id="company-profile">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
           <Building2 className="size-4 text-[#1D376A]" aria-hidden />
@@ -297,6 +297,15 @@ export function CompanyProfileSettings() {
                   value={profile.vatId ?? ""}
                   disabled={!canEdit}
                   onChange={(e) => patch("vatId", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="cp-contact">{t("settings.companyProfile.contactName")}</Label>
+                <Input
+                  id="cp-contact"
+                  value={profile.contactName ?? ""}
+                  disabled={!canEdit}
+                  onChange={(e) => patch("contactName", e.target.value)}
                 />
               </div>
               <div className="space-y-2">

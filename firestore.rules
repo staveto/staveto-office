@@ -51,9 +51,53 @@ service cloud.firestore {
       return request.resource.data.get('enabledModules', {}) == resource.data.get('enabledModules', {});
     }
 
+    function orgServerFieldsUnchanged() {
+      return request.resource.data.get('ownerUid', null) == resource.data.get('ownerUid', null)
+        && request.resource.data.get('billingOwnerUid', null) == resource.data.get('billingOwnerUid', null)
+        && request.resource.data.get('createdByUid', null) == resource.data.get('createdByUid', null)
+        && request.resource.data.get('status', null) == resource.data.get('status', null)
+        && request.resource.data.get('billingStatus', null) == resource.data.get('billingStatus', null)
+        && request.resource.data.get('businessEnabled', null) == resource.data.get('businessEnabled', null)
+        && request.resource.data.get('seatsLimit', null) == resource.data.get('seatsLimit', null)
+        && request.resource.data.get('seatsUsed', null) == resource.data.get('seatsUsed', null)
+        && request.resource.data.get('trialStartedAt', null) == resource.data.get('trialStartedAt', null)
+        && request.resource.data.get('trialEndsAt', null) == resource.data.get('trialEndsAt', null)
+        && request.resource.data.get('activeBusinessOrderId', null) == resource.data.get('activeBusinessOrderId', null);
+    }
+
+    function orgProfileEditableKeysOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'legalName',
+        'name',
+        'billingEmail',
+        'billingAddress',
+        'companyIdentifiers',
+        'contactName',
+        'phone',
+        'countryCode',
+        'country',
+        'profile',
+        'updatedAt',
+        'slug',
+        'domain',
+        'subdomainEnabled',
+        'slugUpdatedAt',
+        'slugUpdatedBy'
+      ]);
+    }
+
+    function onlyEnabledModulesChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'enabledModules',
+        'updatedAt'
+      ]);
+    }
+
     function orgSensitiveFieldsUnchanged() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
         'ownerUid',
+        'billingOwnerUid',
+        'createdByUid',
         'seatsLimit',
         'seatsUsed',
         'seatLimit',
@@ -61,7 +105,10 @@ service cloud.firestore {
         'planCode',
         'billingStatus',
         'status',
+        'trialStartedAt',
         'trialEndsAt',
+        'trialStartedAt',
+        'activeBusinessOrderId',
         'businessEnabled'
       ]);
     }
@@ -130,7 +177,11 @@ service cloud.firestore {
       allow read: if isOrgMember(orgId);
       allow create: if false;
       allow update: if isOrgOwnerOrAdmin(orgId)
-        || (canManageOrganization(orgId) && enabledModulesUnchanged() && orgSensitiveFieldsUnchanged());
+        && orgServerFieldsUnchanged()
+        && orgProfileEditableKeysOnly();
+      allow update: if canManageOrganization(orgId)
+        && onlyEnabledModulesChanged()
+        && orgServerFieldsUnchanged();
       allow delete: if isOrgOwnerOrAdmin(orgId);
 
       match /members/{memberId} {

@@ -1,5 +1,10 @@
 export { createBusinessOrg } from "./createBusinessOrgService";
 export {
+  loadCompanyProfileCompletion,
+  backfillOwnedBusinessOrgs,
+  type CompanyProfileCompletion,
+} from "./companyProfileCompletionService";
+export {
   createBusinessInviteCode,
   redeemBusinessInviteCode,
   listBusinessInvites,

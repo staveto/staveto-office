@@ -18,6 +18,7 @@ import {
 } from "@/lib/dashboardCommandCenter";
 import type { DashboardStats } from "@/lib/dashboardStats";
 import type { OrganizationProfile } from "@/lib/organizationProfile";
+import type { CanonicalOrganizationRecord } from "@/lib/companyProfileCompletion";
 import type { EnabledModulesMap } from "@/lib/enabledModules";
 
 type SetupDashboardChecklistProps = {
@@ -25,6 +26,7 @@ type SetupDashboardChecklistProps = {
   profile: OrganizationProfile | null;
   modules: EnabledModulesMap;
   companyType: CompanyType;
+  org?: CanonicalOrganizationRecord | null;
 };
 
 type ChecklistRowProps = {
@@ -107,9 +109,10 @@ export function SetupDashboardChecklist({
   profile,
   modules,
   companyType,
+  org,
 }: SetupDashboardChecklistProps) {
   const { t } = useI18n();
-  const items = buildSetupChecklist(stats, profile, modules, companyType);
+  const items = buildSetupChecklist(stats, profile, modules, companyType, org);
   const progress = getSetupProgress(items);
   const firstIncomplete = getFirstIncompleteSetupItem(items);
 

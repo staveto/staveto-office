@@ -2,8 +2,9 @@
  * Organization company profile for documents (quotes, exports).
  * Stored additively on organizations/{orgId}.profile — no new collections.
  */
-import { getFirestoreInstance, doc, getDoc, setDoc, serverTimestamp } from "./firebase";
+import { getFirestoreInstance, doc, getDoc, setDoc, serverTimestamp, getCallable } from "./firebase";
 import type { Organization } from "./organizations";
+import { mergeOrganizationIntoProfile } from "./companyProfileCompletion";
 
 export type OrganizationProfile = {
   legalName?: string;
@@ -16,6 +17,7 @@ export type OrganizationProfile = {
   vatId?: string;
   phone?: string;
   email?: string;
+  contactName?: string;
   websiteUrl?: string;
   bankAccount?: string;
   logoUrl?: string;
@@ -97,6 +99,7 @@ export function organizationProfileToFirestore(
     "vatId",
     "phone",
     "email",
+    "contactName",
     "websiteUrl",
     "bankAccount",
     "logoUrl",
@@ -125,7 +128,7 @@ export async function getOrganizationForQuotePrint(
     return {
       orgId,
       name: typeof data.name === "string" ? data.name.trim() || orgId : orgId,
-      profile: parseOrganizationProfile(data),
+      profile: mergeOrganizationIntoProfile(data),
     };
   } catch {
     return null;
@@ -138,9 +141,64 @@ export async function readOrganizationProfile(
   return getOrganizationForQuotePrint(orgId);
 }
 
+function trimOrNull(value: string | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
 export async function writeOrganizationProfile(
   orgId: string,
   input: OrganizationProfileInput
+): Promise<void> {
+  const callable = getCallable<
+    {
+      orgId: string;
+      legalName?: string;
+      billingEmail?: string | null;
+      contactName?: string | null;
+      phone?: string | null;
+      countryCode?: string | null;
+      billingAddress?: {
+        line1?: string | null;
+        line2?: string | null;
+        city?: string | null;
+        zip?: string | null;
+      };
+      companyIdentifiers?: {
+        registrationNumber?: string | null;
+        taxId?: string | null;
+        vatId?: string | null;
+      };
+      profile?: Record<string, string | null | undefined>;
+    },
+    { ok: true }
+  >("updateBusinessOrgProfile");
+
+  await callable({
+    orgId,
+    legalName: input.legalName?.trim() || undefined,
+    billingEmail: trimOrNull(input.email),
+    contactName: trimOrNull(input.contactName),
+    phone: trimOrNull(input.phone),
+    countryCode: trimOrNull(input.country)?.toUpperCase() ?? null,
+    billingAddress: {
+      line1: trimOrNull(input.addressText),
+      city: trimOrNull(input.city),
+      zip: trimOrNull(input.zip),
+    },
+    companyIdentifiers: {
+      registrationNumber: trimOrNull(input.registrationNumber),
+      taxId: trimOrNull(input.taxId),
+      vatId: trimOrNull(input.vatId),
+    },
+    profile: organizationProfileToFirestore(input),
+  });
+}
+
+/** Logo-only patch still uses direct merge for storage metadata fields. */
+export async function patchOrganizationProfileFields(
+  orgId: string,
+  input: Partial<OrganizationProfileInput>
 ): Promise<void> {
   const db = getFirestoreInstance();
   if (!db) throw new Error("Firestore not configured");
@@ -149,11 +207,6 @@ export async function writeOrganizationProfile(
     profile: organizationProfileToFirestore(input),
     updatedAt: serverTimestamp(),
   };
-
-  const legalName = input.legalName?.trim();
-  if (legalName) {
-    payload.name = legalName;
-  }
 
   await setDoc(doc(db, "organizations", orgId), payload, { merge: true });
 }

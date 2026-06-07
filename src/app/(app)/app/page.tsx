@@ -15,6 +15,7 @@ import {
 } from "@/components/dashboard";
 
 import { CompanyWorkspaceSwitchPrompt } from "@/components/dashboard/CompanyWorkspaceSwitchPrompt";
+import { CompanyProfileCompletionCard } from "@/components/settings/CompanyProfileCompletionCard";
 import { useI18n } from "@/i18n/I18nContext";
 
 import { useAuth } from "@/context/AuthContext";
@@ -189,17 +190,15 @@ export default function OverviewPage() {
 
     return (
 
-      <CompanyDashboardView
-
-        activeWorkspace={activeWorkspace}
-
-        displayName={displayName}
-
-        stats={stats}
-
-        statsLoading={statsLoading}
-
-      />
+      <div className="space-y-4">
+        <CompanyProfileCompletionCard />
+        <CompanyDashboardView
+          activeWorkspace={activeWorkspace}
+          displayName={displayName}
+          stats={stats}
+          statsLoading={statsLoading}
+        />
+      </div>
 
     );
 

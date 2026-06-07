@@ -14,6 +14,7 @@ export type CreateBusinessOrgInput = {
   planCode: BusinessPlanCode;
   billingPeriod: BillingPeriod;
   teamSizeBand?: TeamSizeBand;
+  contactName?: string;
 };
 
 export type CreateBusinessOrgResponse = {
@@ -36,6 +37,8 @@ export async function createBusinessOrg(
     planCode: input.planCode,
     billingPeriod: input.billingPeriod,
     teamSizeBand: input.teamSizeBand,
+    contactName: input.contactName?.trim(),
+    source: "web_onboarding" as const,
   };
 
   const callable = getCallable<typeof payload, CreateBusinessOrgResponse>(

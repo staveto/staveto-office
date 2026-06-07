@@ -21,6 +21,8 @@ import {
   clearExplicitPersonalWorkspace,
   logWorkspaceResolveDebug,
 } from "@/services/workspace/workspaceService";
+import { upsertUserProfile } from "@/lib/userProfile";
+import { isCompanyWorkspaceType } from "@/types/workspace";
 import { toLegacyMemberRole } from "@/permissions/roles";
 import type { WorkspaceRole } from "@/types/workspace";
 import {
@@ -88,12 +90,16 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           profile.onboarding.activeWorkspaceId !== "personal"
             ? profile.onboarding.activeWorkspaceId.trim()
             : undefined;
+        const persistedOrgHint = (() => {
+          const persisted = readPersistedWorkspaceId();
+          return persisted && persisted !== "personal" ? persisted.trim() : undefined;
+        })();
 
         const list = await loadAvailableWorkspaces({
           id: user.id,
           email: user.email,
           name: user.name,
-          orgIdHints: [profileOrgHint, onboardingOrgHint].filter(
+          orgIdHints: [profileOrgHint, onboardingOrgHint, persistedOrgHint].filter(
             (id): id is string => !!id
           ),
         });
@@ -101,6 +107,13 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         if (cancelled) return;
 
         setAvailableWorkspaces(list);
+
+        const companyWorkspace = list.find((w) => isCompanyWorkspaceType(w.type));
+        if (companyWorkspace?.orgId && !profile?.activeBusinessOrgId?.trim()) {
+          void upsertUserProfile(user.id, {
+            activeBusinessOrgId: companyWorkspace.orgId,
+          }).catch(() => undefined);
+        }
 
         if (hostTenant.mode === "tenant" && hostTenant.slug) {
           const resolution = await resolveTenantWorkspace(hostTenant.hostname, user.id);

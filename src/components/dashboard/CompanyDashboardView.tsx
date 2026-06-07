@@ -51,7 +51,7 @@ export function CompanyDashboardView({
   const companyType = resolveCompanyType(org?.companyType);
   const showInsights = !emptyCompany && hasMeaningfulInsights(stats, modules);
 
-  const setupItems = buildSetupChecklist(stats, orgProfile, modules, companyType);
+  const setupItems = buildSetupChecklist(stats, orgProfile, modules, companyType, org ?? undefined);
   const firstIncomplete = getFirstIncompleteSetupItem(setupItems);
   const hasActivity = !statsLoading && buildActivityFeed(stats).length > 0;
   const activityTipKey =
@@ -91,6 +91,7 @@ export function CompanyDashboardView({
           profile={orgProfile}
           modules={modules}
           companyType={companyType}
+          org={org ?? undefined}
         />
       ) : null}
 

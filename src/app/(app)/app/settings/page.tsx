@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LanguageSettings } from "@/components/settings/LanguageSettings";
-import { CompanyProfileSettings } from "@/components/settings/CompanyProfileSettings";
+import { CompanyProfileCompletionCard } from "@/components/settings/CompanyProfileCompletionCard";
 import { OrganizationSubdomainSettings } from "@/components/settings/OrganizationSubdomainSettings";
 import { CompanyRegistrationPlaceholder } from "@/components/settings/CompanyRegistrationPlaceholder";
 import { RegisteredCompanyPrompt } from "@/components/settings/RegisteredCompanyPrompt";
@@ -19,9 +19,23 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <RegisteredCompanyPrompt />
+      <CompanyProfileCompletionCard />
+      <Card>
+        <CardHeader>
+          <CardTitle>{t("settings.companyProfile.title")}</CardTitle>
+          <CardDescription>{t("settings.companyProfile.description")}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Link
+            href="/app/settings/company"
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+          >
+            {t("settings.companyProfile.completionCta")}
+          </Link>
+        </CardContent>
+      </Card>
       <CompanyRegistrationPlaceholder />
       <LanguageSettings />
-      <CompanyProfileSettings />
       {canEditModules ? (
         <Card>
           <CardHeader>

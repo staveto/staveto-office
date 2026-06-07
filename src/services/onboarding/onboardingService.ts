@@ -222,7 +222,14 @@ export async function completeCompanyOwnerOnboarding(
 
   let createdOrgId: string;
   try {
-    const result = await createBusinessOrg(uid, input);
+    const contactName =
+      buildOptionalDisplayName({
+        firstName: existing?.firstName,
+        lastName: existing?.lastName,
+      }) ??
+      existing?.displayName?.trim() ??
+      undefined;
+    const result = await createBusinessOrg(uid, { ...input, contactName });
     createdOrgId = result.orgId;
   } catch (err) {
     if (!isDuplicateBusinessOrgError(err)) throw err;

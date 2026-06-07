@@ -1,7 +1,10 @@
 import type { CompanyType } from "@/lib/onboardingTypes";
 import type { Organization } from "@/lib/organizations";
 import type { OrganizationProfile } from "@/lib/organizationProfile";
-import { hasOrganizationProfileData } from "@/lib/organizationProfile";
+import {
+  getCompanyProfileCompletion,
+  type CanonicalOrganizationRecord,
+} from "@/lib/companyProfileCompletion";
 import type { DashboardStats } from "@/lib/dashboardStats";
 import type { EnabledModulesMap } from "@/lib/enabledModules";
 import { isModuleEnabled } from "@/lib/enabledModules";
@@ -60,23 +63,38 @@ export function isSetupDashboardMode(
   return isOrgTrialing(org) && stats.activeJobsCount === 0;
 }
 
-export function isProfileComplete(profile: OrganizationProfile | null | undefined): boolean {
-  if (!profile || !hasOrganizationProfileData(profile)) return false;
-  const hasIdentity = Boolean(profile.legalName?.trim());
-  const hasContact = Boolean(
-    profile.addressText?.trim() ||
-      profile.phone?.trim() ||
-      profile.email?.trim() ||
-      profile.city?.trim()
-  );
-  return hasIdentity && hasContact;
+export function isProfileComplete(
+  profile: OrganizationProfile | null | undefined,
+  org?: CanonicalOrganizationRecord | null
+): boolean {
+  if (org) {
+    return getCompanyProfileCompletion(org).isComplete;
+  }
+  if (!profile) return false;
+  return getCompanyProfileCompletion({
+    legalName: profile.legalName,
+    billingEmail: profile.email,
+    countryCode: profile.country,
+    phone: profile.phone,
+    contactName: profile.contactName,
+    billingAddress: {
+      line1: profile.addressText,
+      city: profile.city,
+      zip: profile.zip,
+    },
+    companyIdentifiers: {
+      registrationNumber: profile.registrationNumber,
+      vatId: profile.vatId,
+    },
+  }).isComplete;
 }
 
 export function buildSetupChecklist(
   stats: DashboardStats,
   profile: OrganizationProfile | null | undefined,
   modules: EnabledModulesMap,
-  companyType: CompanyType = "other"
+  companyType: CompanyType = "other",
+  org?: CanonicalOrganizationRecord | null
 ): SetupChecklistItem[] {
   const totalJobs = stats.projectsCount ?? 0;
   const teamCount = stats.teamCount ?? 1;
@@ -111,8 +129,8 @@ export function buildSetupChecklist(
 
   const companyProfile: SetupChecklistItem = {
     id: "company_profile",
-    href: "/app/settings",
-    completed: isProfileComplete(profile),
+    href: "/app/settings/company",
+    completed: isProfileComplete(profile, org),
   };
 
   const items: SetupChecklistItem[] = [firstJob];

@@ -59,9 +59,10 @@ export function normalizeOrganizationToWorkspace(
 
 export async function getOrganizationWorkspaces(
   userId: string,
-  orgIdHints?: string[]
+  orgIdHints?: string[],
+  email?: string
 ): Promise<ActiveWorkspace[]> {
-  const memberships = await getUserOrgMemberships(userId, { orgIdHints });
+  const memberships = await getUserOrgMemberships(userId, { orgIdHints, email });
   const workspaces: ActiveWorkspace[] = [];
 
   for (const m of memberships) {
@@ -82,7 +83,7 @@ export async function loadAvailableWorkspaces(user: WorkspaceUser): Promise<Acti
   let organizations: ActiveWorkspace[] = [];
 
   try {
-    organizations = await getOrganizationWorkspaces(user.id, user.orgIdHints);
+    organizations = await getOrganizationWorkspaces(user.id, user.orgIdHints, user.email);
   } catch {
     organizations = [];
   }

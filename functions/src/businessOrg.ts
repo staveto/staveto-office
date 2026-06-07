@@ -22,6 +22,7 @@ const createBusinessOrgSchema = z.object({
   ]),
   billingPeriod: z.enum(["monthly", "yearly"]),
   teamSizeBand: z.string().optional(),
+  contactName: z.string().max(200).optional(),
 });
 
 const SEATS: Record<string, number> = {
@@ -115,7 +116,8 @@ async function assertNoDuplicateOwnerOrg(
 export async function handleCreateBusinessOrg(
   uid: string | undefined,
   actorEmail: string | null | undefined,
-  data: unknown
+  data: unknown,
+  contactNameHint?: string | null
 ): Promise<CreateBusinessOrgResult> {
   if (!uid) {
     throw new HttpsError("unauthenticated", "Authentication required.");
@@ -134,6 +136,10 @@ export async function handleCreateBusinessOrg(
   const trialEnds = Timestamp.fromMillis(now.toMillis() + 14 * 24 * 60 * 60 * 1000);
   const seatsLimit = SEATS[input.planCode] ?? 5;
   const timezone = input.timezone?.trim() || "Europe/Bratislava";
+  const countryCode = input.country.trim().toUpperCase();
+  const companyName = input.companyName.trim();
+  const billingEmail = (actorEmail ?? "").trim().toLowerCase() || null;
+  const contactName = input.contactName?.trim() || contactNameHint?.trim() || null;
 
   const orgRef = db.collection("organizations").doc();
   const memberRef = orgRef.collection("members").doc(uid);
@@ -143,13 +149,14 @@ export async function handleCreateBusinessOrg(
     await assertNoDuplicateOwnerOrg(tx, uid);
 
     tx.set(orgRef, {
-      name: input.companyName.trim(),
-      legalName: input.companyName.trim(),
+      name: companyName,
+      legalName: companyName,
       ownerUid: uid,
       billingOwnerUid: uid,
       createdByUid: uid,
       seatLimit: seatsLimit,
       seatsLimit,
+      requestedSeats: seatsLimit,
       seatsUsed: 1,
       plan: LEGACY_PLAN[input.planCode] ?? "TEAM_5",
       planCode: input.planCode,
@@ -160,19 +167,27 @@ export async function handleCreateBusinessOrg(
       businessEnabled: true,
       companyType: input.companyType,
       enabledModules: buildEnabledModulesForCompanyType(input.companyType),
-      countryCode: input.country,
-      country: input.country,
+      countryCode,
+      country: countryCode,
       timezone,
       teamSizeBand: input.teamSizeBand ?? null,
       trialStartedAt: now,
       trialEndsAt: trialEnds,
+      billingEmail,
+      billingAddress: {},
+      companyIdentifiers: {},
+      contactName,
+      phone: null,
       source: "web_onboarding",
       onboardingSource: "web",
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
       profile: {
-        legalName: input.companyName.trim(),
-        country: input.country,
+        legalName: companyName,
+        country: countryCode,
+        countryCode,
+        email: billingEmail,
+        contactEmail: billingEmail,
       },
     });
 
