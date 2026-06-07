@@ -84,8 +84,8 @@ export function canManageCompanyMembers(
 /** Web invite backend only supports admin | member — never owner. */
 export function getInviteRoleLabelKey(storedInviteRole: OrgMemberRole | string): string {
   const r = String(storedInviteRole).toLowerCase();
-  if (r === "admin") return "members.role.admin";
-  return "members.role.viewer";
+  if (r === "admin") return "members.inviteDialog.role.manager.title";
+  return "members.inviteDialog.role.worker.title";
 }
 
 export function mapInviteRoleToEffective(storedInviteRole: OrgMemberRole | string): CanonicalCompanyRole {
@@ -185,4 +185,88 @@ export function countActiveTeamSeats(rows: CompanyTeamMemberRow[]): number {
     const s = String(r.status ?? "active").toLowerCase();
     return !s || s === "active";
   }).length;
+}
+
+const PLAN_SEAT_DEFAULTS: Record<string, number> = {
+  business_starter: 5,
+  business_team: 15,
+  business_company: 30,
+  TEAM_5: 5,
+  TEAM_15: 15,
+  TEAM_30: 30,
+};
+
+export type OrganizationSeatFields = Organization & {
+  seatsLimit?: number;
+  seatsUsed?: number;
+  requestedSeats?: number;
+};
+
+export function resolveOrganizationSeatLimit(org: OrganizationSeatFields): number {
+  if (typeof org.seatsLimit === "number" && org.seatsLimit > 0) return org.seatsLimit;
+  if (typeof org.seatLimit === "number" && org.seatLimit > 0) return org.seatLimit;
+  const code = org.planCode ?? org.plan;
+  if (code && PLAN_SEAT_DEFAULTS[code]) return PLAN_SEAT_DEFAULTS[code];
+  return 5;
+}
+
+export function resolveSeatsUsed(
+  org: OrganizationSeatFields,
+  teamRows: CompanyTeamMemberRow[],
+  pendingInvites: number
+): number {
+  if (typeof org.seatsUsed === "number" && org.seatsUsed >= 0) {
+    return org.seatsUsed;
+  }
+  return countActiveTeamSeats(teamRows) + pendingInvites;
+}
+
+export function getMemberDisplayLabel(row: CompanyTeamMemberRow): string {
+  return row.displayName?.trim() || row.email?.trim() || row.uid;
+}
+
+export function countTeamRole(rows: CompanyTeamMemberRow[], role: CanonicalCompanyRole): number {
+  return rows.filter((r) => {
+    const s = String(r.status ?? "active").toLowerCase();
+    if (s && s !== "active") return false;
+    return r.effectiveRole === role;
+  }).length;
+}
+
+export function isOnlyOwnerTeam(rows: CompanyTeamMemberRow[]): boolean {
+  const active = rows.filter((r) => {
+    const s = String(r.status ?? "active").toLowerCase();
+    return !s || s === "active";
+  });
+  return active.length === 1 && active[0]?.effectiveRole === "owner";
+}
+
+/** UI invite role choices — maps to mobile BusinessInviteRole when creating codes. */
+export type InviteRoleChoice = "manager" | "worker" | "viewer" | "partner" | "customer";
+
+export function isInviteRoleChoiceAvailable(choice: InviteRoleChoice): boolean {
+  return choice === "manager" || choice === "worker" || choice === "viewer";
+}
+
+/** @deprecated Legacy Firestore root invites only — use BusinessInviteRole for new invites. */
+export function mapInviteRoleChoiceToStored(choice: InviteRoleChoice): OrgMemberRole {
+  if (choice === "manager") return "admin";
+  return "member";
+}
+
+export function mapInviteRoleChoiceToBusinessRole(
+  choice: InviteRoleChoice
+): "manager" | "worker" | "viewer" {
+  if (choice === "manager") return "manager";
+  if (choice === "worker") return "worker";
+  return "viewer";
+}
+
+export function getBusinessInviteRoleLabelKey(role: string): string {
+  const r = String(role ?? "").toLowerCase();
+  if (r === "manager") return "members.inviteDialog.role.manager.title";
+  if (r === "worker") return "members.inviteDialog.role.worker.title";
+  if (r === "viewer") return "members.inviteDialog.role.viewer.title";
+  if (r === "admin") return "members.role.admin";
+  return "members.role.viewer";
 }

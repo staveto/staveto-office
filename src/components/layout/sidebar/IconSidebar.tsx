@@ -15,6 +15,7 @@ import {
   isItemActive,
 } from "@/lib/sidebarNavigation";
 import { canManageCompanyOperations } from "@/lib/workspaceProduct";
+import { useEnabledModules } from "@/context/EnabledModulesContext";
 import { IconSidebarItem } from "./IconSidebarItem";
 import { ExpandedSidebarNav } from "./ExpandedSidebarNav";
 import { SidebarFooter } from "./SidebarFooter";
@@ -39,10 +40,13 @@ export function IconSidebar({ onNavigate }: IconSidebarProps) {
 
   const isPersonalWorkspace = activeWorkspace?.type === "personal";
   const canManage = canManageCompanyOperations(activeWorkspace?.role);
-  const navSections = filterNavSections(SIDEBAR_NAV_SECTIONS, {
+  const { modules: enabledModules } = useEnabledModules();
+  const navFilterOpts = {
     isPersonalWorkspace,
     canManage,
-  });
+    enabledModules: isPersonalWorkspace ? null : enabledModules,
+  };
+  const navSections = filterNavSections(SIDEBAR_NAV_SECTIONS, navFilterOpts);
   const comingSoonLabel = t("sidebar.comingSoon");
 
   const handleOpen = useCallback(
@@ -103,6 +107,7 @@ export function IconSidebar({ onNavigate }: IconSidebarProps) {
             search={search}
             isPersonalWorkspace={isPersonalWorkspace}
             canManage={canManage}
+            enabledModules={isPersonalWorkspace ? null : enabledModules}
             comingSoonLabel={comingSoonLabel}
             t={t}
             onNavigate={onNavigate}
@@ -127,6 +132,7 @@ export function IconSidebar({ onNavigate }: IconSidebarProps) {
                   comingSoonLabel={comingSoonLabel}
                   isPersonalWorkspace={isPersonalWorkspace}
                   canManage={canManage}
+                  enabledModules={isPersonalWorkspace ? null : enabledModules}
                   isSectionActive={isSectionActive || activeSectionId === section.id}
                   isOpen={isOpen}
                   t={t}

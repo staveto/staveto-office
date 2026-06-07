@@ -51,6 +51,7 @@ const COUNTRY_SUFFIX: Record<string, string> = {
   SK: "Slovakia",
   CZ: "Czechia",
   AT: "Austria",
+  CH: "Switzerland",
   DE: "Germany",
   PL: "Poland",
   HU: "Hungary",

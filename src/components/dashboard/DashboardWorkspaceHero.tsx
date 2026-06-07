@@ -27,7 +27,9 @@ import {
 } from "@/lib/organizations";
 import { readOrganizationProfile, type OrganizationProfile } from "@/lib/organizationProfile";
 import { CompanyLogo } from "@/components/branding/CompanyLogo";
-import { COMPANY_REGISTRATION_ROUTE } from "@/services/onboarding";
+import { BUSINESS_CREATE_ROUTE } from "@/services/onboarding";
+import { useEnabledModules } from "@/context/EnabledModulesContext";
+import { isModuleEnabled } from "@/lib/enabledModules";
 
 export type DashboardWorkspaceHeroProps = {
   activeWorkspace: ActiveWorkspace;
@@ -142,6 +144,9 @@ function CompanyHeroCard({
   statsLoading,
 }: DashboardWorkspaceHeroProps) {
   const { t } = useI18n();
+  const { modules } = useEnabledModules();
+  const showQuotes = isModuleEnabled(modules, "quotes");
+  const showTeam = isModuleEnabled(modules, "team");
   const { org, profile, teamCount, loading: orgLoading } = useCompanyHeroData(activeWorkspace.orgId);
   const [nowMs] = useState(() => Date.now());
 
@@ -185,13 +190,13 @@ function CompanyHeroCard({
         text: t("dashboard.hero.fact.activeJobs", { count: projectsCount }),
       });
     }
-    if (teamCount !== null && !orgLoading) {
+    if (teamCount !== null && !orgLoading && showTeam) {
       facts.push({
         icon: Users,
         text: t("dashboard.hero.fact.teamCount", { count: teamCount }),
       });
     }
-    if (estimatesCount !== null && !statsLoading) {
+    if (estimatesCount !== null && !statsLoading && showQuotes) {
       facts.push({
         icon: FileText,
         text: t("dashboard.hero.fact.quotes", { count: estimatesCount }),
@@ -205,6 +210,8 @@ function CompanyHeroCard({
     statsLoading,
     teamCount,
     orgLoading,
+    showQuotes,
+    showTeam,
     t,
   ]);
 
@@ -300,6 +307,7 @@ function CompanyHeroCard({
               <Plus className="size-4 mr-2" aria-hidden />
               {t("dashboard.primaryNewJob")}
             </Link>
+            {showQuotes ? (
             <Link
               href="/app/quotes/new"
               className={cn(
@@ -310,6 +318,8 @@ function CompanyHeroCard({
               <FileText className="size-4 mr-2" aria-hidden />
               {t("dashboard.secondaryNewQuote")}
             </Link>
+            ) : null}
+            {showTeam ? (
             <Link
               href="/app/members"
               className={cn(
@@ -320,6 +330,7 @@ function CompanyHeroCard({
               <UserPlus className="size-4 mr-2" aria-hidden />
               {t("dashboard.quick.inviteMember")}
             </Link>
+            ) : null}
           </div>
         </div>
       </div>
@@ -408,7 +419,7 @@ function PersonalHeroCard({
             </Link>
             {!hasCompany ? (
               <Link
-                href={COMPANY_REGISTRATION_ROUTE}
+                href={BUSINESS_CREATE_ROUTE}
                 className={cn(buttonVariants({ variant: "ghost", size: "default" }), "justify-center")}
               >
                 <Building2 className="size-4 mr-2" aria-hidden />

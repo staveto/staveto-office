@@ -22,6 +22,7 @@ type SidebarSectionProps = {
   collapsed: boolean;
   isPersonalWorkspace: boolean;
   canManage: boolean;
+  enabledModules?: import("@/lib/enabledModules").EnabledModulesMap | null;
   flatSingleLink?: boolean;
   onToggle: () => void;
   onNavigate?: () => void;
@@ -40,12 +41,13 @@ export function SidebarSection({
   collapsed,
   isPersonalWorkspace,
   canManage,
+  enabledModules = null,
   flatSingleLink = false,
   onToggle,
   onNavigate,
   onLogout,
 }: SidebarSectionProps) {
-  const filterOpts = { isPersonalWorkspace, canManage };
+  const filterOpts = { isPersonalWorkspace, canManage, enabledModules };
   const items = filterNavItems(section.items, filterOpts);
   const Icon = section.icon;
 

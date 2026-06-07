@@ -6,6 +6,8 @@ import {
   Wallet,
   Settings,
 } from "lucide-react";
+import type { EnabledModulesMap, ModuleKey } from "@/lib/enabledModules";
+import { isModuleEnabled } from "@/lib/enabledModules";
 
 export type NavItemConfig = {
   id: string;
@@ -15,6 +17,8 @@ export type NavItemConfig = {
   personalOnly?: boolean;
   companyOnly?: boolean;
   managementOnly?: boolean;
+  /** When set, item is hidden in company workspace if module is disabled. */
+  moduleKey?: ModuleKey;
   action?: "locale" | "logout";
 };
 
@@ -26,6 +30,8 @@ export type NavSectionConfig = {
   icon: LucideIcon;
   defaultHref?: string;
   managementOnly?: boolean;
+  /** Hide entire section in company workspace when module disabled. */
+  moduleKey?: ModuleKey;
   items: NavItemConfig[];
 };
 
@@ -40,7 +46,7 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
     items: [
       { id: "overview-dashboard", labelKey: "sidebar.item.overview.dashboard", href: "/app" },
       { id: "overview-activity", labelKey: "sidebar.item.overview.activity", comingSoon: true },
-      { id: "overview-reports", labelKey: "sidebar.item.overview.reports", comingSoon: true },
+      { id: "overview-reports", labelKey: "sidebar.item.overview.reports", comingSoon: true, moduleKey: "reports" },
     ],
   },
   {
@@ -48,6 +54,7 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
     labelKey: "sidebar.section.jobs",
     icon: FolderKanban,
     defaultHref: "/app/projects",
+    moduleKey: "jobs",
     items: [
       { id: "jobs-all", labelKey: "sidebar.item.jobs.all", href: "/app/projects" },
       {
@@ -62,8 +69,8 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
       },
       { id: "jobs-new", labelKey: "sidebar.item.jobs.new", href: "/app/projects/new" },
       { id: "jobs-tasks", labelKey: "sidebar.item.jobs.tasks", comingSoon: true },
-      { id: "jobs-issues", labelKey: "sidebar.item.jobs.issues", comingSoon: true },
-      { id: "jobs-planning", labelKey: "sidebar.item.jobs.planning", href: "/app/planning" },
+      { id: "jobs-issues", labelKey: "sidebar.item.jobs.issues", comingSoon: true, moduleKey: "issues" },
+      { id: "jobs-planning", labelKey: "sidebar.item.jobs.planning", href: "/app/planning", moduleKey: "planning" },
     ],
   },
   {
@@ -78,6 +85,7 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
         labelKey: "sidebar.item.finance.quotes",
         href: "/app/quotes",
         managementOnly: true,
+        moduleKey: "quotes",
       },
       {
         id: "finance-invoices",
@@ -90,12 +98,14 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
         labelKey: "sidebar.item.finance.expenses",
         comingSoon: true,
         managementOnly: true,
+        moduleKey: "expenses",
       },
       {
         id: "finance-exports",
         labelKey: "sidebar.item.finance.exports",
         comingSoon: true,
         managementOnly: true,
+        moduleKey: "reports",
       },
     ],
   },
@@ -105,6 +115,7 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
     icon: Users,
     defaultHref: "/app/members",
     managementOnly: true,
+    moduleKey: "team",
     items: [
       {
         id: "team-members",
@@ -145,6 +156,7 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
         href: "/app/billing",
         companyOnly: true,
         managementOnly: true,
+        moduleKey: "billing",
       },
       {
         id: "more-subscription",
@@ -161,9 +173,9 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
 /** Quiet “Demnächst” items — documents & customers not yet in main modules. */
 export const SIDEBAR_LATER_ITEMS: NavItemConfig[] = [
   { id: "later-customers", labelKey: "sidebar.item.more.customers", comingSoon: true },
-  { id: "later-documents-all", labelKey: "sidebar.item.documents.all", comingSoon: true },
-  { id: "later-documents-photos", labelKey: "sidebar.item.documents.photos", comingSoon: true },
-  { id: "later-documents-contracts", labelKey: "sidebar.item.documents.contracts", comingSoon: true },
+  { id: "later-documents-all", labelKey: "sidebar.item.documents.all", comingSoon: true, moduleKey: "documents" },
+  { id: "later-documents-photos", labelKey: "sidebar.item.documents.photos", comingSoon: true, moduleKey: "documents" },
+  { id: "later-documents-contracts", labelKey: "sidebar.item.documents.contracts", comingSoon: true, moduleKey: "documents" },
 ];
 
 function parseHref(href: string): { path: string; query: URLSearchParams } {
@@ -218,26 +230,47 @@ export function isItemActive(pathname: string, item: NavItemConfig, search = "")
 
 export function filterNavItems(
   items: NavItemConfig[],
-  options: { isPersonalWorkspace: boolean; canManage?: boolean }
+  options: {
+    isPersonalWorkspace: boolean;
+    canManage?: boolean;
+    enabledModules?: EnabledModulesMap | null;
+  }
 ): NavItemConfig[] {
   const isCompany = !options.isPersonalWorkspace;
   const canManage = options.canManage ?? true;
+  const modules = options.enabledModules;
   return items.filter((item) => {
     if (item.action === "locale") return false;
     if (item.personalOnly && !options.isPersonalWorkspace) return false;
     if (item.companyOnly && !isCompany) return false;
     if (item.managementOnly && !canManage) return false;
+    if (isCompany && modules && item.moduleKey && !isModuleEnabled(modules, item.moduleKey)) {
+      return false;
+    }
     return true;
   });
 }
 
 export function filterNavSections(
   sections: NavSectionConfig[],
-  options: { isPersonalWorkspace: boolean; canManage?: boolean }
+  options: {
+    isPersonalWorkspace: boolean;
+    canManage?: boolean;
+    enabledModules?: EnabledModulesMap | null;
+  }
 ): NavSectionConfig[] {
   const canManage = options.canManage ?? true;
+  const isCompany = !options.isPersonalWorkspace;
+  const modules = options.enabledModules;
   return sections
     .filter((section) => !section.managementOnly || canManage)
+    .filter(
+      (section) =>
+        !isCompany ||
+        !modules ||
+        !section.moduleKey ||
+        isModuleEnabled(modules, section.moduleKey)
+    )
     .map((section) => ({
       ...section,
       items: filterNavItems(section.items, options),
@@ -248,7 +281,11 @@ export function filterNavSections(
 /** Single primary link sections skip the flyout in collapsed sidebar. */
 export function sectionHasFlyout(
   section: NavSectionConfig,
-  options: { isPersonalWorkspace: boolean; canManage?: boolean }
+  options: {
+    isPersonalWorkspace: boolean;
+    canManage?: boolean;
+    enabledModules?: EnabledModulesMap | null;
+  }
 ): boolean {
   const items = filterNavItems(section.items, options);
   const linkItems = items.filter((item) => item.href && !item.comingSoon && !item.action);
@@ -258,7 +295,11 @@ export function sectionHasFlyout(
 /** Expanded sidebar: show nested items when section has sub-links or coming-soon rows. */
 export function sectionShowsSubnav(
   section: NavSectionConfig,
-  options: { isPersonalWorkspace: boolean; canManage?: boolean }
+  options: {
+    isPersonalWorkspace: boolean;
+    canManage?: boolean;
+    enabledModules?: EnabledModulesMap | null;
+  }
 ): boolean {
   return filterNavItems(section.items, options).length > 1;
 }

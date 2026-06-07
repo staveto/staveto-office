@@ -7,6 +7,7 @@ type MobileSidebarNavProps = {
   pathname: string;
   isPersonalWorkspace: boolean;
   canManage: boolean;
+  enabledModules?: import("@/lib/enabledModules").EnabledModulesMap | null;
   comingSoonLabel: string;
   t: (key: string) => string;
   onNavigate?: () => void;
@@ -17,6 +18,7 @@ export function MobileSidebarNav({
   pathname,
   isPersonalWorkspace,
   canManage,
+  enabledModules = null,
   comingSoonLabel,
   t,
   onNavigate,
@@ -31,6 +33,7 @@ export function MobileSidebarNav({
       search={search}
       isPersonalWorkspace={isPersonalWorkspace}
       canManage={canManage}
+      enabledModules={enabledModules}
       comingSoonLabel={comingSoonLabel}
       t={t}
       onNavigate={onNavigate}

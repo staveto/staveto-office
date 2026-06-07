@@ -1,59 +1,68 @@
 /**
- * Onboarding writes — all Firestore updates for the web wizard.
+ * Onboarding writes — web B2B-first wizard (company_owner | join_company | solo).
  */
-import { doc, setDoc, serverTimestamp } from "@/lib/firebase";
-import { getFirestoreInstance } from "@/lib/firebase";
-import { upsertUserProfile, getUserProfile, isOnboardingCompleted, type UserProfile } from "@/lib/userProfile";
-import { createOrganization } from "@/lib/organizations";
+import {
+  upsertUserProfile,
+  getUserProfile,
+  isOnboardingCompleted,
+  type UserProfile,
+} from "@/lib/userProfile";
+import type {
+  WebOnboardingPath,
+  PrimaryUsageMode,
+  PersonalPlanChoice,
+  BillingPeriod,
+  BusinessPlanCode,
+  TeamSizeBand,
+  CompanyType,
+} from "@/lib/onboardingTypes";
+import { resolveTimezoneForCountry } from "@/lib/onboardingTypes";
+import type { WorkType } from "@/lib/workTypes";
 import {
   persistActiveWorkspaceId,
   clearExplicitPersonalWorkspace,
   markExplicitPersonalWorkspace,
 } from "@/services/workspace/workspaceService";
+import {
+  createBusinessOrg,
+  type CreateBusinessOrgInput,
+} from "@/services/business/createBusinessOrgService";
+import { getUserOrgMemberships } from "@/lib/organizations";
+import { serverTimestamp } from "@/lib/firebase";
+import {
+  CONSENT_PRIVACY_VERSION,
+  CONSENT_TERMS_VERSION,
+} from "@/lib/consent";
+import type { Locale } from "@/i18n/translations";
 
+export type {
+  WebOnboardingPath,
+  PrimaryUsageMode,
+} from "@/lib/onboardingTypes";
+
+/** @deprecated */
+export type MobileOnboardingPath = WebOnboardingPath;
+export type OnboardingPath = WebOnboardingPath;
 export type OnboardingUsageType = "personal" | "company";
 export type OnboardingWorkspaceType = "personal" | "company";
-export type OnboardingPath = "company_owner" | "worker_join" | "personal";
 
-export type OnboardingFeature =
-  | "quotes"
-  | "projects"
-  | "attendance"
-  | "expenses"
-  | "documents"
-  | "team"
-  | "calendar"
-  | "invoices";
-
-export type OnboardingRole = "craftsman" | "manager" | "accountant" | "other";
-
-export const ONBOARDING_FEATURE_IDS: OnboardingFeature[] = [
-  "quotes",
-  "projects",
-  "attendance",
-  "expenses",
-  "documents",
-  "team",
-  "calendar",
-  "invoices",
-];
-
-export type PersonalProfileInput = {
-  firstName: string;
-  lastName: string;
-  role: OnboardingRole;
+export type SoloOnboardingInput = {
+  primaryUsageMode: PrimaryUsageMode;
+  primaryCountry: string;
+  timezone?: string;
+  firstName?: string;
+  lastName?: string;
+  phoneE164?: string;
+  personalPlan?: PersonalPlanChoice;
+  skippedFirstProject?: boolean;
+  skippedFirstEquipment?: boolean;
 };
+
+export type CompanyOwnerOnboardingInput = CreateBusinessOrgInput;
 
 export type MinimalProfileInput = {
   firstName?: string;
   lastName?: string;
-};
-
-export type FinishOnboardingInput = {
-  usageType: OnboardingUsageType;
-  selectedFeatures?: OnboardingFeature[];
-  activeWorkspaceId: string;
-  activeWorkspaceType: OnboardingWorkspaceType;
 };
 
 export function buildDisplayName(firstName: string, lastName: string): string {
@@ -86,19 +95,164 @@ async function writeOnboardingCompletion(
   });
 }
 
-export async function savePersonalProfile(
+export async function saveOnboardingTermsAcceptance(
   uid: string,
-  input: PersonalProfileInput
+  locale: Locale = "sk"
 ): Promise<void> {
-  const displayName = buildDisplayName(input.firstName, input.lastName);
+  const acceptedAt = serverTimestamp();
   await upsertUserProfile(uid, {
-    firstName: input.firstName.trim(),
-    lastName: input.lastName.trim(),
-    displayName,
+    termsAcceptedAt: acceptedAt,
+    privacyAcceptedAt: acceptedAt,
+    termsVersion: CONSENT_TERMS_VERSION,
+    privacyVersion: CONSENT_PRIVACY_VERSION,
+    consentLocale: locale,
     onboarding: {
-      role: input.role,
+      termsAcceptedAt: acceptedAt,
+      privacyAcceptedAt: acceptedAt,
+      termsVersion: CONSENT_TERMS_VERSION,
+      privacyVersion: CONSENT_PRIVACY_VERSION,
+      consentLocale: locale,
+      source: "web",
     },
   });
+}
+
+export async function saveOnboardingPathChoice(
+  uid: string,
+  path: WebOnboardingPath
+): Promise<void> {
+  await upsertUserProfile(uid, {
+    onboarding: {
+      path,
+      source: "web",
+      usageType: path === "solo" ? "personal" : "company",
+    },
+  });
+}
+
+export async function saveJoinCompanyIntent(uid: string): Promise<void> {
+  await saveOnboardingPathChoice(uid, "join_company");
+}
+
+async function resolveOwnedBusinessOrgId(
+  uid: string,
+  orgIdHints: string[] = []
+): Promise<string | null> {
+  const memberships = await getUserOrgMemberships(uid, { orgIdHints });
+  return memberships.find((m) => m.role === "owner")?.orgId ?? null;
+}
+
+function isDuplicateBusinessOrgError(err: unknown): boolean {
+  const e = err as { code?: string; message?: string };
+  return (
+    e?.code === "functions/failed-precondition" ||
+    e?.code === "failed-precondition" ||
+    (typeof e?.message === "string" &&
+      e.message.toLowerCase().includes("already have a business organization"))
+  );
+}
+
+export async function completeCompanyOwnerOnboarding(
+  uid: string,
+  input: CompanyOwnerOnboardingInput
+): Promise<{ orgId: string; alreadyCompleted?: boolean }> {
+  const existing = await getUserProfile(uid);
+
+  if (isOnboardingCompleted(existing)) {
+    const orgId =
+      existing?.activeBusinessOrgId ??
+      existing?.onboarding?.activeWorkspaceId ??
+      "";
+    if (orgId) {
+      persistActiveWorkspaceId(orgId);
+      clearExplicitPersonalWorkspace();
+    }
+    return { orgId, alreadyCompleted: true };
+  }
+
+  const existingOrgId = existing?.activeBusinessOrgId?.trim();
+  if (existingOrgId) {
+    await writeOnboardingCompletion(
+      uid,
+      {
+        path: "company_owner",
+        usageType: "company",
+        activeWorkspaceId: existingOrgId,
+        activeWorkspaceType: "business",
+        teamSizeBand: input.teamSizeBand,
+        businessPlanCode: input.planCode,
+        billingPeriod: input.billingPeriod,
+      },
+      {
+        activeBusinessOrgId: existingOrgId,
+        primaryCountry: input.country,
+        timezone: input.timezone ?? resolveTimezoneForCountry(input.country),
+      }
+    );
+
+    persistActiveWorkspaceId(existingOrgId);
+    clearExplicitPersonalWorkspace();
+    return { orgId: existingOrgId };
+  }
+
+  const orgIdHints: string[] = [];
+  const ownedOrgId = await resolveOwnedBusinessOrgId(uid, orgIdHints);
+  if (ownedOrgId) {
+    await writeOnboardingCompletion(
+      uid,
+      {
+        path: "company_owner",
+        usageType: "company",
+        activeWorkspaceId: ownedOrgId,
+        activeWorkspaceType: "business",
+        teamSizeBand: input.teamSizeBand,
+        businessPlanCode: input.planCode,
+        billingPeriod: input.billingPeriod,
+      },
+      {
+        activeBusinessOrgId: ownedOrgId,
+        primaryCountry: input.country,
+        timezone: input.timezone ?? resolveTimezoneForCountry(input.country),
+      }
+    );
+    persistActiveWorkspaceId(ownedOrgId);
+    clearExplicitPersonalWorkspace();
+    return { orgId: ownedOrgId };
+  }
+
+  let createdOrgId: string;
+  try {
+    const result = await createBusinessOrg(uid, input);
+    createdOrgId = result.orgId;
+  } catch (err) {
+    if (!isDuplicateBusinessOrgError(err)) throw err;
+    const recoveredOrgId = await resolveOwnedBusinessOrgId(uid, orgIdHints);
+    if (!recoveredOrgId) throw err;
+    createdOrgId = recoveredOrgId;
+  }
+
+  await writeOnboardingCompletion(
+    uid,
+    {
+      path: "company_owner",
+      usageType: "company",
+      activeWorkspaceId: createdOrgId,
+      activeWorkspaceType: "business",
+      teamSizeBand: input.teamSizeBand,
+      businessPlanCode: input.planCode,
+      billingPeriod: input.billingPeriod,
+    },
+    {
+      activeBusinessOrgId: createdOrgId,
+      primaryCountry: input.country,
+      timezone: input.timezone ?? resolveTimezoneForCountry(input.country),
+    }
+  );
+
+  persistActiveWorkspaceId(createdOrgId);
+  clearExplicitPersonalWorkspace();
+
+  return { orgId: createdOrgId };
 }
 
 export async function saveMinimalProfile(
@@ -122,111 +276,63 @@ export async function saveOnboardingDraft(
   await upsertUserProfile(uid, { onboarding: partial });
 }
 
-/** Legacy — creates org during onboarding. Prefer settings/dashboard registration. */
-export async function createCompanyForOnboarding(
-  ownerUid: string,
-  companyName: string
-): Promise<string> {
-  const orgId = await createOrganization(ownerUid, companyName.trim());
-  const db = getFirestoreInstance();
-  if (db) {
-    await setDoc(
-      doc(db, "organizations", orgId),
-      {
-        onboardingSource: "web",
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true }
-    );
-  }
-  return orgId;
+export function defaultWorkTypeForUsageMode(mode: PrimaryUsageMode): WorkType {
+  return mode === "build" ? "customer_job" : "service_inspection";
 }
 
-/**
- * Flow A — company owner: minimal profile, no org creation in onboarding.
- * User lands in personal workspace until company registration completes elsewhere.
- */
-export async function completeCompanyOwnerOnboarding(
+export async function completeSoloOnboarding(
   uid: string,
-  input: MinimalProfileInput = {}
+  input: SoloOnboardingInput
 ): Promise<void> {
-  await saveMinimalProfile(uid, input);
+  const timezone =
+    input.timezone?.trim() || resolveTimezoneForCountry(input.primaryCountry);
+  const displayName = buildOptionalDisplayName(input);
 
   const activeWorkspaceId = getPersonalActiveWorkspaceId();
-  await writeOnboardingCompletion(uid, {
-    usageType: "company",
-    activeWorkspaceId,
-    activeWorkspaceType: "personal",
-  });
+  await writeOnboardingCompletion(
+    uid,
+    {
+      path: "solo",
+      usageType: "personal",
+      activeWorkspaceId,
+      activeWorkspaceType: "personal",
+      personalPlan: input.personalPlan ?? "free",
+      skippedFirstProject: input.skippedFirstProject ?? false,
+      skippedFirstEquipment: input.skippedFirstEquipment ?? false,
+    },
+    {
+      primaryUsageMode: input.primaryUsageMode,
+      primaryCountry: input.primaryCountry,
+      timezone,
+      ...(input.firstName?.trim() ? { firstName: input.firstName.trim() } : {}),
+      ...(input.lastName?.trim() ? { lastName: input.lastName.trim() } : {}),
+      ...(displayName ? { displayName } : {}),
+      ...(input.phoneE164?.trim() ? { phoneE164: input.phoneE164.trim() } : {}),
+    }
+  );
 
   persistActiveWorkspaceId(activeWorkspaceId);
   markExplicitPersonalWorkspace();
 }
 
-/**
- * Flow B — worker join intent: persist choice before redirect to /join.
- * Completion happens in finishOnboardingAfterJoin after invite accept.
- */
-export async function completeWorkerJoinIntent(uid: string): Promise<void> {
-  await saveOnboardingDraft(uid, {
-    usageType: "company",
-    source: "web",
-  });
-}
-
-/** Flow C — solo personal usage. */
 export async function completePersonalOnboarding(
   uid: string,
   input: MinimalProfileInput = {}
 ): Promise<void> {
-  await saveMinimalProfile(uid, input);
-
-  const activeWorkspaceId = getPersonalActiveWorkspaceId();
-  await writeOnboardingCompletion(uid, {
-    usageType: "personal",
-    activeWorkspaceId,
-    activeWorkspaceType: "personal",
+  await completeSoloOnboarding(uid, {
+    primaryUsageMode: "build",
+    primaryCountry: "SK",
+    personalPlan: "free",
+    ...input,
+    skippedFirstProject: true,
+    skippedFirstEquipment: true,
   });
-
-  persistActiveWorkspaceId(activeWorkspaceId);
-  markExplicitPersonalWorkspace();
 }
 
-/** @deprecated Use path-specific complete* helpers. Kept for compatibility. */
-export async function finishOnboarding(
-  uid: string,
-  input: FinishOnboardingInput
-): Promise<void> {
-  const existing = await getUserProfile(uid);
-  const existingOnb = existing?.onboarding ?? {};
-
-  await upsertUserProfile(uid, {
-    ...(input.activeWorkspaceType === "company" &&
-    input.activeWorkspaceId !== "personal"
-      ? { activeBusinessOrgId: input.activeWorkspaceId }
-      : {}),
-    onboardingCompletedAt: serverTimestamp(),
-    onboarding: {
-      ...existingOnb,
-      usageType: input.usageType,
-      selectedFeatures: input.selectedFeatures ?? [],
-      activeWorkspaceId: input.activeWorkspaceId,
-      activeWorkspaceType: input.activeWorkspaceType,
-      completed: true,
-      completedAt: serverTimestamp(),
-      source: "web",
-    },
-  });
-
-  persistActiveWorkspaceId(input.activeWorkspaceId);
-  if (input.activeWorkspaceType === "company") {
-    clearExplicitPersonalWorkspace();
-  } else {
-    markExplicitPersonalWorkspace();
-  }
+export async function completeWorkerJoinIntent(uid: string): Promise<void> {
+  return saveJoinCompanyIntent(uid);
 }
 
-/** After `/join?token=` — preserve existing onboarding fields, set company workspace. */
 export async function finishOnboardingAfterJoin(
   uid: string,
   orgId: string
@@ -239,9 +345,10 @@ export async function finishOnboardingAfterJoin(
     onboardingCompletedAt: serverTimestamp(),
     onboarding: {
       ...existingOnb,
+      path: "join_company",
       usageType: "company",
       activeWorkspaceId: orgId,
-      activeWorkspaceType: "company",
+      activeWorkspaceType: "business",
       completed: true,
       completedAt: serverTimestamp(),
       source: "web",
@@ -252,20 +359,31 @@ export async function finishOnboardingAfterJoin(
   clearExplicitPersonalWorkspace();
 }
 
+export async function dismissBusinessSetupChecklist(uid: string): Promise<void> {
+  await upsertUserProfile(uid, {
+    onboarding: { businessChecklistDismissed: true },
+  });
+}
+
 export function getPersonalActiveWorkspaceId(): string {
   return "personal";
 }
 
-/** Safe route for company registration when a dedicated flow is unavailable. */
-export const COMPANY_REGISTRATION_ROUTE = "/app/settings";
+export const BUSINESS_CREATE_ROUTE = "/app/business/create";
+export const COMPANY_REGISTRATION_ROUTE = BUSINESS_CREATE_ROUTE;
 
-export function userNeedsCompanyRegistration(
-  profile: UserProfile | null,
-  hasCompanyWorkspace: boolean
+export function userNeedsCompanyRegistration(): boolean {
+  return false;
+}
+
+export function shouldShowBusinessSetupChecklist(
+  profile: UserProfile | null
 ): boolean {
   return (
     isOnboardingCompleted(profile) &&
-    profile?.onboarding?.usageType === "company" &&
-    !hasCompanyWorkspace
+    profile?.onboarding?.path === "company_owner" &&
+    !profile?.onboarding?.businessChecklistDismissed
   );
 }
+
+export { isOnboardingCompleted };

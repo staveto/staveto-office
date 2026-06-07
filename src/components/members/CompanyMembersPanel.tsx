@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Card,
   CardContent,
@@ -16,22 +16,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/context/AuthContext";
@@ -42,7 +26,6 @@ import {
   getMemberDisplayName,
   listOrgMembers,
   listOrgInvites,
-  createInvite,
   updateMemberRole,
   removeMember,
   revokeInvite,
@@ -51,20 +34,41 @@ import {
   type InviteWithId,
 } from "@/lib/organizations";
 import {
+  fetchBusinessInvites,
+  revokeBusinessInvite,
+  getInviteListJoinUrl,
+  buildLegacyTokenJoinUrl,
+  resolveBusinessInviteDisplay,
+  resolveInviteEmailLower,
+  buildLegacyInviteDisplay,
+  createdInviteToListItem,
+  type BusinessInviteListItem,
+  type CreateBusinessInviteCodeResult,
+} from "@/services/business/businessInvitesService";
+import {
   buildCompanyTeamRows,
   canInviteCompanyMembers,
   canManageCompanyMembers,
-  countActiveTeamSeats,
   getInviteRoleLabelKey,
-  isOrgOwner,
+  getBusinessInviteRoleLabelKey,
+  getMemberDisplayLabel,
+  isOnlyOwnerTeam,
+  resolveOrganizationSeatLimit,
+  resolveSeatsUsed,
   type CompanyTeamMemberRow,
+  type OrganizationSeatFields,
 } from "@/lib/companyRoles";
 import {
   MemberRoleCell,
   MemberStatusCell,
   useCurrentUserCompanyRole,
 } from "@/components/members/MemberRoleBadge";
-import { Users, Loader2, Plus, Trash2, UserMinus, Mail, Crown } from "lucide-react";
+import { TeamOverviewHero } from "@/components/members/TeamOverviewHero";
+import { TeamFirstInviteCard } from "@/components/members/TeamFirstInviteCard";
+import { TeamRoleCards } from "@/components/members/TeamRoleCards";
+import { InviteMemberDialog } from "@/components/members/InviteMemberDialog";
+import { InviteCodeViewDialog } from "@/components/members/InviteCodeViewDialog";
+import { Users, Loader2, Plus, Trash2, UserMinus, Mail, Copy, Link2, QrCode } from "lucide-react";
 import { getFirestoreInstance } from "@/lib/firebase";
 
 export function CompanyMembersPanel() {
@@ -82,26 +86,31 @@ export function CompanyMembersPanel() {
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [teamRows, setTeamRows] = useState<CompanyTeamMemberRow[]>([]);
   const [invites, setInvites] = useState<InviteWithId[]>([]);
-  const [ownerDisplayName, setOwnerDisplayName] = useState<string | null>(null);
+  const [businessInvites, setBusinessInvites] = useState<BusinessInviteListItem[]>([]);
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState<OrgMemberRole>("member");
-  const [inviting, setInviting] = useState(false);
-  const [inviteError, setInviteError] = useState<string | null>(null);
   const [actioning, setActioning] = useState<string | null>(null);
+  const [viewInviteOpen, setViewInviteOpen] = useState(false);
+  const [viewInviteResult, setViewInviteResult] = useState<CreateBusinessInviteCodeResult | null>(
+    null
+  );
+  const [viewInviteEmail, setViewInviteEmail] = useState<string | null>(null);
+  const [viewInviteLegacy, setViewInviteLegacy] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { background?: boolean }) => {
     if (!orgId) {
       setLoading(false);
       return;
     }
-    setLoading(true);
+    if (!opts?.background) {
+      setLoading(true);
+    }
     setError(null);
     try {
-      const [orgSnap, membersList, invitesList] = await Promise.all([
+      const [orgSnap, membersList, invitesList, businessInvitesList] = await Promise.all([
         getOrganization(orgId),
         listOrgMembers(orgId),
         listOrgInvites(orgId),
+        fetchBusinessInvites(orgId),
       ]);
 
       if (!orgSnap) {
@@ -109,11 +118,13 @@ export function CompanyMembersPanel() {
         setOrganization(null);
         setTeamRows([]);
         setInvites([]);
+        setBusinessInvites([]);
         return;
       }
 
       setOrganization(orgSnap);
       setInvites(invitesList);
+      setBusinessInvites(businessInvitesList);
 
       let ownerName: string | null = null;
       const db = getFirestoreInstance();
@@ -125,11 +136,8 @@ export function CompanyMembersPanel() {
         }
       }
       if (!ownerName && orgSnap.ownerUid === user?.id) {
-        ownerName =
-          user?.name?.trim() ||
-          null;
+        ownerName = user?.name?.trim() || null;
       }
-      setOwnerDisplayName(ownerName);
 
       setTeamRows(
         buildCompanyTeamRows({
@@ -143,6 +151,7 @@ export function CompanyMembersPanel() {
       setError(e instanceof Error ? e.message : t("members.loadError"));
       setTeamRows([]);
       setInvites([]);
+      setBusinessInvites([]);
     } finally {
       setLoading(false);
     }
@@ -159,34 +168,41 @@ export function CompanyMembersPanel() {
   );
   const canInvite = canInviteCompanyMembers(currentUserRole);
   const canManage = canManageCompanyMembers(currentUserRole);
-  const isCurrentUserOwner = isOrgOwner(organization, user?.id);
 
-  const ownerRow = useMemo(
-    () => teamRows.find((r) => r.effectiveRole === "owner"),
-    [teamRows]
+  const legacyPendingInvites = invites.filter((i) => i.status === "pending").length;
+  const activeBusinessInvites = businessInvites.filter(
+    (i) => i.status === "active" && i.usedCount < i.maxUses
   );
+  const pendingInvites = legacyPendingInvites + activeBusinessInvites.length;
+  const orgWithSeats = organization as OrganizationSeatFields | null;
+  const seatLimit = orgWithSeats ? resolveOrganizationSeatLimit(orgWithSeats) : 5;
+  const seatsUsed = orgWithSeats
+    ? resolveSeatsUsed(orgWithSeats, teamRows, pendingInvites)
+    : 0;
+  const seatsFull = seatsUsed >= seatLimit;
+  const showFirstInvite = canInvite && isOnlyOwnerTeam(teamRows) && pendingInvites === 0;
 
-  const ownerLabel =
-    ownerRow?.displayName?.trim() ||
-    ownerDisplayName?.trim() ||
-    (isCurrentUserOwner ? user?.name?.trim() || user?.email : null) ||
-    t("members.ownerUnknown");
+  const openInvite = () => {
+    setInviteOpen(true);
+  };
 
-  const handleInvite = async () => {
-    if (!orgId || !inviteEmail.trim()) return;
-    setInviting(true);
-    setInviteError(null);
+  const handleInviteCreated = (
+    created: CreateBusinessInviteCodeResult,
+    meta: { role: string; emailLower?: string | null }
+  ) => {
+    const item = createdInviteToListItem(created, meta);
+    setBusinessInvites((prev) => {
+      const without = prev.filter((i) => i.inviteId !== item.inviteId);
+      return [item, ...without];
+    });
+    void load({ background: true });
+  };
+
+  const copyInviteLink = async (url: string) => {
     try {
-      if (!user?.id) throw new Error("Not signed in");
-      await createInvite(orgId, inviteEmail.trim(), inviteRole, user.id);
-      setInviteEmail("");
-      setInviteRole("member");
-      setInviteOpen(false);
-      await load();
-    } catch (e) {
-      setInviteError(e instanceof Error ? e.message : t("members.inviteError"));
-    } finally {
-      setInviting(false);
+      await navigator.clipboard.writeText(url);
+    } catch {
+      /* ignore */
     }
   };
 
@@ -215,7 +231,7 @@ export function CompanyMembersPanel() {
     }
   };
 
-  const handleRevokeInvite = async (inviteId: string) => {
+  const handleRevokeLegacyInvite = async (inviteId: string) => {
     if (!confirm(t("members.confirmRevoke"))) return;
     setActioning(inviteId);
     try {
@@ -226,15 +242,51 @@ export function CompanyMembersPanel() {
     }
   };
 
-  const seatsUsed = countActiveTeamSeats(teamRows);
+  const handleRevokeBusinessInvite = async (inviteId: string) => {
+    if (!orgId || !confirm(t("members.confirmRevoke"))) return;
+    setActioning(inviteId);
+    try {
+      await revokeBusinessInvite(orgId, inviteId);
+      await load();
+    } finally {
+      setActioning(null);
+    }
+  };
+
+  const openInviteCodeView = (
+    result: CreateBusinessInviteCodeResult | null,
+    email?: string | null,
+    legacy = false
+  ) => {
+    setViewInviteResult(result);
+    setViewInviteEmail(email ?? null);
+    setViewInviteLegacy(legacy);
+    setViewInviteOpen(true);
+  };
+
+  const isSelf = useCallback(
+    (row: CompanyTeamMemberRow) => (row.userId ?? row.uid) === user?.id,
+    [user?.id]
+  );
 
   if (loading) {
     return (
-      <Card>
-        <CardContent className="py-12 flex justify-center">
-          <Loader2 className="size-8 animate-spin text-muted-foreground" />
-        </CardContent>
-      </Card>
+      <>
+        <Card>
+          <CardContent className="py-12 flex justify-center">
+            <Loader2 className="size-8 animate-spin text-muted-foreground" />
+          </CardContent>
+        </Card>
+        {orgId ? (
+          <InviteMemberDialog
+            open={inviteOpen}
+            onOpenChange={setInviteOpen}
+            orgId={orgId}
+            seatsFull={seatsFull}
+            onSuccess={handleInviteCreated}
+          />
+        ) : null}
+      </>
     );
   }
 
@@ -249,48 +301,35 @@ export function CompanyMembersPanel() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
-          <p className="text-sm text-muted-foreground">
-            {t("members.companyLabel")}:{" "}
-            <span className="font-medium text-foreground">
-              {organization?.name ?? activeWorkspace?.name}
-            </span>
-          </p>
-          <p className="text-sm text-muted-foreground">
-            {t("members.ownerLabel")}:{" "}
-            <span className="font-medium text-foreground">{ownerLabel}</span>
-          </p>
-        </div>
-        {canInvite ? (
-          <Button onClick={() => setInviteOpen(true)} size="sm" className="shrink-0">
+    <div className="mx-auto max-w-5xl space-y-8 pb-8">
+      {organization ? (
+        <TeamOverviewHero
+          organization={organization as OrganizationSeatFields}
+          teamRows={teamRows}
+          pendingInvites={pendingInvites}
+          seatsFull={seatsFull}
+        />
+      ) : null}
+
+      {canInvite ? (
+        <div className="flex justify-end">
+          <Button
+            onClick={openInvite}
+            size="sm"
+            className="shrink-0 bg-[#1D376A] hover:bg-[#1D376A]/90"
+            disabled={seatsFull}
+          >
             <Plus className="size-4 mr-2" />
             {t("members.invite")}
           </Button>
-        ) : null}
-      </div>
-
-      {isCurrentUserOwner ? (
-        <div
-          className="flex items-start gap-2 rounded-lg border border-[#1D376A]/15 bg-[#1D376A]/[0.05] px-4 py-3 text-sm text-[#1D376A]"
-          role="status"
-        >
-          <Crown className="size-4 shrink-0 mt-0.5" aria-hidden />
-          <p>{t("members.ownerBanner")}</p>
         </div>
       ) : null}
 
-      {organization ? (
-        <Card>
-          <CardContent className="py-4">
-            <p className="text-sm text-muted-foreground">
-              {t("members.seatsUsed")}: {seatsUsed} / {organization.seatLimit} ·{" "}
-              {t("members.plan")}: {organization.plan}
-            </p>
-          </CardContent>
-        </Card>
+      {showFirstInvite ? (
+        <TeamFirstInviteCard onInvite={openInvite} disabled={seatsFull} />
       ) : null}
+
+      <TeamRoleCards />
 
       <Card>
         <CardHeader>
@@ -314,17 +353,22 @@ export function CompanyMembersPanel() {
               {teamRows.map((row) => (
                 <TableRow key={row.uid}>
                   <TableCell>
-                    <span className="inline-flex items-center gap-1.5">
-                      {row.displayName || "—"}
-                      {row.synthetic ? (
-                        <Badge variant="outline" className="text-[10px] font-normal">
+                    <span className="inline-flex flex-wrap items-center gap-1.5">
+                      <span className="font-medium">{getMemberDisplayLabel(row)}</span>
+                      {row.effectiveRole === "owner" ? (
+                        <Badge variant="default" className="text-[10px] font-normal">
                           {t("members.ownerBadge")}
+                        </Badge>
+                      ) : null}
+                      {isSelf(row) ? (
+                        <Badge variant="outline" className="text-[10px] font-normal">
+                          {t("members.currentUserBadge")}
                         </Badge>
                       ) : null}
                     </span>
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">
-                    {row.email || row.uid}
+                    {row.email || "—"}
                   </TableCell>
                   <TableCell>
                     <MemberRoleCell
@@ -363,13 +407,125 @@ export function CompanyMembersPanel() {
         </CardContent>
       </Card>
 
+      {canInvite || businessInvites.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Link2 className="size-4" />
+              {t("members.invites.activeTitle")}
+            </CardTitle>
+            {businessInvites.length === 0 ? (
+              <p className="text-xs text-muted-foreground mt-1">
+                {t("members.invites.emptyHint")}
+              </p>
+            ) : null}
+          </CardHeader>
+          {businessInvites.length > 0 ? (
+          <CardContent className="p-0 overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("members.emailCol")}</TableHead>
+                  <TableHead>{t("members.invites.inviteCode")}</TableHead>
+                  <TableHead>{t("members.roleCol")}</TableHead>
+                  <TableHead>{t("members.statusCol")}</TableHead>
+                  <TableHead>{t("members.invites.usage")}</TableHead>
+                  <TableHead>{t("members.invites.expiresCol")}</TableHead>
+                  {canManage ? <TableHead className="w-[140px]" /> : null}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {businessInvites.map((inv) => {
+                  const joinUrl = getInviteListJoinUrl(inv);
+                  const displayResult = orgId ? resolveBusinessInviteDisplay(orgId, inv) : null;
+                  const inviteEmail = orgId ? resolveInviteEmailLower(orgId, inv) : inv.emailLower;
+                  return (
+                    <TableRow key={inv.inviteId}>
+                      <TableCell className="text-sm">
+                        {inviteEmail ?? "—"}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {displayResult?.code ?? (inv.codePrefix ? `${inv.codePrefix}…` : "—")}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className="font-normal">
+                          {t(getBusinessInviteRoleLabelKey(inv.role))}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className="font-normal">
+                          {inv.status === "active"
+                            ? t("members.status.active")
+                            : inv.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {inv.usedCount}/{inv.maxUses}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {inv.expiresAt
+                          ? new Date(inv.expiresAt).toLocaleDateString()
+                          : "—"}
+                      </TableCell>
+                      {canManage ? (
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title={t("members.invites.showCodeQr")}
+                              onClick={() =>
+                                openInviteCodeView(displayResult, inviteEmail)
+                              }
+                            >
+                              <QrCode className="size-4" />
+                            </Button>
+                            {joinUrl ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                title={t("members.invites.copyLink")}
+                                onClick={() => void copyInviteLink(joinUrl)}
+                              >
+                                <Copy className="size-4" />
+                              </Button>
+                            ) : null}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => void handleRevokeBusinessInvite(inv.inviteId)}
+                              disabled={actioning === inv.inviteId}
+                              title={t("members.revoke")}
+                            >
+                              {actioning === inv.inviteId ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="size-4 text-destructive" />
+                              )}
+                            </Button>
+                          </div>
+                        </TableCell>
+                      ) : null}
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+          ) : null}
+        </Card>
+      ) : null}
+
       {invites.length > 0 ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Mail className="size-4" />
-              {t("members.pendingInvites")}
+              {t("members.invites.legacyPendingTitle")}
             </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              {t("members.invites.legacyLinkHint")}
+            </p>
           </CardHeader>
           <CardContent className="p-0 overflow-x-auto">
             <Table>
@@ -377,18 +533,35 @@ export function CompanyMembersPanel() {
                 <TableRow>
                   <TableHead>{t("members.emailCol")}</TableHead>
                   <TableHead>{t("members.roleCol")}</TableHead>
+                  <TableHead>{t("members.invites.joinLink")}</TableHead>
                   <TableHead>{t("members.statusCol")}</TableHead>
-                  {canManage ? <TableHead className="w-[80px]" /> : null}
+                  {canManage ? <TableHead className="w-[120px]" /> : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {invites.map((inv) => (
+                {invites.map((inv) => {
+                  const legacyJoinUrl = inv.token
+                    ? buildLegacyTokenJoinUrl(inv.token)
+                    : null;
+                  return (
                   <TableRow key={inv.id}>
                     <TableCell>{inv.emailLower}</TableCell>
                     <TableCell>
                       <Badge variant="secondary" className="font-normal">
                         {t(getInviteRoleLabelKey(inv.role))}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="max-w-[200px]">
+                      {legacyJoinUrl ? (
+                        <span
+                          className="block truncate text-xs text-muted-foreground font-mono"
+                          title={legacyJoinUrl}
+                        >
+                          {legacyJoinUrl}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary" className="font-normal">
@@ -397,75 +570,76 @@ export function CompanyMembersPanel() {
                     </TableCell>
                     {canManage ? (
                       <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRevokeInvite(inv.id)}
-                          disabled={actioning === inv.id}
-                          title={t("members.revoke")}
-                        >
-                          {actioning === inv.id ? (
-                            <Loader2 className="size-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="size-4 text-destructive" />
-                          )}
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          {legacyJoinUrl ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title={t("members.invites.showCodeQr")}
+                              onClick={() =>
+                                openInviteCodeView(
+                                  buildLegacyInviteDisplay(inv.token!, inv.id),
+                                  inv.emailLower,
+                                  true
+                                )
+                              }
+                            >
+                              <QrCode className="size-4" />
+                            </Button>
+                          ) : null}
+                          {legacyJoinUrl ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              title={t("members.invites.copyLink")}
+                              onClick={() => void copyInviteLink(legacyJoinUrl)}
+                            >
+                              <Copy className="size-4" />
+                            </Button>
+                          ) : null}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => void handleRevokeLegacyInvite(inv.id)}
+                            disabled={actioning === inv.id}
+                            title={t("members.revoke")}
+                          >
+                            {actioning === inv.id ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="size-4 text-destructive" />
+                            )}
+                          </Button>
+                        </div>
                       </TableCell>
                     ) : null}
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>
         </Card>
       ) : null}
 
-      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("members.invite")}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div>
-              <Label htmlFor="invite-email">{t("members.emailCol")}</Label>
-              <Input
-                id="invite-email"
-                type="email"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="email@example.com"
-                className="mt-1"
-              />
-            </div>
-            <div>
-              <Label htmlFor="invite-role">{t("members.roleCol")}</Label>
-              <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as OrgMemberRole)}>
-                <SelectTrigger id="invite-role" className="mt-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="admin">{t("members.role.admin")}</SelectItem>
-                  <SelectItem value="member">{t("members.role.viewer")}</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="mt-1.5 text-xs text-muted-foreground">
-                {inviteRole === "admin"
-                  ? t("members.roleDesc.admin")
-                  : t("members.roleDesc.viewer")}
-              </p>
-            </div>
-            {inviteError ? <p className="text-sm text-destructive">{inviteError}</p> : null}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setInviteOpen(false)}>
-              {t("common.cancel")}
-            </Button>
-            <Button onClick={handleInvite} disabled={inviting || !inviteEmail.trim()}>
-              {inviting ? t("common.loading") : t("members.sendInvite")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {orgId ? (
+        <>
+          <InviteMemberDialog
+            open={inviteOpen}
+            onOpenChange={setInviteOpen}
+            orgId={orgId}
+            seatsFull={seatsFull}
+            onSuccess={handleInviteCreated}
+          />
+          <InviteCodeViewDialog
+            open={viewInviteOpen}
+            onOpenChange={setViewInviteOpen}
+            result={viewInviteResult}
+            email={viewInviteEmail}
+            legacy={viewInviteLegacy}
+          />
+        </>
+      ) : null}
     </div>
   );
 }

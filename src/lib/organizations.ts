@@ -36,6 +36,8 @@ export type Organization = {
   status?: string;
   businessEnabled?: boolean;
   planCode?: string;
+  companyType?: string;
+  enabledModules?: Partial<import("./enabledModules").EnabledModulesMap>;
 };
 
 export type OrgMembership = {
@@ -69,12 +71,6 @@ export type Invite = {
 };
 
 export type InviteWithId = Invite & { id: string };
-
-function randomToken(): string {
-  return Array.from(crypto.getRandomValues(new Uint8Array(32)))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 function isFirestorePermissionDenied(e: unknown): boolean {
   const err = e as { code?: string; message?: string };
@@ -110,25 +106,14 @@ export async function createOrganization(
 }
 
 export async function createInvite(
-  orgId: string,
-  email: string,
-  role: OrgMemberRole,
-  invitedByUid: string
+  _orgId: string,
+  _email: string,
+  _role: OrgMemberRole,
+  _invitedByUid: string
 ): Promise<{ inviteId: string; token: string }> {
-  const db = getFirestoreInstance();
-  if (!db) throw new Error("Firestore not configured");
-  const emailLower = email.trim().toLowerCase();
-  const token = randomToken();
-  const inviteRef = await addDoc(collection(db, "invites"), {
-    orgId,
-    emailLower,
-    role,
-    invitedByUid,
-    createdAt: serverTimestamp(),
-    status: "pending",
-    token,
-  });
-  return { inviteId: inviteRef.id, token };
+  throw new Error(
+    "Legacy client invite creation is disabled. Use createBusinessInviteCode Cloud Function."
+  );
 }
 
 export async function getOrCreateUserOrg(uid: string, email: string): Promise<string | null> {
@@ -153,29 +138,13 @@ export async function getInviteByToken(token: string): Promise<Invite & { id: st
 }
 
 export async function acceptInvite(
-  inviteId: string,
-  uid: string,
-  email: string
+  _inviteId: string,
+  _uid: string,
+  _email: string
 ): Promise<string> {
-  const db = getFirestoreInstance();
-  if (!db) throw new Error("Firestore not configured");
-  const inviteSnap = await getDoc(doc(db, "invites", inviteId));
-  if (!inviteSnap.exists()) throw new Error("Invite not found");
-  const invite = inviteSnap.data() as Invite;
-  if (invite.status !== "pending") throw new Error("Invite already used");
-  const orgId = invite.orgId;
-  await setDoc(doc(db, "organizations", orgId, "members", uid), {
-    role: invite.role,
-    status: "active",
-    email: email.trim().toLowerCase(),
-    createdAt: serverTimestamp(),
-  });
-  await setDoc(
-    doc(db, "invites", inviteId),
-    { status: "accepted", acceptedAt: serverTimestamp() },
-    { merge: true }
+  throw new Error(
+    "Legacy client invite accept is disabled. Use acceptLegacyInviteToken Cloud Function."
   );
-  return orgId;
 }
 
 export async function getOrganization(orgId: string): Promise<Organization | null> {
@@ -255,8 +224,8 @@ function resolveMembershipRole(
   if (org.ownerUid === uid) return "owner";
   if (!member) return "viewer";
   const raw = String(member.role ?? "member").toLowerCase();
-  if (raw === "member") return "manager";
-  if (raw === "viewer" || raw === "client") return raw;
+  if (raw === "member") return "worker";
+  if (raw === "viewer" || raw === "client") return "viewer";
   return raw;
 }
 

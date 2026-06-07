@@ -374,24 +374,26 @@ Org je v prepínači, ak:
 
 ---
 
-## Company-first web onboarding
+## B2B-first web onboarding
 
-**Implemented (web `/onboarding`, 2026-06-02):**
+**Updated (web `/onboarding`, 2026-06-02):**
 
 | Topic | Behavior |
 |-------|----------|
-| Product model | B2B Manager-first — profile is not the product goal |
-| First screen | Three paths: **Mám firmu** (recommended), **Pracujem pre firmu**, **Pracujem sám** |
-| Company owner | Minimal optional name → onboarding complete → `/app` + CTA to register company (no org created in onboarding) |
-| Worker join | Invite token → existing `/join?token=` flow → company active after accept |
-| Personal / solo | Minimal optional name → personal workspace → `/app` |
-| Business registration | Separate from onboarding — placeholder CTA on dashboard/settings; no billing or plan activation |
-| Personal workspace | Remains available as secondary path |
-| Completion gate | `onboarding.completed` **and** top-level `onboardingCompletedAt` (mobile-aligned, additive) |
-| Legacy fields | All existing `onboarding.*` fields preserved; completed users not re-onboarded |
-| Removed from flow | Role picker, feature interests, inline company creation, 6-step profile wizard |
+| Paths | `company_owner` (default) \| `join_company` \| `solo` |
+| Step 1 | Terms & Privacy acceptance |
+| Step 2 | Three cards: Create company (recommended), Join company, Work solo |
+| Company owner | Company basics → team size → Business plan (monthly/yearly) → `createBusinessOrg` → 14-day trial → `/app` (company workspace) |
+| Join path | Invite code → `/join?token=` → `finishOnboardingAfterJoin` |
+| Solo path | Build/trade → country → profile → phone → Free/Pro choice → optional project/equipment → `/app` (personal workspace) |
+| Business plans | `business_starter`, `business_team`, `business_company`; `business_enterprise` = contact only |
+| Personal plans | `free`, `personal_pro` (Pro billing via mobile; web does not block on Pro) |
+| Completion gate | `onboardingCompletedAt` (primary) + `onboarding.completed` (legacy) |
+| Post-onboarding | Business setup checklist on company dashboard (dismissible) |
+| Register | `/register` → `/onboarding` |
+| Login | No `onboardingCompletedAt` → `/onboarding`; else → `/app` |
 
-**Code:** `src/app/(app)/onboarding/page.tsx`, `src/services/onboarding/onboardingService.ts`, `PendingCompanyRegistrationBanner`, `CompanyRegistrationPlaceholder`.
+**Code:** `WebOnboardingWizard` (alias `MobileAlignedOnboardingWizard`), `BusinessSetupChecklist`, `onboardingService.ts`, `createBusinessOrgService.ts`, `onboardingTypes.ts`, Cloud Function `createBusinessOrg`.
 
 ---
 

@@ -16,6 +16,7 @@ type SidebarFlyoutProps = {
   comingSoonLabel: string;
   isPersonalWorkspace: boolean;
   canManage: boolean;
+  enabledModules?: import("@/lib/enabledModules").EnabledModulesMap | null;
   visible: boolean;
   t: (key: string) => string;
   onNavigate?: () => void;
@@ -31,13 +32,14 @@ export function SidebarFlyout({
   comingSoonLabel,
   isPersonalWorkspace,
   canManage,
+  enabledModules = null,
   visible,
   t,
   onNavigate,
   onLogout,
   id,
 }: SidebarFlyoutProps) {
-  const items = filterNavItems(section.items, { isPersonalWorkspace, canManage });
+  const items = filterNavItems(section.items, { isPersonalWorkspace, canManage, enabledModules });
 
   return (
     <div

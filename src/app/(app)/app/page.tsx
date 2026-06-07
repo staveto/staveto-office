@@ -15,8 +15,6 @@ import {
 } from "@/components/dashboard";
 
 import { CompanyWorkspaceSwitchPrompt } from "@/components/dashboard/CompanyWorkspaceSwitchPrompt";
-import { PendingCompanyRegistrationBanner } from "@/components/onboarding/PendingCompanyRegistrationBanner";
-import { userNeedsCompanyRegistration } from "@/services/onboarding";
 import { useI18n } from "@/i18n/I18nContext";
 
 import { useAuth } from "@/context/AuthContext";
@@ -64,6 +62,7 @@ const EMPTY_STATS: DashboardStats = {
   teamCount: null,
   delayedJobsCount: 0,
   delayedJobs: [],
+  quotesRecent: [],
 };
 
 
@@ -176,11 +175,6 @@ export default function OverviewPage() {
     isCompanyWorkspaceType(w.type)
   );
 
-  const needsCompanyRegistration = userNeedsCompanyRegistration(
-    profile,
-    hasCompanyWorkspace
-  );
-
 
 
   if (!user || !activeWorkspace) {
@@ -225,10 +219,7 @@ export default function OverviewPage() {
 
       statsLoading={statsLoading}
 
-      showCreateCompany={!hasCompanyWorkspace && !needsCompanyRegistration}
-      pendingCompanyBanner={
-        needsCompanyRegistration ? <PendingCompanyRegistrationBanner /> : null
-      }
+      showCreateCompany={!hasCompanyWorkspace}
 
       companySwitchPrompt={
         hasCompanyWorkspace ? <CompanyWorkspaceSwitchPrompt variant="banner" /> : null

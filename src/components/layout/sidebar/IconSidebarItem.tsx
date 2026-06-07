@@ -14,6 +14,7 @@ type IconSidebarItemProps = {
   comingSoonLabel: string;
   isPersonalWorkspace: boolean;
   canManage: boolean;
+  enabledModules?: import("@/lib/enabledModules").EnabledModulesMap | null;
   isSectionActive: boolean;
   isOpen: boolean;
   t: (key: string) => string;
@@ -31,6 +32,7 @@ export function IconSidebarItem({
   comingSoonLabel,
   isPersonalWorkspace,
   canManage,
+  enabledModules = null,
   isSectionActive,
   isOpen,
   t,
@@ -41,7 +43,7 @@ export function IconSidebarItem({
 }: IconSidebarItemProps) {
   const Icon = section.icon;
   const flyoutId = `sidebar-flyout-${section.id}`;
-  const filterOpts = { isPersonalWorkspace, canManage };
+  const filterOpts = { isPersonalWorkspace, canManage, enabledModules };
   const showFlyout = sectionHasFlyout(section, filterOpts);
   const hasDefaultRoute = !!section.defaultHref && !showFlyout;
 
@@ -115,6 +117,7 @@ export function IconSidebarItem({
         comingSoonLabel={comingSoonLabel}
         isPersonalWorkspace={isPersonalWorkspace}
         canManage={canManage}
+        enabledModules={enabledModules}
         visible={isOpen}
         t={t}
         onNavigate={onNavigate}

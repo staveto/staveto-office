@@ -25,12 +25,12 @@ export function OnboardingOptionCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "w-full rounded-xl border-2 p-4 text-left transition-colors",
+        "w-full rounded-xl border-2 p-4 text-left transition-all duration-200",
         selected
-          ? "border-[#e06737] bg-[#e06737]/5 ring-1 ring-[#e06737]/20"
+          ? "border-[#e06737] bg-[#e06737]/5 shadow-md ring-2 ring-[#e06737]/20"
           : recommended
-            ? "border-[#1D376A]/25 bg-[#1D376A]/[0.03] hover:border-[#e06737]/50"
-            : "border-border bg-background hover:border-[#e06737]/40"
+            ? "border-[#1D376A]/20 bg-[#1D376A]/[0.04] hover:border-[#e06737]/50 hover:shadow-sm"
+            : "border-border bg-background hover:border-[#e06737]/40 hover:shadow-sm"
       )}
     >
       <div className="flex items-start gap-3">

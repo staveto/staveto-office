@@ -9,7 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { resolvePostAuthRoute } from "@/lib/userProfile";
 import { useI18n } from "@/i18n/I18nContext";
+import { OnboardingLanguageSwitcher } from "@/components/onboarding/OnboardingLanguageSwitcher";
 
 const COLORS = {
   background: "#1D376A",
@@ -21,29 +23,40 @@ const COLORS = {
 function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") ?? "/onboarding";
-  const { user, loading, signUp, signUpWithGoogle } = useAuth();
+  const next = searchParams.get("next") ?? "/app";
+  const { user, profile, loading, signUp, signUpWithGoogle, refreshUser } = useAuth();
   const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [submitLoading, setSubmitLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  function resolveDestination(currentProfile: typeof profile): string {
+    if (next.startsWith("/join")) return next;
+    return resolvePostAuthRoute(currentProfile, "/app");
+  }
+
   useEffect(() => {
     if (!loading && user) {
-      router.replace(next);
+      router.replace(resolveDestination(profile));
     }
-  }, [user, loading, router, next]);
+  }, [user, profile, loading, router, next]);
 
   async function handleEmailSignUp(e: React.FormEvent) {
     e.preventDefault();
+    if (password !== confirmPassword) {
+      setError(t("register.passwordMismatch"));
+      return;
+    }
     setSubmitLoading(true);
     setError(null);
     try {
       await signUp(email, password, displayName.trim() || undefined);
-      router.push(next);
+      const refreshedProfile = await refreshUser();
+      router.push(resolveDestination(refreshedProfile));
       router.refresh();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -58,7 +71,8 @@ function RegisterForm() {
     setError(null);
     try {
       await signUpWithGoogle();
-      router.push(next);
+      const refreshedProfile = await refreshUser();
+      router.push(resolveDestination(refreshedProfile));
       router.refresh();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -74,6 +88,9 @@ function RegisterForm() {
         className="min-h-screen flex items-center justify-center"
         style={{ backgroundColor: COLORS.background }}
       >
+        <div className="fixed top-4 right-4 z-50">
+          <OnboardingLanguageSwitcher />
+        </div>
         <Loader2 className="size-8 animate-spin text-white" />
       </div>
     );
@@ -84,6 +101,9 @@ function RegisterForm() {
       className="min-h-screen flex flex-col items-center justify-center p-6"
       style={{ backgroundColor: COLORS.background }}
     >
+      <div className="fixed top-4 right-4 z-50">
+        <OnboardingLanguageSwitcher />
+      </div>
       <Image
         src="/logo.png"
         alt="Staveto"
@@ -95,7 +115,7 @@ function RegisterForm() {
         className="text-4xl font-bold text-center mb-6"
         style={{ color: COLORS.textOnDark }}
       >
-        Create account
+        {t("register.title")}
       </h1>
 
       <div className="w-full max-w-sm space-y-4">
@@ -108,34 +128,34 @@ function RegisterForm() {
         <form onSubmit={handleEmailSignUp} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="displayName" className="text-white/90">
-              Display name
+              {t("register.displayName")}
             </Label>
             <Input
               id="displayName"
               type="text"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="Your name"
+              placeholder={t("register.displayNamePlaceholder")}
               className="bg-white/10 border-white/30 text-white placeholder:text-white/50"
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="email" className="text-white/90">
-              Email
+              {t("register.email")}
             </Label>
             <Input
               id="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
+              placeholder={t("register.emailPlaceholder")}
               required
               className="bg-white/10 border-white/30 text-white placeholder:text-white/50"
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="password" className="text-white/90">
-              Password
+              {t("register.password")}
             </Label>
             <Input
               id="password"
@@ -145,19 +165,36 @@ function RegisterForm() {
               placeholder="••••••••"
               required
               minLength={6}
+              autoComplete="new-password"
+              className="bg-white/10 border-white/30 text-white placeholder:text-white/50"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="confirmPassword" className="text-white/90">
+              {t("register.confirmPassword")}
+            </Label>
+            <Input
+              id="confirmPassword"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+              minLength={6}
+              autoComplete="new-password"
               className="bg-white/10 border-white/30 text-white placeholder:text-white/50"
             />
           </div>
           <Button
             type="submit"
-            disabled={submitLoading}
+            disabled={submitLoading || password !== confirmPassword}
             className="w-full h-12 rounded-2xl text-base font-semibold"
             style={{ backgroundColor: COLORS.primary, color: COLORS.textOnDark }}
           >
             {submitLoading ? (
               <Loader2 className="size-5 animate-spin" />
             ) : (
-              "Create account"
+              t("register.submit")
             )}
           </Button>
         </form>
@@ -167,7 +204,7 @@ function RegisterForm() {
             <span className="w-full border-t border-white/30" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-[#1D376A] px-2 text-white/60">or</span>
+            <span className="bg-[#1D376A] px-2 text-white/60">{t("register.or")}</span>
           </div>
         </div>
 
@@ -192,13 +229,13 @@ function RegisterForm() {
         </Button>
 
         <p className="text-center text-sm text-white/80">
-          Already have an account?{" "}
+          {t("register.alreadyHaveAccount")}{" "}
           <Link
             href={`/login${next !== "/app" ? `?next=${encodeURIComponent(next)}` : ""}`}
             className="font-medium underline hover:text-white"
             style={{ color: COLORS.primary }}
           >
-            Sign in
+            {t("register.signInLink")}
           </Link>
         </p>
       </div>

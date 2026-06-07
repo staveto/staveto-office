@@ -19,6 +19,8 @@ export type DashboardJobPreview = {
   id: string;
   name: string;
   location?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type DashboardQuotePreview = {
@@ -26,6 +28,8 @@ export type DashboardQuotePreview = {
   title: string;
   status: QuoteStatus;
   clientName?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 export type DashboardStats = {
@@ -43,6 +47,8 @@ export type DashboardStats = {
   teamCount: number | null;
   delayedJobsCount: number;
   delayedJobs: DashboardJobPreview[];
+  /** Recent quotes with timestamps for activity feed. */
+  quotesRecent: DashboardQuotePreview[];
 };
 
 const RECENT_JOBS_LIMIT = 5;
@@ -63,6 +69,8 @@ function toJobPreview(project: ProjectDoc): DashboardJobPreview {
     id: project.id,
     name: project.name,
     location: jobLocation(project),
+    createdAt: project.createdAt,
+    updatedAt: project.updatedAt,
   };
 }
 
@@ -81,6 +89,8 @@ function toQuotePreview(quote: QuoteDoc): DashboardQuotePreview {
     title: quote.title,
     status: quote.status,
     clientName: quote.clientName,
+    createdAt: quote.createdAt,
+    updatedAt: quote.updatedAt,
   };
 }
 
@@ -102,6 +112,7 @@ export async function fetchDashboardStats(
   let teamCount: number | null = null;
   let delayedJobsCount = 0;
   let delayedJobs: DashboardJobPreview[] = [];
+  let quotesRecent: DashboardQuotePreview[] = [];
 
   const legacyWorkspace =
     "source" in workspace
@@ -145,12 +156,15 @@ export async function fetchDashboardStats(
   try {
     const quotes = await listQuotesForWorkspace(legacyWorkspace, uid);
     quotesCount = quotes.length;
+    const sortedQuotes = [...quotes].sort(sortJobsByRecency);
+    quotesRecent = sortedQuotes.slice(0, RECENT_JOBS_LIMIT).map(toQuotePreview);
     const awaiting = quotes.filter((q) => QUOTES_NEEDING_ACTION.has(q.status));
     quotesAwaitingCount = awaiting.length;
     quotesAwaiting = awaiting.slice(0, QUOTES_ACTION_LIMIT).map(toQuotePreview);
   } catch {
     quotesCount = null;
     quotesAwaiting = [];
+    quotesRecent = [];
   }
 
   try {
@@ -194,5 +208,6 @@ export async function fetchDashboardStats(
     teamCount,
     delayedJobsCount,
     delayedJobs,
+    quotesRecent,
   };
 }

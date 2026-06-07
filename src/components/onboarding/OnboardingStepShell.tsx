@@ -4,10 +4,7 @@ import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/componen
 import { Button } from "@/components/ui/button";
 import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { OnboardingProgress } from "./OnboardingProgress";
-
-const COLORS = {
-  primary: "#e06737",
-};
+import { cn } from "@/lib/utils";
 
 type OnboardingStepShellProps = {
   step: number;
@@ -39,20 +36,24 @@ export function OnboardingStepShell({
   showBack = true,
 }: OnboardingStepShellProps) {
   return (
-    <Card className="max-w-lg w-full bg-white/95 shadow-lg">
-      <CardHeader className="space-y-3">
+    <Card className="w-full overflow-hidden rounded-2xl border-0 bg-white shadow-[0_24px_64px_rgba(0,0,0,0.28)] ring-1 ring-white/10">
+      <div className="h-1 bg-gradient-to-r from-[#1D376A] via-[#e06737] to-[#e06737]/70" aria-hidden />
+      <CardHeader className="space-y-4 pb-2 pt-6">
         <OnboardingProgress current={step} total={totalSteps} />
         <div>
-          <CardTitle className="text-xl">{title}</CardTitle>
+          <p className="text-xs font-medium uppercase tracking-wide text-[#1D376A]/60">
+            {step} / {totalSteps}
+          </p>
+          <CardTitle className="mt-1 font-serif text-2xl font-bold text-[#1D376A]">{title}</CardTitle>
           {subtitle ? (
-            <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{subtitle}</p>
           ) : null}
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">{children}</CardContent>
-      <CardFooter className="flex justify-between gap-2">
+      <CardContent className="space-y-4 px-6 pb-2">{children}</CardContent>
+      <CardFooter className="flex justify-between gap-3 border-t border-border/60 bg-muted/20 px-6 py-4">
         {showBack && onBack ? (
-          <Button type="button" variant="ghost" onClick={onBack} disabled={saving}>
+          <Button type="button" variant="ghost" onClick={onBack} disabled={saving} className="text-[#1D376A]">
             <ChevronLeft className="size-4 mr-1" />
             {backLabel}
           </Button>
@@ -63,8 +64,12 @@ export function OnboardingStepShell({
           type="button"
           onClick={onNext}
           disabled={!canProceed || saving}
-          className="min-w-[120px]"
-          style={{ backgroundColor: COLORS.primary }}
+          className={cn(
+            "min-w-[130px] rounded-xl font-semibold shadow-md transition-all",
+            canProceed && !saving
+              ? "bg-[#e06737] hover:bg-[#c8562d] hover:shadow-lg"
+              : "bg-[#e06737]/40"
+          )}
         >
           {saving ? (
             <Loader2 className="size-4 animate-spin" />

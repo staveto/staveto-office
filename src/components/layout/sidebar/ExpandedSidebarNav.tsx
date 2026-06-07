@@ -19,6 +19,7 @@ type ExpandedSidebarNavProps = {
   search: string;
   isPersonalWorkspace: boolean;
   canManage: boolean;
+  enabledModules?: import("@/lib/enabledModules").EnabledModulesMap | null;
   comingSoonLabel: string;
   t: (key: string) => string;
   onNavigate?: () => void;
@@ -30,12 +31,13 @@ export function ExpandedSidebarNav({
   search,
   isPersonalWorkspace,
   canManage,
+  enabledModules = null,
   comingSoonLabel,
   t,
   onNavigate,
   onLogout,
 }: ExpandedSidebarNavProps) {
-  const filterOpts = { isPersonalWorkspace, canManage };
+  const filterOpts = { isPersonalWorkspace, canManage, enabledModules };
   const sections = filterNavSections(SIDEBAR_NAV_SECTIONS, filterOpts);
   const activeSectionId = getActiveSectionId(pathname, SIDEBAR_NAV_SECTIONS, search);
 
@@ -46,7 +48,7 @@ export function ExpandedSidebarNav({
     }
     if (activeSectionId) ids.add(activeSectionId);
     return ids;
-  }, [sections, activeSectionId, isPersonalWorkspace, canManage]);
+  }, [sections, activeSectionId, isPersonalWorkspace, canManage, enabledModules]);
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(defaultExpanded);
 
@@ -91,6 +93,7 @@ export function ExpandedSidebarNav({
                 collapsed={false}
                 isPersonalWorkspace={isPersonalWorkspace}
                 canManage={canManage}
+                enabledModules={enabledModules}
                 flatSingleLink
                 onToggle={() => undefined}
                 onNavigate={onNavigate}
@@ -113,6 +116,7 @@ export function ExpandedSidebarNav({
               collapsed={false}
               isPersonalWorkspace={isPersonalWorkspace}
               canManage={canManage}
+              enabledModules={enabledModules}
               onToggle={() => toggleSection(section.id)}
               onNavigate={onNavigate}
               onLogout={onLogout}
@@ -126,7 +130,7 @@ export function ExpandedSidebarNav({
           {t("sidebar.laterSection")}
         </p>
         <ul className="space-y-0.5" role="list">
-          {SIDEBAR_LATER_ITEMS.map((item) => (
+          {filterNavItems(SIDEBAR_LATER_ITEMS, filterOpts).map((item) => (
             <SidebarSubItem
               key={item.id}
               item={item}

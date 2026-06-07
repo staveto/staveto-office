@@ -47,7 +47,7 @@ type AuthContextValue = AuthState & {
   signUpWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
   logout: () => Promise<void>;
-  refreshUser: () => Promise<void>;
+  refreshUser: () => Promise<UserProfile | null>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -79,7 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loading: !!getAuthInstance(),
   }));
 
-  const loadUserAndProfile = async (fb: FirebaseUser) => {
+  const loadUserAndProfile = async (fb: FirebaseUser): Promise<UserProfile | null> => {
     let profile: UserProfile | null = null;
     let billing: BillingStatus | null = null;
 
@@ -108,16 +108,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       profile,
       loading: false,
     });
+    return profile;
   };
 
-  const refreshUser = async () => {
+  const refreshUser = async (): Promise<UserProfile | null> => {
     const auth = getAuthInstance();
     const fb = auth?.currentUser;
     if (!fb) {
       setState((s) => ({ ...s, user: null, profile: null, loading: false }));
-      return;
+      return null;
     }
-    await loadUserAndProfile(fb);
+    return loadUserAndProfile(fb);
   };
 
   useEffect(() => {

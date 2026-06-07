@@ -12,8 +12,11 @@
     "firebase:login:no-localhost": "firebase login --reauth --no-localhost",
     "firebase:login:workaround": "powershell -ExecutionPolicy Bypass -File scripts/firebase-login-attest-workaround.ps1",
     "firebase:secret": "firebase functions:secrets:set GEMINI_API_KEY",
-    "firebase:deploy": "firebase deploy --only functions:generateProjectDraft,functions:updateProjectDraftWithAI,functions:createProjectFromDraft,firestore:rules,storage",
-    "firebase:deploy:functions": "firebase deploy --only functions:generateProjectDraft,functions:updateProjectDraftWithAI,functions:createProjectFromDraft",
+    "firebase:deploy": "firebase deploy --only functions:generateProjectDraft,functions:updateProjectDraftWithAI,functions:createProjectFromDraft,functions:createBusinessOrg,firestore:rules,storage",
+    "firebase:deploy:functions": "firebase deploy --only functions:generateProjectDraft,functions:updateProjectDraftWithAI,functions:createProjectFromDraft,functions:createBusinessOrg",
+    "firebase:deploy:business-org": "firebase deploy --only functions:createBusinessOrg,firestore:rules",
+    "firebase:deploy:business-org:function": "firebase deploy --only functions:createBusinessOrg",
+    "emulators:functions": "npm run functions:build && firebase emulators:start --only functions",
     "functions:build": "npm run build --prefix functions"
   },
   "dependencies": {
@@ -24,6 +27,7 @@
     "leaflet": "^1.9.4",
     "lucide-react": "^0.577.0",
     "next": "16.1.6",
+    "qrcode.react": "^4.2.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-leaflet": "^5.0.0",

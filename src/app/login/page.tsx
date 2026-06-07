@@ -9,7 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { resolvePostAuthRoute } from "@/lib/userProfile";
 import { useI18n } from "@/i18n/I18nContext";
+import { OnboardingLanguageSwitcher } from "@/components/onboarding/OnboardingLanguageSwitcher";
 
 const COLORS = {
   background: "#1D376A",
@@ -22,7 +24,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") ?? "/app";
-  const { user, loading, signIn, signUpWithGoogle } = useAuth();
+  const { user, profile, loading, signIn, signUpWithGoogle, refreshUser } = useAuth();
   const { t } = useI18n();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -30,11 +32,16 @@ function LoginForm() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  function resolveDestination(): string {
+    if (next.startsWith("/join")) return next;
+    return resolvePostAuthRoute(profile, next);
+  }
+
   useEffect(() => {
     if (!loading && user) {
-      router.replace(next);
+      router.replace(resolveDestination());
     }
-  }, [user, loading, router, next]);
+  }, [user, profile, loading, router, next]);
 
   async function handleEmailSignIn(e: React.FormEvent) {
     e.preventDefault();
@@ -42,7 +49,10 @@ function LoginForm() {
     setError(null);
     try {
       await signIn(email, password);
-      router.push(next);
+      const refreshedProfile = await refreshUser();
+      router.push(
+        next.startsWith("/join") ? next : resolvePostAuthRoute(refreshedProfile, next)
+      );
       router.refresh();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -57,7 +67,10 @@ function LoginForm() {
     setError(null);
     try {
       await signUpWithGoogle();
-      router.push(next);
+      const refreshedProfile = await refreshUser();
+      router.push(
+        next.startsWith("/join") ? next : resolvePostAuthRoute(refreshedProfile, next)
+      );
       router.refresh();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -73,6 +86,9 @@ function LoginForm() {
         className="min-h-screen flex items-center justify-center"
         style={{ backgroundColor: COLORS.background }}
       >
+        <div className="fixed top-4 right-4 z-50">
+          <OnboardingLanguageSwitcher />
+        </div>
         <Loader2 className="size-8 animate-spin text-white" />
       </div>
     );
@@ -83,6 +99,9 @@ function LoginForm() {
       className="min-h-screen flex flex-col items-center justify-center p-6"
       style={{ backgroundColor: COLORS.background }}
     >
+      <div className="fixed top-4 right-4 z-50">
+        <OnboardingLanguageSwitcher />
+      </div>
       <Image
         src="/logo.png"
         alt="Staveto"
@@ -107,7 +126,7 @@ function LoginForm() {
         <form onSubmit={handleEmailSignIn} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email" className="text-white/90">
-              Email
+              {t("login.email")}
             </Label>
             <Input
               id="email"
@@ -121,7 +140,7 @@ function LoginForm() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="password" className="text-white/90">
-              Password
+              {t("login.password")}
             </Label>
             <Input
               id="password"
@@ -152,7 +171,7 @@ function LoginForm() {
             <span className="w-full border-t border-white/30" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-[#1D376A] px-2 text-white/60">or</span>
+            <span className="bg-[#1D376A] px-2 text-white/60">{t("login.or")}</span>
           </div>
         </div>
 
@@ -177,13 +196,13 @@ function LoginForm() {
         </Button>
 
         <p className="text-center text-sm text-white/80">
-          Don&apos;t have an account?{" "}
+          {t("login.noAccount")}{" "}
           <Link
             href={`/register${next !== "/app" ? `?next=${encodeURIComponent(next)}` : ""}`}
             className="font-medium underline hover:text-white"
             style={{ color: COLORS.primary }}
           >
-            Sign up
+            {t("login.signUpLink")}
           </Link>
         </p>
       </div>

@@ -21,7 +21,7 @@ import { useI18n } from "@/i18n/I18nContext";
 import type { ActiveWorkspace } from "@/types/workspace";
 import type { DashboardStats } from "@/lib/dashboardStats";
 import { getDashboardNextStep } from "@/lib/workspaceProduct";
-import { COMPANY_REGISTRATION_ROUTE } from "@/services/onboarding";
+import { BUSINESS_CREATE_ROUTE } from "@/services/onboarding";
 
 type PersonalDashboardViewProps = {
   activeWorkspace: ActiveWorkspace;
@@ -29,7 +29,6 @@ type PersonalDashboardViewProps = {
   stats: DashboardStats;
   statsLoading: boolean;
   showCreateCompany: boolean;
-  pendingCompanyBanner?: ReactNode;
   companySwitchPrompt?: ReactNode;
 };
 
@@ -39,7 +38,6 @@ export function PersonalDashboardView({
   stats,
   statsLoading,
   showCreateCompany,
-  pendingCompanyBanner,
   companySwitchPrompt,
 }: PersonalDashboardViewProps) {
   const { t } = useI18n();
@@ -66,8 +64,6 @@ export function PersonalDashboardView({
         estimatesCount={stats.quotesCount ?? stats.estimatesCount}
         statsLoading={statsLoading}
       />
-
-      {pendingCompanyBanner}
 
       {companySwitchPrompt}
 
@@ -124,7 +120,7 @@ export function PersonalDashboardView({
             <CompactActionButton
               label={t("dashboard.hero.createCompany")}
               icon={Building2}
-              href={COMPANY_REGISTRATION_ROUTE}
+              href={BUSINESS_CREATE_ROUTE}
             />
           ) : null}
           <CompactActionButton

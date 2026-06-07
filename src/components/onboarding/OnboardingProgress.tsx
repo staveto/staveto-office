@@ -20,8 +20,8 @@ export function OnboardingProgress({ current, total, className }: OnboardingProg
         <div
           key={i}
           className={cn(
-            "h-1.5 flex-1 rounded-full transition-colors",
-            i < current ? "bg-[#e06737]" : "bg-white/25"
+            "h-2 flex-1 rounded-full transition-all duration-300",
+            i < current ? "bg-[#e06737]" : "bg-[#1D376A]/12"
           )}
         />
       ))}

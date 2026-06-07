@@ -12,6 +12,7 @@ import { SidebarBrand } from "./sidebar/SidebarBrand";
 import { ActiveCompanyContextSelector } from "./ActiveCompanyContextSelector";
 import { UserProfileMenu } from "./UserProfileMenu";
 import { canManageCompanyOperations } from "@/lib/workspaceProduct";
+import { useEnabledModules } from "@/context/EnabledModulesContext";
 
 interface SidebarProps {
   collapsed?: boolean;
@@ -27,6 +28,7 @@ export function Sidebar({ onClose, isMobile = false }: SidebarProps) {
 
   const isPersonalWorkspace = activeWorkspace?.type === "personal";
   const canManage = canManageCompanyOperations(activeWorkspace?.role);
+  const { modules: enabledModules } = useEnabledModules();
   const comingSoonLabel = t("sidebar.comingSoon");
 
   const handleLogout = async () => {
@@ -54,6 +56,7 @@ export function Sidebar({ onClose, isMobile = false }: SidebarProps) {
           pathname={pathname}
           isPersonalWorkspace={isPersonalWorkspace}
           canManage={canManage}
+          enabledModules={isPersonalWorkspace ? null : enabledModules}
           comingSoonLabel={comingSoonLabel}
           t={t}
           onNavigate={onClose}

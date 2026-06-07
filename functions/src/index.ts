@@ -6,6 +6,7 @@ import {
   handleGenerateProjectDraft,
   handleUpdateProjectDraftWithAI,
 } from "./handlers";
+import { handleCreateBusinessOrg } from "./businessOrg";
 import { isGeminiQuotaError } from "./gemini";
 import { functionsPermissionError } from "./permissions";
 
@@ -76,6 +77,19 @@ export const createProjectFromDraft = onCall(
   async (request) => {
     try {
       return await handleCreateProjectFromDraft(request.auth?.uid, request.data);
+    } catch (e) {
+      mapError(e);
+    }
+  }
+);
+
+export const createBusinessOrg = onCall(
+  { ...callableOptions, timeoutSeconds: 60, memory: "256MiB" as const },
+  async (request) => {
+    try {
+      const actorEmail =
+        typeof request.auth?.token?.email === "string" ? request.auth.token.email : null;
+      return await handleCreateBusinessOrg(request.auth?.uid, actorEmail, request.data);
     } catch (e) {
       mapError(e);
     }

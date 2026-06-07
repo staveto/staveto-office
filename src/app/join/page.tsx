@@ -3,9 +3,10 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
-import { getInviteByToken, acceptInvite } from "@/lib/organizations";
 import { finishOnboardingAfterJoin } from "@/services/onboarding";
+import { redeemBusinessInviteCode, acceptLegacyInviteToken } from "@/services/business/businessInvitesService";
 import { useI18n } from "@/i18n/I18nContext";
+import { OnboardingLanguageSwitcher } from "@/components/onboarding/OnboardingLanguageSwitcher";
 import { Loader2 } from "lucide-react";
 
 const COLORS = {
@@ -14,45 +15,61 @@ const COLORS = {
   textOnDark: "#ffffff",
 };
 
+type JoinStatus = "redirect" | "processing" | "done" | "pending" | "error";
+
 function JoinHandler() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
+  const code = searchParams.get("code");
   const { user, loading, refreshUser } = useAuth();
   const { t } = useI18n();
-  const [status, setStatus] = useState<"redirect" | "processing" | "done" | "error">("redirect");
+  const [status, setStatus] = useState<JoinStatus>("redirect");
 
   useEffect(() => {
-    if (!token) {
+    if (!token && !code) {
       router.replace("/login");
       return;
     }
     if (loading) return;
     if (!user) {
-      const next = encodeURIComponent(`/join?token=${token}`);
-      router.replace(`/login?next=${next}`);
+      const next = token
+        ? `/join?token=${encodeURIComponent(token)}`
+        : `/join?code=${encodeURIComponent(code ?? "")}`;
+      router.replace(`/login?next=${encodeURIComponent(next)}`);
       return;
     }
+
     void (async () => {
       setStatus("processing");
       try {
-        const invite = await getInviteByToken(token);
-        if (!invite) {
-          setStatus("error");
+        if (code) {
+          const result = await redeemBusinessInviteCode(code);
+          await finishOnboardingAfterJoin(user.id, result.orgId);
+          await refreshUser();
+          if (result.status === "pending") {
+            setStatus("pending");
+            return;
+          }
+          setStatus("done");
+          router.replace("/app");
           return;
         }
-        const orgId = await acceptInvite(invite.id, user.id, user.email ?? "");
-        await finishOnboardingAfterJoin(user.id, orgId);
-        await refreshUser();
-        setStatus("done");
-        router.replace("/app");
+
+        if (token) {
+          const result = await acceptLegacyInviteToken(token);
+          await finishOnboardingAfterJoin(user.id, result.orgId);
+          await refreshUser();
+          setStatus("done");
+          router.replace("/app");
+        }
       } catch {
         setStatus("error");
       }
     })();
-  }, [token, user, loading, router, refreshUser]);
+  }, [token, code, user, loading, router, refreshUser]);
 
-  if (!token) {
+  if (!token && !code) {
     return null;
   }
 
@@ -66,6 +83,26 @@ function JoinHandler() {
         <p style={{ color: COLORS.textOnDark }}>
           {loading ? t("join.loading") : t("join.processing")}
         </p>
+      </div>
+    );
+  }
+
+  if (status === "pending") {
+    return (
+      <div
+        className="min-h-screen flex flex-col items-center justify-center p-6 text-center max-w-md mx-auto"
+        style={{ backgroundColor: COLORS.background }}
+      >
+        <p className="text-white mb-2 font-medium">{t("join.pendingTitle")}</p>
+        <p className="text-white/80 text-sm mb-6">{t("join.pendingBody")}</p>
+        <button
+          type="button"
+          onClick={() => router.push("/app")}
+          className="px-4 py-2 rounded-lg font-medium"
+          style={{ backgroundColor: COLORS.primary, color: COLORS.textOnDark }}
+        >
+          {t("join.goToApp")}
+        </button>
       </div>
     );
   }
@@ -94,17 +131,22 @@ function JoinHandler() {
 
 export default function JoinPage() {
   return (
-    <Suspense
-      fallback={
-        <div
-          className="min-h-screen flex items-center justify-center"
-          style={{ backgroundColor: COLORS.background }}
-        >
-          <Loader2 className="size-8 animate-spin text-white" />
-        </div>
-      }
-    >
-      <JoinHandler />
-    </Suspense>
+    <>
+      <div className="fixed top-4 right-4 z-50">
+        <OnboardingLanguageSwitcher />
+      </div>
+      <Suspense
+        fallback={
+          <div
+            className="min-h-screen flex items-center justify-center"
+            style={{ backgroundColor: COLORS.background }}
+          >
+            <Loader2 className="size-8 animate-spin text-white" />
+          </div>
+        }
+      >
+        <JoinHandler />
+      </Suspense>
+    </>
   );
 }

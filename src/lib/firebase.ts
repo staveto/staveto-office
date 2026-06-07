@@ -30,7 +30,7 @@ import {
   serverTimestamp,
   Timestamp,
 } from "firebase/firestore";
-import { getFunctions, httpsCallable } from "firebase/functions";
+import { getFunctions, httpsCallable, connectFunctionsEmulator } from "firebase/functions";
 import {
   getStorage,
   ref,
@@ -128,12 +128,25 @@ export async function logout(): Promise<void> {
 }
 
 const REGION = "europe-west1";
+let functionsEmulatorConnected = false;
+
+function connectFunctionsEmulatorIfConfigured(functions: ReturnType<typeof getFunctions>): void {
+  if (functionsEmulatorConnected) return;
+  if (process.env.NEXT_PUBLIC_FIREBASE_USE_FUNCTIONS_EMULATOR !== "true") return;
+  if (typeof window === "undefined") return;
+
+  const host = process.env.NEXT_PUBLIC_FIREBASE_FUNCTIONS_EMULATOR_HOST ?? "127.0.0.1";
+  const port = Number(process.env.NEXT_PUBLIC_FIREBASE_FUNCTIONS_EMULATOR_PORT ?? "5001");
+  connectFunctionsEmulator(functions, host, port);
+  functionsEmulatorConnected = true;
+}
 
 export function getCallable<T = unknown, R = unknown>(name: string) {
   return async (data: T): Promise<{ data: R }> => {
     const app = getApp();
     if (!app) throw new Error("Firebase is not configured");
     const functions = getFunctions(app, REGION);
+    connectFunctionsEmulatorIfConfigured(functions);
     const fn = httpsCallable<T, R>(functions, name);
     const result = await fn(data);
     return result as { data: R };
