@@ -10,6 +10,7 @@ import {
   setPersistence,
   browserLocalPersistence,
   updateProfile,
+  sendPasswordResetEmail,
   type User,
 } from "firebase/auth";
 import {
@@ -125,6 +126,19 @@ export async function logout(): Promise<void> {
   if (a) {
     await signOut(a);
   }
+}
+
+export async function sendPasswordReset(email: string): Promise<void> {
+  const a = getAuthInstance();
+  if (!a) {
+    throw new Error("Firebase is not configured. Add NEXT_PUBLIC_FIREBASE_* to .env.local");
+  }
+  const normalizedEmail = email.trim().toLowerCase();
+  const actionCodeSettings =
+    typeof window !== "undefined"
+      ? { url: `${window.location.origin}/login`, handleCodeInApp: false as const }
+      : undefined;
+  await sendPasswordResetEmail(a, normalizedEmail, actionCodeSettings);
 }
 
 const REGION = "europe-west1";
