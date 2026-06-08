@@ -54,6 +54,40 @@ service cloud.firestore {
       );
     }
 
+    function isDirectChatParticipant(chatData) {
+      return chatData.type == 'direct'
+        && chatData.participantUids is list
+        && request.auth.uid in chatData.participantUids;
+    }
+
+    function canReadOrgChat(chatData) {
+      return chatData.type == 'general' || isDirectChatParticipant(chatData);
+    }
+
+    function orgMemberDataFor(orgId, memberUid) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(memberUid)).data;
+    }
+
+    function isOrgMemberUid(orgId, memberUid) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerUid == memberUid
+        || (
+          exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(memberUid))
+          && (
+            !('status' in orgMemberDataFor(orgId, memberUid))
+            || orgMemberDataFor(orgId, memberUid).status in ['active', 'pending']
+          )
+        );
+    }
+
+    function directChatCreateValid(orgId) {
+      return request.resource.data.type == 'direct'
+        && request.resource.data.participantUids is list
+        && request.resource.data.participantUids.size() == 2
+        && request.auth.uid in request.resource.data.participantUids
+        && isOrgMemberUid(orgId, request.resource.data.participantUids[0])
+        && isOrgMemberUid(orgId, request.resource.data.participantUids[1]);
+    }
+
     function isOrgChatWriter(orgId) {
       return isSignedIn() && (
         get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid
@@ -229,13 +263,17 @@ service cloud.firestore {
       }
 
       match /chats/{chatId} {
-        allow read: if isOrgMemberActive(orgId);
+        allow read: if isOrgMemberActive(orgId) && canReadOrgChat(resource.data);
         allow create: if isSignedIn()
           && isOrgMemberActive(orgId)
           && request.resource.data.orgId == orgId
-          && request.resource.data.type in ['general'];
+          && (
+            (request.resource.data.type == 'general' && chatId == 'general')
+            || (directChatCreateValid(orgId) && chatId.matches('direct_.*'))
+          );
         allow update: if isSignedIn()
           && isOrgChatWriter(orgId)
+          && canReadOrgChat(resource.data)
           && request.resource.data.orgId == resource.data.orgId
           && request.resource.data.type == resource.data.type
           && request.resource.data.createdAt == resource.data.createdAt
@@ -249,9 +287,11 @@ service cloud.firestore {
         allow delete: if false;
 
         match /messages/{messageId} {
-          allow read: if isOrgMemberActive(orgId);
+          allow read: if isOrgMemberActive(orgId)
+            && canReadOrgChat(get(/databases/$(database)/documents/organizations/$(orgId)/chats/$(chatId)).data);
           allow create: if isSignedIn()
             && isOrgChatWriter(orgId)
+            && canReadOrgChat(get(/databases/$(database)/documents/organizations/$(orgId)/chats/$(chatId)).data)
             && request.resource.data.orgId == orgId
             && request.resource.data.chatId == chatId
             && request.resource.data.senderUid == request.auth.uid
@@ -261,9 +301,11 @@ service cloud.firestore {
         }
 
         match /reads/{readUid} {
-          allow read: if isOrgMemberActive(orgId);
+          allow read: if isOrgMemberActive(orgId)
+            && canReadOrgChat(get(/databases/$(database)/documents/organizations/$(orgId)/chats/$(chatId)).data);
           allow create, update: if isSignedIn()
             && isOrgMemberActive(orgId)
+            && canReadOrgChat(get(/databases/$(database)/documents/organizations/$(orgId)/chats/$(chatId)).data)
             && readUid == request.auth.uid
             && request.resource.data.uid == request.auth.uid;
           allow delete: if false;

@@ -1697,5 +1697,14 @@
   "business.chat.businessRequiredBody": "Firmenchat ist in Staveto Business verfügbar.",
   "business.chat.noAccessTitle": "Kein Zugriff",
   "business.chat.noAccessBody": "Sie können in diesem Chat nur lesen.",
-  "business.chat.permissionDeniedFriendly": "Kein Zugriff auf den Firmenchat. Bitte wenden Sie sich an Ihren Administrator."
+  "business.chat.permissionDeniedFriendly": "Kein Zugriff auf den Firmenchat. Bitte wenden Sie sich an Ihren Administrator.",
+  "business.chat.compose": "Neue Nachricht",
+  "business.chat.newMessageTitle": "Neue Nachricht",
+  "business.chat.recipientPlaceholder": "Name eingeben",
+  "business.chat.suggested": "Vorschläge",
+  "business.chat.noTeamMembers": "Keine Teammitglieder gefunden.",
+  "business.chat.directTitle": "Direktnachricht",
+  "business.chat.directSubtitle": "Direktnachricht",
+  "business.chat.close": "Schließen",
+  "business.chat.expand": "Erweitern"
 }

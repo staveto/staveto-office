@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import {
   ChevronDown,
@@ -10,6 +10,8 @@ import {
   MessageCircle,
   Minus,
   Send,
+  SquarePen,
+  User,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,8 +20,11 @@ import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/context/AuthContext";
 import { useBusinessChatAccess } from "@/hooks/useBusinessChatAccess";
 import { cn } from "@/lib/utils";
+import { BusinessChatComposePanel } from "@/components/business-chat/BusinessChatComposePanel";
 import {
+  ensureDirectChat,
   ensureGeneralChat,
+  getOtherParticipantUid,
   getUnreadChatCount,
   listenBusinessChats,
   listenChatMessages,
@@ -29,15 +34,28 @@ import {
   type BusinessChatDoc,
   type BusinessChatMessageDoc,
 } from "@/services/business/businessChatService";
+import type { ChatTeamMember } from "@/services/business/businessChatTeamService";
 import { formatChatListTime, formatMessageTime } from "@/services/business/businessChatUtils";
 
-type DrawerView = "collapsed" | "list" | "thread";
+type DrawerView = "collapsed" | "list" | "thread" | "compose";
 
 function userInitials(name: string | null | undefined, email: string | null | undefined): string {
   const src = (name || email || "?").trim();
   const parts = src.split(/\s+/).filter(Boolean);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return src.slice(0, 2).toUpperCase();
+}
+
+function resolveChatTitle(
+  chat: BusinessChatDoc,
+  currentUid: string,
+  t: (key: string) => string,
+  memberNames: Map<string, string>
+): string {
+  if (chat.type === "general") return t("business.chat.generalTitle");
+  const otherUid = getOtherParticipantUid(chat, currentUid);
+  if (otherUid && memberNames.has(otherUid)) return memberNames.get(otherUid)!;
+  return chat.title || t("business.chat.directTitle");
 }
 
 export function BusinessMessagingDrawer() {
@@ -50,6 +68,7 @@ export function BusinessMessagingDrawer() {
   const [loadingChats, setLoadingChats] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [unreadTotal, setUnreadTotal] = useState(0);
+  const [memberNames, setMemberNames] = useState<Map<string, string>>(new Map());
 
   const [activeChat, setActiveChat] = useState<BusinessChatDoc | null>(null);
   const [messages, setMessages] = useState<BusinessChatMessageDoc[]>([]);
@@ -58,6 +77,7 @@ export function BusinessMessagingDrawer() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [openingChat, setOpeningChat] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -77,7 +97,7 @@ export function BusinessMessagingDrawer() {
   }, [orgId, uid]);
 
   useEffect(() => {
-    if (!canAccessBusinessChat || !orgId) return;
+    if (!canAccessBusinessChat || !orgId || !uid) return;
 
     let cancelled = false;
     let unsub: (() => void) | undefined;
@@ -89,6 +109,7 @@ export function BusinessMessagingDrawer() {
         if (cancelled) return;
         unsub = listenBusinessChats(
           orgId,
+          uid,
           (rows) => {
             if (cancelled) return;
             setChats(rows);
@@ -117,7 +138,7 @@ export function BusinessMessagingDrawer() {
       cancelled = true;
       unsub?.();
     };
-  }, [canAccessBusinessChat, orgId, refreshUnread, t]);
+  }, [canAccessBusinessChat, orgId, uid, refreshUnread, t]);
 
   useEffect(() => {
     if (view !== "thread" || !orgId || !activeChat) return;
@@ -154,29 +175,50 @@ export function BusinessMessagingDrawer() {
     }
   }, [messages, view]);
 
-  if (!canAccessBusinessChat || !orgId) return null;
+  const listRows: BusinessChatDoc[] = useMemo(() => {
+    if (chats.length > 0) return chats;
+    if (!orgId) return [];
+    return [
+      {
+        id: "general",
+        orgId,
+        type: "general",
+        title: t("business.chat.generalTitle"),
+        createdAt: null,
+        updatedAt: null,
+        lastMessageText: "",
+        lastMessageAt: null,
+        lastMessageByUid: null,
+      },
+    ];
+  }, [chats, orgId, t]);
 
-  const listRows: BusinessChatDoc[] =
-    chats.length > 0
-      ? chats
-      : [
-          {
-            id: "general",
-            orgId,
-            type: "general",
-            title: t("business.chat.generalTitle"),
-            createdAt: null,
-            updatedAt: null,
-            lastMessageText: "",
-            lastMessageAt: null,
-            lastMessageByUid: null,
-          },
-        ];
+  if (!canAccessBusinessChat || !orgId) return null;
 
   const openThread = (chat: BusinessChatDoc) => {
     setActiveChat(chat);
     setView("thread");
     setMessageError(null);
+  };
+
+  const handleSelectMember = async (member: ChatTeamMember) => {
+    if (!orgId || openingChat) return;
+    setOpeningChat(true);
+    setMessageError(null);
+    try {
+      const chat = await ensureDirectChat({
+        orgId,
+        otherUid: member.uid,
+        otherDisplayName: member.displayName,
+      });
+      setMemberNames((prev) => new Map(prev).set(member.uid, member.displayName));
+      setActiveChat(chat);
+      setView("thread");
+    } catch (e) {
+      setChatError(e instanceof Error ? e.message : t("business.chat.error"));
+    } finally {
+      setOpeningChat(false);
+    }
   };
 
   const handleSend = async () => {
@@ -212,6 +254,10 @@ export function BusinessMessagingDrawer() {
     }
   };
 
+  const activeChatTitle = activeChat
+    ? resolveChatTitle(activeChat, uid, t, memberNames)
+    : t("business.chat.title");
+
   const panelWidth = "w-[360px]";
 
   if (view === "collapsed") {
@@ -241,7 +287,16 @@ export function BusinessMessagingDrawer() {
 
   return (
     <div className={cn("fixed bottom-4 right-4 z-50 flex flex-col", panelWidth)}>
-      <div className="flex flex-col overflow-hidden rounded-xl border border-[#E2E8F0] bg-white shadow-[0_12px_40px_rgba(15,42,77,0.18)] max-h-[min(640px,calc(100vh-2rem))]">
+      <div className="relative flex flex-col overflow-hidden rounded-xl border border-[#E2E8F0] bg-white shadow-[0_12px_40px_rgba(15,42,77,0.18)] max-h-[min(640px,calc(100vh-2rem))]">
+        {view === "compose" && (
+          <BusinessChatComposePanel
+            orgId={orgId}
+            currentUid={uid}
+            onClose={() => setView("list")}
+            onSelectMember={(member) => void handleSelectMember(member)}
+          />
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[#E2E8F0] px-4 py-3 bg-[#FAFBFC]">
           <div className="flex items-center gap-2 min-w-0">
@@ -258,17 +313,25 @@ export function BusinessMessagingDrawer() {
               </button>
             )}
             <h2 className="text-sm font-semibold text-[#0F172A] truncate">
-              {view === "thread"
-                ? activeChat?.title || t("business.chat.generalTitle")
-                : t("business.chat.title")}
+              {view === "thread" ? activeChatTitle : t("business.chat.title")}
             </h2>
           </div>
           <div className="flex items-center gap-1">
+            {view === "list" && canWriteChat && (
+              <button
+                type="button"
+                className="p-1.5 rounded-md hover:bg-[#EEF2F7] text-muted-foreground"
+                onClick={() => setView("compose")}
+                aria-label={t("business.chat.compose")}
+              >
+                <SquarePen className="size-4" />
+              </button>
+            )}
             <button
               type="button"
               className="p-1.5 rounded-md hover:bg-[#EEF2F7] text-muted-foreground"
               onClick={() => setView("collapsed")}
-              aria-label="Minimize"
+              aria-label={t("business.chat.minimize")}
             >
               <Minus className="size-4" />
             </button>
@@ -279,7 +342,7 @@ export function BusinessMessagingDrawer() {
                 setView("collapsed");
                 setActiveChat(null);
               }}
-              aria-label="Close"
+              aria-label={t("business.chat.close")}
             >
               <X className="size-4" />
             </button>
@@ -289,7 +352,7 @@ export function BusinessMessagingDrawer() {
         {/* List view */}
         {view === "list" && (
           <div className="flex-1 overflow-y-auto min-h-[320px]">
-            {loadingChats ? (
+            {loadingChats || openingChat ? (
               <div className="flex flex-col items-center justify-center py-16 gap-2">
                 <Loader2 className="size-6 animate-spin text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">{t("business.chat.loading")}</p>
@@ -300,37 +363,48 @@ export function BusinessMessagingDrawer() {
               <p className="p-4 text-sm text-muted-foreground">{t("business.chat.empty")}</p>
             ) : (
               <ul>
-                {listRows.map((chat) => (
-                  <li key={chat.id}>
-                    <button
-                      type="button"
-                      className="w-full flex items-start gap-3 px-4 py-3 hover:bg-[#F8FAFC] text-left border-b border-[#EEF2F7] transition-colors"
-                      onClick={() => openThread(chat)}
-                    >
-                      <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#EEF2FF] text-[#1D376A]">
-                        <MessageCircle className="size-5" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="font-semibold text-sm text-[#0F172A] truncate">
-                            {chat.title || t("business.chat.generalTitle")}
-                          </p>
-                          <span className="text-[11px] text-muted-foreground shrink-0">
-                            {formatChatListTime(chat.lastMessageAt)}
-                          </span>
+                {listRows.map((chat) => {
+                  const title = resolveChatTitle(chat, uid, t, memberNames);
+                  const isDirect = chat.type === "direct";
+                  return (
+                    <li key={chat.id}>
+                      <button
+                        type="button"
+                        className="w-full flex items-start gap-3 px-4 py-3 hover:bg-[#F8FAFC] text-left border-b border-[#EEF2F7] transition-colors"
+                        onClick={() => openThread(chat)}
+                      >
+                        <div
+                          className={cn(
+                            "flex size-10 shrink-0 items-center justify-center rounded-full",
+                            isDirect ? "bg-[#1D376A] text-white text-xs font-bold" : "bg-[#EEF2FF] text-[#1D376A]"
+                          )}
+                        >
+                          {isDirect ? (
+                            userInitials(title, null)
+                          ) : (
+                            <MessageCircle className="size-5" />
+                          )}
                         </div>
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">
-                          {chat.lastMessageText || t("business.chat.noMessages")}
-                        </p>
-                      </div>
-                      {unreadTotal > 0 && (
-                        <span className="min-w-[20px] h-5 rounded-full bg-[#EA580C] px-1.5 text-[10px] font-bold text-white flex items-center justify-center shrink-0">
-                          {unreadTotal > 99 ? "99+" : unreadTotal}
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                ))}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-semibold text-sm text-[#0F172A] truncate">{title}</p>
+                            <span className="text-[11px] text-muted-foreground shrink-0">
+                              {formatChatListTime(chat.lastMessageAt)}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate mt-0.5">
+                            {chat.lastMessageText || t("business.chat.noMessages")}
+                          </p>
+                        </div>
+                        {chat.type === "general" && unreadTotal > 0 && (
+                          <span className="min-w-[20px] h-5 rounded-full bg-[#EA580C] px-1.5 text-[10px] font-bold text-white flex items-center justify-center shrink-0">
+                            {unreadTotal > 99 ? "99+" : unreadTotal}
+                          </span>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
@@ -339,6 +413,21 @@ export function BusinessMessagingDrawer() {
         {/* Thread view */}
         {view === "thread" && activeChat && (
           <>
+            {activeChat.type === "direct" && (
+              <div className="flex items-center gap-2 px-4 py-2 border-b border-[#EEF2F7] bg-white">
+                <div className="flex size-8 items-center justify-center rounded-full bg-[#1D376A] text-[10px] font-bold text-white">
+                  {userInitials(activeChatTitle, null)}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold truncate">{activeChatTitle}</p>
+                  <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                    <User className="size-3" />
+                    {t("business.chat.directSubtitle")}
+                  </p>
+                </div>
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto min-h-[280px] max-h-[420px] px-3 py-3 space-y-3 bg-[#F4F7FA]">
               {loadingMessages ? (
                 <div className="flex justify-center py-12">
@@ -351,12 +440,13 @@ export function BusinessMessagingDrawer() {
               ) : (
                 messages.map((msg) => {
                   const mine = msg.senderUid === uid;
+                  const showSender = activeChat.type === "general" && !mine;
                   return (
                     <div
                       key={msg.id}
                       className={cn("flex flex-col max-w-[85%]", mine ? "ml-auto items-end" : "items-start")}
                     >
-                      {!mine && (
+                      {showSender && (
                         <span className="text-[11px] text-muted-foreground mb-1 px-1 truncate max-w-full">
                           {msg.senderName || msg.senderEmail || "User"}
                         </span>

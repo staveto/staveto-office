@@ -34,3 +34,12 @@ export function formatMessageTime(raw: unknown): string {
   if (!ms) return "";
   return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
+
+/** Deterministic DM chat id for two org member uids. */
+export function buildDirectChatId(uidA: string, uidB: string): string {
+  return `direct_${[uidA.trim(), uidB.trim()].sort().join("_")}`;
+}
+
+export function sortedParticipantUids(uidA: string, uidB: string): [string, string] {
+  return [uidA.trim(), uidB.trim()].sort() as [string, string];
+}

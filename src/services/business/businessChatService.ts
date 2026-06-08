@@ -4,6 +4,11 @@
  */
 import { ensureOrgMemberForOwner } from "@/lib/organizations";
 import {
+  buildDirectChatId,
+  sortedParticipantUids,
+  toMillis,
+} from "@/services/business/businessChatUtils";
+import {
   getAuthInstance,
   getFirestoreInstance,
   getStorageInstance,
@@ -25,7 +30,7 @@ import {
   onSnapshot,
 } from "@/lib/firebase";
 
-export type BusinessChatType = "general";
+export type BusinessChatType = "general" | "direct";
 export type BusinessChatMessageType = "text" | "image";
 
 export type BusinessChatDoc = {
@@ -33,6 +38,7 @@ export type BusinessChatDoc = {
   orgId: string;
   type: BusinessChatType;
   title: string;
+  participantUids?: string[];
   createdAt: unknown;
   updatedAt: unknown;
   lastMessageText: string;
@@ -66,17 +72,31 @@ function requireUid(): string {
 }
 
 function toChatDoc(id: string, raw: Record<string, unknown>): BusinessChatDoc {
+  const chatType: BusinessChatType = raw.type === "direct" ? "direct" : "general";
+  const participantUids = Array.isArray(raw.participantUids)
+    ? raw.participantUids.filter((u): u is string => typeof u === "string")
+    : undefined;
+
   return {
     id,
     orgId: typeof raw.orgId === "string" ? raw.orgId : "",
-    type: raw.type === "general" ? "general" : "general",
+    type: chatType,
     title: typeof raw.title === "string" && raw.title.trim() ? raw.title.trim() : "General",
+    participantUids,
     createdAt: raw.createdAt ?? null,
     updatedAt: raw.updatedAt ?? null,
     lastMessageText: typeof raw.lastMessageText === "string" ? raw.lastMessageText : "",
     lastMessageAt: raw.lastMessageAt ?? null,
     lastMessageByUid: typeof raw.lastMessageByUid === "string" ? raw.lastMessageByUid : null,
   };
+}
+
+export function getOtherParticipantUid(
+  chat: Pick<BusinessChatDoc, "type" | "participantUids">,
+  currentUid: string
+): string | null {
+  if (chat.type !== "direct" || !chat.participantUids?.length) return null;
+  return chat.participantUids.find((u) => u !== currentUid) ?? null;
 }
 
 function toMessageDoc(id: string, raw: Record<string, unknown>): BusinessChatMessageDoc {
@@ -97,6 +117,68 @@ function toMessageDoc(id: string, raw: Record<string, unknown>): BusinessChatMes
     deletedAt: raw.deletedAt ?? undefined,
     status: "sent",
   };
+}
+
+export async function ensureDirectChat(input: {
+  orgId: string;
+  otherUid: string;
+  otherDisplayName: string;
+}): Promise<BusinessChatDoc> {
+  const uid = requireUid();
+  const db = getFirestoreInstance();
+  if (!db) throw new Error("Firestore not configured");
+
+  const normalizedOrgId = input.orgId.trim();
+  const otherUid = input.otherUid.trim();
+  if (!normalizedOrgId || !otherUid) throw new Error("Invalid chat participants");
+  if (otherUid === uid) throw new Error("Cannot start a chat with yourself");
+
+  await ensureOrgMemberForOwner(normalizedOrgId, uid);
+
+  const chatId = buildDirectChatId(uid, otherUid);
+  const chatRef = doc(db, `organizations/${normalizedOrgId}/chats/${chatId}`);
+  const snap = await getDoc(chatRef);
+  if (snap.exists()) {
+    return toChatDoc(snap.id, snap.data() as Record<string, unknown>);
+  }
+
+  const participantUids = sortedParticipantUids(uid, otherUid);
+  const title = input.otherDisplayName.trim() || otherUid;
+
+  await setDoc(chatRef, {
+    orgId: normalizedOrgId,
+    type: "direct",
+    participantUids,
+    title,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    lastMessageText: "",
+    lastMessageAt: serverTimestamp(),
+    lastMessageByUid: null,
+  });
+
+  const created = await getDoc(chatRef);
+  return toChatDoc(
+    chatId,
+    (created.data() ?? {
+      orgId: normalizedOrgId,
+      type: "direct",
+      participantUids,
+      title,
+    }) as Record<string, unknown>
+  );
+}
+
+async function ensureChatExists(orgId: string, chatId: string): Promise<void> {
+  if (chatId === "general") {
+    await ensureGeneralChat(orgId);
+    return;
+  }
+  if (!chatId.startsWith("direct_")) return;
+  const db = getFirestoreInstance();
+  if (!db) throw new Error("Firestore not configured");
+  const snap = await getDoc(doc(db, `organizations/${orgId}/chats/${chatId}`));
+  if (!snap.exists()) throw new Error("Chat not found");
 }
 
 export async function ensureGeneralChat(orgId: string): Promise<void> {
@@ -128,13 +210,32 @@ export async function ensureGeneralChat(orgId: string): Promise<void> {
 
 export function listenBusinessChats(
   orgId: string,
+  uid: string,
   callback: (chats: BusinessChatDoc[]) => void,
   onError?: (error: Error) => void
 ): () => void {
-  return listenGeneralBusinessChat(
-    orgId,
-    (chat) => callback(chat ? [chat] : []),
-    onError
+  const db = getFirestoreInstance();
+  if (!db) {
+    onError?.(new Error("Firestore not configured"));
+    return () => {};
+  }
+
+  const normalizedOrgId = orgId.trim();
+  const chatsRef = collection(db, `organizations/${normalizedOrgId}/chats`);
+  return onSnapshot(
+    chatsRef,
+    (snap) => {
+      const rows = snap.docs
+        .map((d) => toChatDoc(d.id, d.data() as Record<string, unknown>))
+        .filter(
+          (chat) =>
+            chat.type === "general" ||
+            (chat.type === "direct" && chat.participantUids?.includes(uid))
+        )
+        .sort((a, b) => toMillis(b.lastMessageAt) - toMillis(a.lastMessageAt));
+      callback(rows);
+    },
+    (err) => onError?.(err)
   );
 }
 
@@ -203,7 +304,7 @@ export async function sendTextMessage(input: {
   const text = input.text.trim();
   if (!text) return;
 
-  await ensureGeneralChat(input.orgId);
+  await ensureChatExists(input.orgId, input.chatId);
 
   const messagesRef = collection(db, `organizations/${input.orgId}/chats/${input.chatId}/messages`);
   await addDoc(messagesRef, {
@@ -245,7 +346,7 @@ export async function sendImageMessage(input: {
     throw new Error("Image is too large (max 15 MB).");
   }
 
-  await ensureGeneralChat(input.orgId);
+  await ensureChatExists(input.orgId, input.chatId);
 
   const ext = mimeType.includes("png") ? "png" : "jpg";
   const fileName = `${uid}_${Date.now()}.${ext}`;
@@ -295,21 +396,8 @@ export async function markChatRead(input: { orgId: string; chatId: string }): Pr
   );
 }
 
-function toMillis(raw: unknown): number {
-  if (!raw) return 0;
-  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
-  if (typeof raw === "string") {
-    const parsed = new Date(raw).getTime();
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-  if (typeof raw === "object" && raw !== null) {
-    const maybe = raw as { toDate?: () => Date };
-    if (typeof maybe.toDate === "function") {
-      const parsed = maybe.toDate().getTime();
-      return Number.isFinite(parsed) ? parsed : 0;
-    }
-  }
-  return 0;
+function toMillisLocal(raw: unknown): number {
+  return toMillis(raw);
 }
 
 export async function getUnreadChatCount(orgId: string, uid: string): Promise<number> {
@@ -326,7 +414,7 @@ export async function getUnreadChatCount(orgId: string, uid: string): Promise<nu
 
   const readRef = doc(db, `organizations/${normalizedOrgId}/chats/general/reads/${uid}`);
   const readSnap = await getDoc(readRef);
-  const lastReadAtMs = toMillis(readSnap.data()?.lastReadAt);
+  const lastReadAtMs = toMillisLocal(readSnap.data()?.lastReadAt);
 
   const messagesRef = collection(db, `organizations/${normalizedOrgId}/chats/general/messages`);
   const q =
