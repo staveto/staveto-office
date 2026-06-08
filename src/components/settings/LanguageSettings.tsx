@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -12,6 +12,13 @@ import {
 import { useI18n } from "@/i18n/I18nContext";
 import { LOCALE_LABELS, LOCALE_NATIVE_LABELS, type Locale } from "@/i18n/config";
 import { cn } from "@/lib/utils";
+import { SettingsSectionCard } from "./SettingsSectionCard";
+import {
+  settingsFieldGroupClassName,
+  settingsFieldHintClassName,
+  settingsFieldLabelClassName,
+  settingsSelectTriggerClassName,
+} from "./settingsStyles";
 
 type Props = {
   className?: string;
@@ -21,16 +28,18 @@ export function LanguageSettings({ className }: Props) {
   const { t, locale, setLocale, locales } = useI18n();
 
   return (
-    <Card className={className} id="language">
+    <SettingsSectionCard className={className} id="language">
       <CardHeader>
         <CardTitle>{t("settings.language.title")}</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-sm text-muted-foreground">{t("settings.language.description")}</p>
-        <div className="space-y-2 max-w-sm">
-          <Label htmlFor="app-locale">{t("settings.language.label")}</Label>
+      <CardContent className="space-y-4">
+        <p className={settingsFieldHintClassName}>{t("settings.language.description")}</p>
+        <div className={cn(settingsFieldGroupClassName, "max-w-md space-y-2")}>
+          <Label htmlFor="app-locale" className={settingsFieldLabelClassName}>
+            {t("settings.language.label")}
+          </Label>
           <Select value={locale} onValueChange={(v) => setLocale(v as Locale)}>
-            <SelectTrigger id="app-locale" className="w-full">
+            <SelectTrigger id="app-locale" className={settingsSelectTriggerClassName}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -43,7 +52,7 @@ export function LanguageSettings({ className }: Props) {
           </Select>
         </div>
       </CardContent>
-    </Card>
+    </SettingsSectionCard>
   );
 }
 

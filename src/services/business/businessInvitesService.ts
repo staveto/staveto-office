@@ -204,27 +204,39 @@ function parseCachedInvitePayload(raw: unknown): CachedBusinessInvitePayload | n
 export function listCachedBusinessInvites(orgId: string): BusinessInviteListItem[] {
   if (typeof window === "undefined") return [];
   const prefix = `${INVITE_CODE_CACHE_PREFIX}${orgId}.`;
+  const seen = new Set<string>();
   const items: BusinessInviteListItem[] = [];
-  for (let i = 0; i < sessionStorage.length; i += 1) {
-    const key = sessionStorage.key(i);
-    if (!key?.startsWith(prefix)) continue;
-    const payload = parseCachedInvitePayload(JSON.parse(sessionStorage.getItem(key)!));
-    if (!payload) continue;
-    items.push({
-      inviteId: payload.inviteId,
-      code: payload.code,
-      codePrefix: payload.code.slice(0, 4),
-      role: payload.role ?? "worker",
-      status: "active",
-      type: payload.type ?? (payload.emailLower ? "direct_email" : "join_code"),
-      emailLower: payload.emailLower ?? null,
-      requiresApproval: payload.requiresApproval === true,
-      expiresAt: payload.expiresAt ?? null,
-      usedCount: 0,
-      maxUses: payload.maxUses ?? 1,
-      deepLink: payload.deepLink ?? null,
-    });
-  }
+
+  const collectFromStorage = (storage: Storage) => {
+    for (let i = 0; i < storage.length; i += 1) {
+      const key = storage.key(i);
+      if (!key?.startsWith(prefix) || seen.has(key)) continue;
+      seen.add(key);
+      try {
+        const payload = parseCachedInvitePayload(JSON.parse(storage.getItem(key)!));
+        if (!payload) continue;
+        items.push({
+          inviteId: payload.inviteId,
+          code: payload.code,
+          codePrefix: payload.code.slice(0, 4),
+          role: payload.role ?? "worker",
+          status: "active",
+          type: payload.type ?? (payload.emailLower ? "direct_email" : "join_code"),
+          emailLower: payload.emailLower ?? null,
+          requiresApproval: payload.requiresApproval === true,
+          expiresAt: payload.expiresAt ?? null,
+          usedCount: 0,
+          maxUses: payload.maxUses ?? 1,
+          deepLink: payload.deepLink ?? null,
+        });
+      } catch {
+        /* ignore corrupt cache */
+      }
+    }
+  };
+
+  collectFromStorage(sessionStorage);
+  collectFromStorage(localStorage);
   return items;
 }
 
@@ -356,7 +368,67 @@ export function formatBusinessInviteError(error: unknown): string {
   if (code === "functions/unauthenticated") {
     return "members.invites.error.notSignedIn";
   }
+  if (
+    code === "functions/failed-precondition" &&
+    (msgLower.includes("not available") || msgLower.includes("regenerate"))
+  ) {
+    return "members.invites.error.codeUnavailable";
+  }
+  if (code === "functions/internal" || code === "functions/unavailable") {
+    return "members.invites.error.loadCodeFailed";
+  }
   return "members.invites.error.generic";
+}
+
+function normalizeInviteRoleForCreate(role: string): BusinessInviteRole {
+  if (role === "manager" || role === "worker" || role === "viewer") return role;
+  if (role === "admin") return "manager";
+  return "worker";
+}
+
+/** Regenerate invite code — server decrypt/regenerate, or revoke + recreate as fallback. */
+export async function regenerateBusinessInviteCode(
+  orgId: string,
+  invite: BusinessInviteListItem,
+  emailLower?: string | null
+): Promise<CreateBusinessInviteCodeResult> {
+  try {
+    return await fetchBusinessInviteDisplay(orgId, invite.inviteId, { regenerate: true });
+  } catch (primaryError) {
+    const err = primaryError as { code?: string; message?: string };
+    const code = String(err?.code ?? "");
+    const msgLower = String(err?.message ?? "").toLowerCase();
+    const canFallback =
+      code === "functions/not-found" ||
+      code === "functions/failed-precondition" ||
+      code === "functions/internal" ||
+      code === "functions/unavailable" ||
+      msgLower.includes("not available") ||
+      msgLower.includes("regenerate");
+
+    if (!canFallback) throw primaryError;
+  }
+
+  const email = (emailLower ?? invite.emailLower)?.trim().toLowerCase() || undefined;
+  const role = normalizeInviteRoleForCreate(String(invite.role));
+
+  await revokeBusinessInvite(orgId, invite.inviteId);
+  const created = await createBusinessInviteCode({
+    orgId,
+    role,
+    emailLower: email,
+    maxUses: invite.maxUses,
+    requiresApproval: invite.requiresApproval,
+  });
+  cacheBusinessInviteCode(orgId, created, {
+    role,
+    emailLower: email ?? null,
+    type: email ? "direct_email" : "join_code",
+  });
+  if (email) {
+    cacheBusinessInviteEmail(orgId, created.inviteId, email);
+  }
+  return created;
 }
 
 export async function createBusinessInviteCode(
@@ -400,6 +472,53 @@ export async function listBusinessInvites(orgId: string): Promise<BusinessInvite
     throw error;
   }
 }
+
+export async function fetchBusinessInviteDisplay(
+  orgId: string,
+  inviteId: string,
+  options?: { regenerate?: boolean }
+): Promise<CreateBusinessInviteCodeResult> {
+  const callable = getCallable<
+    { orgId: string; inviteId: string; regenerate?: boolean },
+    GetBusinessInviteDisplayResult
+  >("getBusinessInviteDisplay");
+  const res = await callable({
+    orgId,
+    inviteId,
+    regenerate: options?.regenerate === true,
+  });
+  const data = (res?.data ?? res) as GetBusinessInviteDisplayResult;
+  const result = parseCreateResult({
+    inviteId: data.inviteId,
+    code: data.code,
+    deepLink: data.deepLink,
+    webJoinUrl: data.webJoinUrl?.startsWith("http")
+      ? data.webJoinUrl
+      : undefined,
+    expiresAt: data.expiresAt,
+    maxUses: data.maxUses,
+    requiresApproval: data.requiresApproval,
+  });
+  if (!data.webJoinUrl?.startsWith("http") && data.code) {
+    result.webJoinUrl = buildWebJoinUrl(data.code);
+  }
+  cacheBusinessInviteCode(orgId, result, {
+    emailLower: data.emailLower,
+  });
+  return result;
+}
+
+type GetBusinessInviteDisplayResult = {
+  inviteId: string;
+  code: string;
+  deepLink?: string;
+  webJoinUrl?: string;
+  expiresAt?: string | null;
+  maxUses?: number;
+  requiresApproval?: boolean;
+  emailLower?: string | null;
+  regenerated?: boolean;
+};
 
 export async function revokeBusinessInvite(orgId: string, inviteId: string): Promise<void> {
   const callable = getCallable<{ orgId: string; inviteId: string }, { ok: boolean }>(
@@ -475,7 +594,9 @@ function readCachedBusinessInvitePayload(
 ): CachedBusinessInvitePayload | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = sessionStorage.getItem(inviteCodeCacheKey(orgId, inviteId));
+    const raw =
+      sessionStorage.getItem(inviteCodeCacheKey(orgId, inviteId)) ??
+      localStorage.getItem(inviteCodeCacheKey(orgId, inviteId));
     if (!raw) return null;
     return parseCachedInvitePayload(JSON.parse(raw));
   } catch {
@@ -510,6 +631,7 @@ export function cacheBusinessInviteCode(
       type: meta?.type ?? (meta?.emailLower ? "direct_email" : "join_code"),
     };
     sessionStorage.setItem(inviteCodeCacheKey(orgId, result.inviteId), JSON.stringify(payload));
+    localStorage.setItem(inviteCodeCacheKey(orgId, result.inviteId), JSON.stringify(payload));
     if (meta?.emailLower) {
       cacheBusinessInviteEmail(orgId, result.inviteId, meta.emailLower);
     }
@@ -522,14 +644,9 @@ export function readCachedBusinessInviteCode(
   orgId: string,
   inviteId: string
 ): CreateBusinessInviteCodeResult | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = sessionStorage.getItem(inviteCodeCacheKey(orgId, inviteId));
-    if (!raw) return null;
-    return parseCreateResult(JSON.parse(raw));
-  } catch {
-    return null;
-  }
+  const payload = readCachedBusinessInvitePayload(orgId, inviteId);
+  if (!payload) return null;
+  return parseCreateResult(payload);
 }
 
 export function resolveBusinessInviteDisplay(

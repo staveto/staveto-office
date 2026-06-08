@@ -9,6 +9,8 @@ import type { DashboardStats } from "@/lib/dashboardStats";
 import type { EnabledModulesMap } from "@/lib/enabledModules";
 import { isModuleEnabled } from "@/lib/enabledModules";
 
+import type { CompanySetupProgress } from "@/services/onboarding/setupChecklistService";
+
 export type DashboardActivityItem = {
   id: string;
   kind: "job_created" | "job_updated" | "quote_created" | "quote_updated";
@@ -58,9 +60,36 @@ export function isOrgTrialing(org: Organization | null | undefined): boolean {
 
 export function isSetupDashboardMode(
   org: Organization | null | undefined,
-  stats: DashboardStats
+  stats: DashboardStats,
+  items: SetupChecklistItem[]
 ): boolean {
-  return isOrgTrialing(org) && stats.activeJobsCount === 0;
+  if (!isOrgTrialing(org)) return false;
+  const progress = getSetupProgress(items);
+  if (progress.completed >= progress.total) return false;
+  return stats.activeJobsCount === 0;
+}
+
+export function resolveSetupDashboardState(
+  stats: DashboardStats,
+  profile: OrganizationProfile | null | undefined,
+  modules: EnabledModulesMap,
+  companyType: CompanyType,
+  org: Organization | null | undefined,
+  orgRecord?: CanonicalOrganizationRecord | null,
+  setupProgress?: CompanySetupProgress
+): { items: SetupChecklistItem[]; setupMode: boolean } {
+  const items = buildSetupChecklist(
+    stats,
+    profile,
+    modules,
+    companyType,
+    orgRecord,
+    setupProgress
+  );
+  return {
+    items,
+    setupMode: isSetupDashboardMode(org, stats, items),
+  };
 }
 
 export function isProfileComplete(
@@ -94,11 +123,14 @@ export function buildSetupChecklist(
   profile: OrganizationProfile | null | undefined,
   modules: EnabledModulesMap,
   companyType: CompanyType = "other",
-  org?: CanonicalOrganizationRecord | null
+  org?: CanonicalOrganizationRecord | null,
+  setupProgress?: CompanySetupProgress
 ): SetupChecklistItem[] {
   const totalJobs = stats.projectsCount ?? 0;
   const teamCount = stats.teamCount ?? 1;
   const totalQuotes = stats.quotesCount ?? 0;
+  const offerVisited = setupProgress?.first_offer === true;
+  const documentVisited = setupProgress?.first_document === true;
 
   const firstJob: SetupChecklistItem = {
     id: "first_job",
@@ -115,15 +147,15 @@ export function buildSetupChecklist(
 
   const firstOffer: SetupChecklistItem = {
     id: "first_offer",
-    href: "/app/quotes/new",
-    completed: totalQuotes > 0,
+    href: "/app/quotes",
+    completed: totalQuotes > 0 || offerVisited,
     moduleKey: "quotes",
   };
 
   const firstDocument: SetupChecklistItem = {
     id: "first_document",
     href: "/app/projects",
-    completed: false,
+    completed: documentVisited,
     moduleKey: "documents",
   };
 

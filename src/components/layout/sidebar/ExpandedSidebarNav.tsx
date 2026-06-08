@@ -19,6 +19,7 @@ type ExpandedSidebarNavProps = {
   search: string;
   isPersonalWorkspace: boolean;
   canManage: boolean;
+  isFieldWorker?: boolean;
   enabledModules?: import("@/lib/enabledModules").EnabledModulesMap | null;
   comingSoonLabel: string;
   t: (key: string) => string;
@@ -31,13 +32,14 @@ export function ExpandedSidebarNav({
   search,
   isPersonalWorkspace,
   canManage,
+  isFieldWorker = false,
   enabledModules = null,
   comingSoonLabel,
   t,
   onNavigate,
   onLogout,
 }: ExpandedSidebarNavProps) {
-  const filterOpts = { isPersonalWorkspace, canManage, enabledModules };
+  const filterOpts = { isPersonalWorkspace, canManage, isFieldWorker, enabledModules };
   const sections = filterNavSections(SIDEBAR_NAV_SECTIONS, filterOpts);
   const activeSectionId = getActiveSectionId(pathname, SIDEBAR_NAV_SECTIONS, search);
 
@@ -83,7 +85,7 @@ export function ExpandedSidebarNav({
               <SidebarSection
                 key={section.id}
                 section={section}
-                sectionLabel={t(getNavSectionLabelKey(section, isPersonalWorkspace))}
+                sectionLabel={t(getNavSectionLabelKey(section, isPersonalWorkspace, isFieldWorker))}
                 comingSoonLabel={comingSoonLabel}
                 t={t}
                 pathname={pathname}
@@ -93,6 +95,7 @@ export function ExpandedSidebarNav({
                 collapsed={false}
                 isPersonalWorkspace={isPersonalWorkspace}
                 canManage={canManage}
+                isFieldWorker={isFieldWorker}
                 enabledModules={enabledModules}
                 flatSingleLink
                 onToggle={() => undefined}
@@ -106,7 +109,7 @@ export function ExpandedSidebarNav({
             <SidebarSection
               key={section.id}
               section={section}
-              sectionLabel={t(getNavSectionLabelKey(section, isPersonalWorkspace))}
+              sectionLabel={t(getNavSectionLabelKey(section, isPersonalWorkspace, isFieldWorker))}
               comingSoonLabel={comingSoonLabel}
               t={t}
               pathname={pathname}
@@ -116,6 +119,7 @@ export function ExpandedSidebarNav({
               collapsed={false}
               isPersonalWorkspace={isPersonalWorkspace}
               canManage={canManage}
+              isFieldWorker={isFieldWorker}
               enabledModules={enabledModules}
               onToggle={() => toggleSection(section.id)}
               onNavigate={onNavigate}
@@ -125,6 +129,7 @@ export function ExpandedSidebarNav({
         })}
       </div>
 
+      {!isFieldWorker ? (
       <div className="mt-auto pt-4 border-t border-white/10">
         <p className="px-3 pb-2 text-[11px] font-medium uppercase tracking-wider text-white/35">
           {t("sidebar.laterSection")}
@@ -143,6 +148,7 @@ export function ExpandedSidebarNav({
           ))}
         </ul>
       </div>
+      ) : null}
     </nav>
   );
 }

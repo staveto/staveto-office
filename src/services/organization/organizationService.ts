@@ -14,6 +14,7 @@ import {
   serverTimestamp,
 } from "@/lib/firebase";
 import type { Organization, OrgMemberRole } from "@/lib/organizations";
+import { normalizeMembershipRole } from "@/lib/organizations";
 import {
   normalizeWorkspaceSlug,
   validateWorkspaceSlug,
@@ -69,7 +70,7 @@ export async function isOrganizationSlugAvailable(
 export async function isOrganizationMember(
   orgId: string,
   uid: string
-): Promise<{ member: boolean; role?: OrgMemberRole }> {
+): Promise<{ member: boolean; role?: string }> {
   const db = getFirestoreInstance();
   if (!db) return { member: false };
 
@@ -77,16 +78,19 @@ export async function isOrganizationMember(
   if (orgSnap.exists()) {
     const org = orgSnap.data() as Organization;
     if (org.ownerUid === uid) {
-      return { member: true, role: "admin" };
+      return { member: true, role: "owner" };
     }
   }
 
   const memberSnap = await getDoc(doc(db, "organizations", orgId, "members", uid));
   if (!memberSnap.exists()) return { member: false };
 
-  const data = memberSnap.data() as { status?: string; role?: OrgMemberRole };
+  const data = memberSnap.data() as { status?: string; role?: OrgMemberRole | string };
   if (data.status === "removed") return { member: false };
-  return { member: true, role: data.role };
+  return {
+    member: true,
+    role: normalizeMembershipRole(String(data.role ?? "member")),
+  };
 }
 
 export async function updateOrganizationSlug(

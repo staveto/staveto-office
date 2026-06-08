@@ -124,21 +124,23 @@ export type TaskDoc = {
   isActive?: boolean;
 };
 
-export type ExpenseCategory = "MATERIAL" | "WORK" | "OTHER" | "TRAVEL";
+export type {
+  ExpenseDoc,
+  ExpenseCategory,
+  ExpenseSource,
+  ExpenseStatus,
+  TravelExpenseData,
+  CreateExpenseInput,
+  UpdateExpenseInput,
+} from "./expenses";
 
-export type ExpenseDoc = {
-  id: string;
-  projectId: string;
-  title: string;
-  amount: number | null;
-  currency: string;
-  date: string;
-  note?: string;
-  category?: ExpenseCategory;
-  status?: string;
-  createdAt?: string;
-  updatedAt?: string;
-};
+export {
+  listProjectExpenses,
+  createExpense,
+  updateExpense,
+  deleteExpense,
+  toExpenseDoc,
+} from "./expenses";
 
 export function toProjectDoc(id: string, data: Record<string, unknown>): ProjectDoc {
   const toStr = (raw: unknown): string | undefined => {
@@ -184,9 +186,14 @@ export function toProjectDoc(id: string, data: Record<string, unknown>): Project
     quoteDraftVatPercent:
       typeof data.quoteDraftVatPercent === "number" ? data.quoteDraftVatPercent : undefined,
     quoteDraftNotes: (data.quoteDraftNotes as string) || undefined,
-    assignedMemberIds: Array.isArray(data.assignedMemberIds)
-      ? (data.assignedMemberIds as string[]).filter((id) => typeof id === "string" && id.length > 0)
-      : undefined,
+    assignedMemberIds: [
+      ...(Array.isArray(data.assignedMemberIds)
+        ? (data.assignedMemberIds as string[]).filter((id) => typeof id === "string" && id.length > 0)
+        : []),
+      ...(Array.isArray(data.assignedUserIds)
+        ? (data.assignedUserIds as string[]).filter((id) => typeof id === "string" && id.length > 0)
+        : []),
+    ].filter((id, index, arr) => arr.indexOf(id) === index),
   };
 }
 
@@ -262,30 +269,6 @@ function toTaskDoc(id: string, projectId: string, data: Record<string, unknown>)
     createdAt: toStr(data.createdAt),
     updatedAt: toStr(data.updatedAt),
     isActive: data.isActive !== undefined ? (data.isActive as boolean) : undefined,
-  };
-}
-
-function toExpenseDoc(id: string, projectId: string, data: Record<string, unknown>): ExpenseDoc {
-  const toStr = (raw: unknown): string | undefined => {
-    if (!raw) return undefined;
-    if (typeof raw === "string") return raw;
-    if (typeof raw === "object" && raw !== null && "toDate" in raw) {
-      return (raw as { toDate: () => Date }).toDate().toISOString();
-    }
-    return undefined;
-  };
-  return {
-    id,
-    projectId,
-    title: (data.title as string) ?? "",
-    amount: (data.amount as number | null) ?? null,
-    currency: (data.currency as string) ?? "EUR",
-    date: toStr(data.date) ?? new Date().toISOString(),
-    note: (data.note as string) || undefined,
-    category: data.category as ExpenseCategory | undefined,
-    status: (data.status as string) || undefined,
-    createdAt: toStr(data.createdAt),
-    updatedAt: toStr(data.updatedAt),
   };
 }
 
@@ -521,118 +504,11 @@ export async function createTask(
   return ref.id;
 }
 
-/**
- * List expenses for a project.
- * Uses orderBy(date, "desc").
- */
-export async function listProjectExpenses(projectId: string): Promise<ExpenseDoc[]> {
-  const db = getFirestoreInstance();
-  if (!db) return [];
-
-  const expensesRef = collection(db, "projects", projectId, "expenses");
-  try {
-    const q = query(expensesRef, orderBy("date", "desc"));
-
-    const snap = await getDocs(q);
-    return snap.docs.map((d) =>
-      toExpenseDoc(d.id, projectId, d.data() as Record<string, unknown>)
-    );
-  } catch (e) {
-    wrapIndexError(e, "projects/{projectId}/expenses: date (Desc)");
-  }
-}
-
 async function updateProjectUpdatedAt(projectId: string): Promise<void> {
   const db = getFirestoreInstance();
   if (!db) return;
   const ref = doc(db, "projects", projectId);
   await updateDoc(ref, { updatedAt: serverTimestamp() });
-}
-
-/**
- * Create an expense in a project.
- */
-export async function createExpense(
-  projectId: string,
-  uid: string,
-  data: {
-    title: string;
-    amount: number;
-    currency?: string;
-    date: string;
-    category?: ExpenseCategory;
-    note?: string;
-  }
-): Promise<string> {
-  const db = getFirestoreInstance();
-  if (!db) throw new Error("Firestore not configured");
-
-  const title = data.title?.trim() || "";
-  if (!title) throw new Error("Expense title is required");
-  const amount = typeof data.amount === "number" ? data.amount : 0;
-  const dateStr = data.date || new Date().toISOString().slice(0, 10);
-  const dateTimestamp = Timestamp.fromDate(new Date(dateStr));
-
-  const ref = await addDoc(collection(db, "projects", projectId, "expenses"), {
-    ownerId: uid,
-    projectId,
-    title,
-    amount,
-    currency: data.currency ?? "EUR",
-    date: dateTimestamp,
-    category: data.category ?? null,
-    note: data.note?.trim() ?? null,
-    source: "MANUAL",
-    status: "READY",
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  });
-
-  await updateProjectUpdatedAt(projectId);
-  return ref.id;
-}
-
-/**
- * Update an expense.
- */
-export async function updateExpense(
-  projectId: string,
-  expenseId: string,
-  data: Partial<{
-    title: string;
-    amount: number;
-    currency: string;
-    date: string;
-    category: ExpenseCategory;
-    note: string;
-  }>
-): Promise<void> {
-  const db = getFirestoreInstance();
-  if (!db) throw new Error("Firestore not configured");
-
-  const ref = doc(db, "projects", projectId, "expenses", expenseId);
-  const update: Record<string, unknown> = { updatedAt: serverTimestamp() };
-  if (data.title !== undefined) update.title = data.title.trim();
-  if (data.amount !== undefined) update.amount = data.amount;
-  if (data.currency !== undefined) update.currency = data.currency;
-  if (data.date !== undefined) update.date = Timestamp.fromDate(new Date(data.date));
-  if (data.category !== undefined) update.category = data.category;
-  if (data.note !== undefined) update.note = data.note.trim() || null;
-
-  await updateDoc(ref, update);
-  await updateProjectUpdatedAt(projectId);
-}
-
-/**
- * Delete an expense.
- */
-export async function deleteExpense(projectId: string, expenseId: string): Promise<void> {
-  const db = getFirestoreInstance();
-  if (!db) throw new Error("Firestore not configured");
-
-  const ref = doc(db, "projects", projectId, "expenses", expenseId);
-  await deleteDoc(ref);
-  await updateProjectUpdatedAt(projectId);
 }
 
 /** Update task due date (YYYY-MM-DD). Mobile-compatible field. */

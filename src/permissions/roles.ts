@@ -63,8 +63,9 @@ export function mapLegacyOrgRoleToWorkspaceRole(
   if (r === "accountant") return "accountant";
   if (r === "worker") return "worker";
   if (r === "viewer" || r === "client") return "client";
-  if (legacyRole === "member" || r === "member") return "manager";
-  return "manager";
+  /** Legacy org docs store field staff as `member` — not managerial. */
+  if (legacyRole === "member" || r === "member") return "worker";
+  return "worker";
 }
 
 /** Personal workspace owner is always `owner`. */

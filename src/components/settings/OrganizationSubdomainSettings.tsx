@@ -26,6 +26,14 @@ import {
   validateWorkspaceSlug,
   buildSubdomainPreviewUrl,
 } from "@/lib/workspaceSlug";
+import { SettingsSectionCard } from "./SettingsSectionCard";
+import {
+  settingsFieldGroupClassName,
+  settingsFieldHintClassName,
+  settingsFieldLabelClassName,
+  settingsInputClassName,
+} from "./settingsStyles";
+import { cn } from "@/lib/utils";
 export function OrganizationSubdomainSettings() {
   const { t } = useI18n();
   const { user } = useAuth();
@@ -103,31 +111,27 @@ export function OrganizationSubdomainSettings() {
 
   if (!orgId) {
     return (
-      <Card>
+      <SettingsSectionCard>
         <CardHeader>
           <CardTitle>{t("settings.subdomain.title")}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">
-            {t("settings.subdomain.teamOnly")}
-          </p>
+          <p className={settingsFieldHintClassName}>{t("settings.subdomain.teamOnly")}</p>
         </CardContent>
-      </Card>
+      </SettingsSectionCard>
     );
   }
 
   if (!canEdit) {
     return (
-      <Card>
+      <SettingsSectionCard>
         <CardHeader>
           <CardTitle>{t("settings.subdomain.title")}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">
-            {t("settings.subdomain.adminOnly")}
-          </p>
+          <p className={settingsFieldHintClassName}>{t("settings.subdomain.adminOnly")}</p>
           {slug ? (
-            <p className="mt-2 text-sm">
+            <p className={cn("mt-2 text-sm font-medium text-[#152238]")}>
               {t("settings.subdomain.current")}:{" "}
               <a href={buildSubdomainPreviewUrl(slug)} className="text-primary underline">
                 {buildSubdomainPreviewUrl(slug)}
@@ -135,29 +139,34 @@ export function OrganizationSubdomainSettings() {
             </p>
           ) : null}
         </CardContent>
-      </Card>
+      </SettingsSectionCard>
     );
   }
 
   return (
-    <Card>
+    <SettingsSectionCard>
       <CardHeader>
         <CardTitle>{t("settings.subdomain.title")}</CardTitle>
-        <CardDescription>{t("settings.subdomain.description")}</CardDescription>
+        <CardDescription className="text-[#4a5568]">
+          {t("settings.subdomain.description")}
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {loading ? (
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         ) : (
           <>
-            <div className="space-y-2">
-              <Label htmlFor="org-slug">{t("settings.subdomain.slugLabel")}</Label>
+            <div className={cn(settingsFieldGroupClassName, "space-y-2")}>
+              <Label htmlFor="org-slug" className={settingsFieldLabelClassName}>
+                {t("settings.subdomain.slugLabel")}
+              </Label>
               <Input
                 id="org-slug"
                 value={slug}
                 onChange={(e) => setSlug(e.target.value)}
                 placeholder="elc"
                 autoComplete="off"
+                className={settingsInputClassName}
               />
               {!validation.valid && slug.trim() ? (
                 <p className="text-sm text-destructive">{validation.error}</p>
@@ -173,11 +182,11 @@ export function OrganizationSubdomainSettings() {
                 </p>
               ) : null}
             </div>
-            <div className="rounded-lg border bg-muted/40 px-3 py-2 text-sm">
-              <span className="text-muted-foreground">{t("settings.subdomain.preview")}: </span>
-              <span className="font-medium">{previewUrl}</span>
+            <div className="rounded-lg border border-[#b8c5d4] bg-[#f8fafc] px-4 py-3 text-sm">
+              <span className={settingsFieldHintClassName}>{t("settings.subdomain.preview")}: </span>
+              <span className="font-medium text-[#152238]">{previewUrl}</span>
             </div>
-            <p className="text-xs text-muted-foreground">{t("settings.subdomain.dnsNote")}</p>
+            <p className="text-xs text-[#5a6577]">{t("settings.subdomain.dnsNote")}</p>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
             {success ? <p className="text-sm text-green-700">{success}</p> : null}
             <Button
@@ -194,6 +203,6 @@ export function OrganizationSubdomainSettings() {
           </>
         )}
       </CardContent>
-    </Card>
+    </SettingsSectionCard>
   );
 }

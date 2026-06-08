@@ -30,6 +30,12 @@ export function isFieldRole(role: WorkspaceRole | undefined): boolean {
   return role === "worker" || role === "client";
 }
 
+/** Worker home (/app) — not company command center. */
+export function shouldShowWorkerDashboard(role: WorkspaceRole | undefined): boolean {
+  if (!role) return false;
+  return !canManageCompanyOperations(role);
+}
+
 export type DashboardNextStep = {
   messageKey: string;
   ctaKey: string;

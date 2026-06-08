@@ -14,7 +14,7 @@ import {
   getNavSectionLabelKey,
   isItemActive,
 } from "@/lib/sidebarNavigation";
-import { canManageCompanyOperations } from "@/lib/workspaceProduct";
+import { canManageCompanyOperations, shouldShowWorkerDashboard } from "@/lib/workspaceProduct";
 import { useEnabledModules } from "@/context/EnabledModulesContext";
 import { IconSidebarItem } from "./IconSidebarItem";
 import { ExpandedSidebarNav } from "./ExpandedSidebarNav";
@@ -40,10 +40,13 @@ export function IconSidebar({ onNavigate }: IconSidebarProps) {
 
   const isPersonalWorkspace = activeWorkspace?.type === "personal";
   const canManage = canManageCompanyOperations(activeWorkspace?.role);
+  const isFieldWorker =
+    !isPersonalWorkspace && shouldShowWorkerDashboard(activeWorkspace?.role);
   const { modules: enabledModules } = useEnabledModules();
   const navFilterOpts = {
     isPersonalWorkspace,
     canManage,
+    isFieldWorker,
     enabledModules: isPersonalWorkspace ? null : enabledModules,
   };
   const navSections = filterNavSections(SIDEBAR_NAV_SECTIONS, navFilterOpts);
@@ -107,6 +110,7 @@ export function IconSidebar({ onNavigate }: IconSidebarProps) {
             search={search}
             isPersonalWorkspace={isPersonalWorkspace}
             canManage={canManage}
+            isFieldWorker={isFieldWorker}
             enabledModules={isPersonalWorkspace ? null : enabledModules}
             comingSoonLabel={comingSoonLabel}
             t={t}
@@ -126,12 +130,13 @@ export function IconSidebar({ onNavigate }: IconSidebarProps) {
                 <IconSidebarItem
                   key={section.id}
                   section={section}
-                  sectionLabel={t(getNavSectionLabelKey(section, isPersonalWorkspace))}
+                  sectionLabel={t(getNavSectionLabelKey(section, isPersonalWorkspace, isFieldWorker))}
                   pathname={pathname}
                   search={search}
                   comingSoonLabel={comingSoonLabel}
                   isPersonalWorkspace={isPersonalWorkspace}
                   canManage={canManage}
+                  isFieldWorker={isFieldWorker}
                   enabledModules={isPersonalWorkspace ? null : enabledModules}
                   isSectionActive={isSectionActive || activeSectionId === section.id}
                   isOpen={isOpen}

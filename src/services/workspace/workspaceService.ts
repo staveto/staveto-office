@@ -1,7 +1,12 @@
 /**
  * Workspace bridge service — organizations + personal, no `workspaces/` migration.
  */
-import { getUserOrgMemberships, getOrganization, isDefaultCompanyRole } from "@/lib/organizations";
+import {
+  getUserOrgMemberships,
+  getOrganization,
+  getUserRoleInOrganization,
+  isDefaultCompanyRole,
+} from "@/lib/organizations";
 import type { ActiveWorkspace, WorkspaceMember, WorkspaceUser } from "@/types/workspace";
 import type { WorkspaceRole } from "@/types/workspace";
 import {
@@ -57,6 +62,43 @@ export function normalizeOrganizationToWorkspace(
   };
 }
 
+async function enrichCompanyWorkspaceRole(
+  workspace: ActiveWorkspace,
+  memberUid: string,
+  email?: string
+): Promise<ActiveWorkspace> {
+  return refreshCompanyWorkspaceRole(workspace, memberUid, email);
+}
+
+/** Re-read member role from Firestore (authoritative for UI gating). */
+export async function refreshCompanyWorkspaceRole(
+  workspace: ActiveWorkspace,
+  memberUid: string,
+  email?: string
+): Promise<ActiveWorkspace> {
+  if (workspace.type !== "company" || !workspace.orgId) return workspace;
+
+  const freshRole = await getUserRoleInOrganization(workspace.orgId, memberUid, email);
+  if (!freshRole) return workspace;
+
+  const org = await getOrganization(workspace.orgId);
+  const role = mapLegacyOrgRoleToWorkspaceRole(freshRole, {
+    isOrgOwner: org?.ownerUid === memberUid,
+  });
+  if (role === workspace.role) return workspace;
+  return { ...workspace, role };
+}
+
+export async function refreshCompanyWorkspaceRoles(
+  workspaces: ActiveWorkspace[],
+  memberUid: string,
+  email?: string
+): Promise<ActiveWorkspace[]> {
+  return Promise.all(
+    workspaces.map((w) => refreshCompanyWorkspaceRole(w, memberUid, email))
+  );
+}
+
 export async function getOrganizationWorkspaces(
   userId: string,
   orgIdHints?: string[],
@@ -67,12 +109,11 @@ export async function getOrganizationWorkspaces(
 
   for (const m of memberships) {
     const org = await getOrganization(m.orgId);
-    workspaces.push(
-      normalizeOrganizationToWorkspace(m.orgId, m.orgName, m.role, {
-        ownerUid: org?.ownerUid,
-        memberUid: userId,
-      })
-    );
+    const workspace = normalizeOrganizationToWorkspace(m.orgId, m.orgName, m.role, {
+      ownerUid: org?.ownerUid,
+      memberUid: userId,
+    });
+    workspaces.push(await enrichCompanyWorkspaceRole(workspace, userId, email));
   }
 
   return workspaces;

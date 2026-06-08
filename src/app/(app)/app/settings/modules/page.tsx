@@ -14,7 +14,7 @@ export default function ModuleSettingsPage() {
 
   if (!loading && (!isCompanyModulesActive || !canEditModules)) {
     return (
-      <div className="mx-auto max-w-2xl space-y-4">
+      <div className="mx-auto max-w-3xl space-y-4">
         <Link
           href="/app/settings"
           className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "gap-1.5")}
@@ -28,7 +28,7 @@ export default function ModuleSettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4">
+    <div className="mx-auto max-w-3xl space-y-4">
       <Link
         href="/app/settings"
         className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "gap-1.5")}

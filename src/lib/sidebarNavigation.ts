@@ -5,6 +5,8 @@ import {
   Users,
   Wallet,
   Settings,
+  CalendarDays,
+  Wrench,
 } from "lucide-react";
 import type { EnabledModulesMap, ModuleKey } from "@/lib/enabledModules";
 import { isModuleEnabled } from "@/lib/enabledModules";
@@ -17,6 +19,10 @@ export type NavItemConfig = {
   personalOnly?: boolean;
   companyOnly?: boolean;
   managementOnly?: boolean;
+  /** Hidden for field workers (worker / client / viewer). */
+  hideForFieldWorker?: boolean;
+  /** Shown only for field workers. */
+  fieldWorkerOnly?: boolean;
   /** When set, item is hidden in company workspace if module is disabled. */
   moduleKey?: ModuleKey;
   action?: "locale" | "logout";
@@ -27,6 +33,8 @@ export type NavSectionConfig = {
   labelKey: string;
   /** When in personal workspace (e.g. overview section). */
   personalLabelKey?: string;
+  /** Overview section label when user is a field worker. */
+  fieldWorkerLabelKey?: string;
   icon: LucideIcon;
   defaultHref?: string;
   managementOnly?: boolean;
@@ -41,12 +49,13 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
     id: "overview",
     labelKey: "sidebar.section.overview",
     personalLabelKey: "sidebar.section.personalOverview",
+    fieldWorkerLabelKey: "sidebar.section.workerOverview",
     icon: LayoutDashboard,
     defaultHref: "/app",
     items: [
       { id: "overview-dashboard", labelKey: "sidebar.item.overview.dashboard", href: "/app" },
-      { id: "overview-activity", labelKey: "sidebar.item.overview.activity", comingSoon: true },
-      { id: "overview-reports", labelKey: "sidebar.item.overview.reports", comingSoon: true, moduleKey: "reports" },
+      { id: "overview-activity", labelKey: "sidebar.item.overview.activity", comingSoon: true, hideForFieldWorker: true },
+      { id: "overview-reports", labelKey: "sidebar.item.overview.reports", comingSoon: true, moduleKey: "reports", hideForFieldWorker: true },
     ],
   },
   {
@@ -56,21 +65,43 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
     defaultHref: "/app/projects",
     moduleKey: "jobs",
     items: [
-      { id: "jobs-all", labelKey: "sidebar.item.jobs.all", href: "/app/projects" },
+      { id: "jobs-all", labelKey: "sidebar.item.jobs.all", href: "/app/projects", hideForFieldWorker: true },
+      {
+        id: "jobs-my-assigned",
+        labelKey: "sidebar.item.jobs.myAssigned",
+        href: "/app/projects?filter=assigned",
+        fieldWorkerOnly: true,
+      },
       {
         id: "jobs-concepts",
         labelKey: "sidebar.item.jobs.concepts",
         href: "/app/projects?filter=concepts",
+        hideForFieldWorker: true,
       },
       {
         id: "jobs-active",
         labelKey: "sidebar.item.jobs.active",
         href: "/app/projects?filter=active",
+        hideForFieldWorker: true,
       },
-      { id: "jobs-new", labelKey: "sidebar.item.jobs.new", href: "/app/projects/new" },
+      { id: "jobs-new", labelKey: "sidebar.item.jobs.new", href: "/app/projects/new", managementOnly: true },
       { id: "jobs-tasks", labelKey: "sidebar.item.jobs.tasks", comingSoon: true },
-      { id: "jobs-issues", labelKey: "sidebar.item.jobs.issues", comingSoon: true, moduleKey: "issues" },
-      { id: "jobs-planning", labelKey: "sidebar.item.jobs.planning", href: "/app/planning", moduleKey: "planning" },
+      { id: "jobs-issues", labelKey: "sidebar.item.jobs.issues", comingSoon: true, moduleKey: "issues", hideForFieldWorker: true },
+    ],
+  },
+  {
+    id: "planning",
+    labelKey: "sidebar.section.planning",
+    icon: CalendarDays,
+    defaultHref: "/app/planning",
+    managementOnly: true,
+    items: [
+      {
+        id: "planning-overview",
+        labelKey: "sidebar.item.planning.overview",
+        href: "/app/planning",
+        managementOnly: true,
+      },
     ],
   },
   {
@@ -88,6 +119,13 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
         moduleKey: "quotes",
       },
       {
+        id: "finance-materials",
+        labelKey: "sidebar.item.finance.materials",
+        href: "/app/materials",
+        managementOnly: true,
+        moduleKey: "jobs",
+      },
+      {
         id: "finance-invoices",
         labelKey: "sidebar.item.finance.invoices",
         comingSoon: true,
@@ -96,7 +134,7 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
       {
         id: "finance-expenses",
         labelKey: "sidebar.item.finance.expenses",
-        comingSoon: true,
+        href: "/app/expenses",
         managementOnly: true,
         moduleKey: "expenses",
       },
@@ -106,6 +144,22 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
         comingSoon: true,
         managementOnly: true,
         moduleKey: "reports",
+      },
+    ],
+  },
+  {
+    id: "equipment",
+    labelKey: "sidebar.section.equipment",
+    icon: Wrench,
+    defaultHref: "/app/equipment",
+    moduleKey: "equipment",
+    items: [
+      {
+        id: "equipment-list",
+        labelKey: "sidebar.item.equipment.list",
+        href: "/app/equipment",
+        companyOnly: true,
+        moduleKey: "equipment",
       },
     ],
   },
@@ -126,7 +180,7 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
       {
         id: "team-attendance",
         labelKey: "sidebar.item.team.attendance",
-        comingSoon: true,
+        href: "/app/attendance",
         managementOnly: true,
       },
       {
@@ -149,7 +203,18 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
     icon: Settings,
     defaultHref: "/app/settings",
     items: [
-      { id: "settings-main", labelKey: "sidebar.item.more.settings", href: "/app/settings" },
+      {
+        id: "settings-main",
+        labelKey: "sidebar.item.more.settings",
+        href: "/app/settings",
+        hideForFieldWorker: true,
+      },
+      {
+        id: "settings-profile",
+        labelKey: "sidebar.item.more.myProfile",
+        href: "/app/settings",
+        fieldWorkerOnly: true,
+      },
       {
         id: "more-billing",
         labelKey: "sidebar.item.more.billing",
@@ -233,17 +298,21 @@ export function filterNavItems(
   options: {
     isPersonalWorkspace: boolean;
     canManage?: boolean;
+    isFieldWorker?: boolean;
     enabledModules?: EnabledModulesMap | null;
   }
 ): NavItemConfig[] {
   const isCompany = !options.isPersonalWorkspace;
   const canManage = options.canManage ?? true;
+  const isFieldWorker = options.isFieldWorker ?? false;
   const modules = options.enabledModules;
   return items.filter((item) => {
     if (item.action === "locale") return false;
     if (item.personalOnly && !options.isPersonalWorkspace) return false;
     if (item.companyOnly && !isCompany) return false;
     if (item.managementOnly && !canManage) return false;
+    if (item.hideForFieldWorker && isFieldWorker) return false;
+    if (item.fieldWorkerOnly && !isFieldWorker) return false;
     if (isCompany && modules && item.moduleKey && !isModuleEnabled(modules, item.moduleKey)) {
       return false;
     }
@@ -256,6 +325,7 @@ export function filterNavSections(
   options: {
     isPersonalWorkspace: boolean;
     canManage?: boolean;
+    isFieldWorker?: boolean;
     enabledModules?: EnabledModulesMap | null;
   }
 ): NavSectionConfig[] {
@@ -306,8 +376,12 @@ export function sectionShowsSubnav(
 
 export function getNavSectionLabelKey(
   section: NavSectionConfig,
-  isPersonalWorkspace: boolean
+  isPersonalWorkspace: boolean,
+  isFieldWorker = false
 ): string {
+  if (isFieldWorker && section.fieldWorkerLabelKey) {
+    return section.fieldWorkerLabelKey;
+  }
   if (isPersonalWorkspace && section.personalLabelKey) {
     return section.personalLabelKey;
   }

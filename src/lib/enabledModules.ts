@@ -39,7 +39,7 @@ export const DEFAULT_ENABLED_MODULES: EnabledModulesMap = {
   team: true,
   documents: true,
   billing: true,
-  planning: false,
+  planning: true,
   vehicles: false,
   equipment: false,
   expenses: false,
@@ -60,22 +60,24 @@ export function getSuggestedModulesForCompanyType(
 
   switch (type) {
     case "hvac":
-      enable("equipment", "vehicles");
+      enable("planning", "equipment", "vehicles");
       break;
     case "construction":
       enable("planning", "vehicles");
       break;
     case "electrical":
     case "plumbing":
-      enable("equipment");
+      enable("planning", "equipment");
       if (type === "plumbing") enable("vehicles");
       break;
     case "painting":
+      enable("planning");
       break;
     case "roofing":
-      enable("equipment", "vehicles");
+      enable("planning", "equipment", "vehicles");
       break;
     default:
+      enable("planning");
       break;
   }
 

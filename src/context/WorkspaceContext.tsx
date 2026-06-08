@@ -20,6 +20,8 @@ import {
   markExplicitPersonalWorkspace,
   clearExplicitPersonalWorkspace,
   logWorkspaceResolveDebug,
+  refreshCompanyWorkspaceRole,
+  refreshCompanyWorkspaceRoles,
 } from "@/services/workspace/workspaceService";
 import { upsertUserProfile } from "@/lib/userProfile";
 import { isCompanyWorkspaceType } from "@/types/workspace";
@@ -46,6 +48,8 @@ type WorkspaceContextValue = {
   legacyActiveWorkspace: Workspace | null;
   memberRole: WorkspaceMember["role"] | null;
   workspaceRole: WorkspaceRole | null;
+  /** Company member role still loading from Firestore. */
+  roleResolving: boolean;
   tenant: WorkspaceTenantState | null;
   setActiveWorkspace: (ws: Workspace | ActiveWorkspace | null) => void;
 };
@@ -60,6 +64,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const { user, profile } = useAuth();
   const [availableWorkspaces, setAvailableWorkspaces] = useState<ActiveWorkspace[]>([]);
   const [activeWorkspace, setActiveWorkspaceState] = useState<ActiveWorkspace | null>(null);
+  const [roleResolving, setRoleResolving] = useState(false);
   const [tenant, setTenant] = useState<WorkspaceTenantState | null>(null);
   const [hostTenant] = useState<TenantFromHostname>(() =>
     typeof window !== "undefined"
@@ -106,9 +111,19 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
         if (cancelled) return;
 
-        setAvailableWorkspaces(list);
+        setRoleResolving(list.some((w) => w.type === "company"));
+        const refreshedList = await refreshCompanyWorkspaceRoles(
+          list,
+          user.id,
+          user.email
+        );
 
-        const companyWorkspace = list.find((w) => isCompanyWorkspaceType(w.type));
+        if (cancelled) return;
+
+        setAvailableWorkspaces(refreshedList);
+        setRoleResolving(false);
+
+        const companyWorkspace = refreshedList.find((w) => isCompanyWorkspaceType(w.type));
         if (companyWorkspace?.orgId && !profile?.activeBusinessOrgId?.trim()) {
           void upsertUserProfile(user.id, {
             activeBusinessOrgId: companyWorkspace.orgId,
@@ -142,14 +157,23 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           }
 
           if (resolution.status === "resolved" && resolution.workspace) {
+            setRoleResolving(true);
+            const refreshedTenantWorkspace = await refreshCompanyWorkspaceRole(
+              resolution.workspace,
+              user.id,
+              user.email
+            );
+            if (cancelled) return;
+
             setTenant({
               mode: "tenant",
               slug: hostTenant.slug,
               status: "resolved",
               organizationName: resolution.organization?.name,
             });
-            setActiveWorkspaceState(resolution.workspace);
-            persistActiveWorkspaceId(resolution.workspace.id);
+            setActiveWorkspaceState(refreshedTenantWorkspace);
+            persistActiveWorkspaceId(refreshedTenantWorkspace.id);
+            setRoleResolving(false);
             return;
           }
         }
@@ -163,17 +187,19 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           profileBusinessOrgId: profile?.activeBusinessOrgId,
         };
         const { workspace: resolved, reason } = resolveActiveWorkspaceWithReason(
-          list,
+          refreshedList,
           resolveOptions
         );
-        setActiveWorkspaceState(resolved);
-        persistActiveWorkspaceId(resolved.id);
-        if (resolved.type === "company") {
+        const activeMatch =
+          refreshedList.find((w) => w.id === resolved.id) ?? resolved;
+        setActiveWorkspaceState(activeMatch);
+        persistActiveWorkspaceId(activeMatch.id);
+        if (activeMatch.type === "company") {
           clearExplicitPersonalWorkspace();
         }
         logWorkspaceResolveDebug({
-          available: list,
-          active: resolved,
+          available: refreshedList,
+          active: activeMatch,
           reason,
           persistedId,
         });
@@ -234,7 +260,18 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
       const next = isActiveWorkspace(ws)
         ? ws
-        : fromLegacyWorkspace(ws, user?.id ?? "", activeWorkspace?.role ?? "manager");
+        : fromLegacyWorkspace(
+            ws,
+            user?.id ?? "",
+            availableWorkspaces.find(
+              (w) =>
+                w.id === ws.id ||
+                w.legacyId === ws.id ||
+                (w.type === "company" && w.orgId === ws.id)
+            )?.role ??
+              activeWorkspace?.role ??
+              "worker"
+          );
 
       setActiveWorkspaceState(next);
       persistActiveWorkspaceId(next.id);
@@ -242,9 +279,19 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         markExplicitPersonalWorkspace();
       } else {
         clearExplicitPersonalWorkspace();
+        if (user?.id && next.orgId) {
+          setRoleResolving(true);
+          void refreshCompanyWorkspaceRole(next, user.id, user.email).then((refreshed) => {
+            setActiveWorkspaceState(refreshed);
+            setAvailableWorkspaces((prev) =>
+              prev.map((w) => (w.id === refreshed.id ? refreshed : w))
+            );
+            setRoleResolving(false);
+          });
+        }
       }
     },
-    [user?.id, activeWorkspace?.role, tenant]
+    [user?.id, user?.email, activeWorkspace?.role, tenant, availableWorkspaces]
   );
 
   const value: WorkspaceContextValue = {
@@ -254,6 +301,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     legacyActiveWorkspace,
     memberRole,
     workspaceRole,
+    roleResolving,
     tenant,
     setActiveWorkspace,
   };

@@ -5,6 +5,30 @@ service firebase.storage {
       return request.auth != null;
     }
 
+    function orgMemberData(orgId) {
+      return firestore.get(/databases/(default)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data;
+    }
+
+    function isOrgMemberActive(orgId) {
+      return isSignedIn() && (
+        firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid
+        || (
+          firestore.exists(/databases/(default)/documents/organizations/$(orgId)/members/$(request.auth.uid))
+          && (
+            !('status' in orgMemberData(orgId))
+            || orgMemberData(orgId).status in ['active', 'pending']
+          )
+        )
+      );
+    }
+
+    function isOrgChatWriter(orgId) {
+      return isOrgMemberActive(orgId) && (
+        firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid
+        || orgMemberData(orgId).role in ['owner', 'admin', 'manager', 'worker', 'member']
+      );
+    }
+
     match /workspaces/{workspaceId}/ai-drafts/{sessionId}/{fileName} {
       allow read: if isSignedIn();
       allow write: if isSignedIn()
@@ -22,6 +46,23 @@ service firebase.storage {
       allow write: if isSignedIn()
         && request.resource.size < 2 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
+    }
+
+    match /users/{userId}/equipment/{equipmentId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /organizations/{orgId}/chats/{chatId}/messages/{fileName} {
+      allow read: if isOrgMemberActive(orgId);
+      allow write: if isOrgChatWriter(orgId)
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if isOrgChatWriter(orgId);
     }
   }
 }

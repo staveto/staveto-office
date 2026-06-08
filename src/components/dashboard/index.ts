@@ -15,3 +15,4 @@ export { DashboardQuotesList } from "./DashboardQuotesList";
 export { TeamSnapshotCard } from "./TeamSnapshotCard";
 export { CompanyDashboardView } from "./CompanyDashboardView";
 export { PersonalDashboardView } from "./PersonalDashboardView";
+export { WorkerDashboardView } from "./WorkerDashboardView";

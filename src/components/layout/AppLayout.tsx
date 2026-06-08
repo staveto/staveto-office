@@ -7,6 +7,7 @@ import { Header } from "./Header";
 import { TenantGate } from "@/components/tenant/TenantGate";
 import { cn } from "@/lib/utils";
 import { SidebarLayoutProvider, useSidebarLayout } from "@/context/SidebarLayoutContext";
+import { BusinessMessagingDrawer } from "@/components/business-chat/BusinessMessagingDrawer";
 
 function AppLayoutInner({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -57,11 +58,12 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
           onMenuClick={() => setSidebarOpen((o) => !o)}
           sidebarOpen={sidebarOpen}
         />
-        <main className="flex-1 overflow-auto p-4 md:p-6">
+        <main className="flex-1 overflow-auto bg-[#e4eaf1] p-4 md:p-6">
           <div className="mx-auto max-w-6xl">
             <TenantGate>{children}</TenantGate>
           </div>
         </main>
+        <BusinessMessagingDrawer />
       </div>
     </div>
   );

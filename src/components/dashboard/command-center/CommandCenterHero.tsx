@@ -9,7 +9,6 @@ import { CompanyLogo } from "@/components/branding/CompanyLogo";
 import {
   getGreetingKey,
   isOrgTrialing,
-  isSetupDashboardMode,
 } from "@/lib/dashboardCommandCenter";
 import { useCompanyOrgContext } from "./useCompanyOrgContext";
 import type { ActiveWorkspace } from "@/types/workspace";
@@ -23,6 +22,7 @@ type CommandCenterHeroProps = {
   stats: DashboardStats;
   statsLoading: boolean;
   modules: EnabledModulesMap;
+  setupMode?: boolean;
 };
 
 type StatusCard = {
@@ -39,6 +39,7 @@ export function CommandCenterHero({
   stats,
   statsLoading,
   modules,
+  setupMode = false,
 }: CommandCenterHeroProps) {
   const { t } = useI18n();
   const orgId = activeWorkspace.orgId ?? activeWorkspace.id;
@@ -49,7 +50,6 @@ export function CommandCenterHero({
     activeWorkspace.name?.trim() ||
     t("dashboard.hero.companyFallback");
   const greetingKey = getGreetingKey(new Date().getHours());
-  const setupMode = isSetupDashboardMode(org, stats);
   const isTrial = isOrgTrialing(org);
 
   const showQuotes = isModuleEnabled(modules, "quotes");

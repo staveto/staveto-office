@@ -35,7 +35,10 @@ import {
 } from "@/lib/organizations";
 import {
   fetchBusinessInvites,
+  fetchBusinessInviteDisplay,
+  regenerateBusinessInviteCode,
   revokeBusinessInvite,
+  formatBusinessInviteError,
   getInviteListJoinUrl,
   buildLegacyTokenJoinUrl,
   resolveBusinessInviteDisplay,
@@ -95,6 +98,10 @@ export function CompanyMembersPanel() {
   );
   const [viewInviteEmail, setViewInviteEmail] = useState<string | null>(null);
   const [viewInviteLegacy, setViewInviteLegacy] = useState(false);
+  const [viewInviteLoading, setViewInviteLoading] = useState(false);
+  const [viewInviteId, setViewInviteId] = useState<string | null>(null);
+  const [viewInviteCanRegenerate, setViewInviteCanRegenerate] = useState(false);
+  const [viewInviteErrorKey, setViewInviteErrorKey] = useState<string | null>(null);
 
   const load = useCallback(async (opts?: { background?: boolean }) => {
     if (!orgId) {
@@ -262,6 +269,53 @@ export function CompanyMembersPanel() {
     setViewInviteEmail(email ?? null);
     setViewInviteLegacy(legacy);
     setViewInviteOpen(true);
+  };
+
+  const openBusinessInviteCodeView = async (
+    inv: BusinessInviteListItem,
+    inviteEmail?: string | null,
+    regenerate = false
+  ) => {
+    if (!orgId) return;
+    setViewInviteId(inv.inviteId);
+    setViewInviteCanRegenerate(
+      inv.type === "direct_email" || Boolean(inviteEmail ?? inv.emailLower)
+    );
+    setViewInviteEmail(inviteEmail ?? null);
+    setViewInviteLegacy(false);
+    setViewInviteOpen(true);
+    setViewInviteLoading(true);
+    setViewInviteResult(null);
+    setViewInviteErrorKey(null);
+
+    const cached = resolveBusinessInviteDisplay(orgId, inv);
+    if (cached && !regenerate) {
+      setViewInviteResult(cached);
+      setViewInviteLoading(false);
+      return;
+    }
+
+    try {
+      const loaded = regenerate
+        ? await regenerateBusinessInviteCode(orgId, inv, inviteEmail)
+        : await fetchBusinessInviteDisplay(orgId, inv.inviteId);
+      setViewInviteResult(loaded);
+      setViewInviteId(loaded.inviteId);
+      setViewInviteErrorKey(null);
+      await load({ background: true });
+    } catch (error) {
+      setViewInviteResult(null);
+      setViewInviteErrorKey(formatBusinessInviteError(error));
+    } finally {
+      setViewInviteLoading(false);
+    }
+  };
+
+  const handleRegenerateInviteCode = () => {
+    if (!orgId || !viewInviteId) return;
+    const inv = businessInvites.find((i) => i.inviteId === viewInviteId);
+    if (!inv) return;
+    void openBusinessInviteCodeView(inv, viewInviteEmail, true);
   };
 
   const isSelf = useCallback(
@@ -475,7 +529,7 @@ export function CompanyMembersPanel() {
                               size="sm"
                               title={t("members.invites.showCodeQr")}
                               onClick={() =>
-                                openInviteCodeView(displayResult, inviteEmail)
+                                void openBusinessInviteCodeView(inv, inviteEmail)
                               }
                             >
                               <QrCode className="size-4" />
@@ -637,6 +691,10 @@ export function CompanyMembersPanel() {
             result={viewInviteResult}
             email={viewInviteEmail}
             legacy={viewInviteLegacy}
+            loading={viewInviteLoading}
+            errorKey={viewInviteErrorKey}
+            canRegenerate={viewInviteCanRegenerate && !viewInviteLoading}
+            onRegenerate={handleRegenerateInviteCode}
           />
         </>
       ) : null}

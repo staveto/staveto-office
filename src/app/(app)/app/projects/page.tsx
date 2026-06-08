@@ -27,6 +27,9 @@ import {
   FirestoreIndexError,
   type ProjectDoc,
 } from "@/lib/projects";
+import { isProjectAssignedToUser } from "@/lib/projectOwnership";
+import { listAssignedProjectsForWorker } from "@/services/worker/workerDashboardService";
+import { shouldShowWorkerDashboard } from "@/lib/workspaceProduct";
 import {
   matchesProjectFilter,
   type ProjectListFilter,
@@ -39,6 +42,7 @@ import { FolderKanban, RefreshCw, Search, Plus, List, Map } from "lucide-react";
 import { ProjectsMapPanel } from "@/components/projects/ProjectsMapPanel";
 import { ProjectsWorkspaceContextBanner } from "@/components/projects/ProjectsWorkspaceContextBanner";
 import { ProjectOwnershipBadge } from "@/components/projects/ProjectOwnershipBadge";
+import { useSetupChecklistVisit } from "@/hooks/useSetupChecklistVisit";
 
 const FILTERS: ProjectListFilter[] = [
   "all",
@@ -47,6 +51,10 @@ const FILTERS: ProjectListFilter[] = [
   "waiting",
   "closed",
 ];
+
+type ProjectsPageFilter = ProjectListFilter | "assigned";
+
+const ALL_FILTERS: ProjectsPageFilter[] = [...FILTERS, "assigned"];
 
 function ProjectsTableSkeleton() {
   return (
@@ -64,6 +72,7 @@ function ProjectsTableSkeleton() {
 
 export default function ProjectsPage() {
   const { t } = useI18n();
+  useSetupChecklistVisit("first_document");
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
   const searchParams = useSearchParams();
@@ -72,15 +81,33 @@ export default function ProjectsPage() {
   const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<ProjectListFilter>("all");
+  const [filter, setFilter] = useState<ProjectsPageFilter>("all");
   const [view, setView] = useState<"list" | "map">("list");
+
+  const isFieldWorker =
+    activeWorkspace != null &&
+    activeWorkspace.type === "company" &&
+    shouldShowWorkerDashboard(activeWorkspace.role);
 
   useEffect(() => {
     const param = searchParams.get("filter");
+    if (param === "assigned") {
+      setFilter("assigned");
+      return;
+    }
     if (param && FILTERS.includes(param as ProjectListFilter)) {
       setFilter(param as ProjectListFilter);
+    } else if (isFieldWorker && !param) {
+      setFilter("assigned");
     }
-  }, [searchParams]);
+  }, [searchParams, isFieldWorker]);
+
+  const fetchProjects = () => {
+    if (!user?.id || !activeWorkspace) return Promise.resolve([] as ProjectDoc[]);
+    return isFieldWorker
+      ? listAssignedProjectsForWorker(activeWorkspace, user.id)
+      : listProjectsForWorkspace(activeWorkspace, user.id);
+  };
 
   useEffect(() => {
     if (!user?.id || !activeWorkspace) {
@@ -94,7 +121,7 @@ export default function ProjectsPage() {
     setError(null);
     setAccessDenied(false);
 
-    void listProjectsForWorkspace(activeWorkspace, user.id)
+    void fetchProjects()
       .then((list) => {
         if (!cancelled) setProjects(list);
       })
@@ -116,14 +143,14 @@ export default function ProjectsPage() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, activeWorkspace?.id, activeWorkspace?.type]);
+  }, [user?.id, activeWorkspace?.id, activeWorkspace?.type, isFieldWorker]);
 
   const loadProjects = () => {
     if (!user?.id || !activeWorkspace) return;
     setLoading(true);
     setError(null);
     setAccessDenied(false);
-    void listProjectsForWorkspace(activeWorkspace, user.id)
+    void fetchProjects()
       .then(setProjects)
       .catch((e) => {
         const msg = e instanceof Error ? e.message : "Failed to load projects";
@@ -139,7 +166,12 @@ export default function ProjectsPage() {
   };
 
   const filteredProjects = useMemo(() => {
-    const list = projects.filter((p) => matchesProjectFilter(p, filter));
+    let list = projects;
+    if (filter === "assigned") {
+      list = projects.filter((p) => isProjectAssignedToUser(p, user?.id ?? ""));
+    } else {
+      list = projects.filter((p) => matchesProjectFilter(p, filter));
+    }
     if (!search.trim()) return list;
     const q = search.trim().toLowerCase();
     return list.filter(
@@ -149,7 +181,7 @@ export default function ProjectsPage() {
         p.addressText?.toLowerCase().includes(q) ||
         p.city?.toLowerCase().includes(q)
     );
-  }, [projects, search, filter]);
+  }, [projects, search, filter, user?.id]);
 
   const formatDate = (s?: string): string => {
     if (!s) return "";
@@ -186,8 +218,10 @@ export default function ProjectsPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-2">
-          <h2 className="text-xl font-semibold">{t("projects.titleJobs")}</h2>
-          <ProjectsWorkspaceContextBanner />
+          <h2 className="text-xl font-semibold">
+            {isFieldWorker ? t("workerDashboard.myJobs.title") : t("projects.titleJobs")}
+          </h2>
+          {!isFieldWorker ? <ProjectsWorkspaceContextBanner /> : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 min-w-[12rem] sm:w-64">
@@ -199,13 +233,15 @@ export default function ProjectsPage() {
               className="pl-8"
             />
           </div>
-          <Link
-            href="/app/projects/new"
-            className={buttonVariants({ variant: "default", size: "sm" })}
-          >
-            <Plus className="size-4 mr-2" />
-            {t("projects.createJob")}
-          </Link>
+          {!isFieldWorker ? (
+            <Link
+              href="/app/projects/new"
+              className={buttonVariants({ variant: "default", size: "sm" })}
+            >
+              <Plus className="size-4 mr-2" />
+              {t("projects.createJob")}
+            </Link>
+          ) : null}
           <Button variant="outline" size="sm" onClick={loadProjects} disabled={loading}>
             <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
             {t("common.refresh")}
@@ -215,7 +251,8 @@ export default function ProjectsPage() {
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap gap-2" role="tablist" aria-label={t("projects.titleJobs")}>
-          {FILTERS.map((f) => (
+          {(isFieldWorker ? (["assigned", "active"] as ProjectsPageFilter[]) : ALL_FILTERS).map(
+            (f) => (
             <Button
               key={f}
               type="button"
@@ -228,9 +265,10 @@ export default function ProjectsPage() {
                 filter === f && "border-[#1D376A]/30 bg-[#1D376A]/8 text-[#1D376A]"
               )}
             >
-              {t(`projects.filter.${f}`)}
+              {t(f === "assigned" ? "projects.filter.assigned" : `projects.filter.${f}`)}
             </Button>
-          ))}
+          )
+          )}
         </div>
 
         <div

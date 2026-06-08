@@ -7,6 +7,7 @@ import { useWorkspaceProduct } from "@/hooks/useWorkspaceProduct";
 import { useAuth } from "@/context/AuthContext";
 import { useEnabledModules } from "@/context/EnabledModulesContext";
 import { shouldShowWelcomeGuide } from "@/services/onboarding/welcomeGuideService";
+import { getCompanySetupProgress } from "@/services/onboarding/setupChecklistService";
 import { BusinessWelcomeGuide } from "@/components/dashboard/BusinessWelcomeGuide";
 import { CommandCenterHero } from "@/components/dashboard/command-center/CommandCenterHero";
 import { PrimaryActionsRow } from "@/components/dashboard/command-center/PrimaryActionsRow";
@@ -17,13 +18,12 @@ import { SetupDashboardChecklist } from "@/components/dashboard/command-center/S
 import { useCompanyOrgContext } from "@/components/dashboard/command-center/useCompanyOrgContext";
 import {
   buildActivityFeed,
-  buildSetupChecklist,
   getFirstIncompleteSetupItem,
   getSetupActivityTipKey,
   hasMeaningfulInsights,
   isEmptyCompanyMode,
-  isSetupDashboardMode,
   resolveCompanyType,
+  resolveSetupDashboardState,
 } from "@/lib/dashboardCommandCenter";
 
 type CompanyDashboardViewProps = {
@@ -45,13 +45,21 @@ export function CompanyDashboardView({
   const { modules } = useEnabledModules();
   const orgId = activeWorkspace.orgId ?? activeWorkspace.id;
   const { org, profile: orgProfile } = useCompanyOrgContext(orgId);
-
-  const setupMode = isSetupDashboardMode(org, stats);
-  const emptyCompany = isEmptyCompanyMode(stats);
+  const setupProgress = getCompanySetupProgress(profile, orgId);
   const companyType = resolveCompanyType(org?.companyType);
+
+  const { items: setupItems, setupMode } = resolveSetupDashboardState(
+    stats,
+    orgProfile,
+    modules,
+    companyType,
+    org,
+    org ?? undefined,
+    setupProgress
+  );
+  const emptyCompany = isEmptyCompanyMode(stats);
   const showInsights = !emptyCompany && hasMeaningfulInsights(stats, modules);
 
-  const setupItems = buildSetupChecklist(stats, orgProfile, modules, companyType, org ?? undefined);
   const firstIncomplete = getFirstIncompleteSetupItem(setupItems);
   const hasActivity = !statsLoading && buildActivityFeed(stats).length > 0;
   const activityTipKey =
@@ -77,6 +85,7 @@ export function CompanyDashboardView({
         stats={stats}
         statsLoading={statsLoading}
         modules={modules}
+        setupMode={setupMode}
       />
 
       <PrimaryActionsRow

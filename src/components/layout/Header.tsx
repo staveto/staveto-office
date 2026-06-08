@@ -5,6 +5,7 @@ import { Menu } from "lucide-react";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { useI18n } from "@/i18n/I18nContext";
 import { isCompanyWorkspaceType } from "@/types/workspace";
+import { shouldShowWorkerDashboard } from "@/lib/workspaceProduct";
 import { ActiveCompanyContextSelector } from "./ActiveCompanyContextSelector";
 import { UserProfileMenu } from "./UserProfileMenu";
 
@@ -15,6 +16,12 @@ const PAGE_TITLES: Record<string, string> = {
   "/app/projects/new": "projects.new.title",
   "/app/projects": "nav.projects",
   "/app/members": "nav.members",
+  "/app/planning": "planning.title",
+  "/app/materials": "materials.overview.title",
+  "/app/expenses": "expenses.title",
+  "/app/expenses/new": "expenses.new",
+  "/app/attendance": "attendance.title",
+  "/app/equipment": "equipment.title",
   "/app/billing": "nav.billing",
   "/app/settings": "nav.settings",
   "/app/help": "nav.help",
@@ -44,9 +51,13 @@ export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
   let pageTitleKey = getPageTitle(pathname);
   if (activeWorkspace) {
     if (pathname === "/app") {
-      pageTitleKey = isCompanyWorkspaceType(activeWorkspace.type)
-        ? "dashboard.title"
-        : "dashboard.titlePersonal";
+      if (isCompanyWorkspaceType(activeWorkspace.type)) {
+        pageTitleKey = shouldShowWorkerDashboard(activeWorkspace.role)
+          ? "dashboard.titleWorker"
+          : "dashboard.title";
+      } else {
+        pageTitleKey = "dashboard.titlePersonal";
+      }
     } else if (
       pathname === "/app/projects" ||
       pathname.startsWith("/app/projects/")

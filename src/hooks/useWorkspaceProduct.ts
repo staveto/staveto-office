@@ -6,8 +6,9 @@ import {
   isCompanyWorkspaceMode,
   canManageCompanyOperations,
   isOwnerLikeRole,
-  isFieldRole,
+  shouldShowWorkerDashboard,
 } from "@/lib/workspaceProduct";
+import { getCompanyRoleLabelKey } from "@/lib/companyRoles";
 
 export function useWorkspaceProduct() {
   const { activeWorkspace, availableWorkspaces } = useWorkspace();
@@ -17,16 +18,23 @@ export function useWorkspaceProduct() {
     const role = activeWorkspace?.role;
     const canManage = canManageCompanyOperations(role);
     const isOwner = isOwnerLikeRole(role);
-    const isField = isFieldRole(role);
+    const isField = shouldShowWorkerDashboard(role);
     const hasCompanyWorkspace = availableWorkspaces.some(
       (w) => w.type === "company"
     );
+    const roleLabelKey =
+      isCompany && role
+        ? getCompanyRoleLabelKey(role)
+        : !isCompany
+          ? "header.context.personalLabel"
+          : null;
 
     return {
       activeWorkspace,
       isCompany,
       isPersonal: !isCompany,
       role,
+      roleLabelKey,
       canManage,
       isOwner,
       isField,

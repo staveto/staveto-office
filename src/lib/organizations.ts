@@ -223,10 +223,96 @@ function resolveMembershipRole(
 ): string {
   if (org.ownerUid === uid) return "owner";
   if (!member) return "viewer";
-  const raw = String(member.role ?? "member").toLowerCase();
-  if (raw === "member") return "worker";
-  if (raw === "viewer" || raw === "client") return "viewer";
-  return raw;
+  return normalizeMembershipRole(String(member.role ?? "member"));
+}
+
+/** Normalize raw Firestore / callable role strings before workspace mapping. */
+export function normalizeMembershipRole(role: string): string {
+  const r = String(role ?? "member").toLowerCase();
+  if (r === "member") return "worker";
+  if (r === "viewer" || r === "client") return "client";
+  return r;
+}
+
+function mergeOrgMembership(existing: OrgMembership, incoming: OrgMembership): OrgMembership {
+  const a = normalizeMembershipRole(existing.role);
+  const b = normalizeMembershipRole(incoming.role);
+  if (a === b) {
+    return { ...incoming, role: a, orgName: incoming.orgName || existing.orgName };
+  }
+  if (b === "owner" || b === "admin") {
+    return { ...incoming, role: b, orgName: incoming.orgName || existing.orgName };
+  }
+  if (a === "owner" || a === "admin") {
+    return { ...existing, orgName: incoming.orgName || existing.orgName };
+  }
+  const isField = (role: string) => role === "worker" || role === "client";
+  if (isField(a) && (b === "manager" || b === "accountant")) {
+    return { ...incoming, role: a, orgName: incoming.orgName || existing.orgName };
+  }
+  if (isField(b) && (a === "manager" || a === "accountant")) {
+    return { ...incoming, role: b, orgName: incoming.orgName || existing.orgName };
+  }
+  if (isDefaultCompanyRole(b)) {
+    return { ...incoming, role: b, orgName: incoming.orgName || existing.orgName };
+  }
+  return { ...incoming, role: a, orgName: incoming.orgName || existing.orgName };
+}
+
+/** Authoritative role for a user in an organization (member doc + ownerUid). */
+export async function getUserRoleInOrganization(
+  orgId: string,
+  uid: string,
+  email?: string
+): Promise<string | null> {
+  const db = getFirestoreInstance();
+  if (!db) return null;
+
+  const org = await getOrganization(orgId);
+  if (!org) return null;
+  if (org.ownerUid === uid) return "owner";
+
+  const found = await findOrgMemberForUser(db, orgId, uid);
+  if (found && isOrgMemberActive(found.member)) {
+    return resolveMembershipRole(org, found.member, found.memberDocId, uid);
+  }
+
+  try {
+    const snap = await getDocs(
+      query(collectionGroup(db, "members"), where("userId", "==", uid))
+    );
+    for (const memberDoc of snap.docs) {
+      if (parseOrgIdFromMemberPath(memberDoc.ref.path) !== orgId) continue;
+      const member = memberDoc.data() as OrgMember;
+      if (!isOrgMemberActive(member)) continue;
+      return resolveMembershipRole(org, member, memberDoc.id, uid);
+    }
+  } catch (err) {
+    if (process.env.NODE_ENV === "development") {
+      console.debug("[organizations] getUserRoleInOrganization collectionGroup failed", err);
+    }
+  }
+
+  const emailLower = email?.trim().toLowerCase();
+  if (emailLower) {
+    for (const field of ["emailLower", "email"] as const) {
+      try {
+        const snap = await getDocs(
+          query(collectionGroup(db, "members"), where(field, "==", emailLower))
+        );
+        for (const memberDoc of snap.docs) {
+          if (parseOrgIdFromMemberPath(memberDoc.ref.path) !== orgId) continue;
+          const member = memberDoc.data() as OrgMember;
+          if (!isOrgMemberActive(member)) continue;
+          return resolveMembershipRole(org, member, memberDoc.id, uid);
+        }
+      } catch {
+        // rules / index — try next field
+      }
+    }
+  }
+
+  return null;
 }
 
 export type OrgEligibilityContext = {
@@ -362,7 +448,7 @@ async function listMembershipsViaCallable(uid: string): Promise<OrgMembership[]>
     return rows.map((row) => ({
       orgId: row.orgId,
       orgName: row.orgName?.trim() || "Firma",
-      role: row.role || "worker",
+      role: normalizeMembershipRole(row.role || "worker"),
     }));
   } catch (err) {
     if (process.env.NODE_ENV === "development") {
@@ -532,16 +618,22 @@ export async function getUserOrgMemberships(
   const merged = new Map<string, OrgMembership>();
 
   for (const m of [
-    ...fromCallableEarly,
     ...fromGroup,
     ...fromEmail,
     ...fromHints,
+    ...fromCallableEarly,
     ...fromOwned,
   ]) {
-    const existing = merged.get(m.orgId);
-    if (!existing || isDefaultCompanyRole(m.role)) {
-      merged.set(m.orgId, m);
+    const normalized: OrgMembership = {
+      ...m,
+      role: normalizeMembershipRole(m.role),
+    };
+    const existing = merged.get(normalized.orgId);
+    if (!existing) {
+      merged.set(normalized.orgId, normalized);
+      continue;
     }
+    merged.set(normalized.orgId, mergeOrgMembership(existing, normalized));
   }
 
   return [...merged.values()];

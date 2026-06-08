@@ -16,6 +16,8 @@
     "firebase:deploy:functions": "firebase deploy --only functions:generateProjectDraft,functions:updateProjectDraftWithAI,functions:createProjectFromDraft,functions:createBusinessOrg",
     "firebase:deploy:business-org": "firebase deploy --only functions:createBusinessOrg,firestore:rules",
     "firebase:deploy:business-org:function": "firebase deploy --only functions:createBusinessOrg",
+    "firebase:deploy:rules": "powershell -ExecutionPolicy Bypass -File scripts/firebase-deploy-rules.ps1",
+    "firebase:deploy:rules:equipment": "powershell -ExecutionPolicy Bypass -File scripts/firebase-deploy-rules.ps1 -Only firestore:rules,storage",
     "emulators:functions": "npm run functions:build && firebase emulators:start --only functions",
     "functions:build": "npm run build --prefix functions"
   },

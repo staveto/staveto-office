@@ -28,6 +28,11 @@ export type UserProfile = {
     dismissedAt?: unknown;
     lastOpenedModule?: string;
   };
+  /** Per-org soft progress for company dashboard setup checklist (visit-based steps). */
+  companySetupProgress?: Record<
+    string,
+    Partial<Record<"first_offer" | "first_document", boolean>> & { updatedAt?: unknown }
+  >;
   onboarding?: {
     purpose?: string;
     role?: string;
@@ -107,6 +112,20 @@ export async function upsertUserProfile(
       ...existingGuide,
       ...Object.fromEntries(Object.entries(guide).filter(([, v]) => v !== undefined)),
     };
+  }
+  if (data.companySetupProgress) {
+    const existingProgress =
+      (existing.companySetupProgress as Record<string, Record<string, unknown>>) ?? {};
+    const merged: Record<string, Record<string, unknown>> = { ...existingProgress };
+    for (const [orgId, steps] of Object.entries(data.companySetupProgress)) {
+      merged[orgId] = {
+        ...(merged[orgId] ?? {}),
+        ...Object.fromEntries(
+          Object.entries(steps as Record<string, unknown>).filter(([, v]) => v !== undefined)
+        ),
+      };
+    }
+    update.companySetupProgress = merged;
   }
   if (data.onboarding) {
     const existingOnb = (existing.onboarding as Record<string, unknown>) ?? {};

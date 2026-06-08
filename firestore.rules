@@ -13,12 +13,19 @@ service cloud.firestore {
       );
     }
 
+    function orgMemberData(orgId) {
+      return get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data;
+    }
+
     function isOrgMemberActive(orgId) {
       return isSignedIn() && (
         get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid
         || (
           exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid))
-          && get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data.status in ['active', 'pending']
+          && (
+            !('status' in orgMemberData(orgId))
+            || orgMemberData(orgId).status in ['active', 'pending']
+          )
         )
       );
     }
@@ -43,6 +50,20 @@ service cloud.firestore {
           exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid))
           && get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data.role in ['admin', 'owner', 'manager']
           && get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data.status == 'active'
+        )
+      );
+    }
+
+    function isOrgChatWriter(orgId) {
+      return isSignedIn() && (
+        get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid
+        || (
+          exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid))
+          && (
+            !('status' in orgMemberData(orgId))
+            || orgMemberData(orgId).status in ['active', 'pending']
+          )
+          && orgMemberData(orgId).role in ['owner', 'admin', 'manager', 'worker', 'member']
         )
       );
     }
@@ -171,6 +192,14 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read, write: if isSignedIn() && request.auth.uid == userId;
+
+      match /equipment/{equipmentId} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
+
+      match /equipment/{equipmentId}/{rest=**} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
     }
 
     match /organizations/{orgId} {
@@ -197,6 +226,48 @@ service cloud.firestore {
       match /invites/{inviteId} {
         allow read: if isOrgOwnerOrAdmin(orgId);
         allow create, update, delete: if false;
+      }
+
+      match /chats/{chatId} {
+        allow read: if isOrgMemberActive(orgId);
+        allow create: if isSignedIn()
+          && isOrgMemberActive(orgId)
+          && request.resource.data.orgId == orgId
+          && request.resource.data.type in ['general'];
+        allow update: if isSignedIn()
+          && isOrgChatWriter(orgId)
+          && request.resource.data.orgId == resource.data.orgId
+          && request.resource.data.type == resource.data.type
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'title',
+            'updatedAt',
+            'lastMessageText',
+            'lastMessageAt',
+            'lastMessageByUid'
+          ]);
+        allow delete: if false;
+
+        match /messages/{messageId} {
+          allow read: if isOrgMemberActive(orgId);
+          allow create: if isSignedIn()
+            && isOrgChatWriter(orgId)
+            && request.resource.data.orgId == orgId
+            && request.resource.data.chatId == chatId
+            && request.resource.data.senderUid == request.auth.uid
+            && request.resource.data.type in ['text', 'image']
+            && request.resource.data.status == 'sent';
+          allow update, delete: if false;
+        }
+
+        match /reads/{readUid} {
+          allow read: if isOrgMemberActive(orgId);
+          allow create, update: if isSignedIn()
+            && isOrgMemberActive(orgId)
+            && readUid == request.auth.uid
+            && request.resource.data.uid == request.auth.uid;
+          allow delete: if false;
+        }
       }
     }
 
@@ -234,6 +305,10 @@ service cloud.firestore {
       }
 
       match /materials/{materialId} {
+        allow read, write: if canAccessProjectId(projectId);
+      }
+
+      match /materialSuggestions/{suggestionId} {
         allow read, write: if canAccessProjectId(projectId);
       }
 

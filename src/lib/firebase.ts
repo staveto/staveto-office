@@ -30,6 +30,7 @@ import {
   limit,
   serverTimestamp,
   Timestamp,
+  onSnapshot,
 } from "firebase/firestore";
 import { getFunctions, httpsCallable, connectFunctionsEmulator } from "firebase/functions";
 import {
@@ -184,5 +185,6 @@ export {
   limit,
   serverTimestamp,
   Timestamp,
+  onSnapshot,
 };
 export type { User };

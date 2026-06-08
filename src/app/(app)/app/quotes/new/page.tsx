@@ -38,6 +38,7 @@ import { computeItemTotal, computeEstimateTotals } from "@/lib/estimateUtils";
 import { createStandaloneQuote } from "@/services/quotes";
 import type { QuoteStatus } from "@/lib/quotes";
 import { QUOTE_DRAFT_UNITS } from "@/lib/quoteDraftItems";
+import { useSetupChecklistVisit } from "@/hooks/useSetupChecklistVisit";
 
 const STATUSES: QuoteStatus[] = ["draft", "sent", "accepted", "rejected"];
 const DEFAULT_UNIT = "ks";
@@ -50,6 +51,7 @@ interface LineItem {
 }
 
 export default function NewQuotePage() {
+  useSetupChecklistVisit("first_offer");
   const router = useRouter();
   const { t } = useI18n();
   const { user } = useAuth();

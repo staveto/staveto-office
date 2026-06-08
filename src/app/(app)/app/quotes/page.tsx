@@ -19,9 +19,11 @@ import {
 import { formatMoney } from "@/lib/format";
 import { listQuotesForWorkspace, toLegacyWorkspace } from "@/services/quotes";
 import { QuoteStatusBadge } from "@/components/quotes/QuoteStatusBadge";
+import { useSetupChecklistVisit } from "@/hooks/useSetupChecklistVisit";
 
 export default function QuotesPage() {
   const { t } = useI18n();
+  useSetupChecklistVisit("first_offer");
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
   const [quotes, setQuotes] = useState<Awaited<ReturnType<typeof listQuotesForWorkspace>>>([]);

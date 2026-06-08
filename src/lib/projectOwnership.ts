@@ -28,9 +28,19 @@ export function isCompanyOwnedProject(project: Pick<ProjectDoc, "orgId">): boole
 }
 
 export function getAssignedMemberIds(
-  project: Pick<ProjectDoc, "assignedMemberIds">
+  project: Pick<ProjectDoc, "assignedMemberIds"> & { assignedUserIds?: string[] }
 ): string[] {
-  return project.assignedMemberIds ?? [];
+  const fromMember = project.assignedMemberIds ?? [];
+  const fromUser = project.assignedUserIds ?? [];
+  return [...new Set([...fromMember, ...fromUser].filter(Boolean))];
+}
+
+export function isProjectAssignedToUser(
+  project: Pick<ProjectDoc, "assignedMemberIds"> & { assignedUserIds?: string[] },
+  uid: string
+): boolean {
+  if (!uid) return false;
+  return getAssignedMemberIds(project).includes(uid);
 }
 
 export function getAssignedMemberCount(project: Pick<ProjectDoc, "assignedMemberIds">): number {

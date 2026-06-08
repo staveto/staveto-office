@@ -11,7 +11,7 @@ import { SidebarFooter } from "./sidebar/SidebarFooter";
 import { SidebarBrand } from "./sidebar/SidebarBrand";
 import { ActiveCompanyContextSelector } from "./ActiveCompanyContextSelector";
 import { UserProfileMenu } from "./UserProfileMenu";
-import { canManageCompanyOperations } from "@/lib/workspaceProduct";
+import { canManageCompanyOperations, shouldShowWorkerDashboard } from "@/lib/workspaceProduct";
 import { useEnabledModules } from "@/context/EnabledModulesContext";
 
 interface SidebarProps {
@@ -28,6 +28,8 @@ export function Sidebar({ onClose, isMobile = false }: SidebarProps) {
 
   const isPersonalWorkspace = activeWorkspace?.type === "personal";
   const canManage = canManageCompanyOperations(activeWorkspace?.role);
+  const isFieldWorker =
+    !isPersonalWorkspace && shouldShowWorkerDashboard(activeWorkspace?.role);
   const { modules: enabledModules } = useEnabledModules();
   const comingSoonLabel = t("sidebar.comingSoon");
 
@@ -56,6 +58,7 @@ export function Sidebar({ onClose, isMobile = false }: SidebarProps) {
           pathname={pathname}
           isPersonalWorkspace={isPersonalWorkspace}
           canManage={canManage}
+          isFieldWorker={isFieldWorker}
           enabledModules={isPersonalWorkspace ? null : enabledModules}
           comingSoonLabel={comingSoonLabel}
           t={t}
