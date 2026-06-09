@@ -142,15 +142,21 @@ Run `npm run firebase:login:no-localhost` and `npm run firebase:deploy` on home 
 
 **Permanent fix:** System → Environment Variables → User `Path` → add `C:\nvm4w\nodejs`, then restart Cursor.
 
-Optional model (default `gemini-2.0-flash`):
+Optional models (defaults: vision `gemini-2.5-flash-lite`, draft `gemini-2.5-flash`):
 
 ```bash
+# Fast vision extraction (photos/PDFs) — parallel, text-only summaries
+firebase functions:secrets:set GEMINI_VISION_MODEL
+# e.g. gemini-2.5-flash-lite, gemini-2.0-flash-lite
+
+# JSON project draft generation (text only, faster than multimodal)
 firebase functions:secrets:set GEMINI_MODEL
-# e.g. gemini-2.5-flash, gemini-2.0-flash-lite, gemini-1.5-flash
+# e.g. gemini-2.5-flash, gemini-2.0-flash
+
 npm run firebase:deploy:functions
 ```
 
-Wire `GEMINI_MODEL` only after creating the secret in Secret Manager (optional; default stays `gemini-2.0-flash`):
+Pipeline: attachments → **GEMINI_VISION_MODEL** (bullet summaries) → **GEMINI_MODEL** (JSON draft). Set `GEMINI_DRAFT_INLINE_VISION=1` only to revert to one heavy multimodal draft call.
 
 Region: **europe-west1** (same as `getBillingStatus`).
 

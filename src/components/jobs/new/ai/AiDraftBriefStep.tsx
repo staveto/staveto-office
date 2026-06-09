@@ -13,7 +13,8 @@ import { nj } from "../newJobFormStyles";
 type Props = {
   workspace: ActiveWorkspace;
   userId: string;
-  onEnsureProject: () => Promise<string>;
+  uploadSessionId: string;
+  useOfficeUploadFallback?: boolean;
   uploadedFiles: UploadedAiDraftFile[];
   onUploadedFilesChange: (files: UploadedAiDraftFile[]) => void;
   projectName: string;
@@ -39,7 +40,8 @@ function RequiredMark() {
 export function AiDraftBriefStep({
   workspace,
   userId,
-  onEnsureProject,
+  uploadSessionId,
+  useOfficeUploadFallback,
   uploadedFiles,
   onUploadedFilesChange,
   projectName,
@@ -143,9 +145,10 @@ export function AiDraftBriefStep({
           </p>
         </div>
         <AiDraftFileUpload
-          workspace={workspace}
           userId={userId}
-          onEnsureProject={onEnsureProject}
+          sessionId={uploadSessionId}
+          workspace={workspace}
+          useOfficeUploadFallback={useOfficeUploadFallback}
           files={uploadedFiles}
           onFilesChange={onUploadedFilesChange}
         />

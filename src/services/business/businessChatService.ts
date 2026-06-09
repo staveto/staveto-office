@@ -221,22 +221,47 @@ export function listenBusinessChats(
   }
 
   const normalizedOrgId = orgId.trim();
-  const chatsRef = collection(db, `organizations/${normalizedOrgId}/chats`);
-  return onSnapshot(
-    chatsRef,
+  let generalChat: BusinessChatDoc | null = null;
+  let directChats: BusinessChatDoc[] = [];
+
+  const emit = () => {
+    const rows = [
+      ...(generalChat ? [generalChat] : []),
+      ...directChats,
+    ].sort((a, b) => toMillis(b.lastMessageAt) - toMillis(a.lastMessageAt));
+    callback(rows);
+  };
+
+  // Single-doc listener for general (same as mobile — avoids collection permission edge cases).
+  const unsubGeneral = listenGeneralBusinessChat(
+    normalizedOrgId,
+    (chat) => {
+      generalChat = chat;
+      emit();
+    },
+    onError
+  );
+
+  // Only direct chats where the user is a participant (safe query — no leaked DMs).
+  const directQ = query(
+    collection(db, `organizations/${normalizedOrgId}/chats`),
+    where("participantUids", "array-contains", uid)
+  );
+  const unsubDirect = onSnapshot(
+    directQ,
     (snap) => {
-      const rows = snap.docs
+      directChats = snap.docs
         .map((d) => toChatDoc(d.id, d.data() as Record<string, unknown>))
-        .filter(
-          (chat) =>
-            chat.type === "general" ||
-            (chat.type === "direct" && chat.participantUids?.includes(uid))
-        )
-        .sort((a, b) => toMillis(b.lastMessageAt) - toMillis(a.lastMessageAt));
-      callback(rows);
+        .filter((chat) => chat.type === "direct");
+      emit();
     },
     (err) => onError?.(err)
   );
+
+  return () => {
+    unsubGeneral();
+    unsubDirect();
+  };
 }
 
 export function listenGeneralBusinessChat(

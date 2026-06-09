@@ -18,7 +18,10 @@ import {
   mapCallableError,
   updateProjectDraftWithAI,
 } from "@/services/ai/projectDraftService";
-import type { UploadedAiDraftFile } from "@/services/ai/aiDraftFiles";
+import {
+  filterOfficeAttachedFileIds,
+  type UploadedAiDraftFile,
+} from "@/services/ai/aiDraftFiles";
 import { nj, njNavPrimary } from "./newJobFormStyles";
 
 export type NewJobAiDraftContext = {
@@ -84,7 +87,7 @@ export function NewJobAiDraftStep({ workspace, userId, context, onProjectCreated
         description: context.description,
         location: context.location.trim() || undefined,
         language,
-        attachedFileIds: context.attachedFiles.map((f) => f.id),
+        attachedFileIds: filterOfficeAttachedFileIds(context.attachedFiles),
       });
       setDraftId(res.draftId);
       setDraft(res.draft);

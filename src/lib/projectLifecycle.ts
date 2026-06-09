@@ -53,7 +53,13 @@ export type ProjectListFilter =
   | "concepts"
   | "active"
   | "waiting"
-  | "closed";
+  | "closed"
+  | "completed"
+  | "archived";
+
+export type ProjectFilterContext = {
+  taskProgressPercent?: number | null;
+};
 
 const SALES_LIFECYCLE: ReadonlySet<ProjectLifecycleStatus> = new Set([
   "new_request",
@@ -133,21 +139,52 @@ export function isClosedJob(project: Pick<ProjectDoc, "phase" | "lifecycleStatus
   return false;
 }
 
+export function isProjectArchived(
+  project: Pick<ProjectDoc, "archivedAt" | "lifecycleStatus">
+): boolean {
+  if (project.archivedAt) return true;
+  return normalizeLifecycleStatus(project) === "archived";
+}
+
 export function matchesProjectFilter(
   project: ProjectDoc,
-  filter: ProjectListFilter
+  filter: ProjectListFilter,
+  ctx?: ProjectFilterContext
 ): boolean {
+  const archived = isProjectArchived(project);
+  const progress = ctx?.taskProgressPercent ?? null;
+
   switch (filter) {
     case "all":
-      return true;
+      return !archived;
+    case "archived":
+      return archived;
+    case "completed": {
+      if (archived) return false;
+      if (progress === 100) return true;
+      return normalizeLifecycleStatus(project) === "completed";
+    }
     case "concepts":
-      return isDraftJob(project);
-    case "active":
-      return isActiveJob(project);
+      return !archived && isDraftJob(project);
+    case "active": {
+      if (archived) return false;
+      if (normalizeLifecycleStatus(project) === "rejected") return false;
+      if (progress === 100) return false;
+      if (isClosedJob(project) && normalizeLifecycleStatus(project) !== "paused") {
+        return false;
+      }
+      return (
+        isActiveJob(project) ||
+        isDraftJob(project) ||
+        (normalizeProjectPhase(project) === "delivery" &&
+          progress != null &&
+          progress < 100)
+      );
+    }
     case "waiting":
-      return isDraftJob(project) && isWaitingForCustomer(project);
+      return !archived && isDraftJob(project) && isWaitingForCustomer(project);
     case "closed":
-      return isClosedJob(project);
+      return isClosedJob(project) || !!project.archivedAt;
     default:
       return true;
   }

@@ -11,6 +11,7 @@ import {
   addDoc,
   setDoc,
   doc,
+  getDocs,
   serverTimestamp,
 } from "@/lib/firebase";
 import { getWorkspaceStorageKey } from "@/lib/workspaceStorage";
@@ -19,6 +20,7 @@ import type { UploadedAiDraftFile } from "@/services/ai/aiDraftFiles";
 
 export type ProjectDocumentRecord = UploadedAiDraftFile & {
   projectId: string;
+  createdAt?: string;
 };
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -34,6 +36,37 @@ const ALLOWED_TYPES = new Set([
 
 function sanitizeFileName(name: string): string {
   return name.replace(/[^\w.\-()+ ]/g, "_").slice(0, 120);
+}
+
+function toIso(raw: unknown): string | undefined {
+  if (!raw) return undefined;
+  if (typeof raw === "string") return raw;
+  if (typeof raw === "object" && raw !== null && "toDate" in raw) {
+    return (raw as { toDate: () => Date }).toDate().toISOString();
+  }
+  return undefined;
+}
+
+export async function listProjectDocuments(
+  projectId: string
+): Promise<ProjectDocumentRecord[]> {
+  const db = getFirestoreInstance();
+  if (!db) return [];
+
+  const snap = await getDocs(collection(db, "projects", projectId, "documents"));
+  return snap.docs
+    .map((d) => {
+      const data = d.data() as Record<string, unknown>;
+      return {
+        id: d.id,
+        projectId,
+        fileName: (data.fileName as string) ?? "file",
+        mimeType: (data.mimeType as string) ?? "application/octet-stream",
+        storagePath: (data.storagePath as string) ?? "",
+        createdAt: toIso(data.createdAt),
+      };
+    })
+    .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
 }
 
 export async function uploadProjectDocument(

@@ -7,7 +7,7 @@ import {
   handleUpdateProjectDraftWithAI,
 } from "./handlers";
 import { handleCreateBusinessOrg } from "./businessOrg";
-import { isGeminiQuotaError } from "./gemini";
+import { isGeminiOverloadedError, isGeminiQuotaError } from "./gemini";
 import { functionsPermissionError } from "./permissions";
 
 setGlobalOptions({
@@ -20,6 +20,13 @@ const callableOptions = {
   memory: "512MiB" as const,
   /** Required for browser clients (Firebase SDK → Cloud Run). */
   invoker: "public" as const,
+};
+
+const aiDraftCallableOptions = {
+  ...callableOptions,
+  /** Vision + draft JSON can exceed 120s when attachments are present. */
+  timeoutSeconds: 300,
+  memory: "1GiB" as const,
 };
 
 function mapError(err: unknown): never {
@@ -42,6 +49,15 @@ function mapError(err: unknown): never {
         "Gemini API quota exceeded. Wait a few minutes, enable billing in Google AI Studio, or set GEMINI_MODEL to another model."
       );
     }
+    if (isGeminiOverloadedError(err)) {
+      throw new HttpsError(
+        "unavailable",
+        "AI service is busy. Please try again in a moment."
+      );
+    }
+    if (msg.includes("GoogleGenerativeAI") || msg.includes("generativelanguage.googleapis.com")) {
+      throw new HttpsError("unavailable", "AI service is temporarily unavailable. Please try again.");
+    }
     if (msg.includes("JSON") || msg.includes("schema")) {
       throw new HttpsError("internal", "AI returned invalid data. Please try again.");
     }
@@ -51,7 +67,7 @@ function mapError(err: unknown): never {
 }
 
 export const generateProjectDraft = onCall(
-  { ...callableOptions, secrets: ["GEMINI_API_KEY"] },
+  { ...aiDraftCallableOptions, secrets: ["GEMINI_API_KEY"] },
   async (request) => {
     try {
       return await handleGenerateProjectDraft(request.auth?.uid, request.data);
@@ -62,7 +78,7 @@ export const generateProjectDraft = onCall(
 );
 
 export const updateProjectDraftWithAI = onCall(
-  { ...callableOptions, secrets: ["GEMINI_API_KEY"] },
+  { ...aiDraftCallableOptions, secrets: ["GEMINI_API_KEY"] },
   async (request) => {
     try {
       return await handleUpdateProjectDraftWithAI(request.auth?.uid, request.data);

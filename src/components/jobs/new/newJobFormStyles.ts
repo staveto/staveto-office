@@ -4,15 +4,16 @@ import { cn } from "@/lib/utils";
 const njFieldFocus = cn(
   "focus-visible:outline-none",
   "focus-visible:border-[#E95F2A]",
-  "focus-visible:shadow-[0_0_0_3px_rgba(233,95,42,0.18)]"
+  "focus-visible:shadow-[0_0_0_3px_rgba(233,95,42,0.22)]"
 );
 
 const njFieldBase = cn(
-  "w-full bg-white text-[#0F172A] text-[15px]",
-  "border border-[#E2E8F0] rounded-[14px]",
+  "w-full !bg-white text-[#0F172A] text-[15px]",
+  "border-2 border-[#94A3B8] rounded-[14px]",
+  "shadow-[0_1px_3px_rgba(15,42,77,0.08)]",
   "placeholder:text-[#64748B]",
   "transition-[border-color,box-shadow,background-color]",
-  "hover:border-[#CBD5E1]",
+  "hover:border-[#64748B] hover:shadow-[0_2px_6px_rgba(15,42,77,0.1)]",
   njFieldFocus,
   "disabled:opacity-60 disabled:cursor-not-allowed",
   "aria-invalid:border-red-600 aria-invalid:shadow-[0_0_0_3px_rgba(220,38,38,0.2)]"
@@ -31,7 +32,8 @@ export const nj = {
   required: "text-[#E95F2A] font-bold ml-0.5",
   error: "text-red-600 font-medium text-sm mt-1.5",
   helper: "text-[#64748B] text-sm mt-2 leading-relaxed",
-  formGroup: "rounded-[22px] bg-[#F8FAFC]/80 p-6 sm:p-7 space-y-5",
+  formGroup:
+    "rounded-[22px] bg-[#F8FAFC] border-2 border-[#CBD5E1] p-6 sm:p-7 space-y-5 shadow-[0_4px_18px_rgba(15,42,77,0.06)]",
   fieldStack: "space-y-5",
   mainCard:
     "bg-white rounded-[28px] shadow-[0_12px_32px_rgba(15,42,77,0.06)] border-0 overflow-hidden",
@@ -46,7 +48,7 @@ export const nj = {
     njFieldBase,
     "min-h-[52px] h-[52px] px-4 py-3 flex items-center justify-between gap-2"
   ),
-  segmentedWrap: "flex w-full p-1 rounded-xl bg-[#EEF2F7]",
+  segmentedWrap: "flex w-full p-1 rounded-xl bg-[#E2E8F0] border border-[#CBD5E1]",
   previewPanel:
     "rounded-[28px] shadow-[0_20px_50px_rgba(15,42,77,0.10)] overflow-hidden bg-[#0F2A4D] text-white",
   previewMeta: "space-y-4 text-[15px]",
@@ -60,10 +62,17 @@ export const nj = {
     "text-white/70 hover:text-white hover:bg-white/10",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
   ),
-  optionalToggle:
-    "text-sm font-semibold text-[#64748B] hover:text-[#0F2A4D] inline-flex items-center gap-1.5 min-h-11",
+  optionalToggle: cn(
+    "text-sm font-semibold text-[#334155]",
+    "inline-flex items-center justify-center gap-2 min-h-11 px-4 py-2.5",
+    "rounded-xl border-2 border-[#94A3B8] bg-white",
+    "shadow-[0_1px_3px_rgba(15,42,77,0.06)]",
+    "hover:border-[#64748B] hover:text-[#0F2A4D] hover:shadow-[0_2px_6px_rgba(15,42,77,0.1)]",
+    "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(233,95,42,0.2)]",
+    "cursor-pointer transition-all"
+  ),
   searchDropdown:
-    "absolute z-20 mt-2 w-full max-h-56 overflow-y-auto rounded-[14px] bg-white border border-[#E2E8F0] shadow-[0_18px_42px_rgba(15,42,77,0.10)] py-1",
+    "absolute z-20 mt-2 w-full max-h-56 overflow-y-auto rounded-[14px] bg-white border-2 border-[#94A3B8] shadow-[0_18px_42px_rgba(15,42,77,0.14)] py-1",
 } as const;
 
 export function njSegment(selected: boolean) {
@@ -78,21 +87,21 @@ export function njSegment(selected: boolean) {
 
 export function njChoicePill(selected: boolean) {
   return cn(
-    "inline-flex items-center gap-2 min-h-[48px] rounded-[14px] px-5 py-2.5 text-sm font-semibold transition-all",
-    "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(233,95,42,0.18)]",
+    "inline-flex items-center gap-2 min-h-[48px] rounded-[14px] px-5 py-2.5 text-sm font-semibold transition-all cursor-pointer",
+    "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(233,95,42,0.22)]",
     selected
-      ? "bg-[#FFF3EC] text-[#0F2A4D] border-2 border-[#E95F2A]"
-      : "bg-white text-[#475569] border border-[#E2E8F0] hover:border-[#CBD5E1] hover:shadow-[0_8px_24px_rgba(15,42,77,0.06)]"
+      ? "bg-[#FFF3EC] text-[#0F2A4D] border-2 border-[#E95F2A] shadow-[0_2px_8px_rgba(233,95,42,0.15)]"
+      : "bg-white text-[#334155] border-2 border-[#94A3B8] shadow-[0_1px_3px_rgba(15,42,77,0.06)] hover:border-[#64748B] hover:text-[#0F2A4D] hover:shadow-[0_4px_12px_rgba(15,42,77,0.1)]"
   );
 }
 
 export function njJobTypeCard(selected: boolean) {
   return cn(
-    "group relative flex flex-col gap-4 rounded-[22px] p-6 sm:p-7 text-left min-h-[168px] transition-all duration-200",
+    "group relative flex flex-col gap-4 rounded-[22px] p-6 sm:p-7 text-left min-h-[168px] transition-all duration-200 cursor-pointer",
     "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(233,95,42,0.25)]",
     selected
       ? "bg-[#FFF3EC] border-2 border-[#E95F2A] shadow-[0_12px_32px_rgba(15,42,77,0.08)]"
-      : "bg-white border border-[#E2E8F0] shadow-[0_12px_32px_rgba(15,42,77,0.06)] hover:shadow-[0_18px_42px_rgba(15,42,77,0.10)] hover:border-[#CBD5E1]"
+      : "bg-white border-2 border-[#94A3B8] shadow-[0_8px_24px_rgba(15,42,77,0.07)] hover:shadow-[0_18px_42px_rgba(15,42,77,0.12)] hover:border-[#64748B]"
   );
 }
 
@@ -112,11 +121,11 @@ export function njJobTypeCheck() {
 /** Full-width workflow choice (contact / creation method). */
 export function njLargeChoice(selected: boolean) {
   return cn(
-    "relative w-full flex items-start gap-5 rounded-[22px] p-6 text-left transition-all duration-200 min-h-[96px]",
+    "relative w-full flex items-start gap-5 rounded-[22px] p-6 text-left transition-all duration-200 min-h-[96px] cursor-pointer",
     "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-[rgba(233,95,42,0.25)]",
     selected
       ? "bg-[#FFF3EC] border-2 border-[#E95F2A] shadow-[0_12px_32px_rgba(15,42,77,0.08)]"
-      : "bg-white border border-[#E2E8F0] shadow-[0_12px_32px_rgba(15,42,77,0.06)] hover:shadow-[0_18px_42px_rgba(15,42,77,0.10)] hover:border-[#CBD5E1]"
+      : "bg-[#FAFBFC] border-2 border-[#94A3B8] shadow-[0_8px_24px_rgba(15,42,77,0.07)] hover:bg-white hover:shadow-[0_18px_42px_rgba(15,42,77,0.12)] hover:border-[#64748B]"
   );
 }
 
@@ -131,8 +140,10 @@ export function njNavPrimary() {
 
 export function njNavSecondary() {
   return cn(
-    "min-h-[52px] h-[52px] px-6 rounded-[14px] font-semibold text-base text-[#64748B]",
-    "hover:text-[#0F2A4D] hover:bg-[#F1F5F9]",
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E95F2A]/40"
+    "min-h-[52px] h-[52px] px-6 rounded-[14px] font-semibold text-base text-[#334155]",
+    "border-2 border-[#94A3B8] bg-white shadow-[0_1px_3px_rgba(15,42,77,0.06)]",
+    "hover:text-[#0F2A4D] hover:border-[#64748B] hover:bg-[#F8FAFC]",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E95F2A]/40",
+    "cursor-pointer transition-all"
   );
 }

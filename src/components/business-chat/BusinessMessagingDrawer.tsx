@@ -34,7 +34,10 @@ import {
   type BusinessChatDoc,
   type BusinessChatMessageDoc,
 } from "@/services/business/businessChatService";
-import type { ChatTeamMember } from "@/services/business/businessChatTeamService";
+import {
+  listChatTeamMembers,
+  type ChatTeamMember,
+} from "@/services/business/businessChatTeamService";
 import { formatChatListTime, formatMessageTime } from "@/services/business/businessChatUtils";
 
 type DrawerView = "collapsed" | "list" | "thread" | "compose";
@@ -78,6 +81,8 @@ export function BusinessMessagingDrawer() {
   const [sending, setSending] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [openingChat, setOpeningChat] = useState(false);
+  const [teamMembers, setTeamMembers] = useState<ChatTeamMember[]>([]);
+  const [loadingTeam, setLoadingTeam] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -104,10 +109,11 @@ export function BusinessMessagingDrawer() {
     setLoadingChats(true);
     setChatError(null);
 
-    ensureGeneralChat(orgId)
-      .then(() => {
-        if (cancelled) return;
-        unsub = listenBusinessChats(
+    void ensureGeneralChat(orgId).catch(() => {
+      /* Best effort — listener may still work if general chat already exists. */
+    });
+
+    unsub = listenBusinessChats(
           orgId,
           uid,
           (rows) => {
@@ -127,18 +133,38 @@ export function BusinessMessagingDrawer() {
             setLoadingChats(false);
           }
         );
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setChatError(e instanceof Error ? e.message : t("business.chat.error"));
-        setLoadingChats(false);
-      });
 
     return () => {
       cancelled = true;
       unsub?.();
     };
   }, [canAccessBusinessChat, orgId, uid, refreshUnread, t]);
+
+  useEffect(() => {
+    if (!canAccessBusinessChat || !orgId || !uid) return;
+
+    let cancelled = false;
+    setLoadingTeam(true);
+    listChatTeamMembers(orgId, uid)
+      .then((rows) => {
+        if (cancelled) return;
+        setTeamMembers(rows);
+        setMemberNames((prev) => {
+          const next = new Map(prev);
+          for (const m of rows) next.set(m.uid, m.displayName);
+          return next;
+        });
+        setLoadingTeam(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLoadingTeam(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canAccessBusinessChat, orgId, uid]);
 
   useEffect(() => {
     if (view !== "thread" || !orgId || !activeChat) return;
@@ -292,6 +318,7 @@ export function BusinessMessagingDrawer() {
           <BusinessChatComposePanel
             orgId={orgId}
             currentUid={uid}
+            initialMembers={teamMembers}
             onClose={() => setView("list")}
             onSelectMember={(member) => void handleSelectMember(member)}
           />
@@ -357,55 +384,98 @@ export function BusinessMessagingDrawer() {
                 <Loader2 className="size-6 animate-spin text-muted-foreground" />
                 <p className="text-sm text-muted-foreground">{t("business.chat.loading")}</p>
               </div>
-            ) : chatError ? (
-              <p className="p-4 text-sm text-destructive">{chatError}</p>
-            ) : listRows.length === 0 ? (
-              <p className="p-4 text-sm text-muted-foreground">{t("business.chat.empty")}</p>
             ) : (
-              <ul>
-                {listRows.map((chat) => {
-                  const title = resolveChatTitle(chat, uid, t, memberNames);
-                  const isDirect = chat.type === "direct";
-                  return (
-                    <li key={chat.id}>
-                      <button
-                        type="button"
-                        className="w-full flex items-start gap-3 px-4 py-3 hover:bg-[#F8FAFC] text-left border-b border-[#EEF2F7] transition-colors"
-                        onClick={() => openThread(chat)}
-                      >
-                        <div
-                          className={cn(
-                            "flex size-10 shrink-0 items-center justify-center rounded-full",
-                            isDirect ? "bg-[#1D376A] text-white text-xs font-bold" : "bg-[#EEF2FF] text-[#1D376A]"
-                          )}
-                        >
-                          {isDirect ? (
-                            userInitials(title, null)
-                          ) : (
-                            <MessageCircle className="size-5" />
-                          )}
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="font-semibold text-sm text-[#0F172A] truncate">{title}</p>
-                            <span className="text-[11px] text-muted-foreground shrink-0">
-                              {formatChatListTime(chat.lastMessageAt)}
-                            </span>
-                          </div>
-                          <p className="text-xs text-muted-foreground truncate mt-0.5">
-                            {chat.lastMessageText || t("business.chat.noMessages")}
-                          </p>
-                        </div>
-                        {chat.type === "general" && unreadTotal > 0 && (
-                          <span className="min-w-[20px] h-5 rounded-full bg-[#EA580C] px-1.5 text-[10px] font-bold text-white flex items-center justify-center shrink-0">
-                            {unreadTotal > 99 ? "99+" : unreadTotal}
-                          </span>
-                        )}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+              <>
+                {chatError && (
+                  <p className="p-4 text-sm text-destructive border-b border-red-100 bg-red-50">{chatError}</p>
+                )}
+
+                {listRows.length > 0 && (
+                  <ul>
+                    {listRows.map((chat) => {
+                      const title = resolveChatTitle(chat, uid, t, memberNames);
+                      const isDirect = chat.type === "direct";
+                      return (
+                        <li key={chat.id}>
+                          <button
+                            type="button"
+                            className="w-full flex items-start gap-3 px-4 py-3 hover:bg-[#F8FAFC] text-left border-b border-[#EEF2F7] transition-colors"
+                            onClick={() => openThread(chat)}
+                          >
+                            <div
+                              className={cn(
+                                "flex size-10 shrink-0 items-center justify-center rounded-full",
+                                isDirect ? "bg-[#1D376A] text-white text-xs font-bold" : "bg-[#EEF2FF] text-[#1D376A]"
+                              )}
+                            >
+                              {isDirect ? (
+                                userInitials(title, null)
+                              ) : (
+                                <MessageCircle className="size-5" />
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="font-semibold text-sm text-[#0F172A] truncate">{title}</p>
+                                <span className="text-[11px] text-muted-foreground shrink-0">
+                                  {formatChatListTime(chat.lastMessageAt)}
+                                </span>
+                              </div>
+                              <p className="text-xs text-muted-foreground truncate mt-0.5">
+                                {chat.lastMessageText || t("business.chat.noMessages")}
+                              </p>
+                            </div>
+                            {chat.type === "general" && unreadTotal > 0 && (
+                              <span className="min-w-[20px] h-5 rounded-full bg-[#EA580C] px-1.5 text-[10px] font-bold text-white flex items-center justify-center shrink-0">
+                                {unreadTotal > 99 ? "99+" : unreadTotal}
+                              </span>
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+
+                {canWriteChat && (
+                  <div className="border-t border-[#EEF2F7]">
+                    <p className="px-4 pt-3 pb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      {t("business.chat.teamMembers")}
+                    </p>
+                    {loadingTeam ? (
+                      <div className="flex justify-center py-6">
+                        <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                      </div>
+                    ) : teamMembers.length === 0 ? (
+                      <p className="px-4 pb-4 text-sm text-muted-foreground">{t("business.chat.noTeamMembers")}</p>
+                    ) : (
+                      <ul>
+                        {teamMembers.map((member) => (
+                          <li key={member.uid}>
+                            <button
+                              type="button"
+                              className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[#F8FAFC] text-left transition-colors"
+                              onClick={() => void handleSelectMember(member)}
+                            >
+                              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#1D376A] text-xs font-bold text-white">
+                                {userInitials(member.displayName, member.email)}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-semibold text-[#0F172A] truncate">{member.displayName}</p>
+                                <p className="text-xs text-muted-foreground truncate">{t(member.roleLabelKey)}</p>
+                              </div>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+
+                {!chatError && listRows.length === 0 && teamMembers.length === 0 && !loadingTeam && (
+                  <p className="p-4 text-sm text-muted-foreground">{t("business.chat.empty")}</p>
+                )}
+              </>
             )}
           </div>
         )}

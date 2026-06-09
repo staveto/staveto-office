@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Search,
@@ -26,12 +26,24 @@ import { createDraftJob } from "@/services/projects";
 import { createCustomer, listCustomersForWorkspace } from "@/lib/customers";
 import type { CustomerDoc, CustomerType } from "@/lib/customers";
 import {
+  buildCreateCustomerInput,
+  getCustomerContactPersonName,
+  getCustomerDisplayName,
+  projectCustomerFieldsFromDoc,
+  projectCustomerFieldsFromNewInput,
+  resolveCustomerType,
+} from "@/lib/customerFields";
+import {
   aiPlanToLocalDraft,
+  draftPhaseToAiPhase,
   localDraftToAiProjectPlan,
   removeDraftPhase,
   removeDraftTask,
+  replaceDraftPhase,
+  replaceDraftTask,
   toggleMaterialSelection,
   updateDraftPhase,
+  updateDraftProjectTitle,
   updateDraftTask,
   type AiProjectDraftLocal,
 } from "@/lib/aiProjectDraftLocal";
@@ -42,8 +54,11 @@ import {
   getWizardAiErrorDetail,
   mapWizardAiError,
 } from "@/services/ai/aiWizardGenerationService";
-import type { UploadedAiDraftFile } from "@/services/ai/aiDraftFiles";
-import { getNewJobArchetypeAiContextHint } from "@/lib/aiProjectContext";
+import { createAiUploadSessionId, type UploadedAiDraftFile } from "@/services/ai/aiDraftFiles";
+import { enrichProjectAfterAiConfirm } from "@/services/ai/aiProjectPostConfirmService";
+import { refineGeneratedProjectNode } from "@/services/ai/mobileAiProjectService";
+import { extractCallableErrorMessage } from "@/services/ai/projectDraftService";
+import { buildAiProjectBriefForGenerate } from "@/lib/aiProjectGeneratePayload";
 import {
   WORK_TYPES,
   WORK_TYPE_ICONS,
@@ -54,13 +69,6 @@ import {
   workTypeLabelKey,
   type WorkType,
 } from "@/lib/workTypes";
-import {
-  doc,
-  getFirestoreInstance,
-  serverTimestamp,
-  updateDoc,
-} from "@/lib/firebase";
-import { getProjectWorkspaceWriteFields } from "@/services/workspace/workspaceService";
 import { cn } from "@/lib/utils";
 import {
   nj,
@@ -78,6 +86,7 @@ import { ProjectCreateOwnershipBanner } from "@/components/projects/ProjectCreat
 import { AiCreationMethodStep } from "./ai/AiCreationMethodStep";
 import { AiDraftBriefStep } from "./ai/AiDraftBriefStep";
 import { AiDraftReviewPanel, type AiDraftReviewMode } from "./ai/AiDraftReviewPanel";
+import type { AiRefineNodeTarget } from "./ai/aiDraftReviewTypes";
 import {
   buildWizardPath,
   getNextStep,
@@ -107,11 +116,13 @@ export function NewJobForm() {
   const [contactMode, setContactMode] = useState<ContactMode | null>(null);
   const [customers, setCustomers] = useState<CustomerDoc[]>([]);
   const [customersLoading, setCustomersLoading] = useState(true);
+  const [customersLoadError, setCustomersLoadError] = useState<string | null>(null);
   const [contactSearch, setContactSearch] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerDoc | null>(null);
   const [contactListOpen, setContactListOpen] = useState(false);
 
   const [newContactName, setNewContactName] = useState("");
+  const [newContactPersonName, setNewContactPersonName] = useState("");
   const [newContactEmail, setNewContactEmail] = useState("");
   const [newContactPhone, setNewContactPhone] = useState("");
   const [newContactType, setNewContactType] = useState<CustomerType>("person");
@@ -128,8 +139,7 @@ export function NewJobForm() {
   const [aiProjectName, setAiProjectName] = useState("");
   const [aiBrief, setAiBrief] = useState("");
   const [aiExtraContext, setAiExtraContext] = useState("");
-  const [aiDraftProjectId, setAiDraftProjectId] = useState<string | null>(null);
-  const [aiDraftProjectCreating, setAiDraftProjectCreating] = useState(false);
+  const [aiUploadSessionId] = useState(() => createAiUploadSessionId());
   const [aiUploadedFiles, setAiUploadedFiles] = useState<UploadedAiDraftFile[]>([]);
   const [aiDraft, setAiDraft] = useState<AiProjectDraftLocal | null>(null);
   const [aiDraftSource, setAiDraftSource] = useState<"mobile" | "office" | null>(null);
@@ -138,6 +148,8 @@ export function NewJobForm() {
   const [aiReviewMode, setAiReviewMode] = useState<AiDraftReviewMode>("placeholder");
   const [aiGenerateError, setAiGenerateError] = useState<string | null>(null);
   const [aiConfirming, setAiConfirming] = useState(false);
+  const [aiRegenerating, setAiRegenerating] = useState(false);
+  const [aiRefiningKey, setAiRefiningKey] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -150,9 +162,16 @@ export function NewJobForm() {
     if (!user?.id || !activeWorkspace) return;
     let cancelled = false;
     setCustomersLoading(true);
+    setCustomersLoadError(null);
     void listCustomersForWorkspace(activeWorkspace, user.id)
       .then((list) => {
         if (!cancelled) setCustomers(list);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCustomers([]);
+          setCustomersLoadError(t("projects.new.contact.loadError"));
+        }
       })
       .finally(() => {
         if (!cancelled) setCustomersLoading(false);
@@ -160,23 +179,36 @@ export function NewJobForm() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, activeWorkspace]);
+  }, [user?.id, activeWorkspace, t]);
 
   const filteredContacts = useMemo(() => {
     const q = contactSearch.trim().toLowerCase();
     if (!q) return customers.slice(0, 12);
-    return customers.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.email?.toLowerCase().includes(q) ||
-        c.phone?.toLowerCase().includes(q)
-    );
+    return customers.filter((c) => {
+      const blob = [
+        c.name,
+        c.companyName,
+        c.contactPersonName,
+        c.email,
+        c.phone,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return blob.includes(q);
+    });
   }, [customers, contactSearch]);
 
   const stepDoneContact =
     contactMode === "none" ||
     (contactMode === "existing" && !!selectedCustomer) ||
-    (contactMode === "new" && !!newContactName.trim());
+    (contactMode === "new" &&
+      newContactType === "person" &&
+      !!newContactName.trim()) ||
+    (contactMode === "new" &&
+      newContactType === "company" &&
+      !!newContactName.trim() &&
+      !!newContactPersonName.trim());
 
   const stepDoneMethod = creationMethod === "manual" || creationMethod === "ai";
 
@@ -187,11 +219,27 @@ export function NewJobForm() {
 
   const previewContact = useMemo(() => {
     if (contactMode === "none") return t("projects.new.contact.none");
-    if (contactMode === "existing" && selectedCustomer) return selectedCustomer.name;
+    if (contactMode === "existing" && selectedCustomer) {
+      return getCustomerDisplayName(selectedCustomer) || selectedCustomer.name;
+    }
+    if (contactMode === "new" && newContactType === "company" && newContactName.trim()) {
+      return newContactName.trim();
+    }
     if (contactMode === "new" && newContactName.trim()) return newContactName.trim();
     if (contactMode === "new") return t("projects.new.preview.customerNew");
     return t("projects.new.preview.customerNotSelected");
-  }, [contactMode, selectedCustomer, newContactName, t]);
+  }, [contactMode, selectedCustomer, newContactName, newContactType, t]);
+
+  const previewContactPerson = useMemo(() => {
+    if (contactMode === "existing" && selectedCustomer) {
+      if (resolveCustomerType(selectedCustomer) !== "company") return null;
+      return getCustomerContactPersonName(selectedCustomer) ?? null;
+    }
+    if (contactMode === "new" && newContactType === "company") {
+      return newContactPersonName.trim() || null;
+    }
+    return null;
+  }, [contactMode, selectedCustomer, newContactType, newContactPersonName]);
 
   const previewType = workType
     ? t(workTypeLabelKey(workType))
@@ -235,37 +283,27 @@ export function NewJobForm() {
     }
   };
 
-  const resolveCustomerFields = async (): Promise<{
-    customerId?: string;
-    customerName?: string;
-    customerEmail?: string;
-    customerPhone?: string;
-  }> => {
+  const resolveCustomerFields = async () => {
     if (!user?.id || !activeWorkspace) return {};
     if (contactMode === "existing" && selectedCustomer) {
-      return {
-        customerId: selectedCustomer.id,
-        customerName: selectedCustomer.name,
-        customerEmail: selectedCustomer.email,
-        customerPhone: selectedCustomer.phone,
-      };
+      return projectCustomerFieldsFromDoc(selectedCustomer);
     }
-    if (contactMode === "new" && newContactName.trim()) {
-      const customerId = await createCustomer(activeWorkspace, user.id, {
-        name: newContactName.trim(),
-        email: newContactEmail.trim() || undefined,
-        phone: newContactPhone.trim() || undefined,
+    if (contactMode === "new") {
+      const createInput = buildCreateCustomerInput({
         type: newContactType,
-        ico: newContactIco.trim() || undefined,
-        taxId: newContactTaxId.trim() || undefined,
-        address: newContactAddress.trim() || undefined,
+        personName: newContactType === "person" ? newContactName : undefined,
+        companyName: newContactType === "company" ? newContactName : undefined,
+        contactPersonName:
+          newContactType === "company" ? newContactPersonName : undefined,
+        email: newContactEmail,
+        phone: newContactPhone,
+        ico: newContactIco,
+        vatId: newContactTaxId,
+        address: newContactAddress,
       });
-      return {
-        customerId,
-        customerName: newContactName.trim(),
-        customerEmail: newContactEmail.trim() || undefined,
-        customerPhone: newContactPhone.trim() || undefined,
-      };
+      if (!createInput.name.trim()) return {};
+      const customerId = await createCustomer(activeWorkspace, user.id, createInput);
+      return projectCustomerFieldsFromNewInput(customerId, createInput);
     }
     return {};
   };
@@ -277,8 +315,20 @@ export function NewJobForm() {
       if (!contactMode) err.contact = t("projects.new.validation.customer");
       else if (contactMode === "existing" && !selectedCustomer) {
         err.contact = t("projects.new.validation.customer");
-      } else if (contactMode === "new" && !newContactName.trim()) {
-        err.customerName = t("projects.new.validation.customerName");
+      } else if (contactMode === "new" && newContactType === "person" && !newContactName.trim()) {
+        err.customerName = t("projects.new.validation.customerPersonName");
+      } else if (
+        contactMode === "new" &&
+        newContactType === "company" &&
+        !newContactName.trim()
+      ) {
+        err.customerCompanyName = t("projects.new.validation.customerCompanyName");
+      } else if (
+        contactMode === "new" &&
+        newContactType === "company" &&
+        !newContactPersonName.trim()
+      ) {
+        err.customerContactPerson = t("projects.new.validation.customerContactPerson");
       }
     }
     if (s === "method" && !creationMethod) {
@@ -318,70 +368,16 @@ export function NewJobForm() {
       projectBrief: aiBrief.trim(),
       extraContext: aiExtraContext.trim() || undefined,
       location: location.trim() || undefined,
-      archetypeHint: getNewJobArchetypeAiContextHint(workType),
-      mappedWorkType: mapped.workType,
       jobWorkflowKind: mapped.jobWorkflowKind,
       attachedFileIds: aiUploadedFiles.map((f) => f.id),
       documentStoragePaths: aiUploadedFiles.map((f) => f.storagePath),
+      uploadedFiles: aiUploadedFiles,
     };
   };
 
-  const syncAiDraftProjectFields = useCallback(
-    async (projectId: string) => {
-      const db = getFirestoreInstance();
-      if (!db) return;
-      const patch: Record<string, unknown> = { updatedAt: serverTimestamp() };
-      if (aiProjectName.trim()) patch.name = aiProjectName.trim();
-      if (aiBrief.trim()) patch.customerRequest = aiBrief.trim();
-      if (location.trim()) patch.addressText = location.trim();
-      await updateDoc(doc(db, "projects", projectId), patch);
-    },
-    [aiProjectName, aiBrief, location]
-  );
-
-  const ensureAiDraftProject = useCallback(async (): Promise<string> => {
-    if (!user?.id || !activeWorkspace || !workType) {
-      throw new Error("Missing workspace context");
-    }
-    if (aiDraftProjectId) {
-      await syncAiDraftProjectFields(aiDraftProjectId);
-      return aiDraftProjectId;
-    }
-    setAiDraftProjectCreating(true);
-    try {
-      const customer = await resolveCustomerFields();
-      const jobName = aiProjectName.trim() || t("projects.new.ai.defaultDraftName");
-      const projectId = await createDraftJob(activeWorkspace, user.id, {
-        workType,
-        name: jobName,
-        customerId: customer.customerId,
-        customerRequest: aiBrief.trim() || undefined,
-        customerName: customer.customerName,
-        customerEmail: customer.customerEmail,
-        customerPhone: customer.customerPhone,
-        addressText: location.trim() || undefined,
-        source: "web",
-      });
-      setAiDraftProjectId(projectId);
-      return projectId;
-    } finally {
-      setAiDraftProjectCreating(false);
-    }
-  }, [
-    user?.id,
-    activeWorkspace,
-    workType,
-    aiDraftProjectId,
-    syncAiDraftProjectFields,
-    aiProjectName,
-    aiBrief,
-    location,
-    t,
-  ]);
-
   const mapAiGenerateErrorMessage = (err: unknown): string => {
     if (process.env.NODE_ENV === "development") {
-      console.error("[staveto ai generate]", err);
+      console.warn("[staveto ai generate]", extractCallableErrorMessage(err) || err);
     }
     if (err instanceof Error && err.message === "AI_GENERATION_DISABLED") {
       return t("projects.new.ai.errorNotConfigured");
@@ -391,6 +387,7 @@ export function NewJobForm() {
     }
     const kind = mapWizardAiError(err);
     const detail = getWizardAiErrorDetail(err);
+    const detailLower = detail?.toLowerCase() ?? "";
     if (kind === "unauthenticated" || kind === "permission") {
       return detail ? `${t("projects.new.ai.errorPermission")} ${detail}` : t("projects.new.ai.errorPermission");
     }
@@ -402,6 +399,27 @@ export function NewJobForm() {
     }
     if (kind === "quota") {
       return t("projects.new.ai.errorQuota");
+    }
+    if (
+      kind === "overloaded" ||
+      detailLower.includes("503") ||
+      detailLower.includes("high demand") ||
+      detailLower.includes("service unavailable") ||
+      detailLower.includes("googlegenerativeai")
+    ) {
+      return t("projects.new.ai.errorOverloaded");
+    }
+    if (kind === "timeout" || detailLower.includes("deadline-exceeded")) {
+      return t("projects.new.ai.errorTimeout");
+    }
+    if (
+      detailLower.includes("invalid ai response") ||
+      detailLower.includes("ai returned empty") ||
+      detailLower.includes("ai returned invalid") ||
+      detailLower.includes("ai generation failed") ||
+      detailLower.includes("try again or create manually")
+    ) {
+      return t("projects.new.ai.errorGenerate");
     }
     if (detail) return detail;
     return t("projects.new.ai.errorGenerate");
@@ -419,17 +437,6 @@ export function NewJobForm() {
     setAiReviewMode("draft");
   };
 
-  const runAiGenerateWithProject = async () => {
-    try {
-      await ensureAiDraftProject();
-    } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : t("projects.new.validation.name");
-      throw new Error(`DRAFT_PROJECT: ${msg}`);
-    }
-    await runAiGenerate();
-  };
-
   const goNext = async () => {
     if (!validateStep(step)) return;
     const next = getNextStep(step, creationMethod);
@@ -445,7 +452,7 @@ export function NewJobForm() {
       }
       setAiReviewMode("generating");
       try {
-        await runAiGenerateWithProject();
+        await runAiGenerate();
       } catch (err) {
         setAiDraft(null);
         setAiDraftSource(null);
@@ -482,7 +489,7 @@ export function NewJobForm() {
     setAiGenerateError(null);
     setAiReviewMode("generating");
     try {
-      await runAiGenerateWithProject();
+      await runAiGenerate();
     } catch (err) {
       setAiDraft(null);
       setAiDraftSource(null);
@@ -492,36 +499,125 @@ export function NewJobForm() {
     }
   };
 
+  const handleRegenerateAiDraft = async () => {
+    if (!validateStep("ai-brief")) {
+      setStep("ai-brief");
+      return;
+    }
+    setAiGenerateError(null);
+    setAiRegenerating(true);
+    try {
+      await runAiGenerate();
+    } catch (err) {
+      setAiGenerateError(mapAiGenerateErrorMessage(err));
+    } finally {
+      setAiRegenerating(false);
+    }
+  };
+
+  const handleRefineNode = async (aiRefineTarget: AiRefineNodeTarget, changeRequest: string) => {
+    if (!aiDraft || !aiRefineTarget) return;
+    const brief = buildAiProjectBriefForGenerate(aiProjectName, aiBrief);
+    if (!brief) throw new Error(t("projects.new.validation.aiBrief"));
+
+    const summaryLine = aiDraft.summary?.trim().slice(0, 400);
+    const extra = aiExtraContext.trim() || undefined;
+
+    if (aiRefineTarget.kind === "phase") {
+      const phase = aiDraft.phases.find((p) => p.id === aiRefineTarget.phaseId);
+      if (!phase) throw new Error(t("projects.new.ai.refine.error"));
+      setAiRefiningKey(aiRefineTarget.phaseId);
+      try {
+        const res = await refineGeneratedProjectNode({
+          projectBrief: brief,
+          draftSummary: summaryLine,
+          nodeKind: "phase",
+          phaseIndex: aiRefineTarget.phaseIndex,
+          currentPhase: draftPhaseToAiPhase(phase),
+          userChangeRequest: changeRequest,
+          extraContext: extra,
+        });
+        if (res.kind !== "phase") throw new Error(t("projects.new.ai.refine.error"));
+        setAiDraft((prev) =>
+          prev ? replaceDraftPhase(prev, aiRefineTarget.phaseId, res.phase) : prev
+        );
+      } finally {
+        setAiRefiningKey(null);
+      }
+      return;
+    }
+
+    const phase = aiDraft.phases.find((p) => p.id === aiRefineTarget.phaseId);
+    const task = phase?.tasks.find((x) => x.id === aiRefineTarget.taskId);
+    if (!phase || !task) throw new Error(t("projects.new.ai.refine.error"));
+
+    const refineKey = `${aiRefineTarget.phaseId}:${aiRefineTarget.taskId}`;
+    setAiRefiningKey(refineKey);
+    try {
+      const res = await refineGeneratedProjectNode({
+        projectBrief: brief,
+        draftSummary: summaryLine,
+        nodeKind: "task",
+        phaseIndex: aiRefineTarget.phaseIndex,
+        taskIndex: aiRefineTarget.taskIndex,
+        currentTask: {
+          title: task.title,
+          description: task.description,
+          taskType: task.taskType,
+          priority: task.priority,
+        },
+        userChangeRequest: changeRequest,
+        extraContext: extra,
+      });
+      if (res.kind !== "task") throw new Error(t("projects.new.ai.refine.error"));
+      setAiDraft((prev) =>
+        prev ? replaceDraftTask(prev, aiRefineTarget.phaseId, aiRefineTarget.taskId, res.task) : prev
+      );
+    } finally {
+      setAiRefiningKey(null);
+    }
+  };
+
   const handleAiConfirm = async () => {
     if (!user?.id || !activeWorkspace || !workType || !aiDraft || !aiDraftSource) return;
 
     setAiConfirming(true);
     setSubmitError(null);
     try {
-      const customer = await resolveCustomerFields();
       const plan = localDraftToAiProjectPlan(aiDraft);
       const projectId = await confirmWizardAiProject({
         source: aiDraftSource,
         officeDraftId: aiOfficeDraftId ?? undefined,
-        existingProjectId: aiDraftProjectId ?? undefined,
         workspace: activeWorkspace,
         userId: user.id,
         plan,
         originalBrief: aiBrief.trim() || undefined,
         addressText: location.trim() || undefined,
-        attachedFileIds: aiUploadedFiles.map((f) => f.id),
       });
 
-      const db = getFirestoreInstance();
-      if (db) {
-        await updateDoc(doc(db, "projects", projectId), {
-          ...getProjectWorkspaceWriteFields(activeWorkspace, user.id),
-          ...(customer.customerId ? { customerId: customer.customerId } : {}),
-          ...(customer.customerName ? { customerName: customer.customerName } : {}),
-          ...(customer.customerEmail ? { customerEmail: customer.customerEmail } : {}),
-          ...(customer.customerPhone ? { customerPhone: customer.customerPhone } : {}),
-          updatedAt: serverTimestamp(),
-        });
+      const enrichPayload = {
+        projectId,
+        workspace: activeWorkspace,
+        userId: user.id,
+        workType,
+        addressText: location.trim() || undefined,
+        materialSuggestions: plan.materialSuggestions,
+        uploadedFiles: aiUploadedFiles,
+      };
+
+      if (aiDraftSource === "mobile") {
+        const customer = await resolveCustomerFields();
+        void enrichProjectAfterAiConfirm({
+          ...enrichPayload,
+          customerId: customer.customerId,
+          customerName: customer.customerName,
+          customerCompanyName: customer.customerCompanyName,
+          customerContactPersonName: customer.customerContactPersonName,
+          customerEmail: customer.customerEmail,
+          customerPhone: customer.customerPhone,
+        }).catch(() => {});
+      } else {
+        void enrichProjectAfterAiConfirm(enrichPayload).catch(() => {});
       }
 
       router.push(`/app/projects/${projectId}?setup=ai`);
@@ -529,7 +625,6 @@ export function NewJobForm() {
       setSubmitError(
         err instanceof Error ? err.message : t("projects.new.ai.errorConfirm")
       );
-    } finally {
       setAiConfirming(false);
     }
   };
@@ -557,36 +652,19 @@ export function NewJobForm() {
         return;
       }
 
-      const projectId = aiDraftProjectId
-        ? aiDraftProjectId
-        : await createDraftJob(activeWorkspace, user.id, {
-            workType,
-            name: jobName,
-            customerId: customer.customerId,
-            customerRequest: shortDescription.trim() || undefined,
-            customerName: customer.customerName,
-            customerEmail: customer.customerEmail,
-            customerPhone: customer.customerPhone,
-            addressText: location.trim() || undefined,
-            source: "manual",
-          });
-
-      if (aiDraftProjectId) {
-        const db = getFirestoreInstance();
-        if (db) {
-          await updateDoc(doc(db, "projects", aiDraftProjectId), {
-            name: jobName,
-            customerId: customer.customerId ?? null,
-            customerRequest: shortDescription.trim() || null,
-            customerName: customer.customerName ?? null,
-            customerEmail: customer.customerEmail ?? null,
-            customerPhone: customer.customerPhone ?? null,
-            addressText: location.trim() || null,
-            source: "manual",
-            updatedAt: serverTimestamp(),
-          });
-        }
-      }
+      const projectId = await createDraftJob(activeWorkspace, user.id, {
+        workType,
+        name: jobName,
+        customerId: customer.customerId,
+        customerRequest: shortDescription.trim() || undefined,
+        customerName: customer.customerName,
+        customerCompanyName: customer.customerCompanyName,
+        customerContactPersonName: customer.customerContactPersonName,
+        customerEmail: customer.customerEmail,
+        customerPhone: customer.customerPhone,
+        addressText: location.trim() || undefined,
+        source: "web",
+      });
 
       router.push(`/app/projects/${projectId}`);
     } catch (err) {
@@ -631,7 +709,14 @@ export function NewJobForm() {
         <NewJobStepper steps={stepperSteps} activeId={step} />
       </header>
 
-      <div className="grid gap-8 xl:gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)] lg:items-start">
+      <div
+        className={cn(
+          "grid gap-8 xl:gap-12 lg:items-start",
+          step === "ai-review" && aiReviewMode === "draft"
+            ? "lg:grid-cols-1"
+            : "lg:grid-cols-[minmax(0,1fr)_minmax(320px,380px)]"
+        )}
+      >
         <div className={nj.mainCard}>
           <div className={cn(nj.mainCardInner, "min-h-[320px] flex flex-col")}>
             {step === "type" ? (
@@ -776,8 +861,15 @@ export function NewJobForm() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="font-bold text-lg text-[#0F2A4D] truncate">
-                            {selectedCustomer.name}
+                            {getCustomerDisplayName(selectedCustomer) || selectedCustomer.name}
                           </p>
+                          {resolveCustomerType(selectedCustomer) === "company" &&
+                          getCustomerContactPersonName(selectedCustomer) ? (
+                            <p className={cn("text-sm mt-0.5", nj.bodyMuted)}>
+                              {t("projects.new.preview.contactPerson")}:{" "}
+                              {getCustomerContactPersonName(selectedCustomer)}
+                            </p>
+                          ) : null}
                           {(selectedCustomer.email || selectedCustomer.phone) && (
                             <p className={cn("text-sm mt-0.5", nj.bodyMuted)}>
                               {[selectedCustomer.email, selectedCustomer.phone]
@@ -799,6 +891,10 @@ export function NewJobForm() {
                       </div>
                     ) : customersLoading ? (
                       <p className={nj.bodyMuted}>{t("common.loading")}</p>
+                    ) : customersLoadError ? (
+                      <p className="text-sm text-amber-800" role="status">
+                        {customersLoadError}
+                      </p>
                     ) : customers.length === 0 ? (
                       <p className={nj.bodyMuted}>{t("projects.new.customersEmpty")}</p>
                     ) : (
@@ -848,7 +944,16 @@ export function NewJobForm() {
                                       clearFieldError("contact");
                                     }}
                                   >
-                                    <span className="font-semibold text-[#0F2A4D]">{c.name}</span>
+                                    <span className="font-semibold text-[#0F2A4D]">
+                                      {getCustomerDisplayName(c) || c.name}
+                                    </span>
+                                    {resolveCustomerType(c) === "company" &&
+                                    getCustomerContactPersonName(c) ? (
+                                      <span className="block text-xs text-[#64748B] mt-0.5">
+                                        {t("projects.new.preview.contactPerson")}:{" "}
+                                        {getCustomerContactPersonName(c)}
+                                      </span>
+                                    ) : null}
                                   </button>
                                 </li>
                               ))
@@ -868,27 +973,111 @@ export function NewJobForm() {
 
                 {contactMode === "new" ? (
                   <div className={cn(nj.formGroup, nj.fieldStack, "max-w-2xl pt-2")}>
-                    <div>
-                      <Label htmlFor="newContactName" className={nj.label}>
-                        {t("projects.new.newCustomerName")}
-                        <RequiredMark />
-                      </Label>
-                      <Input
-                        id="newContactName"
-                        value={newContactName}
-                        onChange={(e) => {
-                          setNewContactName(e.target.value);
-                          clearFieldError("customerName");
-                        }}
-                        className={nj.input}
-                        aria-invalid={!!fieldErrors.customerName}
-                      />
-                      {fieldErrors.customerName ? (
-                        <p className={nj.error} role="alert">
-                          {fieldErrors.customerName}
-                        </p>
-                      ) : null}
+                    <p className="text-sm font-medium text-[#475569] -mt-1">
+                      {t("projects.new.form.editableHint")}
+                    </p>
+                    <div className="space-y-3">
+                      <span className={nj.label}>{t("projects.new.customerTypeLabel")}</span>
+                      <div className="flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewContactType("person");
+                            clearFieldError("customerCompanyName");
+                            clearFieldError("customerContactPerson");
+                          }}
+                          className={njChoicePill(newContactType === "person")}
+                        >
+                          {newContactType === "person" ? (
+                            <Check className="size-4 text-[#E95F2A]" aria-hidden />
+                          ) : null}
+                          {t("projects.new.customerType.person")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewContactType("company");
+                            clearFieldError("customerName");
+                          }}
+                          className={njChoicePill(newContactType === "company")}
+                        >
+                          {newContactType === "company" ? (
+                            <Check className="size-4 text-[#E95F2A]" aria-hidden />
+                          ) : null}
+                          {t("projects.new.customerType.company")}
+                        </button>
+                      </div>
                     </div>
+
+                    {newContactType === "person" ? (
+                      <div>
+                        <Label htmlFor="newContactName" className={nj.label}>
+                          {t("projects.new.customerPersonName")}
+                          <RequiredMark />
+                        </Label>
+                        <Input
+                          id="newContactName"
+                          value={newContactName}
+                          onChange={(e) => {
+                            setNewContactName(e.target.value);
+                            clearFieldError("customerName");
+                          }}
+                          className={nj.input}
+                          aria-invalid={!!fieldErrors.customerName}
+                        />
+                        {fieldErrors.customerName ? (
+                          <p className={nj.error} role="alert">
+                            {fieldErrors.customerName}
+                          </p>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <>
+                        <div>
+                          <Label htmlFor="newCompanyName" className={nj.label}>
+                            {t("projects.new.customerCompanyName")}
+                            <RequiredMark />
+                          </Label>
+                          <Input
+                            id="newCompanyName"
+                            value={newContactName}
+                            onChange={(e) => {
+                              setNewContactName(e.target.value);
+                              clearFieldError("customerCompanyName");
+                            }}
+                            className={nj.input}
+                            aria-invalid={!!fieldErrors.customerCompanyName}
+                          />
+                          {fieldErrors.customerCompanyName ? (
+                            <p className={nj.error} role="alert">
+                              {fieldErrors.customerCompanyName}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div>
+                          <Label htmlFor="newContactPersonName" className={nj.label}>
+                            {t("projects.new.customerContactPerson")}
+                            <RequiredMark />
+                          </Label>
+                          <Input
+                            id="newContactPersonName"
+                            value={newContactPersonName}
+                            onChange={(e) => {
+                              setNewContactPersonName(e.target.value);
+                              clearFieldError("customerContactPerson");
+                            }}
+                            className={nj.input}
+                            aria-invalid={!!fieldErrors.customerContactPerson}
+                          />
+                          {fieldErrors.customerContactPerson ? (
+                            <p className={nj.error} role="alert">
+                              {fieldErrors.customerContactPerson}
+                            </p>
+                          ) : null}
+                        </div>
+                      </>
+                    )}
+
                     <div className="grid gap-5 sm:grid-cols-2">
                       <div>
                         <Label htmlFor="newContactEmail" className={nj.label}>
@@ -915,69 +1104,34 @@ export function NewJobForm() {
                         />
                       </div>
                     </div>
-                    <div className="space-y-3">
-                      <span className={nj.label}>{t("projects.new.customerTypeLabel")}</span>
-                      <div className="flex flex-wrap gap-3">
-                        <button
-                          type="button"
-                          onClick={() => setNewContactType("person")}
-                          className={njChoicePill(newContactType === "person")}
-                        >
-                          {newContactType === "person" ? (
-                            <Check className="size-4 text-[#E95F2A]" aria-hidden />
-                          ) : null}
-                          {t("projects.new.customerType.person")}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setNewContactType("company")}
-                          className={njChoicePill(newContactType === "company")}
-                        >
-                          {newContactType === "company" ? (
-                            <Check className="size-4 text-[#E95F2A]" aria-hidden />
-                          ) : null}
-                          {t("projects.new.customerType.company")}
-                        </button>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      className={nj.optionalToggle}
-                      onClick={() => setExtendedContactOpen((o) => !o)}
-                      aria-expanded={extendedContactOpen}
-                    >
-                      {extendedContactOpen ? (
-                        <ChevronUp className="size-4" aria-hidden />
-                      ) : (
-                        <ChevronDown className="size-4" aria-hidden />
-                      )}
-                      {t("projects.new.extendedCustomerFields")}
-                    </button>
-                    {extendedContactOpen ? (
-                      <div className="grid gap-5 sm:grid-cols-2">
-                        <div className="space-y-2">
-                          <Label htmlFor="ico" className={nj.label}>
-                            {t("projects.new.customerIco")}
-                          </Label>
-                          <Input
-                            id="ico"
-                            value={newContactIco}
-                            onChange={(e) => setNewContactIco(e.target.value)}
-                            className={nj.input}
-                          />
+
+                    {newContactType === "company" ? (
+                      <>
+                        <div className="grid gap-5 sm:grid-cols-2">
+                          <div>
+                            <Label htmlFor="ico" className={nj.label}>
+                              {t("projects.new.customerIco")}
+                            </Label>
+                            <Input
+                              id="ico"
+                              value={newContactIco}
+                              onChange={(e) => setNewContactIco(e.target.value)}
+                              className={nj.input}
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="taxId" className={nj.label}>
+                              {t("projects.new.customerTaxId")}
+                            </Label>
+                            <Input
+                              id="taxId"
+                              value={newContactTaxId}
+                              onChange={(e) => setNewContactTaxId(e.target.value)}
+                              className={nj.input}
+                            />
+                          </div>
                         </div>
                         <div>
-                          <Label htmlFor="taxId" className={nj.label}>
-                            {t("projects.new.customerTaxId")}
-                          </Label>
-                          <Input
-                            id="taxId"
-                            value={newContactTaxId}
-                            onChange={(e) => setNewContactTaxId(e.target.value)}
-                            className={nj.input}
-                          />
-                        </div>
-                        <div className="sm:col-span-2">
                           <Label htmlFor="custAddress" className={nj.label}>
                             {t("projects.new.customerAddress")}
                           </Label>
@@ -988,8 +1142,61 @@ export function NewJobForm() {
                             className={nj.input}
                           />
                         </div>
-                      </div>
-                    ) : null}
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className={nj.optionalToggle}
+                          onClick={() => setExtendedContactOpen((o) => !o)}
+                          aria-expanded={extendedContactOpen}
+                        >
+                          {extendedContactOpen ? (
+                            <ChevronUp className="size-4" aria-hidden />
+                          ) : (
+                            <ChevronDown className="size-4" aria-hidden />
+                          )}
+                          {t("projects.new.extendedCustomerFields")}
+                        </button>
+                        {extendedContactOpen ? (
+                          <div className="grid gap-5 sm:grid-cols-2">
+                            <div>
+                              <Label htmlFor="ico" className={nj.label}>
+                                {t("projects.new.customerIco")}
+                              </Label>
+                              <Input
+                                id="ico"
+                                value={newContactIco}
+                                onChange={(e) => setNewContactIco(e.target.value)}
+                                className={nj.input}
+                              />
+                            </div>
+                            <div>
+                              <Label htmlFor="taxId" className={nj.label}>
+                                {t("projects.new.customerTaxId")}
+                              </Label>
+                              <Input
+                                id="taxId"
+                                value={newContactTaxId}
+                                onChange={(e) => setNewContactTaxId(e.target.value)}
+                                className={nj.input}
+                              />
+                            </div>
+                            <div className="sm:col-span-2">
+                              <Label htmlFor="custAddress" className={nj.label}>
+                                {t("projects.new.customerAddress")}
+                              </Label>
+                              <Input
+                                id="custAddress"
+                                value={newContactAddress}
+                                onChange={(e) => setNewContactAddress(e.target.value)}
+                                className={nj.input}
+                              />
+                            </div>
+                          </div>
+                        ) : null}
+                      </>
+                    )}
                   </div>
                 ) : null}
 
@@ -1080,7 +1287,8 @@ export function NewJobForm() {
                 <AiDraftBriefStep
                   workspace={activeWorkspace}
                   userId={user.id}
-                  onEnsureProject={ensureAiDraftProject}
+                  uploadSessionId={aiUploadSessionId}
+                  useOfficeUploadFallback={aiDraftSource === "office"}
                   uploadedFiles={aiUploadedFiles}
                   onUploadedFilesChange={setAiUploadedFiles}
                   projectName={aiProjectName}
@@ -1110,7 +1318,13 @@ export function NewJobForm() {
                   mode={aiReviewMode}
                   draft={aiDraft}
                   generateError={aiGenerateError}
+                  generatingWithAttachments={aiUploadedFiles.length > 0}
                   confirming={aiConfirming}
+                  regenerating={aiRegenerating}
+                  refiningKey={aiRefiningKey}
+                  onProjectTitleChange={(title) =>
+                    setAiDraft((prev) => (prev ? updateDraftProjectTitle(prev, title) : prev))
+                  }
                   onPhaseChange={(phaseId, patch) =>
                     setAiDraft((prev) =>
                       prev ? updateDraftPhase(prev, phaseId, patch) : prev
@@ -1134,6 +1348,10 @@ export function NewJobForm() {
                       prev ? toggleMaterialSelection(prev, materialId, selected) : prev
                     )
                   }
+                  onRefine={handleRefineNode}
+                  onRegenerate={
+                    isWizardAiGenerationEnabled() ? () => void handleRegenerateAiDraft() : undefined
+                  }
                   onContinueManual={handleContinueManual}
                   onConfirm={
                     aiReviewMode === "draft" && aiDraftSource
@@ -1145,6 +1363,7 @@ export function NewJobForm() {
                     isWizardAiGenerationEnabled() ? () => void handleRetryGenerate() : undefined
                   }
                   showCallablePendingNote={aiReviewMode === "placeholder"}
+                  confirmError={submitError}
                 />
               </section>
             ) : null}
@@ -1160,8 +1379,13 @@ export function NewJobForm() {
                   </div>
                   <div className="flex justify-between gap-4">
                     <dt className="text-[#64748B]">{t("projects.new.preview.customer")}</dt>
-                    <dd className="font-semibold text-[#0F2A4D] text-right truncate max-w-[55%]">
-                      {previewContact}
+                    <dd className="font-semibold text-[#0F2A4D] text-right min-w-0 max-w-[55%]">
+                      <span className="block truncate">{previewContact}</span>
+                      {previewContactPerson ? (
+                        <span className="mt-1 block text-sm font-medium text-[#64748B] truncate">
+                          {t("projects.new.preview.contactPerson")}: {previewContactPerson}
+                        </span>
+                      ) : null}
                     </dd>
                   </div>
                   <div className="flex justify-between gap-4">
@@ -1206,18 +1430,21 @@ export function NewJobForm() {
           </div>
         </div>
 
-        <aside className="lg:sticky lg:top-8 hidden lg:block">
-          <NewJobPreviewPanel
-            workTypeLabel={previewType}
-            contactLabel={previewContact}
-            activeStep={step}
-            submitLabel={submitLabel}
-            loading={loading}
-            submitError={submitError}
-            onSubmit={() => void handleCreate()}
-            showSubmit={showFooterSubmit}
-          />
-        </aside>
+        {!(step === "ai-review" && aiReviewMode === "draft") ? (
+          <aside className="lg:sticky lg:top-8 hidden lg:block">
+            <NewJobPreviewPanel
+              workTypeLabel={previewType}
+              contactLabel={previewContact}
+              contactPersonLabel={previewContactPerson}
+              activeStep={step}
+              submitLabel={submitLabel}
+              loading={loading}
+              submitError={submitError}
+              onSubmit={() => void handleCreate()}
+              showSubmit={showFooterSubmit}
+            />
+          </aside>
+        ) : null}
       </div>
 
       {showFooterSubmit ? (
@@ -1225,6 +1452,7 @@ export function NewJobForm() {
           <NewJobPreviewPanel
             workTypeLabel={previewType}
             contactLabel={previewContact}
+            contactPersonLabel={previewContactPerson}
             activeStep={step}
             submitLabel={submitLabel}
             loading={loading}

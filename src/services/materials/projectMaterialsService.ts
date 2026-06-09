@@ -127,9 +127,15 @@ function toMaterialDoc(docSnap: { id: string; data: () => Record<string, unknown
     return null;
   }
   const name = typeof d.name === "string" ? d.name.trim() : "";
-  const quantity = typeof d.quantity === "number" ? d.quantity : NaN;
-  const unit = parseMaterialUnit(d.unit);
-  if (!name || !Number.isFinite(quantity) || !unit) return null;
+  if (!name) return null;
+
+  const rawQty = typeof d.quantity === "number" ? d.quantity : 1;
+  const quantity = Number.isFinite(rawQty) && rawQty > 0 ? rawQty : 1;
+  const rawUnit = typeof d.unit === "string" ? d.unit.trim().toLowerCase() : "";
+  const unit: MaterialUnit =
+    parseMaterialUnit(d.unit) ??
+    (rawUnit === "ks" || rawUnit === "stk" || rawUnit === "stück" ? "pcs" : "pcs");
+
   return {
     id: docSnap.id,
     projectId: (d.projectId as string) ?? "",
@@ -148,7 +154,8 @@ function toMaterialDoc(docSnap: { id: string; data: () => Record<string, unknown
     usedByUserId: typeof d.usedByUserId === "string" ? d.usedByUserId : undefined,
     usedByName: typeof d.usedByName === "string" ? d.usedByName : undefined,
     usedAt: convertTimestamp(d.usedAt) ?? convertTimestamp(d.createdAt) ?? new Date().toISOString(),
-    notes: typeof d.notes === "string" ? d.notes : undefined,
+    notes:
+      typeof d.notes === "string" ? d.notes : typeof d.note === "string" ? d.note : undefined,
     createdAt: convertTimestamp(d.createdAt) ?? new Date().toISOString(),
     updatedAt: convertTimestamp(d.updatedAt),
     createdBy: (d.createdBy as string) ?? "",
@@ -249,6 +256,20 @@ export async function createMaterialSuggestion(
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
+}
+
+/** Persist multiple AI material suggestions in parallel (mobile parity). */
+export async function createMaterialSuggestionsBatch(
+  projectId: string,
+  items: CreateMaterialSuggestionInput[]
+): Promise<number> {
+  const valid = items.filter((item) => item.name?.trim());
+  if (valid.length === 0) return 0;
+
+  const results = await Promise.allSettled(
+    valid.map((item) => createMaterialSuggestion(projectId, item))
+  );
+  return results.filter((r) => r.status === "fulfilled").length;
 }
 
 export async function updateMaterialSuggestion(

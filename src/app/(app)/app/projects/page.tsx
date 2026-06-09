@@ -32,16 +32,20 @@ import { listAssignedProjectsForWorker } from "@/services/worker/workerDashboard
 import { shouldShowWorkerDashboard } from "@/lib/workspaceProduct";
 import {
   matchesProjectFilter,
+  isProjectArchived,
+  normalizeProjectPhase,
   type ProjectListFilter,
 } from "@/lib/projectLifecycle";
-import { JobLifecycleBadge } from "@/components/jobs/JobLifecycleBadge";
+import { loadTaskProgressBatch } from "@/lib/projectTaskProgress";
+import { getListPrimaryAction, getHumanWorkflowStatusKey, getQuoteStatusKey } from "@/lib/projectDashboard";
 import { JobSourceBadge } from "@/components/jobs/JobSourceBadge";
-import { WorkTypeBadge } from "@/components/jobs/WorkTypeBadge";
+import { ProjectActionsMenu } from "@/components/projects/ProjectActionsMenu";
+import { Badge } from "@/components/ui/badge";
+import { useWorkspaceProduct } from "@/hooks/useWorkspaceProduct";
 import { cn } from "@/lib/utils";
-import { FolderKanban, RefreshCw, Search, Plus, List, Map } from "lucide-react";
+import { FolderKanban, RefreshCw, Search, Plus, List, Map as MapIcon } from "lucide-react";
 import { ProjectsMapPanel } from "@/components/projects/ProjectsMapPanel";
 import { ProjectsWorkspaceContextBanner } from "@/components/projects/ProjectsWorkspaceContextBanner";
-import { ProjectOwnershipBadge } from "@/components/projects/ProjectOwnershipBadge";
 import { useSetupChecklistVisit } from "@/hooks/useSetupChecklistVisit";
 
 const FILTERS: ProjectListFilter[] = [
@@ -49,7 +53,9 @@ const FILTERS: ProjectListFilter[] = [
   "concepts",
   "active",
   "waiting",
+  "completed",
   "closed",
+  "archived",
 ];
 
 type ProjectsPageFilter = ProjectListFilter | "assigned";
@@ -75,8 +81,12 @@ export default function ProjectsPage() {
   useSetupChecklistVisit("first_document");
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
+  const { role } = useWorkspaceProduct();
   const searchParams = useSearchParams();
   const [projects, setProjects] = useState<ProjectDoc[]>([]);
+  const [taskProgress, setTaskProgress] = useState<Record<string, number>>({});
+  const [progressLoading, setProgressLoading] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
@@ -123,7 +133,10 @@ export default function ProjectsPage() {
 
     void fetchProjects()
       .then((list) => {
-        if (!cancelled) setProjects(list);
+        if (!cancelled) {
+          setProjects(list);
+          setTaskProgress({});
+        }
       })
       .catch((e) => {
         if (cancelled) return;
@@ -144,6 +157,38 @@ export default function ProjectsPage() {
       cancelled = true;
     };
   }, [user?.id, activeWorkspace?.id, activeWorkspace?.type, isFieldWorker]);
+
+  useEffect(() => {
+    if (projects.length === 0) return;
+    const deliveryIds = projects
+      .filter((p) => normalizeProjectPhase(p) === "delivery" && !isProjectArchived(p))
+      .map((p) => p.id);
+    if (deliveryIds.length === 0) return;
+
+    let cancelled = false;
+    setProgressLoading(true);
+    void loadTaskProgressBatch(deliveryIds)
+      .then((map) => {
+        if (cancelled) return;
+        const percentMap: Record<string, number> = {};
+        map.forEach((v, id) => {
+          percentMap[id] = v.percent;
+        });
+        setTaskProgress(percentMap);
+      })
+      .finally(() => {
+        if (!cancelled) setProgressLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projects]);
+
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => setToastMessage(null), 4000);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
 
   const loadProjects = () => {
     if (!user?.id || !activeWorkspace) return;
@@ -170,7 +215,11 @@ export default function ProjectsPage() {
     if (filter === "assigned") {
       list = projects.filter((p) => isProjectAssignedToUser(p, user?.id ?? ""));
     } else {
-      list = projects.filter((p) => matchesProjectFilter(p, filter));
+      list = projects.filter((p) =>
+        matchesProjectFilter(p, filter, {
+          taskProgressPercent: taskProgress[p.id] ?? null,
+        })
+      );
     }
     if (!search.trim()) return list;
     const q = search.trim().toLowerCase();
@@ -181,7 +230,21 @@ export default function ProjectsPage() {
         p.addressText?.toLowerCase().includes(q) ||
         p.city?.toLowerCase().includes(q)
     );
-  }, [projects, search, filter, user?.id]);
+  }, [projects, search, filter, user?.id, taskProgress]);
+
+  const archivedForAllView = useMemo(() => {
+    if (filter !== "all" || isFieldWorker) return [];
+    return projects.filter((p) => isProjectArchived(p));
+  }, [projects, filter, isFieldWorker]);
+
+  const handleProjectUpdated = (updated: ProjectDoc) => {
+    setProjects((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+  };
+
+  const handleActionToast = (key: string) => {
+    setToastMessage(t(key));
+    loadProjects();
+  };
 
   const formatDate = (s?: string): string => {
     if (!s) return "";
@@ -216,6 +279,11 @@ export default function ProjectsPage() {
 
   return (
     <div className="space-y-6">
+      {toastMessage ? (
+        <div className="rounded-lg border border-[#1D376A]/20 bg-[#1D376A]/5 px-4 py-2 text-sm text-[#1D376A]">
+          {toastMessage}
+        </div>
+      ) : null}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-2">
           <h2 className="text-xl font-semibold">
@@ -297,7 +365,7 @@ export default function ProjectsPage() {
             onClick={() => setView("map")}
             className={cn(view === "map" && "bg-background shadow-sm")}
           >
-            <Map className="size-4 mr-1.5" aria-hidden />
+            <MapIcon className="size-4 mr-1.5" aria-hidden />
             {t("projects.viewMap")}
           </Button>
         </div>
@@ -344,6 +412,7 @@ export default function ProjectsPage() {
           </CardContent>
         </Card>
       ) : (
+        <>
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
@@ -356,24 +425,33 @@ export default function ProjectsPage() {
                 <TableRow>
                   <TableHead>{t("projects.nameCol")}</TableHead>
                   <TableHead className="hidden md:table-cell">
-                    {t("projects.ownership.listCol")}
-                  </TableHead>
-                  <TableHead className="hidden md:table-cell">
                     {t("projects.customerCol")}
                   </TableHead>
                   <TableHead className="hidden lg:table-cell">
                     {t("projects.addressCol")}
                   </TableHead>
                   <TableHead>{t("projects.statusCol")}</TableHead>
+                  <TableHead className="hidden md:table-cell">
+                    {t("projects.dashboard.list.quoteCol")}
+                  </TableHead>
                   <TableHead className="hidden sm:table-cell">
                     {t("projects.updatedCol")}
                   </TableHead>
-                  <TableHead className="w-[80px]"></TableHead>
+                  <TableHead className="w-[120px]">{t("projects.dashboard.list.actionCol")}</TableHead>
+                  <TableHead className="w-[40px]"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredProjects.map((p) => (
-                  <TableRow key={p.id}>
+                {filteredProjects.map((p) => {
+                  const archived = isProjectArchived(p);
+                  const statusKey = getHumanWorkflowStatusKey(p);
+                  const quoteKey = getQuoteStatusKey(p);
+                  const primaryAction = getListPrimaryAction(p);
+                  return (
+                  <TableRow
+                    key={p.id}
+                    className={cn(archived && "opacity-60")}
+                  >
                     <TableCell>
                       <div className="space-y-1.5">
                         <Link
@@ -382,42 +460,104 @@ export default function ProjectsPage() {
                         >
                           {p.name || t("projects.noName")}
                         </Link>
-                        <ProjectOwnershipBadge project={p} className="md:hidden" />
+                        {archived ? (
+                          <Badge variant="secondary" className="text-xs">
+                            {t("projects.archivedBadge")}
+                          </Badge>
+                        ) : null}
                       </div>
                     </TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      <ProjectOwnershipBadge project={p} />
-                    </TableCell>
                     <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
-                      {p.customerName || "—"}
+                      {p.customerCompanyName || p.customerName || "—"}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell text-muted-foreground text-sm">
                       {p.addressText || p.city || "—"}
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <WorkTypeBadge project={p} />
-                        <JobLifecycleBadge project={p} />
-                        <JobSourceBadge source={p.source} />
+                        <Badge variant="outline" className="font-normal text-xs border-[#1D376A]/25 bg-[#1D376A]/5 text-[#1D376A]">
+                          {t(`projects.workflow.status.${statusKey}`)}
+                        </Badge>
+                        <JobSourceBadge project={p} />
                       </div>
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
+                      {t(`projects.dashboard.quoteStatus.${quoteKey}`)}
                     </TableCell>
                     <TableCell className="hidden sm:table-cell text-muted-foreground text-sm">
                       {formatDate(p.updatedAt ?? p.createdAt)}
                     </TableCell>
                     <TableCell>
                       <Link
-                        href={`/app/projects/${p.id}`}
-                        className="text-sm font-medium text-[#e06737] hover:underline"
+                        href={primaryAction.href}
+                        className="text-sm font-medium text-[#e06737] hover:underline whitespace-nowrap"
                       >
-                        {t("projects.view")}
+                        {t(primaryAction.labelKey)}
                       </Link>
                     </TableCell>
+                    <TableCell>
+                      {!isFieldWorker && user?.id ? (
+                        <ProjectActionsMenu
+                          project={p}
+                          userId={user.id}
+                          role={role}
+                          variant="list"
+                          onProjectUpdated={handleProjectUpdated}
+                          onActionComplete={handleActionToast}
+                          onRefresh={loadProjects}
+                        />
+                      ) : null}
+                    </TableCell>
                   </TableRow>
-                ))}
+                );
+                })}
               </TableBody>
             </Table>
           </CardContent>
         </Card>
+
+        {archivedForAllView.length > 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{t("projects.archivedSection")}</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 overflow-x-auto">
+              <Table>
+                <TableBody>
+                  {archivedForAllView.map((p) => (
+                    <TableRow key={`archived-${p.id}`} className="opacity-60">
+                      <TableCell>
+                        <Link
+                          href={`/app/projects/${p.id}`}
+                          className="font-medium text-[#1D376A] hover:text-[#e06737] hover:underline"
+                        >
+                          {p.name || t("projects.noName")}
+                        </Link>
+                        <Badge variant="secondary" className="ml-2 text-xs">
+                          {t("projects.archivedBadge")}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="w-[56px]">
+                        {user?.id ? (
+                          <ProjectActionsMenu
+                            project={p}
+                            userId={user.id}
+                            role={role}
+                            variant="list"
+                            onProjectUpdated={handleProjectUpdated}
+                            onActionComplete={handleActionToast}
+                            onRefresh={loadProjects}
+                          />
+                        ) : null}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        ) : null}
+        </>
       )}
     </div>
   );

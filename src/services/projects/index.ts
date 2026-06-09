@@ -12,3 +12,16 @@ export {
   getSourceBadgeKey,
   type CreateDraftJobInput,
 } from "./projectService";
+export {
+  archiveProject,
+  unarchiveProject,
+  deleteProject,
+  updateProjectBasics,
+  markProjectCompleted,
+  markProjectPaused,
+  rejectProjectConcept,
+  canDeleteProject,
+  canArchiveProject,
+  canManageProjectLifecycle,
+  type UpdateProjectBasicsInput,
+} from "./projectLifecycleActions";

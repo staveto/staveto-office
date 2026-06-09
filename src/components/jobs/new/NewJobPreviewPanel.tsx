@@ -10,6 +10,7 @@ import type { NewJobStepId } from "./NewJobStepper";
 type Props = {
   workTypeLabel: string;
   contactLabel: string;
+  contactPersonLabel?: string | null;
   activeStep: NewJobStepId;
   submitLabel: string;
   loading: boolean;
@@ -47,6 +48,7 @@ function nextStepKeys(activeStep: NewJobStepId): readonly string[] {
 export function NewJobPreviewPanel({
   workTypeLabel,
   contactLabel,
+  contactPersonLabel,
   activeStep,
   submitLabel,
   loading,
@@ -70,10 +72,15 @@ export function NewJobPreviewPanel({
             <dt className="text-white/60">{t("projects.new.preview.type")}</dt>
             <dd className="font-semibold text-white text-right">{workTypeLabel}</dd>
           </div>
-          <div className="flex justify-between gap-4 items-baseline">
-            <dt className="text-white/60">{t("projects.new.preview.customer")}</dt>
-            <dd className="font-semibold text-white text-right truncate max-w-[58%]">
-              {contactLabel}
+          <div className="flex justify-between gap-4 items-start">
+            <dt className="text-white/60 shrink-0 pt-0.5">{t("projects.new.preview.customer")}</dt>
+            <dd className="font-semibold text-white text-right min-w-0 max-w-[58%]">
+              <span className="block truncate">{contactLabel}</span>
+              {contactPersonLabel ? (
+                <span className="mt-1 block text-sm font-medium text-white/70 truncate">
+                  {t("projects.new.preview.contactPerson")}: {contactPersonLabel}
+                </span>
+              ) : null}
             </dd>
           </div>
           <div className="flex justify-between gap-4 items-baseline">

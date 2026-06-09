@@ -95,6 +95,8 @@ export type ProjectDoc = {
   customerId?: string;
   customerRequest?: string;
   customerName?: string;
+  customerCompanyName?: string;
+  customerContactPersonName?: string;
   customerEmail?: string;
   customerPhone?: string;
   internalNote?: string;
@@ -177,6 +179,8 @@ export function toProjectDoc(id: string, data: Record<string, unknown>): Project
     customerId: (data.customerId as string) || undefined,
     customerRequest: (data.customerRequest as string) || undefined,
     customerName: (data.customerName as string) || undefined,
+    customerCompanyName: (data.customerCompanyName as string) || undefined,
+    customerContactPersonName: (data.customerContactPersonName as string) || undefined,
     customerEmail: (data.customerEmail as string) || undefined,
     internalNote: (data.internalNote as string) || undefined,
     customerPhone: (data.customerPhone as string) || undefined,
@@ -332,8 +336,7 @@ async function runProjectsQuery(
   }
   const snap = await getDocs(q);
   return snap.docs
-    .map((d) => toProjectDoc(d.id, d.data() as Record<string, unknown>))
-    .filter((p) => !p.archivedAt);
+    .map((d) => toProjectDoc(d.id, d.data() as Record<string, unknown>));
 }
 
 /**

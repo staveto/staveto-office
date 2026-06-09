@@ -1,16 +1,28 @@
 /**
  * AI generation for /app/projects/new wizard.
- * Mobile callables when NEXT_PUBLIC_MOBILE_AI_CALLABLES=1; otherwise deployed office
- * generateProjectDraft (reads attachedFileIds from workspaces/.../aiDraftFiles).
+ * Office generateProjectDraft is primary on web (vision + deployed stack); mobile callables fallback.
  */
 
 import type { AiProjectPlan } from "@/lib/aiProjectSchema";
+import {
+  sanitizeAiProjectPlanFromModel,
+  validateAiProjectPlan,
+} from "@/lib/aiProjectSchema";
+import {
+  appendContactToAiProjectDetails,
+  buildAiProjectBriefForGenerate,
+  buildUnifiedAiProjectDetails,
+} from "@/lib/aiProjectGeneratePayload";
 import { officeDraftToAiProjectPlan } from "@/lib/officeDraftToAiPlan";
 import type { WorkType } from "@/lib/workTypes";
 import type { ContactMode } from "@/components/jobs/new/newJobWizardTypes";
 import type { CustomerDoc, CustomerType } from "@/lib/customers";
 import type { ActiveWorkspace } from "@/types/workspace";
 import type { Locale } from "@/i18n/translations";
+import {
+  filterOfficeAttachedFileIds,
+  type UploadedAiDraftFile,
+} from "@/services/ai/aiDraftFiles";
 import {
   createProjectFromDraft,
   extractCallableErrorMessage,
@@ -22,9 +34,7 @@ import {
 import {
   createProjectFromAiPlan,
   generateProjectStructure,
-  isMobileAiCallablesEnabled,
 } from "./mobileAiProjectService";
-import { applyAiPlanToDraftProject } from "./applyAiPlanToProject";
 
 export type AiWizardGenerateInput = {
   workspace: ActiveWorkspace;
@@ -44,11 +54,10 @@ export type AiWizardGenerateInput = {
   projectBrief: string;
   extraContext?: string;
   location?: string;
-  archetypeHint?: string;
-  mappedWorkType: string;
   jobWorkflowKind?: string;
   attachedFileIds?: string[];
   documentStoragePaths?: string[];
+  uploadedFiles?: UploadedAiDraftFile[];
 };
 
 export type AiWizardGenerateResult = {
@@ -71,6 +80,56 @@ export function getWizardAiErrorDetail(err: unknown): string | undefined {
   return detail.length > 0 ? detail : undefined;
 }
 
+function isCallableUnavailable(err: unknown): boolean {
+  const code = (err as { code?: string })?.code ?? "";
+  return (
+    code === "functions/not-found" ||
+    code === "functions/unavailable" ||
+    mapCallableError(err) === "not_deployed"
+  );
+}
+
+function ensureReviewableAiPlan(plan: AiProjectPlan, fallbackSummary?: string): AiProjectPlan {
+  const normalized = sanitizeAiProjectPlanFromModel(plan) as AiProjectPlan;
+  let phases = normalized.phases.map((phase) => ({
+    ...phase,
+    tasks:
+      phase.tasks.length > 0 ?
+        phase.tasks
+      : [
+          {
+            title: fallbackSummary?.trim().slice(0, 120) || "Review scope and define tasks",
+            description: fallbackSummary?.trim() || undefined,
+            taskType: "execution" as const,
+            priority: "medium" as const,
+          },
+        ],
+  }));
+
+  if (phases.length === 0) {
+    phases = [
+      {
+        name: "Main phase",
+        description: fallbackSummary?.trim() || undefined,
+        tasks: [
+          {
+            title: fallbackSummary?.trim().slice(0, 120) || "Review scope and define tasks",
+            taskType: "execution" as const,
+            priority: "medium" as const,
+          },
+        ],
+      },
+    ];
+  }
+
+  const candidate = { ...normalized, phases };
+  const errors = validateAiProjectPlan(candidate);
+  if (errors) {
+    throw new Error(`Invalid AI response: ${errors.map((e) => `${e.path}: ${e.message}`).join("; ")}`);
+  }
+  return candidate;
+}
+
 function buildNewContact(input: AiWizardGenerateInput) {
   if (input.contactMode !== "new" || !input.newContactName.trim()) return undefined;
   return {
@@ -85,37 +144,79 @@ function buildNewContact(input: AiWizardGenerateInput) {
 }
 
 async function generateViaMobile(input: AiWizardGenerateInput): Promise<AiWizardGenerateResult> {
-  const details = [
-    input.archetypeHint,
-    input.extraContext?.trim(),
-    input.location?.trim() ? `Location: ${input.location.trim()}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+  const projectBrief = buildAiProjectBriefForGenerate(input.projectTitle, input.projectBrief);
+  if (!projectBrief) {
+    throw new Error("Project brief is required");
+  }
+
+  const projectDetails = appendContactToAiProjectDetails(
+    buildUnifiedAiProjectDetails({
+      archetype: input.workType,
+      extraContext: input.extraContext,
+      location: input.location,
+    }),
+    {
+      contactMode: input.contactMode,
+      selectedCustomer: input.selectedCustomer,
+      newContactName: input.newContactName,
+      newContactType: input.newContactType,
+      newContactEmail: input.newContactEmail,
+      newContactPhone: input.newContactPhone,
+      newContactAddress: input.newContactAddress,
+    }
+  );
 
   const plan = await generateProjectStructure({
-    projectBrief: input.projectBrief.trim(),
-    projectDetails: details || undefined,
+    projectBrief,
+    projectDetails,
     documentStoragePaths: input.documentStoragePaths?.length
       ? input.documentStoragePaths
       : undefined,
-    workType: input.mappedWorkType,
     jobWorkflowKind: input.jobWorkflowKind,
   });
 
   return {
-    plan: {
-      ...plan,
-      projectTitle: input.projectTitle.trim() || plan.projectTitle,
-    },
+    plan: ensureReviewableAiPlan(
+      {
+        ...plan,
+        projectTitle: input.projectTitle.trim() || plan.projectTitle,
+      },
+      plan.summary
+    ),
     source: "mobile",
   };
 }
 
+function resolveOfficeAttachedFileIds(input: AiWizardGenerateInput): string[] | undefined {
+  if (input.uploadedFiles?.length) {
+    const ids = filterOfficeAttachedFileIds(input.uploadedFiles);
+    return ids.length > 0 ? ids : undefined;
+  }
+  if (!input.attachedFileIds?.length) return undefined;
+  const ids = input.attachedFileIds.filter((id) => !id.includes("/"));
+  return ids.length > 0 ? ids : undefined;
+}
+
 async function generateViaOffice(input: AiWizardGenerateInput): Promise<AiWizardGenerateResult> {
-  const description = [input.projectBrief.trim(), input.extraContext?.trim()]
-    .filter(Boolean)
-    .join("\n\n");
+  const brief = buildAiProjectBriefForGenerate(input.projectTitle, input.projectBrief);
+  const contextBlock = appendContactToAiProjectDetails(
+    buildUnifiedAiProjectDetails({
+      archetype: input.workType,
+      extraContext: input.extraContext,
+      location: input.location,
+    }),
+    {
+      contactMode: input.contactMode,
+      selectedCustomer: input.selectedCustomer,
+      newContactName: input.newContactName,
+      newContactType: input.newContactType,
+      newContactEmail: input.newContactEmail,
+      newContactPhone: input.newContactPhone,
+      newContactAddress: input.newContactAddress,
+    }
+  );
+
+  const description = [brief, contextBlock].filter(Boolean).join("\n\n");
 
   const res = await generateProjectDraft({
     workspace: input.workspace,
@@ -127,15 +228,23 @@ async function generateViaOffice(input: AiWizardGenerateInput): Promise<AiWizard
     description,
     location: input.location?.trim() || undefined,
     language: localeToDraftLanguage(input.locale),
-    attachedFileIds: input.attachedFileIds,
+    attachedFileIds: resolveOfficeAttachedFileIds(input),
+    documentStoragePaths: input.documentStoragePaths?.length
+      ? input.documentStoragePaths
+      : undefined,
   });
 
-  return {
-    plan: officeDraftToAiProjectPlan(
+  const plan = ensureReviewableAiPlan(
+    officeDraftToAiProjectPlan(
       res.draft,
       input.workType,
       input.projectTitle.trim() || res.draft.projectTitle
     ),
+    res.draft.summary
+  );
+
+  return {
+    plan,
     source: "office",
     officeDraftId: res.draftId,
     warnings: res.warnings,
@@ -149,41 +258,30 @@ export async function generateWizardAiPlan(
     throw new Error("AI_GENERATION_DISABLED");
   }
 
-  if (isMobileAiCallablesEnabled()) {
-    try {
-      return await generateViaMobile(input);
-    } catch (err) {
-      const code = (err as { code?: string })?.code ?? "";
-      if (code === "functions/not-found" || (err as Error).message === "MOBILE_AI_DISABLED") {
-        return generateViaOffice(input);
+  try {
+    return await generateViaOffice(input);
+  } catch (err) {
+    if (isCallableUnavailable(err)) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[staveto ai generate] office callable unavailable, trying mobile", {
+          message: extractCallableErrorMessage(err),
+        });
       }
-      throw err;
+      return generateViaMobile(input);
     }
+    throw err;
   }
-
-  return generateViaOffice(input);
 }
 
 export async function confirmWizardAiProject(params: {
   source: "mobile" | "office";
   officeDraftId?: string;
-  existingProjectId?: string;
   workspace: ActiveWorkspace;
   userId: string;
   plan: AiProjectPlan;
   originalBrief?: string;
   addressText?: string;
-  attachedFileIds?: string[];
 }): Promise<string> {
-  if (params.source === "office" && params.existingProjectId) {
-    await applyAiPlanToDraftProject(params.existingProjectId, params.plan, {
-      originalBrief: params.originalBrief,
-      addressText: params.addressText,
-      attachedFileIds: params.attachedFileIds,
-    });
-    return params.existingProjectId;
-  }
-
   if (params.source === "office" && params.officeDraftId) {
     const res = await createProjectFromDraft({
       workspace: params.workspace,
@@ -191,10 +289,6 @@ export async function confirmWizardAiProject(params: {
       draftId: params.officeDraftId,
     });
     return res.projectId;
-  }
-
-  if (!isMobileAiCallablesEnabled()) {
-    throw new Error("AI_GENERATION_DISABLED");
   }
 
   return createProjectFromAiPlan({

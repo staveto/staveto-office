@@ -26,6 +26,16 @@ import type {
   ProjectSalesStatus,
 } from "@/lib/projectLifecycle";
 
+function plainNotesFromProjectDraft(notes?: string | null): string {
+  if (!notes?.trim()) return "";
+  try {
+    const parsed = JSON.parse(notes) as { plainNotes?: string };
+    return parsed.plainNotes?.trim() ?? "";
+  } catch {
+    return notes.trim();
+  }
+}
+
 function toActiveWorkspace(workspace: Workspace | ActiveWorkspace, uid: string): ActiveWorkspace {
   if (isNormalizedActiveWorkspace(workspace)) return workspace;
   return fromLegacyWorkspace(workspace, uid);
@@ -93,13 +103,17 @@ export async function createQuoteFromProject(
   const active = toActiveWorkspace(workspace, uid);
   const quoteId = await createQuoteDoc(active, uid, {
     title: project.name || "Cenová ponuka",
-    clientName: project.customerName || project.name || "Zákazník",
+    clientName:
+      project.customerCompanyName?.trim() ||
+      project.customerName?.trim() ||
+      project.name ||
+      "Zákazník",
     clientEmail: project.customerEmail,
     projectId,
     projectName: project.name,
     status: "draft",
-    vatPercent: project.quoteDraftVatPercent ?? 20,
-    notes: project.quoteDraftNotes,
+    vatPercent: project.quoteDraftVatPercent ?? 8.1,
+    notes: plainNotesFromProjectDraft(project.quoteDraftNotes),
     items: draftItems.map((row) => ({
       category: row.category,
       name: row.name,
@@ -111,6 +125,57 @@ export async function createQuoteFromProject(
 
   await syncProjectFromQuote(projectId, quoteId, "draft");
   return quoteId;
+}
+
+export async function upsertQuoteFromProject(
+  workspace: Workspace | ActiveWorkspace,
+  uid: string,
+  projectId: string
+): Promise<string> {
+  const access = await hasProjectAccess(projectId, uid);
+  if (!access.allowed || !access.project) {
+    throw new Error("Project not found or access denied");
+  }
+
+  const project = access.project;
+  const draftItems = await listProjectQuoteDraftItems(projectId);
+  if (draftItems.length === 0) {
+    throw new Error("Add at least one material or work line on the draft job first");
+  }
+
+  const active = toActiveWorkspace(workspace, uid);
+  const quotes = await listQuotesForWorkspace(toLegacyWorkspace(active), uid);
+  const existing = quotes.find((q) => q.projectId === projectId && q.status === "draft");
+
+  const clientName =
+    project.customerCompanyName?.trim() ||
+    project.customerName?.trim() ||
+    project.name?.trim() ||
+    "Customer";
+
+  const payload = {
+    title: project.name?.trim() || "Quote",
+    clientName,
+    clientEmail: project.customerEmail,
+    status: "draft" as const,
+    vatPercent: project.quoteDraftVatPercent ?? 8.1,
+    notes: plainNotesFromProjectDraft(project.quoteDraftNotes),
+    items: draftItems.map((row) => ({
+      category: row.category,
+      name: row.name,
+      qty: row.qty,
+      unit: row.unit,
+      unitPrice: row.unitPrice,
+    })),
+  };
+
+  if (existing) {
+    await updateQuote(existing.id, payload);
+    await syncProjectFromQuote(projectId, existing.id, "draft");
+    return existing.id;
+  }
+
+  return createQuoteFromProject(workspace, uid, projectId);
 }
 
 export async function saveQuote(

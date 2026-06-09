@@ -6,23 +6,30 @@ import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nContext";
 import { cn } from "@/lib/utils";
 import type { UploadedAiDraftFile } from "@/services/ai/aiDraftFiles";
-import { uploadProjectDocument } from "@/services/projects/projectDocuments";
+import { uploadAiDraftFile } from "@/services/ai/aiDraftFiles";
+import {
+  isStorageUploadPermissionError,
+  uploadMobileAiDraftFile,
+} from "@/services/ai/mobileAiDraftUploadService";
+import { compressImageForAiUpload } from "@/lib/compressAiUploadImage";
 import type { ActiveWorkspace } from "@/types/workspace";
 import { nj } from "./newJobFormStyles";
 
 type Props = {
-  workspace: ActiveWorkspace;
   userId: string;
-  onEnsureProject: () => Promise<string>;
+  sessionId: string;
+  workspace?: ActiveWorkspace;
+  useOfficeUploadFallback?: boolean;
   files: UploadedAiDraftFile[];
   onFilesChange: (files: UploadedAiDraftFile[]) => void;
   disabled?: boolean;
 };
 
 export function AiDraftFileUpload({
-  workspace,
   userId,
-  onEnsureProject,
+  sessionId,
+  workspace,
+  useOfficeUploadFallback = false,
   files,
   onFilesChange,
   disabled,
@@ -39,11 +46,24 @@ export function AiDraftFileUpload({
 
     const added: UploadedAiDraftFile[] = [];
     try {
-      const projectId = await onEnsureProject();
-      for (const file of Array.from(list)) {
-        const uploaded = await uploadProjectDocument(projectId, workspace, userId, file);
-        added.push(uploaded);
-      }
+      const uploads = await Promise.all(
+        Array.from(list).map(async (rawFile) => {
+          const file = await compressImageForAiUpload(rawFile);
+          if (useOfficeUploadFallback && workspace) {
+            return uploadAiDraftFile(workspace, userId, sessionId, file);
+          }
+          try {
+            if (!workspace) throw new Error("Missing workspace");
+            return uploadMobileAiDraftFile(workspace, userId, sessionId, file);
+          } catch (mobileErr) {
+            if (workspace && isStorageUploadPermissionError(mobileErr)) {
+              return uploadAiDraftFile(workspace, userId, sessionId, file);
+            }
+            throw mobileErr;
+          }
+        })
+      );
+      added.push(...uploads);
       onFilesChange([...files, ...added]);
     } catch (e) {
       const code = e instanceof Error ? e.message : "";
@@ -51,6 +71,8 @@ export function AiDraftFileUpload({
         setError(t("projects.new.ai.filesTooLarge"));
       } else if (code === "FILE_TYPE_UNSUPPORTED") {
         setError(t("projects.new.ai.filesUnsupported"));
+      } else if (isStorageUploadPermissionError(e)) {
+        setError(t("projects.new.ai.filesPermissionError"));
       } else {
         setError(t("projects.new.ai.filesUploadError"));
       }

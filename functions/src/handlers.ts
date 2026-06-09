@@ -1,14 +1,15 @@
 import * as admin from "firebase-admin";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { draftLanguageSchema, projectDraftSchema, type ProjectDraftPayload } from "./draftSchema";
-import { extractFileText, loadDraftFiles } from "./files";
+import { extractFileText, collectDraftFilesForGeneration, isVisualAttachmentMime, loadVisualAttachment } from "./files";
 import { mapArchetypeToFirestoreFields } from "./projectArchetype";
 import {
   assertProjectCreatePermission,
   assertWorkspaceAccess,
   functionsPermissionError,
 } from "./permissions";
-import { buildGeneratePrompt, buildUpdatePrompt, generateDraftWithGemini } from "./gemini";
+import { buildGeneratePrompt, buildUpdatePrompt, generateDraftWithGemini, summarizeAttachmentsWithGemini, type GeminiInlineAttachment } from "./gemini";
+import { sanitizeDraftMaterials } from "./materialDedup";
 import { z } from "zod";
 
 if (!admin.apps.length) {
@@ -53,6 +54,7 @@ const generateInputSchema = z.object({
   location: optionalString,
   language: draftLanguageSchema,
   attachedFileIds: optionalStringArray,
+  documentStoragePaths: optionalStringArray,
 });
 
 const updateInputSchema = z.object({
@@ -150,34 +152,74 @@ export async function handleGenerateProjectDraft(
   );
   assertProjectCreatePermission(access);
 
-  const files = await loadDraftFiles(db, access.storageKey, input.attachedFileIds);
-  const warnings: string[] = [];
-  const documentTexts: { fileName: string; text: string }[] = [];
-  const imageNotes: string[] = [];
-
-  for (const file of files) {
-    const extracted =
-      file.extractedText ?
-        { text: file.extractedText, status: "ok" as const }
-      : await extractFileText(bucket, file);
-    if (extracted.status !== "ok" && extracted.note) {
-      warnings.push(`${file.fileName}: ${extracted.note}`);
-    }
-    if (extracted.text) {
-      documentTexts.push({ fileName: file.fileName, text: extracted.text });
-    }
-    if (file.mimeType?.startsWith("image/")) {
-      imageNotes.push(`Image file: ${file.fileName} (${file.storagePath})`);
-    }
-  }
-
-  const contactSummary = await loadContactSummary(
+  const contactSummaryPromise = loadContactSummary(
     access,
     input.userId,
     input.contactMode,
     input.contactId,
     input.newContact
   );
+
+  const files = await collectDraftFilesForGeneration({
+    db,
+    storageKey: access.storageKey,
+    authUid: input.userId,
+    attachedFileIds: input.attachedFileIds,
+    documentStoragePaths: input.documentStoragePaths,
+  });
+  const warnings: string[] = [];
+  const documentTexts: { fileName: string; text: string }[] = [];
+  const visualAttachments: GeminiInlineAttachment[] = [];
+
+  const extractions = await Promise.all(
+    files.map(async (file) => {
+      const mime = file.mimeType?.toLowerCase() ?? "";
+      if (isVisualAttachmentMime(mime)) {
+        const visual = await loadVisualAttachment(bucket, file);
+        if (visual) {
+          visualAttachments.push(visual);
+          return { file, extracted: { text: "", status: "ok" as const } };
+        }
+        return {
+          file,
+          extracted: {
+            text: "",
+            status: "partial" as const,
+            note: "Attachment too large or could not be loaded for AI vision.",
+          },
+        };
+      }
+      const extracted =
+        file.extractedText ?
+          { text: file.extractedText, status: "ok" as const }
+        : await extractFileText(bucket, file);
+      return { file, extracted };
+    })
+  );
+
+  for (const { file, extracted } of extractions) {
+    if (extracted.status !== "ok" && extracted.note) {
+      warnings.push(`${file.fileName}: ${extracted.note}`);
+    }
+    if (extracted.text) {
+      documentTexts.push({ fileName: file.fileName, text: extracted.text });
+    }
+  }
+
+  if (visualAttachments.length > 0) {
+    const summaries = await summarizeAttachmentsWithGemini(visualAttachments, input.language);
+    const summarizedNames = new Set(summaries.map((s) => s.fileName));
+    for (const summary of summaries) {
+      documentTexts.push({ fileName: summary.fileName, text: summary.text });
+    }
+    for (const att of visualAttachments) {
+      if (!summarizedNames.has(att.fileName)) {
+        warnings.push(`${att.fileName}: AI could not read this attachment.`);
+      }
+    }
+  }
+
+  const contactSummary = await contactSummaryPromise;
 
   const prompt = buildGeneratePrompt({
     language: input.language,
@@ -187,7 +229,6 @@ export async function handleGenerateProjectDraft(
     description: input.description,
     location: input.location,
     documentTexts,
-    imageNotes,
   });
 
   let rawDraft = await generateDraftWithGemini(
@@ -195,7 +236,7 @@ export async function handleGenerateProjectDraft(
     { retryInvalidJson: true }
   );
   rawDraft = mergeCustomerIntoDraft(rawDraft, input);
-  const draft = projectDraftSchema.parse(rawDraft);
+  const draft = projectDraftSchema.parse(sanitizeDraftMaterials(rawDraft));
 
   const draftRef = db.collection(`workspaces/${access.storageKey}/projectDrafts`).doc();
   const chatMessage = {
@@ -409,6 +450,8 @@ export async function handleCreateProjectFromDraft(
   const projectId = projectRef.id;
   const batch = db.batch();
   let order = 0;
+  let quoteOrder = 0;
+
   for (const task of draft.tasks) {
     const taskRef = db.collection(`projects/${projectId}/tasks`).doc();
     batch.set(taskRef, {
@@ -428,15 +471,34 @@ export async function handleCreateProjectFromDraft(
     const matRef = db.collection(`projects/${projectId}/materials`).doc();
     batch.set(matRef, {
       name: mat.name,
-      quantity: mat.quantity,
-      unit: mat.unit,
+      quantity: mat.quantity ?? 1,
+      unit: mat.unit ?? "ks",
       note: mat.note,
       createdAt: FieldValue.serverTimestamp(),
     });
+
+    const quoteMatRef = db.collection(`projects/${projectId}/quoteItems`).doc();
+    batch.set(quoteMatRef, {
+      name: mat.name,
+      description: mat.note ?? "",
+      category: "material",
+      qty: mat.quantity ?? 1,
+      unit: mat.unit ?? "ks",
+      unitPrice: 0,
+      order: quoteOrder++,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
   }
 
-  let qi = 0;
   for (const line of draft.offerPreparation.suggestedLineItems) {
+    if (line.category === "material") {
+      const title = line.title?.trim().toLowerCase() ?? "";
+      const duplicate = draft.materials.some(
+        (m) => (m.name?.trim().toLowerCase() ?? "") === title
+      );
+      if (duplicate) continue;
+    }
     const itemRef = db.collection(`projects/${projectId}/quoteItems`).doc();
     batch.set(itemRef, {
       name: line.title,
@@ -445,7 +507,7 @@ export async function handleCreateProjectFromDraft(
       qty: line.quantity ?? 1,
       unit: line.unit ?? "ks",
       unitPrice: 0,
-      order: qi++,
+      order: quoteOrder++,
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });

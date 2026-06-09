@@ -1,5 +1,6 @@
 export {
   createQuoteFromProject,
+  upsertQuoteFromProject,
   createStandaloneQuote,
   saveQuote,
   setQuoteStatus,

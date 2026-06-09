@@ -156,16 +156,26 @@ function connectFunctionsEmulatorIfConfigured(functions: ReturnType<typeof getFu
   functionsEmulatorConnected = true;
 }
 
-export function getCallable<T = unknown, R = unknown>(name: string) {
+export function getCallable<T = unknown, R = unknown>(
+  name: string,
+  options?: { timeoutMs?: number }
+) {
   return async (data: T): Promise<{ data: R }> => {
     const app = getApp();
     if (!app) throw new Error("Firebase is not configured");
     const functions = getFunctions(app, REGION);
     connectFunctionsEmulatorIfConfigured(functions);
-    const fn = httpsCallable<T, R>(functions, name);
+    const fn = httpsCallable<T, R>(functions, name, {
+      timeout: options?.timeoutMs ?? 70_000,
+    });
     const result = await fn(data);
     return result as { data: R };
   };
+}
+
+/** AI draft callables can run up to 5 min server-side (vision + JSON). */
+export function getAiCallable<T = unknown, R = unknown>(name: string) {
+  return getCallable<T, R>(name, { timeoutMs: 320_000 });
 }
 
 export {

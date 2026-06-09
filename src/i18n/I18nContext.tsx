@@ -20,7 +20,9 @@ const I18nContext = createContext<I18nContextValue | null>(null);
 
 function interpolate(text: string, params?: Record<string, string | number>): string {
   if (!params) return text;
-  return text.replace(/\{\{(\w+)\}\}/g, (_, k) => String(params[k] ?? `{{${k}}}`));
+  let result = text.replace(/\{\{(\w+)\}\}/g, (_, k) => String(params[k] ?? `{{${k}}}`));
+  result = result.replace(/\{(\w+)\}/g, (_, k) => String(params[k] ?? `{${k}}`));
+  return result;
 }
 
 function resolveText(locale: Locale, key: string): string {

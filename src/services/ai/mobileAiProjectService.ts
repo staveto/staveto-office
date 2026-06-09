@@ -1,9 +1,15 @@
 /**
  * Mobile-aligned AI project callables (europe-west1).
- * Wired only when explicitly enabled — interim office draft callables are not used here.
+ * Default path for web wizard — office draft callables are fallback only.
  */
 
-import type { AiPhase, AiProjectPlan, AiTask } from "@/lib/aiProjectSchema";
+import {
+  type AiPhase,
+  type AiProjectPlan,
+  type AiTask,
+  sanitizeAiProjectPlanFromModel,
+  validateAiProjectPlan,
+} from "@/lib/aiProjectSchema";
 import { getCallable } from "@/lib/firebase";
 
 export type GenerateProjectStructureInput = {
@@ -37,34 +43,35 @@ export type CreateProjectFromAiPlanInput = {
   projectNumber?: string;
 };
 
-/**
- * Mobile callables are deployed in the shared Firebase project but not yet validated from web.
- * Set NEXT_PUBLIC_MOBILE_AI_CALLABLES=1 after E2E verification.
- */
+/** @deprecated Use mobile callables directly; kept for diagnostics only. */
 export function isMobileAiCallablesEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_MOBILE_AI_CALLABLES === "1";
+  return process.env.NEXT_PUBLIC_DISABLE_AI_GENERATION !== "1";
 }
 
 export async function generateProjectStructure(
   input: GenerateProjectStructureInput
 ): Promise<AiProjectPlan> {
-  if (!isMobileAiCallablesEnabled()) {
-    throw new Error("MOBILE_AI_DISABLED");
-  }
   const fn = getCallable<GenerateProjectStructureInput, { plan: AiProjectPlan }>(
     "generateProjectStructure"
   );
   const res = await fn(input);
-  if (!res.data?.plan) throw new Error("Empty AI plan");
-  return res.data.plan;
+  if (!res.data?.plan) {
+    throw new Error("AI returned empty response. Please try again or create manually.");
+  }
+
+  const normalized = sanitizeAiProjectPlanFromModel(res.data.plan);
+  const validationErrors = validateAiProjectPlan(normalized);
+  if (validationErrors) {
+    const msg = validationErrors.map((e) => `${e.path}: ${e.message}`).join("; ");
+    throw new Error(`Invalid AI response: ${msg}`);
+  }
+
+  return normalized as AiProjectPlan;
 }
 
 export async function refineGeneratedProjectNode(
   input: RefineGeneratedNodeInput
 ): Promise<{ kind: "phase"; phase: AiPhase } | { kind: "task"; task: AiTask }> {
-  if (!isMobileAiCallablesEnabled()) {
-    throw new Error("MOBILE_AI_DISABLED");
-  }
   const fn = getCallable<
     RefineGeneratedNodeInput,
     { kind: "phase"; phase: AiPhase } | { kind: "task"; task: AiTask }
@@ -76,9 +83,6 @@ export async function refineGeneratedProjectNode(
 export async function createProjectFromAiPlan(
   input: CreateProjectFromAiPlanInput
 ): Promise<string> {
-  if (!isMobileAiCallablesEnabled()) {
-    throw new Error("MOBILE_AI_DISABLED");
-  }
   const fn = getCallable<CreateProjectFromAiPlanInput, { projectId: string }>(
     "createProjectFromAiPlan"
   );

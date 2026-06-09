@@ -30,6 +30,21 @@ export function isGeminiQuotaError(err: unknown): boolean {
   );
 }
 
+export function isGeminiOverloadedError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    msg.includes("503") ||
+    msg.includes("service unavailable") ||
+    msg.includes("high demand") ||
+    msg.includes("overloaded") ||
+    msg.includes("temporarily unavailable")
+  );
+}
+
+function isGeminiRetryableError(err: unknown): boolean {
+  return isGeminiQuotaError(err) || isGeminiOverloadedError(err);
+}
+
 function parseRetryDelayMs(err: unknown): number {
   const msg = err instanceof Error ? err.message : String(err);
   const secondsMatch = msg.match(/retry in ([\d.]+)s/i);
@@ -43,17 +58,18 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function runWithQuotaRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+async function runWithGeminiRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promise<T> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       return await fn();
     } catch (err) {
       lastErr = err;
-      if (!isGeminiQuotaError(err) || attempt === maxAttempts - 1) {
+      if (!isGeminiRetryableError(err) || attempt === maxAttempts - 1) {
         throw err;
       }
-      await sleep(parseRetryDelayMs(err));
+      const delay = isGeminiOverloadedError(err) ? 3000 + attempt * 2000 : parseRetryDelayMs(err);
+      await sleep(delay);
     }
   }
   throw lastErr;
@@ -65,24 +81,175 @@ function languageLabel(lang: "sk" | "de" | "en"): string {
   return "Slovak";
 }
 
+export type GeminiInlineAttachment = {
+  fileName: string;
+  mimeType: string;
+  bytes: Buffer;
+};
+
+const MAX_INLINE_ATTACHMENT_BYTES = 7 * 1024 * 1024;
+
+function buildGeminiContentParts(
+  prompt: string,
+  attachments?: GeminiInlineAttachment[]
+): Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> {
+  const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [
+    { text: prompt },
+  ];
+
+  for (const att of attachments ?? []) {
+    const mime = att.mimeType.toLowerCase();
+    if (!mime.startsWith("image/") && mime !== "application/pdf") continue;
+    if (att.bytes.length > MAX_INLINE_ATTACHMENT_BYTES) continue;
+    parts.push({ text: `\n[Visual attachment: ${att.fileName}]` });
+    parts.push({
+      inlineData: {
+        mimeType: mime === "application/pdf" ? "application/pdf" : mime,
+        data: att.bytes.toString("base64"),
+      },
+    });
+  }
+
+  return parts;
+}
+
+function resolveVisionModel(): string {
+  return process.env.GEMINI_VISION_MODEL?.trim() || "gemini-2.5-flash-lite";
+}
+
+function resolveDraftModel(): string {
+  return process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash-lite";
+}
+
+const VISION_MODEL_FALLBACKS = ["gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-2.5-flash"];
+const DRAFT_MODEL_FALLBACKS = ["gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-2.5-flash"];
+
+function uniqueModels(primary: string, fallbacks: string[]): string[] {
+  const ordered = primary ? [primary, ...fallbacks] : fallbacks;
+  return [...new Set(ordered.filter(Boolean))];
+}
+
+function visionModelCandidates(): string[] {
+  const primary = resolveVisionModel();
+  if (primary.includes("1.5")) {
+    console.warn("[staveto-ai] GEMINI_VISION_MODEL is deprecated:", primary);
+    return uniqueModels("", VISION_MODEL_FALLBACKS);
+  }
+  return uniqueModels(primary, VISION_MODEL_FALLBACKS);
+}
+
+function draftModelCandidates(): string[] {
+  const primary = resolveDraftModel();
+  if (primary.includes("1.5")) {
+    console.warn("[staveto-ai] GEMINI_MODEL is deprecated:", primary);
+    return uniqueModels("", DRAFT_MODEL_FALLBACKS);
+  }
+  return uniqueModels(primary, DRAFT_MODEL_FALLBACKS);
+}
+
+async function runWithModelFallback<T>(
+  candidates: string[],
+  run: (modelName: string) => Promise<T>
+): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < candidates.length; i++) {
+    try {
+      return await run(candidates[i]);
+    } catch (err) {
+      lastErr = err;
+      if (!isGeminiRetryableError(err) || i === candidates.length - 1) {
+        throw err;
+      }
+      console.warn("[staveto-ai] model unavailable, trying fallback:", candidates[i]);
+    }
+  }
+  throw lastErr;
+}
+
+export async function summarizeAttachmentsWithGemini(
+  attachments: GeminiInlineAttachment[],
+  language: "sk" | "de" | "en"
+): Promise<{ fileName: string; text: string }[]> {
+  if (attachments.length === 0) return [];
+
+  const genAI = new GoogleGenerativeAI(getApiKey());
+  const lang = languageLabel(language);
+
+  const summarizeOne = async (att: GeminiInlineAttachment) => {
+    const mime = att.mimeType.toLowerCase();
+    const isPdf = mime === "application/pdf";
+    const prompt = `Extract construction project facts from this attachment for quoting/planning.
+Output bullet points only (max 14 bullets, under 450 words). Language: ${lang}.
+Include: scope, rooms/systems, materials, dimensions, visible defects, quantities, deadlines if readable.
+File: ${att.fileName}`;
+
+    const text = await runWithModelFallback(visionModelCandidates(), async (modelName) => {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        generationConfig: {
+          maxOutputTokens: 512,
+          temperature: 0.1,
+        },
+      });
+      return runWithGeminiRetry(async () => {
+        const response = await model.generateContent([
+          { text: prompt },
+          {
+            inlineData: {
+              mimeType: isPdf ? "application/pdf" : mime,
+              data: att.bytes.toString("base64"),
+            },
+          },
+        ]);
+        return response.response.text().trim();
+      });
+    });
+
+    return { fileName: att.fileName, text: text.slice(0, 6000) };
+  };
+
+  const results = await Promise.all(
+    attachments.map(async (att) => {
+      try {
+        return await summarizeOne(att);
+      } catch {
+        return { fileName: att.fileName, text: "" };
+      }
+    })
+  );
+
+  return results.filter((r) => r.text.length > 0);
+}
+
 export async function generateDraftWithGemini(
   userPrompt: string,
-  options?: { retryInvalidJson?: boolean }
+  options?: { retryInvalidJson?: boolean; attachments?: GeminiInlineAttachment[] }
 ): Promise<ProjectDraftPayload> {
   const genAI = new GoogleGenerativeAI(getApiKey());
-  const model = genAI.getGenerativeModel({
-    model: process.env.GEMINI_MODEL ?? "gemini-2.0-flash",
-    systemInstruction: SYSTEM_INSTRUCTION,
-    generationConfig: {
-      responseMimeType: "application/json",
-      temperature: 0.35,
-    },
-  });
+
+  const useInlineVision =
+    (options?.attachments?.length ?? 0) > 0 &&
+    process.env.GEMINI_DRAFT_INLINE_VISION === "1";
 
   const run = async (prompt: string) =>
-    runWithQuotaRetry(async () => {
-      const result = await model.generateContent(prompt);
-      return result.response.text();
+    runWithModelFallback(draftModelCandidates(), async (modelName) => {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        systemInstruction: SYSTEM_INSTRUCTION,
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.35,
+          maxOutputTokens: 8192,
+        },
+      });
+      return runWithGeminiRetry(async () => {
+        const parts =
+          useInlineVision ?
+            buildGeminiContentParts(prompt, options?.attachments)
+          : [{ text: prompt }];
+        const result = await model.generateContent(parts);
+        return result.response.text();
+      });
     });
 
   let text = await run(userPrompt);
@@ -111,7 +278,7 @@ export function buildGeneratePrompt(params: {
   const docs =
     params.documentTexts?.length ?
       params.documentTexts
-        .map((d) => `--- ${d.fileName} ---\n${d.text.slice(0, 12000)}`)
+        .map((d) => `--- ${d.fileName} ---\n${d.text.slice(0, 6000)}`)
         .join("\n\n")
     : "None";
 
@@ -154,7 +321,15 @@ ${docs}
 Image attachments:
 ${images}
 
-Set source.creationMethod to "ai" and source.attachedFileIds to the IDs provided in context if any.
+Always populate materials[] with concrete construction items (units, pipes, fittings, consumables) when inferrable from scope or attachments.
+List each material once only in materials[] — do not repeat the same item in offerPreparation.suggestedLineItems.
+Avoid umbrella duplicates (e.g. do not list both "Elektrokabel" and "Elektromaterial", or both "Isolationsmaterial" and "Isolationsmaterial für Leitungen").
+Max 10 distinct material rows unless scope requires more.
+
+Keep the draft concise: max 4 phases and max 12 tasks total unless the scope clearly requires more.
+Prefer short task titles and brief descriptions.
+
+Use visual attachments (photos/PDFs) provided inline when present. Set source.creationMethod to "ai" and source.attachedFileIds to the IDs provided in context if any.
 Set status to "draft".`;
 }
 
@@ -174,4 +349,47 @@ ${JSON.stringify(params.existingDraft, null, 2)}
 
 User instruction:
 ${params.userMessage}`;
+}
+
+export async function describeAttachmentWithGemini(params: {
+  fileName: string;
+  mimeType: string;
+  bytes: Buffer;
+}): Promise<string> {
+  const mime = params.mimeType.toLowerCase();
+  const isImage = mime.startsWith("image/");
+  const isPdf = mime === "application/pdf";
+  if (!isImage && !isPdf) {
+    return "";
+  }
+
+  const genAI = new GoogleGenerativeAI(getApiKey());
+  const prompt = isImage
+    ? `You analyze construction site / plan / equipment photos for project planning.
+Describe "${params.fileName}" in detail: rooms, installations, visible defects, materials, dimensions if readable, and implied work steps.
+Write in the same language as visible text on the photo; otherwise use English.`
+    : `You analyze construction-related PDF attachments for project planning.
+Summarize "${params.fileName}": scope, locations, quantities, materials, deadlines, and action items.
+Write in the document language when obvious; otherwise use English.`;
+
+  const result = await runWithModelFallback(visionModelCandidates(), async (modelName) => {
+    const model = genAI.getGenerativeModel({
+      model: modelName,
+      generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+    });
+    return runWithGeminiRetry(async () => {
+      const response = await model.generateContent([
+        { text: prompt },
+        {
+          inlineData: {
+            mimeType: isPdf ? "application/pdf" : mime,
+            data: params.bytes.toString("base64"),
+          },
+        },
+      ]);
+      return response.response.text().trim();
+    });
+  });
+
+  return result.slice(0, 12000);
 }

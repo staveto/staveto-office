@@ -17,6 +17,20 @@ export type UploadedAiDraftFile = {
   storagePath: string;
 };
 
+/** Firestore `workspaces/{ws}/aiDraftFiles/{id}` — not a raw Storage path used as id. */
+export function isRegisteredAiDraftFile(file: UploadedAiDraftFile): boolean {
+  return !file.id.includes("/");
+}
+
+/** @deprecated Use isRegisteredAiDraftFile */
+export function isOfficeRegisteredAiDraftFile(file: UploadedAiDraftFile): boolean {
+  return isRegisteredAiDraftFile(file);
+}
+
+export function filterOfficeAttachedFileIds(files: UploadedAiDraftFile[]): string[] {
+  return files.filter(isRegisteredAiDraftFile).map((f) => f.id);
+}
+
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const ALLOWED_TYPES = new Set([
   "text/plain",

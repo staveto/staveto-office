@@ -329,10 +329,18 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Mobile parity: delete/update require project owner or org manager+ (not every org member).
+    function canManageProjectDoc() {
+      return isSignedIn() && (
+        resource.data.ownerId == request.auth.uid
+        || (resource.data.orgId != null && canManageOrganization(resource.data.orgId))
+      );
+    }
+
     match /projects/{projectId} {
       allow read: if canReadProject();
       allow create: if canCreateProject();
-      allow update, delete: if canReadProject();
+      allow update, delete: if canManageProjectDoc();
 
       match /tasks/{taskId} {
         allow read, write: if canAccessProjectId(projectId);

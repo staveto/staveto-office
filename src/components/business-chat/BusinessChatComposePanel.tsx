@@ -20,6 +20,7 @@ function memberInitials(name: string): string {
 type BusinessChatComposePanelProps = {
   orgId: string;
   currentUid: string;
+  initialMembers?: ChatTeamMember[];
   onClose: () => void;
   onSelectMember: (member: ChatTeamMember) => void;
 };
@@ -27,17 +28,24 @@ type BusinessChatComposePanelProps = {
 export function BusinessChatComposePanel({
   orgId,
   currentUid,
+  initialMembers,
   onClose,
   onSelectMember,
 }: BusinessChatComposePanelProps) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
-  const [members, setMembers] = useState<ChatTeamMember[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [members, setMembers] = useState<ChatTeamMember[]>(initialMembers ?? []);
+  const [loading, setLoading] = useState(!initialMembers?.length);
   const [error, setError] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
+    if (initialMembers?.length) {
+      setMembers(initialMembers);
+      setLoading(false);
+      return;
+    }
+
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -55,7 +63,7 @@ export function BusinessChatComposePanel({
     return () => {
       cancelled = true;
     };
-  }, [orgId, currentUid, t]);
+  }, [orgId, currentUid, initialMembers, t]);
 
   const filtered = useMemo(() => filterChatTeamMembers(members, query), [members, query]);
 

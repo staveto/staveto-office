@@ -1,4 +1,4 @@
-import { getCallable } from "@/lib/firebase";
+import { getAiCallable, getCallable } from "@/lib/firebase";
 import { getCompanyIdForCallable, getWorkspaceStorageKey } from "@/lib/workspaceStorage";
 import type { ActiveWorkspace } from "@/types/workspace";
 import type { DraftLanguage, ProjectDraftPayload } from "@/types/aiProjectDraft";
@@ -27,6 +27,7 @@ export type GenerateProjectDraftInput = {
   location?: string;
   language: DraftLanguage;
   attachedFileIds?: string[];
+  documentStoragePaths?: string[];
 };
 
 export function localeToDraftLanguage(locale: Locale): DraftLanguage {
@@ -56,6 +57,9 @@ function buildGenerateProjectDraftPayload(
   const location = input.location?.trim();
   if (location) payload.location = location;
   if (input.attachedFileIds?.length) payload.attachedFileIds = input.attachedFileIds;
+  if (input.documentStoragePaths?.length) {
+    payload.documentStoragePaths = input.documentStoragePaths;
+  }
 
   return payload;
 }
@@ -63,7 +67,7 @@ function buildGenerateProjectDraftPayload(
 export async function generateProjectDraft(
   input: GenerateProjectDraftInput
 ): Promise<{ draftId: string; draft: ProjectDraftPayload; warnings?: string[] }> {
-  const fn = getCallable<Record<string, unknown>, { draftId: string; draft: ProjectDraftPayload; warnings?: string[] }>(
+  const fn = getAiCallable<Record<string, unknown>, { draftId: string; draft: ProjectDraftPayload; warnings?: string[] }>(
     "generateProjectDraft"
   );
   const res = await fn(buildGenerateProjectDraftPayload(input));
@@ -77,7 +81,7 @@ export async function updateProjectDraftWithAI(params: {
   userMessage: string;
   language: DraftLanguage;
 }): Promise<{ draft: ProjectDraftPayload; version: number }> {
-  const fn = getCallable<
+  const fn = getAiCallable<
     Record<string, unknown>,
     { draft: ProjectDraftPayload; version: number }
   >("updateProjectDraftWithAI");
@@ -119,6 +123,8 @@ export type CallableErrorKind =
   | "not_deployed"
   | "unauthenticated"
   | "quota"
+  | "overloaded"
+  | "timeout"
   | "generic";
 
 /** Firebase callable error message for UI (sanitized). */
@@ -172,7 +178,6 @@ export function mapCallableError(err: unknown): CallableErrorKind {
   }
   if (
     code === "functions/not-found" ||
-    code === "functions/unavailable" ||
     message.includes("not found") ||
     message.includes("404") ||
     rawMessage.includes("failed to fetch") ||
@@ -180,6 +185,17 @@ export function mapCallableError(err: unknown): CallableErrorKind {
     message.includes("cloud run invoker")
   ) {
     return "not_deployed";
+  }
+  if (
+    code === "functions/unavailable" ||
+    message.includes("503") ||
+    message.includes("high demand") ||
+    message.includes("service unavailable") ||
+    message.includes("ai service is busy") ||
+    message.includes("temporarily unavailable") ||
+    message.includes("googlegenerativeai")
+  ) {
+    return "overloaded";
   }
   if (
     code === "functions/permission-denied" ||
@@ -204,6 +220,18 @@ export function mapCallableError(err: unknown): CallableErrorKind {
     message.includes("429")
   ) {
     return "quota";
+  }
+  if (
+    code === "functions/deadline-exceeded" ||
+    code === "deadline-exceeded" ||
+    code === "functions/cancelled" ||
+    message.includes("deadline-exceeded") ||
+    message.includes("deadline exceeded") ||
+    message.includes("timed out") ||
+    message.includes("timeout") ||
+    rawMessage.includes("deadline-exceeded")
+  ) {
+    return "timeout";
   }
   return "generic";
 }

@@ -140,3 +140,57 @@ export function toggleMaterialSelection(
     ),
   };
 }
+
+export function updateDraftProjectTitle(
+  draft: AiProjectDraftLocal,
+  projectTitle: string
+): AiProjectDraftLocal {
+  return { ...draft, projectTitle };
+}
+
+export function replaceDraftPhase(
+  draft: AiProjectDraftLocal,
+  phaseId: string,
+  next: AiPhase
+): AiProjectDraftLocal {
+  return {
+    ...draft,
+    phases: draft.phases.map((p) => {
+      if (p.id !== phaseId) return p;
+      return {
+        ...p,
+        name: next.name,
+        description: next.description,
+        tasks: next.tasks.map((t) => ({ ...t, id: newNodeId() })),
+      };
+    }),
+  };
+}
+
+export function replaceDraftTask(
+  draft: AiProjectDraftLocal,
+  phaseId: string,
+  taskId: string,
+  next: AiTask
+): AiProjectDraftLocal {
+  return {
+    ...draft,
+    phases: draft.phases.map((p) => {
+      if (p.id !== phaseId) return p;
+      return {
+        ...p,
+        tasks: p.tasks.map((t) =>
+          t.id === taskId
+            ? {
+                ...t,
+                title: next.title,
+                description: next.description,
+                taskType: next.taskType,
+                priority: next.priority,
+              }
+            : t
+        ),
+      };
+    }),
+  };
+}

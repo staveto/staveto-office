@@ -32,6 +32,8 @@ export type CreateDraftJobInput = {
   customerId?: string;
   customerRequest?: string;
   customerName?: string;
+  customerCompanyName?: string;
+  customerContactPersonName?: string;
   customerEmail?: string;
   customerPhone?: string;
   addressText?: string;
@@ -85,6 +87,12 @@ export async function createDraftJob(
   if (input.customerId?.trim()) projectData.customerId = input.customerId.trim();
   if (customerRequest) projectData.customerRequest = customerRequest;
   if (input.customerName?.trim()) projectData.customerName = input.customerName.trim();
+  if (input.customerCompanyName?.trim()) {
+    projectData.customerCompanyName = input.customerCompanyName.trim();
+  }
+  if (input.customerContactPersonName?.trim()) {
+    projectData.customerContactPersonName = input.customerContactPersonName.trim();
+  }
   if (input.customerEmail?.trim()) projectData.customerEmail = input.customerEmail.trim();
   if (input.customerPhone?.trim()) projectData.customerPhone = input.customerPhone.trim();
   if (input.addressText?.trim()) projectData.addressText = input.addressText.trim();
