@@ -151,6 +151,7 @@ export async function assignMemberToBusinessProject(input: {
       name: input.name ?? null,
       role: "member",
       status: "active",
+      pendingAcknowledgment: true,
       permissionLevel: "editor",
       addedBy: input.actorUid ?? null,
       addedAt: serverTimestamp(),

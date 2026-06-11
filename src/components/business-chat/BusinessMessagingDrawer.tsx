@@ -24,6 +24,7 @@ import { BusinessChatComposePanel } from "@/components/business-chat/BusinessCha
 import {
   ensureDirectChat,
   ensureGeneralChat,
+  ensureMyOrgMemberIndex,
   getOtherParticipantUid,
   getUnreadChatCount,
   listenBusinessChats,
@@ -109,30 +110,38 @@ export function BusinessMessagingDrawer() {
     setLoadingChats(true);
     setChatError(null);
 
-    void ensureGeneralChat(orgId).catch(() => {
-      /* Best effort — listener may still work if general chat already exists. */
-    });
+    void (async () => {
+      try {
+        await ensureMyOrgMemberIndex(orgId);
+        await ensureGeneralChat(orgId);
+      } catch {
+        /* Best effort — listener may still work if chat + membership index exist. */
+      }
+      if (cancelled) return;
 
-    unsub = listenBusinessChats(
-          orgId,
-          uid,
-          (rows) => {
-            if (cancelled) return;
-            setChats(rows);
-            setLoadingChats(false);
-            void refreshUnread();
-          },
-          (err) => {
-            if (cancelled) return;
-            const raw = err.message || "";
-            setChatError(
-              raw.includes("permission-denied") || raw.includes("PERMISSION_DENIED")
-                ? t("business.chat.permissionDeniedFriendly")
-                : raw || t("business.chat.error")
-            );
-            setLoadingChats(false);
-          }
-        );
+      unsub = listenBusinessChats(
+        orgId,
+        uid,
+        (rows) => {
+          if (cancelled) return;
+          setChats(rows);
+          setLoadingChats(false);
+          void refreshUnread();
+        },
+        (err) => {
+          if (cancelled) return;
+          const raw = (err.message || "").toLowerCase();
+          const denied =
+            raw.includes("permission") ||
+            raw.includes("insufficient") ||
+            (err as { code?: string }).code === "permission-denied";
+          setChatError(
+            denied ? t("business.chat.permissionDeniedFriendly") : err.message || t("business.chat.error")
+          );
+          setLoadingChats(false);
+        }
+      );
+    })();
 
     return () => {
       cancelled = true;

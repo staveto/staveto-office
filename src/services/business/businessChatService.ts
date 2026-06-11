@@ -3,6 +3,7 @@
  * Firestore: organizations/{orgId}/chats/{chatId}/messages|reads
  */
 import { ensureOrgMemberForOwner } from "@/lib/organizations";
+import { ensureAuthTokenReady } from "@/lib/firebase";
 import {
   buildDirectChatId,
   sortedParticipantUids,
@@ -64,6 +65,34 @@ export type BusinessChatMessageDoc = {
 };
 
 const MAX_CHAT_IMAGE_BYTES = 15 * 1024 * 1024;
+
+export async function ensureMyOrgMemberIndex(orgId: string): Promise<void> {
+  const normalizedOrgId = orgId.trim();
+  if (!normalizedOrgId) return;
+
+  await ensureAuthTokenReady();
+  const { getCallable } = await import("@/lib/firebase");
+
+  try {
+    const listOrgs = getCallable<
+      { orgId?: string },
+      { organizations: { orgId: string }[] }
+    >("listMyBusinessOrganizations");
+    await listOrgs({ orgId: normalizedOrgId });
+    return;
+  } catch {
+    /* Fall through to dedicated heal callable when deployed. */
+  }
+
+  try {
+    const heal = getCallable<{ orgId: string }, { ok: boolean; healed: boolean }>(
+      "ensureMyOrgMemberIndex"
+    );
+    await heal({ orgId: normalizedOrgId });
+  } catch {
+    /* Rules may still pass when members/{uid} already exists. */
+  }
+}
 
 function requireUid(): string {
   const uid = getAuthInstance()?.currentUser?.uid ?? null;
@@ -133,6 +162,7 @@ export async function ensureDirectChat(input: {
   if (!normalizedOrgId || !otherUid) throw new Error("Invalid chat participants");
   if (otherUid === uid) throw new Error("Cannot start a chat with yourself");
 
+  await ensureMyOrgMemberIndex(normalizedOrgId);
   await ensureOrgMemberForOwner(normalizedOrgId, uid);
 
   const chatId = buildDirectChatId(uid, otherUid);
@@ -190,6 +220,7 @@ export async function ensureGeneralChat(orgId: string): Promise<void> {
   if (!normalizedOrgId) return;
 
   const uid = requireUid();
+  await ensureMyOrgMemberIndex(normalizedOrgId);
   await ensureOrgMemberForOwner(normalizedOrgId, uid);
 
   const chatRef = doc(db, `organizations/${normalizedOrgId}/chats/general`);
@@ -255,7 +286,10 @@ export function listenBusinessChats(
         .filter((chat) => chat.type === "direct");
       emit();
     },
-    (err) => onError?.(err)
+    () => {
+      directChats = [];
+      emit();
+    }
   );
 
   return () => {
@@ -421,27 +455,27 @@ export async function markChatRead(input: { orgId: string; chatId: string }): Pr
   );
 }
 
-function toMillisLocal(raw: unknown): number {
-  return toMillis(raw);
-}
-
-export async function getUnreadChatCount(orgId: string, uid: string): Promise<number> {
-  if (!orgId || !uid) return 0;
+export async function getUnreadCountForChat(
+  orgId: string,
+  uid: string,
+  chatId: string
+): Promise<number> {
+  if (!orgId || !uid || !chatId) return 0;
   const db = getFirestoreInstance();
   if (!db) return 0;
 
   const normalizedOrgId = orgId.trim();
   if (!normalizedOrgId) return 0;
 
-  const chatRef = doc(db, `organizations/${normalizedOrgId}/chats/general`);
+  const chatRef = doc(db, `organizations/${normalizedOrgId}/chats/${chatId}`);
   const chatSnap = await getDoc(chatRef);
   if (!chatSnap.exists()) return 0;
 
-  const readRef = doc(db, `organizations/${normalizedOrgId}/chats/general/reads/${uid}`);
+  const readRef = doc(db, `organizations/${normalizedOrgId}/chats/${chatId}/reads/${uid}`);
   const readSnap = await getDoc(readRef);
-  const lastReadAtMs = toMillisLocal(readSnap.data()?.lastReadAt);
+  const lastReadAtMs = toMillis(readSnap.data()?.lastReadAt);
 
-  const messagesRef = collection(db, `organizations/${normalizedOrgId}/chats/general/messages`);
+  const messagesRef = collection(db, `organizations/${normalizedOrgId}/chats/${chatId}/messages`);
   const q =
     lastReadAtMs > 0
       ? query(messagesRef, where("createdAt", ">", new Date(lastReadAtMs)), orderBy("createdAt", "desc"), limit(100))
@@ -457,4 +491,36 @@ export async function getUnreadChatCount(orgId: string, uid: string): Promise<nu
     if (unread >= 99) break;
   }
   return unread;
+}
+
+/** Total unread across general + all direct chats for the signed-in user. */
+export async function getUnreadChatCount(orgId: string, uid: string): Promise<number> {
+  if (!orgId || !uid) return 0;
+  const db = getFirestoreInstance();
+  if (!db) return 0;
+
+  const normalizedOrgId = orgId.trim();
+  if (!normalizedOrgId) return 0;
+
+  const chatIds = new Set<string>(["general"]);
+
+  try {
+    const directQ = query(
+      collection(db, `organizations/${normalizedOrgId}/chats`),
+      where("participantUids", "array-contains", uid)
+    );
+    const directSnap = await getDocs(directQ);
+    for (const d of directSnap.docs) {
+      if (d.id !== "general") chatIds.add(d.id);
+    }
+  } catch {
+    /* Direct chat list is best-effort for the badge. */
+  }
+
+  let total = 0;
+  for (const chatId of chatIds) {
+    total += await getUnreadCountForChat(normalizedOrgId, uid, chatId);
+    if (total >= 99) return 99;
+  }
+  return total;
 }

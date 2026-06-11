@@ -68,7 +68,7 @@ export function ActiveCompanyContextSelector({
         "flex items-center gap-2 rounded-lg border text-left transition-colors",
         isDrawer
           ? "w-full border-white/15 bg-white/5 px-3 py-2.5 hover:bg-white/10"
-          : "border-[#1D376A]/15 bg-white px-2.5 py-1.5 hover:bg-[#1D376A]/[0.04]",
+          : "max-w-[8.5rem] border-[#1D376A]/15 bg-white px-2 py-1 hover:bg-[#1D376A]/[0.04] sm:max-w-[10.5rem] md:max-w-[12rem]",
         showDropdown && !isDrawer && "hover:bg-[#1D376A]/[0.04]",
         !showDropdown && "cursor-default"
       )}
@@ -126,14 +126,11 @@ export function ActiveCompanyContextSelector({
             >
               {companyDisplayName}
             </div>
-            <div
-              className={cn(
-                "text-[11px]",
-                isDrawer ? "text-white/55" : "text-muted-foreground"
-              )}
-            >
-              {t("header.context.companyLabel")}
-            </div>
+            {isDrawer ? (
+              <div className="text-[11px] text-white/55">
+                {t("header.context.companyLabel")}
+              </div>
+            ) : null}
           </div>
         </>
       )}

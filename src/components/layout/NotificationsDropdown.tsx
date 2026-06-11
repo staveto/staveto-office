@@ -16,19 +16,29 @@ import { listPendingProjectInvites } from "@/services/invites/projectInvitesServ
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
+function resolveProjectName(n: UserNotification): string | null {
+  const name = n.projectName?.trim();
+  if (!name || name === "Projekt") return null;
+  return name;
+}
+
 function notificationMessage(
   n: UserNotification,
   t: (key: string, params?: Record<string, string | number>) => string
 ): string {
   switch (n.type) {
-    case "PROJECT_ASSIGNED":
-      return t("notifications.projectAssigned", {
-        projectName: n.projectName || t("projects.titleJobs"),
-      });
-    case "PROJECT_INVITED":
-      return t("notifications.projectInvited", {
-        projectName: n.projectName || t("projects.titleJobs"),
-      });
+    case "PROJECT_ASSIGNED": {
+      const projectName = resolveProjectName(n);
+      return projectName
+        ? t("notifications.projectAssigned", { projectName })
+        : t("notifications.projectAssignedGeneric");
+    }
+    case "PROJECT_INVITED": {
+      const projectName = resolveProjectName(n);
+      return projectName
+        ? t("notifications.projectInvited", { projectName })
+        : t("notifications.projectInvitedGeneric");
+    }
     case "TASK_ASSIGNED":
       return t("notifications.taskAssigned", {
         taskName: n.taskName || t("notifications.generic"),
@@ -200,22 +210,22 @@ export function NotificationsDropdown() {
                 {t("notifications.empty")}
               </p>
             ) : (
-              <ul role="none" className="space-y-1">
+              <ul role="none" className="divide-y divide-border/50">
                 {notifications.map((n) => {
                   const projectHref = getNotificationProjectHref(n);
                   const isUnread = !n.read;
                   return (
-                    <li key={n.id}>
+                    <li key={n.id} className="py-2 first:pt-0 last:pb-0">
                       <div
                         className={cn(
-                          "rounded-lg px-3 py-2.5 text-sm transition-colors",
+                          "rounded-lg px-3 py-3 text-sm transition-colors",
                           isUnread ? "bg-primary/5" : "hover:bg-muted/60"
                         )}
                       >
-                        <p className={cn("text-sm", isUnread && "font-medium")}>
+                        <p className={cn("text-sm leading-snug", isUnread && "font-medium")}>
                           {notificationMessage(n, t)}
                         </p>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
                           {projectHref && (n.type === "PROJECT_ASSIGNED" || n.type === "PROJECT_INVITED") ? (
                             <Link
                               href={projectHref}

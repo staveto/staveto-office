@@ -280,39 +280,12 @@ export async function getUserRoleInOrganization(
     return resolveMembershipRole(org, found.member, found.memberDocId, uid);
   }
 
-  try {
-    const snap = await getDocs(
-      query(collectionGroup(db, "members"), where("userId", "==", uid))
-    );
-    for (const memberDoc of snap.docs) {
-      if (parseOrgIdFromMemberPath(memberDoc.ref.path) !== orgId) continue;
-      const member = memberDoc.data() as OrgMember;
-      if (!isOrgMemberActive(member)) continue;
-      return resolveMembershipRole(org, member, memberDoc.id, uid);
-    }
-  } catch (err) {
-    if (process.env.NODE_ENV === "development") {
-      console.debug("[organizations] getUserRoleInOrganization collectionGroup failed", err);
-    }
-  }
+  const callableRole = await getOrgRoleViaCallable(orgId);
+  if (callableRole) return callableRole;
 
-  const emailLower = email?.trim().toLowerCase();
-  if (emailLower) {
-    for (const field of ["emailLower", "email"] as const) {
-      try {
-        const snap = await getDocs(
-          query(collectionGroup(db, "members"), where(field, "==", emailLower))
-        );
-        for (const memberDoc of snap.docs) {
-          if (parseOrgIdFromMemberPath(memberDoc.ref.path) !== orgId) continue;
-          const member = memberDoc.data() as OrgMember;
-          if (!isOrgMemberActive(member)) continue;
-          return resolveMembershipRole(org, member, memberDoc.id, uid);
-        }
-      } catch {
-        // rules / index — try next field
-      }
-    }
+  const retry = await findOrgMemberForUser(db, orgId, uid);
+  if (retry && isOrgMemberActive(retry.member)) {
+    return resolveMembershipRole(org, retry.member, retry.memberDocId, uid);
   }
 
   return null;
@@ -389,65 +362,35 @@ async function findOrgMemberForUser(
   return null;
 }
 
-/** collectionGroup on org `members` filtered by email (legacy docs may omit userId). */
-async function listMembershipsViaMemberEmail(
-  uid: string,
-  email?: string
-): Promise<OrgMembership[]> {
-  const db = getFirestoreInstance();
-  if (!db) return [];
-
-  const emailLower = email?.trim().toLowerCase();
-  if (!emailLower) return [];
-
-  const byOrg = new Map<string, OrgMembership>();
-
-  for (const field of ["emailLower", "email"] as const) {
-    try {
-      const snap = await getDocs(
-        query(collectionGroup(db, "members"), where(field, "==", emailLower))
-      );
-      for (const memberDoc of snap.docs) {
-        const orgId = parseOrgIdFromMemberPath(memberDoc.ref.path);
-        if (!orgId || byOrg.has(orgId)) continue;
-
-        const member = memberDoc.data() as OrgMember;
-        if (!isOrgMemberActive(member)) continue;
-
-        const org = await getOrganization(orgId);
-        const role = resolveMembershipRole(
-          org ?? { ownerUid: "", name: "", seatLimit: 5, plan: "TEAM_5", createdAt: null },
-          member,
-          memberDoc.id,
-          uid
-        );
-        if (org && !isOrganizationEligible(org, { uid, memberRole: role })) continue;
-
-        byOrg.set(orgId, {
-          orgId,
-          orgName: org?.name?.trim() || member.displayName?.trim() || "Firma",
-          role,
-        });
-      }
-    } catch (err) {
-      if (process.env.NODE_ENV === "development") {
-        console.debug("[organizations] collectionGroup members by email failed", field, err);
-      }
-    }
-  }
-
-  return [...byOrg.values()];
-}
-
-async function listMembershipsViaCallable(uid: string): Promise<OrgMembership[]> {
+async function getOrgRoleViaCallable(orgId: string): Promise<string | null> {
   try {
     await ensureAuthTokenReady();
     const { getCallable } = await import("./firebase");
     const callable = getCallable<
-      Record<string, never>,
+      { orgId?: string },
+      { organizations: { orgId: string; role: string }[] }
+    >("listMyBusinessOrganizations");
+    const res = await callable({ orgId: orgId.trim() });
+    const row = (res.data?.organizations ?? []).find((o) => o.orgId === orgId);
+    return row?.role ? normalizeMembershipRole(row.role) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function listMembershipsViaCallable(
+  uid: string,
+  focusOrgId?: string
+): Promise<OrgMembership[]> {
+  try {
+    await ensureAuthTokenReady();
+    const { getCallable } = await import("./firebase");
+    const callable = getCallable<
+      { orgId?: string },
       { organizations: { orgId: string; orgName: string; role: string }[] }
     >("listMyBusinessOrganizations");
-    const res = await callable({});
+    const payload = focusOrgId?.trim() ? { orgId: focusOrgId.trim() } : {};
+    const res = await callable(payload);
     const rows = res.data?.organizations ?? [];
     return rows.map((row) => ({
       orgId: row.orgId,
@@ -596,6 +539,21 @@ export type GetUserOrgMembershipsOptions = {
   email?: string;
 };
 
+function mergeMembershipList(target: Map<string, OrgMembership>, list: OrgMembership[]): void {
+  for (const m of list) {
+    const normalized: OrgMembership = {
+      ...m,
+      role: normalizeMembershipRole(m.role),
+    };
+    const existing = target.get(normalized.orgId);
+    if (!existing) {
+      target.set(normalized.orgId, normalized);
+      continue;
+    }
+    target.set(normalized.orgId, mergeOrgMembership(existing, normalized));
+  }
+}
+
 export async function getUserOrgMemberships(
   uid: string,
   options?: GetUserOrgMembershipsOptions
@@ -603,44 +561,29 @@ export async function getUserOrgMemberships(
   await waitForAuthUser();
   await ensureAuthTokenReady();
 
-  const [fromGroup, fromEmail, fromCallableEarly] = await Promise.all([
-    listMembershipsViaCollectionGroup(uid),
-    listMembershipsViaMemberEmail(uid, options?.email),
-    listMembershipsViaCallable(uid),
-  ]);
-
-  let fromHints: OrgMembership[] = [];
-  try {
-    fromHints = await listMembershipsViaOrgHints(uid, options?.orgIdHints ?? []);
-  } catch (e) {
-    if (!isFirestorePermissionDenied(e)) throw e;
-  }
-  let fromOwned: OrgMembership[] = [];
-  try {
-    fromOwned = await listMembershipsViaOwnedOrganizations(uid);
-  } catch (e) {
-    if (!isFirestorePermissionDenied(e)) throw e;
-  }
-
   const merged = new Map<string, OrgMembership>();
+  const focusOrgId = options?.orgIdHints?.find((id) => id?.trim())?.trim();
 
-  for (const m of [
-    ...fromGroup,
-    ...fromEmail,
-    ...fromHints,
-    ...fromCallableEarly,
-    ...fromOwned,
-  ]) {
-    const normalized: OrgMembership = {
-      ...m,
-      role: normalizeMembershipRole(m.role),
-    };
-    const existing = merged.get(normalized.orgId);
-    if (!existing) {
-      merged.set(normalized.orgId, normalized);
-      continue;
-    }
-    merged.set(normalized.orgId, mergeOrgMembership(existing, normalized));
+  // Callable is authoritative and heals members/{uid} index docs (no client collectionGroup email scans).
+  mergeMembershipList(merged, await listMembershipsViaCallable(uid, focusOrgId));
+
+  try {
+    mergeMembershipList(merged, await listMembershipsViaOwnedOrganizations(uid));
+  } catch (e) {
+    if (!isFirestorePermissionDenied(e)) throw e;
+  }
+
+  try {
+    mergeMembershipList(
+      merged,
+      await listMembershipsViaOrgHints(uid, options?.orgIdHints ?? [])
+    );
+  } catch (e) {
+    if (!isFirestorePermissionDenied(e)) throw e;
+  }
+
+  if (merged.size === 0) {
+    mergeMembershipList(merged, await listMembershipsViaCollectionGroup(uid));
   }
 
   return [...merged.values()];

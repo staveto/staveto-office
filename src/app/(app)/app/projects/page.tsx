@@ -398,22 +398,28 @@ export default function ProjectsPage() {
           <CardContent className="py-12">
             <div className="flex flex-col items-center justify-center text-center">
               <FolderKanban className="size-12 text-muted-foreground mb-4" />
-              <p className="font-medium">{t("projects.empty")}</p>
-              <p className="mt-2 text-sm text-muted-foreground max-w-sm">
-                {t("projects.emptyHint")}
+              <p className="font-medium">
+                {isFieldWorker ? t("workerDashboard.myJobs.empty") : t("projects.empty")}
               </p>
-              {activeWorkspace?.type === "company" && projects.length === 0 ? (
+              <p className="mt-2 text-sm text-muted-foreground max-w-sm">
+                {isFieldWorker
+                  ? t("workerDashboard.today.emptyHint")
+                  : t("projects.emptyHint")}
+              </p>
+              {activeWorkspace?.type === "company" && projects.length === 0 && !isFieldWorker ? (
                 <p className="mt-3 text-xs text-muted-foreground max-w-md">
                   {t("projects.dataLoadHint")}
                 </p>
               ) : null}
-              <Link
-                href="/app/projects/new"
-                className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-4 inline-flex")}
-              >
-                <Plus className="size-4 mr-2" />
-                {t("projects.createJob")}
-              </Link>
+              {!isFieldWorker ? (
+                <Link
+                  href="/app/projects/new"
+                  className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-4 inline-flex")}
+                >
+                  <Plus className="size-4 mr-2" />
+                  {t("projects.createJob")}
+                </Link>
+              ) : null}
             </div>
           </CardContent>
         </Card>

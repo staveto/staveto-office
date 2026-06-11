@@ -1,12 +1,10 @@
 import {
   getFirestoreInstance,
   collection,
-  addDoc,
   doc,
+  setDoc,
   updateDoc,
   getDocs,
-  query,
-  where,
   onSnapshot,
   serverTimestamp,
   Timestamp,
@@ -79,6 +77,31 @@ function sortNotifications(rows: UserNotification[]): UserNotification[] {
   });
 }
 
+/** One inbox row per project assignment (web + CF may both try to write). */
+export function projectAssignedNotificationDocId(projectId: string): string {
+  const safe = projectId.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 80);
+  return `project-assigned-${safe}`;
+}
+
+function dedupeNotifications(rows: UserNotification[]): UserNotification[] {
+  const byKey = new Map<string, UserNotification>();
+  for (const row of sortNotifications(rows)) {
+    const key =
+      row.type === "PROJECT_ASSIGNED" || row.type === "PROJECT_INVITED"
+        ? `${row.type}:${row.projectId ?? row.id}`
+        : row.id;
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, row);
+      continue;
+    }
+    const existingTime = existing.createdAt ? new Date(existing.createdAt).getTime() : 0;
+    const rowTime = row.createdAt ? new Date(row.createdAt).getTime() : 0;
+    if (rowTime >= existingTime) byKey.set(key, row);
+  }
+  return sortNotifications([...byKey.values()]);
+}
+
 export async function createProjectAssignedNotification(input: {
   targetUserId: string;
   projectId: string;
@@ -91,16 +114,42 @@ export async function createProjectAssignedNotification(input: {
   if (!db) throw new Error("Firestore not configured");
   if (!input.targetUserId.trim() || input.targetUserId === input.assignedBy) return;
 
-  await addDoc(collection(db, "users", input.targetUserId, "notifications"), {
-    type: "PROJECT_ASSIGNED",
-    projectId: input.projectId,
-    projectName: input.projectName,
-    assignedBy: input.assignedBy,
-    assignedByName: input.assignedByName ?? null,
-    orgId: input.orgId ?? null,
-    createdAt: serverTimestamp(),
-    read: false,
-  });
+  const notifId = projectAssignedNotificationDocId(input.projectId);
+  const ts = serverTimestamp();
+
+  await Promise.all([
+    setDoc(
+      doc(db, "users", input.targetUserId, "notifications", notifId),
+      {
+        type: "PROJECT_ASSIGNED",
+        projectId: input.projectId,
+        projectName: input.projectName,
+        assignedBy: input.assignedBy,
+        assignedByName: input.assignedByName ?? null,
+        orgId: input.orgId ?? null,
+        createdAt: ts,
+        read: false,
+      },
+      { merge: true }
+    ),
+    setDoc(
+      doc(db, "notifications", `${input.targetUserId}_${notifId}`),
+      {
+        userId: input.targetUserId,
+        type: "PROJECT_ASSIGNED",
+        projectId: input.projectId,
+        projectName: input.projectName,
+        fromUserId: input.assignedBy,
+        fromUserName: input.assignedByName ?? null,
+        orgId: input.orgId ?? null,
+        message: "",
+        severity: "info",
+        createdAt: ts,
+        readAt: null,
+      },
+      { merge: true }
+    ),
+  ]);
 }
 
 export function subscribeUserNotifications(
@@ -120,7 +169,7 @@ export function subscribeUserNotifications(
       const rows = snap.docs
         .map((d) => toNotification(d.id, d.data() as Record<string, unknown>))
         .filter((n): n is UserNotification => n != null);
-      const sorted = sortNotifications(rows).slice(0, 50);
+      const sorted = dedupeNotifications(rows).slice(0, 50);
       const unreadCount = sorted.filter((n) => !n.read).length;
       onData(sorted, unreadCount);
     },
@@ -143,15 +192,13 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
   const db = getFirestoreInstance();
   if (!db) throw new Error("Firestore not configured");
 
-  const unreadQuery = query(
-    collection(db, "users", userId, "notifications"),
-    where("read", "==", false)
-  );
-  const snap = await getDocs(unreadQuery);
+  const allSnap = await getDocs(collection(db, "users", userId, "notifications"));
   await Promise.all(
-    snap.docs.map((d) =>
-      updateDoc(doc(db, "users", userId, "notifications", d.id), { read: true })
-    )
+    allSnap.docs
+      .filter((d) => d.data().read !== true)
+      .map((d) =>
+        updateDoc(doc(db, "users", userId, "notifications", d.id), { read: true })
+      )
   );
 }
 

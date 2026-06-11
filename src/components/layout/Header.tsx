@@ -87,7 +87,7 @@ export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
         </h1>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+      <div className="flex min-w-0 shrink items-center gap-1.5 sm:gap-2">
         <ThemeToggle />
         <NotificationsDropdown />
         <ActiveCompanyContextSelector />

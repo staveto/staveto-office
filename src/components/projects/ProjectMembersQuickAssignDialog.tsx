@@ -25,6 +25,9 @@ import {
   type UpsertProjectMemberInput,
 } from "@/services/projects/projectMembersService";
 import {
+  createProjectAssignedNotification,
+} from "@/services/notifications/userNotificationService";
+import {
   assignMemberToBusinessProject,
   unassignMemberFromBusinessProject,
 } from "@/services/projects/businessProjectAssignmentService";
@@ -261,6 +264,25 @@ export function ProjectMembersQuickAssignDialog({
               unassignMemberFromBusinessProject({ projectId: project.id, uid })
             ),
         ]);
+        await Promise.all(
+          newlyAdded
+            .filter((member) => member.userId !== user.id)
+            .map((member) =>
+              createProjectAssignedNotification({
+                targetUserId: member.userId,
+                projectId: project.id,
+                projectName: project.name?.trim() || project.id,
+                assignedBy: user.id,
+                assignedByName:
+                  [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ||
+                  user.email ||
+                  undefined,
+                orgId: effectiveOrgId,
+              }).catch((err) => {
+                console.warn("[membersQuick] createProjectAssignedNotification failed:", err);
+              })
+            )
+        );
       } else {
         await upsertProjectMembers(project.id, selected, previousIds, user.id);
       }

@@ -5,8 +5,14 @@ import { useWorkspace } from "@/context/WorkspaceContext";
 import { useWorkspaceProduct } from "@/hooks/useWorkspaceProduct";
 import type { WorkspaceRole } from "@/types/workspace";
 
-/** Matches mobile default `canViewBusinessDashboard` by role. */
-const CHAT_ACCESS_ROLES: WorkspaceRole[] = ["owner", "admin", "manager"];
+/** All active org members may open team chat (workers read/write per Firestore isOrgChatWriter). */
+const CHAT_ACCESS_ROLES: WorkspaceRole[] = [
+  "owner",
+  "admin",
+  "manager",
+  "accountant",
+  "worker",
+];
 
 /** Matches Firestore `isOrgChatWriter` (owner/admin/manager/worker — not viewer/client). */
 const CHAT_WRITE_ROLES: WorkspaceRole[] = ["owner", "admin", "manager", "worker"];
