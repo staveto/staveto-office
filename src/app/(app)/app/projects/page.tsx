@@ -30,6 +30,7 @@ import {
 import { isProjectAssignedToUser } from "@/lib/projectOwnership";
 import { listAssignedProjectsForWorker } from "@/services/worker/workerDashboardService";
 import { shouldShowWorkerDashboard } from "@/lib/workspaceProduct";
+import { canManageCrewAssignments } from "@/lib/operationsPermissions";
 import {
   matchesProjectFilter,
   isProjectArchived,
@@ -46,6 +47,7 @@ import { cn } from "@/lib/utils";
 import { FolderKanban, RefreshCw, Search, Plus, List, Map as MapIcon } from "lucide-react";
 import { ProjectsMapPanel } from "@/components/projects/ProjectsMapPanel";
 import { ProjectsWorkspaceContextBanner } from "@/components/projects/ProjectsWorkspaceContextBanner";
+import { ProjectMembersQuickAssignDialog } from "@/components/projects/ProjectMembersQuickAssignDialog";
 import { useSetupChecklistVisit } from "@/hooks/useSetupChecklistVisit";
 
 const FILTERS: ProjectListFilter[] = [
@@ -79,7 +81,7 @@ function ProjectsTableSkeleton() {
 export default function ProjectsPage() {
   const { t } = useI18n();
   useSetupChecklistVisit("first_document");
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { activeWorkspace } = useWorkspace();
   const { role } = useWorkspaceProduct();
   const searchParams = useSearchParams();
@@ -93,6 +95,7 @@ export default function ProjectsPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<ProjectsPageFilter>("all");
   const [view, setView] = useState<"list" | "map">("list");
+  const [membersDialogProject, setMembersDialogProject] = useState<ProjectDoc | null>(null);
 
   const isFieldWorker =
     activeWorkspace != null &&
@@ -120,9 +123,11 @@ export default function ProjectsPage() {
   };
 
   useEffect(() => {
-    if (!user?.id || !activeWorkspace) {
-      setProjects([]);
-      setLoading(false);
+    if (authLoading || !user?.id || !activeWorkspace) {
+      if (!authLoading && !user?.id) {
+        setProjects([]);
+        setLoading(false);
+      }
       return;
     }
 
@@ -156,7 +161,7 @@ export default function ProjectsPage() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, activeWorkspace?.id, activeWorkspace?.type, isFieldWorker]);
+  }, [authLoading, user?.id, activeWorkspace?.id, activeWorkspace?.type, isFieldWorker]);
 
   useEffect(() => {
     if (projects.length === 0) return;
@@ -264,13 +269,18 @@ export default function ProjectsPage() {
       <div className="space-y-6">
         <h2 className="text-xl font-semibold">{t("projects.titleJobs")}</h2>
         <Card className="border-destructive/50">
-          <CardContent className="py-8">
+          <CardContent className="space-y-4 py-8">
             <p className="text-center text-destructive font-medium">
               {t("projects.accessDenied")}
             </p>
-            <p className="mt-2 text-center text-sm text-muted-foreground">
-              {t("projects.accessDeniedHint")}
+            <p className="text-center text-sm text-muted-foreground">
+              {error ?? t("projects.accessDeniedHint")}
             </p>
+            <div className="flex justify-center">
+              <Button type="button" variant="outline" onClick={loadProjects}>
+                {t("common.refresh")}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -392,6 +402,11 @@ export default function ProjectsPage() {
               <p className="mt-2 text-sm text-muted-foreground max-w-sm">
                 {t("projects.emptyHint")}
               </p>
+              {activeWorkspace?.type === "company" && projects.length === 0 ? (
+                <p className="mt-3 text-xs text-muted-foreground max-w-md">
+                  {t("projects.dataLoadHint")}
+                </p>
+              ) : null}
               <Link
                 href="/app/projects/new"
                 className={cn(buttonVariants({ variant: "outline", size: "sm" }), "mt-4 inline-flex")}
@@ -481,19 +496,43 @@ export default function ProjectsPage() {
                         <JobSourceBadge project={p} />
                       </div>
                     </TableCell>
-                    <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
-                      {t(`projects.dashboard.quoteStatus.${quoteKey}`)}
+                    <TableCell className="hidden md:table-cell text-sm">
+                      {quoteKey !== "none" ? (
+                        <Link
+                          href={`/app/projects/${p.id}?tab=quote`}
+                          className="text-[#1D376A] hover:underline"
+                        >
+                          {t(`projects.dashboard.quoteStatus.${quoteKey}`)}
+                        </Link>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          {t(`projects.dashboard.quoteStatus.${quoteKey}`)}
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="hidden sm:table-cell text-muted-foreground text-sm">
                       {formatDate(p.updatedAt ?? p.createdAt)}
                     </TableCell>
                     <TableCell>
-                      <Link
-                        href={primaryAction.href}
-                        className="text-sm font-medium text-[#e06737] hover:underline whitespace-nowrap"
-                      >
-                        {t(primaryAction.labelKey)}
-                      </Link>
+                      <div className="flex items-center gap-2 whitespace-nowrap">
+                        <Link
+                          href={primaryAction.href}
+                          className="text-sm font-medium text-[#e06737] hover:underline"
+                        >
+                          {t(primaryAction.labelKey)}
+                        </Link>
+                        {canManageCrewAssignments(role) ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => setMembersDialogProject(p)}
+                          >
+                            {t("projects.membersQuick.addButton")}
+                          </Button>
+                        ) : null}
+                      </div>
                     </TableCell>
                     <TableCell>
                       {!isFieldWorker && user?.id ? (
@@ -559,6 +598,18 @@ export default function ProjectsPage() {
         ) : null}
         </>
       )}
+      <ProjectMembersQuickAssignDialog
+        open={!!membersDialogProject}
+        project={membersDialogProject}
+        onOpenChange={(open) => {
+          if (!open) setMembersDialogProject(null);
+        }}
+        onSaved={() => {
+          setToastMessage(t("projects.membersQuick.savedToast"));
+          loadProjects();
+        }}
+        t={t}
+      />
     </div>
   );
 }

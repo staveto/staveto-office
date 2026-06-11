@@ -1,12 +1,25 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { FileText, Pencil, Printer } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import type { ProjectDoc, TaskDoc } from "@/lib/projects";
 import type { QuoteDraftItemDoc } from "@/lib/quoteDraftItems";
 import { computeQuoteSummary, formatMoney } from "@/lib/projectDashboard";
 import { isDraftJob } from "@/lib/projectLifecycle";
+import { buildProjectQuoteDisplayLines } from "@/lib/projectQuoteDraft";
+import { listMaterialSuggestions } from "@/services/materials/projectMaterialsService";
+import type { MaterialSuggestionDoc } from "@/services/materials/types";
 import { useI18n } from "@/i18n/I18nContext";
 import { cn } from "@/lib/utils";
 
@@ -18,9 +31,30 @@ type ProjectQuoteTabProps = {
 
 export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabProps) {
   const { t } = useI18n();
+  const [suggestions, setSuggestions] = useState<MaterialSuggestionDoc[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void listMaterialSuggestions(project.id)
+      .then((rows) => {
+        if (!cancelled) setSuggestions(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setSuggestions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [project.id]);
+
   const summary = computeQuoteSummary(project, quoteItems, tasks);
+  const displayLines = useMemo(
+    () => buildProjectQuoteDisplayLines(project, quoteItems, tasks, suggestions),
+    [project, quoteItems, tasks, suggestions]
+  );
   const isSales = isDraftJob(project);
   const setupHref = `/app/projects/${project.id}?setup=ai`;
+  const printHref = `/app/projects/${project.id}/print?from=quote`;
 
   return (
     <div className="space-y-4">
@@ -44,15 +78,34 @@ export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabP
       ) : null}
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2">
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle className="text-base text-[#1D376A]">
             {t("projects.dashboard.quote.title")}
           </CardTitle>
-          {isSales ? (
+          {summary.hasQuote ? (
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href={printHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  buttonVariants({ variant: "default", size: "sm" }),
+                  "bg-[#1D376A] hover:bg-[#1D376A]/90"
+                )}
+              >
+                <Printer className="size-4 mr-1.5" />
+                {t("projects.dashboard.quote.viewPdf")}
+              </Link>
+              {isSales ? (
+                <Link href={setupHref} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                  <Pencil className="size-4 mr-1.5" />
+                  {t("projects.dashboard.action.openQuote")}
+                </Link>
+              ) : null}
+            </div>
+          ) : isSales ? (
             <Link href={setupHref} className={buttonVariants({ variant: "outline", size: "sm" })}>
-              {summary.hasQuote
-                ? t("projects.dashboard.action.openQuote")
-                : t("projects.dashboard.action.prepareQuote")}
+              {t("projects.dashboard.action.prepareQuote")}
             </Link>
           ) : null}
         </CardHeader>
@@ -65,22 +118,22 @@ export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabP
           </div>
 
           {summary.hasQuote ? (
-            <dl className="grid gap-3 sm:grid-cols-2 text-sm border-t border-border/60 pt-4">
+            <dl className="grid gap-3 sm:grid-cols-3 text-sm border-t border-border/60 pt-4">
               <div>
                 <dt className="text-muted-foreground">{t("projects.aiSetup.summary.material")}</dt>
-                <dd className="font-semibold text-[#1D376A] mt-0.5">
+                <dd className="font-semibold text-[#1D376A] mt-0.5 tabular-nums">
                   {formatMoney(summary.materialTotal)}
                 </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">{t("projects.aiSetup.summary.work")}</dt>
-                <dd className="font-semibold text-[#1D376A] mt-0.5">
+                <dd className="font-semibold text-[#1D376A] mt-0.5 tabular-nums">
                   {formatMoney(summary.workTotal)}
                 </dd>
               </div>
-              <div className="sm:col-span-2">
+              <div>
                 <dt className="text-muted-foreground">{t("projects.draft.quoteItem.grandTotal")}</dt>
-                <dd className="text-xl font-bold text-[#1D376A] mt-0.5">
+                <dd className="text-xl font-bold text-[#1D376A] mt-0.5 tabular-nums">
                   {summary.grossTotal != null ? formatMoney(summary.grossTotal) : "—"}
                 </dd>
               </div>
@@ -89,21 +142,50 @@ export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabP
             <p className="text-sm text-muted-foreground">{t("projects.dashboard.kpi.noQuote")}</p>
           )}
 
-          {quoteItems.length > 0 ? (
-            <div className="border-t border-border/60 pt-4">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">
-                {t("projects.dashboard.quote.lines", { count: quoteItems.length })}
+          {displayLines.length > 0 ? (
+            <div className="border-t border-border/60 pt-4 space-y-3">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {t("projects.dashboard.quote.lines", { count: String(displayLines.length) })}
               </p>
-              <ul className="space-y-1.5 text-sm max-h-48 overflow-y-auto">
-                {quoteItems.slice(0, 12).map((item) => (
-                  <li key={item.id} className="flex justify-between gap-2">
-                    <span className="truncate">{item.name}</span>
-                    <span className="text-muted-foreground shrink-0">
-                      {formatMoney(item.qty * item.unitPrice)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <div className="rounded-lg border border-border/70 overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/40 hover:bg-muted/40">
+                      <TableHead>{t("quotes.print.colDescription")}</TableHead>
+                      <TableHead className="w-[72px] text-right">{t("quotes.print.colQty")}</TableHead>
+                      <TableHead className="w-[64px]">{t("quotes.print.colUnit")}</TableHead>
+                      <TableHead className="w-[100px] text-right">{t("quotes.print.colUnitPrice")}</TableHead>
+                      <TableHead className="w-[100px] text-right">{t("projects.dashboard.quote.colLineTotal")}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {displayLines.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell className="font-medium text-[#1D376A] max-w-[280px]">
+                          <span className="line-clamp-2">{item.name}</span>
+                          {item.category === "work" ? (
+                            <span className="ml-1.5 text-xs text-muted-foreground font-normal">
+                              ({t("projects.aiSetup.quote.work")})
+                            </span>
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{item.qty}</TableCell>
+                        <TableCell className="text-muted-foreground">{item.unit}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatMoney(item.unitPrice)}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums font-medium">
+                          {formatMoney(item.lineTotal)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                <FileText className="size-3.5 shrink-0" />
+                {t("projects.dashboard.quote.pdfHint")}
+              </p>
             </div>
           ) : null}
         </CardContent>

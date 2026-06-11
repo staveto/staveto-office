@@ -16,6 +16,7 @@ import {
   isOnboardingCompleted,
   type UserProfile,
 } from "@/lib/userProfile";
+import { claimProjectInvites } from "@/services/invites/projectInvitesService";
 import type { User as FirebaseUser } from "firebase/auth";
 
 export type BillingStatus = {
@@ -139,6 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Profile bootstrap may fail under strict rules; sign-in can still proceed
       }
       await loadUserAndProfile(fbUser);
+      void claimProjectInvites().catch(() => undefined);
     });
     return () => unsubscribe();
   }, []);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Briefcase,
@@ -10,11 +10,12 @@ import {
   ExternalLink,
   Loader2,
   MapPin,
-  User,
   AlertTriangle,
+  ChevronRight,
+  CalendarDays,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/I18nContext";
 import { getGreetingKey } from "@/lib/dashboardCommandCenter";
@@ -26,15 +27,10 @@ import {
   type WorkerDashboardData,
 } from "@/services/worker/workerDashboardService";
 import type { ProjectDoc } from "@/lib/projects";
-import {
-  appListRowClassName,
-  appMutedTextClassName,
-  appOutlineActionClassName,
-  appPanelClassName,
-  appPanelInsetClassName,
-  appSectionHeadingClassName,
-  appSubtleTextClassName,
-} from "@/components/settings/settingsStyles";
+import { DashboardSection } from "./DashboardSection";
+import { EmptyState } from "./EmptyState";
+import { CompanyMetricCard } from "./CompanyMetricCard";
+import { CompactActionButton } from "./CompactActionButton";
 
 type WorkerDashboardViewProps = {
   activeWorkspace: ActiveWorkspace;
@@ -42,39 +38,97 @@ type WorkerDashboardViewProps = {
   uid: string;
 };
 
-function WorkerPanel({
-  className,
-  children,
+function WorkerHero({
+  displayName,
+  companyName,
+  t,
 }: {
-  className?: string;
-  children: React.ReactNode;
+  displayName: string;
+  companyName: string;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }) {
+  const greetingKey = getGreetingKey(new Date().getHours());
+
   return (
-    <Card className={cn(appPanelClassName, className)}>
-      <CardContent className="py-5">{children}</CardContent>
-    </Card>
+    <header
+      className={cn(
+        "relative overflow-hidden rounded-2xl border border-border",
+        "bg-gradient-to-br from-[#1D376A]/10 via-card to-[#e06737]/5",
+        "shadow-sm"
+      )}
+    >
+      <div
+        className="pointer-events-none absolute -right-10 -top-10 size-36 rounded-full bg-[#1D376A]/10 blur-2xl"
+        aria-hidden
+      />
+      <div className="relative px-4 py-5 sm:px-6 sm:py-6">
+        <p className="text-sm text-muted-foreground">
+          {t(`dashboard.hero.greeting.${greetingKey}`, { name: displayName })}
+        </p>
+        <h1 className="mt-1 text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+          {companyName}
+        </h1>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Badge
+            variant="secondary"
+            className="border border-[#1D376A]/20 bg-[#1D376A]/10 text-[#1D376A] dark:text-[#93b4e8]"
+          >
+            {t("workerDashboard.connectedAsWorker")}
+          </Badge>
+        </div>
+        <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
+          {t("workerDashboard.scopeHint")}
+        </p>
+      </div>
+    </header>
   );
 }
 
-function TodayJobCard({ project, t }: { project: ProjectDoc; t: (key: string) => string }) {
+function TodayJobCard({
+  project,
+  t,
+  featured = false,
+}: {
+  project: ProjectDoc;
+  t: (key: string) => string;
+  featured?: boolean;
+}) {
   const address = formatProjectAddress(project);
   const mapsUrl = buildMapsUrl(project);
 
   return (
-    <div className={cn(appPanelInsetClassName, "space-y-3")}>
-      <div>
-        <p className="font-semibold text-[#152238]">{project.name}</p>
-        {address ? (
-          <p className={cn(appMutedTextClassName, "mt-1 flex items-start gap-1.5")}>
-            <MapPin className="size-3.5 shrink-0 mt-0.5 text-[#1D376A]" aria-hidden />
-            {address}
-          </p>
-        ) : null}
+    <div
+      className={cn(
+        "rounded-xl border bg-card p-4 shadow-sm",
+        featured ? "border-[#1D376A]/25 ring-1 ring-[#1D376A]/10" : "border-border"
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className={cn(
+            "flex size-10 shrink-0 items-center justify-center rounded-lg",
+            featured ? "bg-[#1D376A]/10 text-[#1D376A]" : "bg-muted text-muted-foreground"
+          )}
+        >
+          <Briefcase className="size-5" aria-hidden />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-foreground">{project.name}</p>
+          {address ? (
+            <p className="mt-1 flex items-start gap-1.5 text-sm text-muted-foreground">
+              <MapPin className="size-3.5 shrink-0 mt-0.5" aria-hidden />
+              <span>{address}</span>
+            </p>
+          ) : null}
+        </div>
       </div>
-      <div className="flex flex-wrap gap-2">
+      <div className="mt-4 flex flex-wrap gap-2">
         <Link
           href={`/app/projects/${project.id}`}
-          className={cn(buttonVariants({ size: "sm" }))}
+          className={cn(
+            buttonVariants({ size: "sm" }),
+            featured && "bg-[#e06737] hover:bg-[#c95a30] text-white"
+          )}
         >
           {t("workerDashboard.openJob")}
         </Link>
@@ -83,11 +137,7 @@ function TodayJobCard({ project, t }: { project: ProjectDoc; t: (key: string) =>
             href={mapsUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className={cn(
-              buttonVariants({ variant: "outline", size: "sm" }),
-              appOutlineActionClassName,
-              "gap-1.5"
-            )}
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5")}
           >
             <ExternalLink className="size-3.5" aria-hidden />
             {t("workerDashboard.navigate")}
@@ -95,6 +145,29 @@ function TodayJobCard({ project, t }: { project: ProjectDoc; t: (key: string) =>
         ) : null}
       </div>
     </div>
+  );
+}
+
+function JobListRow({ project }: { project: ProjectDoc }) {
+  const address = formatProjectAddress(project);
+
+  return (
+    <Link
+      href={`/app/projects/${project.id}`}
+      className={cn(
+        "flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3",
+        "shadow-sm transition-colors hover:border-[#1D376A]/30 hover:bg-muted/40"
+      )}
+    >
+      <Briefcase className="size-4 shrink-0 text-[#1D376A]/80" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-semibold text-foreground">{project.name}</p>
+        {address ? (
+          <p className="truncate text-xs text-muted-foreground">{address}</p>
+        ) : null}
+      </div>
+      <ChevronRight className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+    </Link>
   );
 }
 
@@ -108,7 +181,6 @@ export function WorkerDashboardView({
   const [data, setData] = useState<WorkerDashboardData | null>(null);
 
   const companyName = activeWorkspace.name?.trim() || t("dashboard.hero.companyFallback");
-  const greetingKey = getGreetingKey(new Date().getHours());
 
   useEffect(() => {
     let cancelled = false;
@@ -125,205 +197,166 @@ export function WorkerDashboardView({
     };
   }, [activeWorkspace, uid]);
 
-  const firstProject = data?.activeAssignedProjects[0] ?? data?.assignedProjects[0];
+  const assignedProjects = data?.assignedProjects ?? [];
+  const todayProjects = data?.todayProjects ?? [];
+  const openTasks = data?.openTasks ?? [];
+  const firstProject = assignedProjects[0];
+
+  const focusProject = useMemo(() => {
+    if (todayProjects.length > 0) return todayProjects[0]!;
+    if (assignedProjects.length > 0) return assignedProjects[0]!;
+    return null;
+  }, [todayProjects, assignedProjects]);
+
+  const todayCount = todayProjects.length;
+  const jobsCount = assignedProjects.length;
+  const tasksCount = openTasks.length;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 pb-12">
-      <Card className={cn(appPanelClassName, "border-l-4 border-l-[#1D376A]")}>
-        <CardContent className="space-y-2 pt-6 pb-5">
-          <p className={appMutedTextClassName}>
-            {t(`dashboard.hero.greeting.${greetingKey}`, { name: displayName })}
-          </p>
-          <h2 className="text-xl font-bold text-[#152238]">{companyName}</h2>
-          <p className="text-sm font-semibold text-[#1D376A]">
-            {t("workerDashboard.connectedAsWorker")}
-          </p>
-          <p className={cn(appSubtleTextClassName, "mt-3 border-t border-[#d8e0ea] pt-3")}>
-            {t("workerDashboard.scopeHint")}
-          </p>
-        </CardContent>
-      </Card>
+    <div className="mx-auto max-w-5xl space-y-5 pb-10">
+      <WorkerHero displayName={displayName} companyName={companyName} t={t} />
 
-      <section aria-labelledby="worker-today-heading">
-        <h3 id="worker-today-heading" className={cn(appSectionHeadingClassName, "mb-3")}>
-          {t("workerDashboard.today.title")}
-        </h3>
-        {loading ? (
-          <div className="flex justify-center rounded-xl border border-[#b8c5d4] bg-white py-10 shadow-sm">
-            <Loader2 className="size-6 animate-spin text-[#1D376A]" />
-          </div>
-        ) : data && data.todayProjects.length > 0 ? (
-          <div className="space-y-3">
-            {data.todayProjects.map((project) => (
-              <TodayJobCard key={project.id} project={project} t={t} />
-            ))}
-          </div>
-        ) : data && data.activeAssignedProjects.length > 0 ? (
-          <TodayJobCard project={data.activeAssignedProjects[0]!} t={t} />
-        ) : (
-          <WorkerPanel>
-            <p className={cn(appMutedTextClassName, "text-center font-medium")}>
-              {t("workerDashboard.today.empty")}
-            </p>
-            <p className={cn(appSubtleTextClassName, "mt-2 text-center")}>
-              {t("workerDashboard.today.emptyHint")}
-            </p>
-          </WorkerPanel>
-        )}
-      </section>
+      <div
+        className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-thin"
+        role="region"
+        aria-label={t("dashboard.stats")}
+      >
+        <CompanyMetricCard
+          title={t("workerDashboard.myJobs.title")}
+          value={loading ? null : jobsCount}
+          icon={Briefcase}
+          loading={loading}
+        />
+        <CompanyMetricCard
+          title={t("workerDashboard.today.title")}
+          value={loading ? null : todayCount}
+          icon={CalendarDays}
+          loading={loading}
+        />
+        <CompanyMetricCard
+          title={t("workerDashboard.tasks.title")}
+          value={loading ? null : tasksCount}
+          icon={CheckSquare}
+          loading={loading}
+        />
+      </div>
 
-      <section aria-labelledby="worker-jobs-heading">
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <h3 id="worker-jobs-heading" className={appSectionHeadingClassName}>
-            {t("workerDashboard.myJobs.title")}
-          </h3>
-          <Link
-            href="/app/projects?filter=assigned"
-            className="text-xs font-semibold text-[#c4522a] hover:text-[#e06737] hover:underline"
+      <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
+        <div className="space-y-5">
+          <DashboardSection
+            title={t("workerDashboard.today.title")}
+            description={
+              focusProject
+                ? undefined
+                : t("workerDashboard.today.emptyHint")
+            }
           >
-            {t("workerDashboard.myJobs.viewAll")}
-          </Link>
+            {loading ? (
+              <div className="flex justify-center rounded-xl border border-border bg-card py-12">
+                <Loader2 className="size-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : focusProject ? (
+              <TodayJobCard project={focusProject} t={t} featured />
+            ) : (
+              <EmptyState
+                message={t("workerDashboard.today.empty")}
+                hint={t("workerDashboard.today.emptyHint")}
+              />
+            )}
+          </DashboardSection>
+
+          <DashboardSection
+            title={t("workerDashboard.myJobs.title")}
+            description={
+              assignedProjects.length > 0
+                ? undefined
+                : t("workerDashboard.myJobs.empty")
+            }
+          >
+            <div className="mb-3 flex justify-end">
+              <Link
+                href="/app/projects?filter=assigned"
+                className="text-xs font-semibold text-[#e06737] hover:underline"
+              >
+                {t("workerDashboard.myJobs.viewAll")}
+              </Link>
+            </div>
+            {loading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="size-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : assignedProjects.length > 0 ? (
+              <ul className="space-y-2" role="list">
+                {assignedProjects.slice(0, 6).map((project) => (
+                  <li key={project.id}>
+                    <JobListRow project={project} />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <EmptyState message={t("workerDashboard.myJobs.empty")} />
+            )}
+          </DashboardSection>
         </div>
-        {loading ? null : data && data.activeAssignedProjects.length > 0 ? (
-          <ul className="space-y-2" role="list">
-            {data.activeAssignedProjects.slice(0, 5).map((project) => (
-              <li key={project.id}>
-                <Link href={`/app/projects/${project.id}`} className={appListRowClassName}>
-                  <Briefcase className="size-4 shrink-0 text-[#1D376A]" aria-hidden />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-[#152238]">{project.name}</p>
-                    {formatProjectAddress(project) ? (
-                      <p className={cn(appSubtleTextClassName, "truncate")}>
-                        {formatProjectAddress(project)}
-                      </p>
-                    ) : null}
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <WorkerPanel>
-            <p className={cn(appMutedTextClassName, "text-center")}>
-              {t("workerDashboard.myJobs.empty")}
-            </p>
-          </WorkerPanel>
-        )}
-      </section>
 
-      <section aria-labelledby="worker-tasks-heading">
-        <h3 id="worker-tasks-heading" className={cn(appSectionHeadingClassName, "mb-3")}>
-          {t("workerDashboard.tasks.title")}
-        </h3>
-        {loading ? null : data && data.openTasks.length > 0 ? (
-          <ul className="space-y-2" role="list">
-            {data.openTasks.slice(0, 8).map((task) => (
-              <li key={`${task.projectId}-${task.id}`}>
-                <Link href={`/app/projects/${task.projectId}`} className={appListRowClassName}>
-                  <CheckSquare className="size-4 shrink-0 mt-0.5 text-[#1D376A]" aria-hidden />
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-[#152238]">{task.title}</p>
-                    <p className={cn(appSubtleTextClassName, "truncate")}>{task.projectName}</p>
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <WorkerPanel>
-            <p className={cn(appMutedTextClassName, "text-center")}>
-              {t("workerDashboard.tasks.comingSoon")}
-            </p>
-          </WorkerPanel>
-        )}
-      </section>
+        <div className="space-y-5">
+          <DashboardSection title={t("workerDashboard.tasks.title")}>
+            {loading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="size-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : openTasks.length > 0 ? (
+              <ul className="space-y-2" role="list">
+                {openTasks.slice(0, 6).map((task) => (
+                  <li key={`${task.projectId}-${task.id}`}>
+                    <Link
+                      href={`/app/projects/${task.projectId}`}
+                      className={cn(
+                        "flex items-start gap-3 rounded-xl border border-border bg-card px-4 py-3",
+                        "shadow-sm transition-colors hover:border-[#1D376A]/30 hover:bg-muted/40"
+                      )}
+                    >
+                      <CheckSquare className="size-4 shrink-0 mt-0.5 text-[#1D376A]/80" aria-hidden />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-foreground">{task.title}</p>
+                        <p className="truncate text-xs text-muted-foreground">{task.projectName}</p>
+                      </div>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <EmptyState message={t("workerDashboard.tasks.comingSoon")} />
+            )}
+          </DashboardSection>
 
-      <section aria-labelledby="worker-actions-heading">
-        <h3 id="worker-actions-heading" className={cn(appSectionHeadingClassName, "mb-3")}>
-          {t("workerDashboard.quickActions.title")}
-        </h3>
-        <div className="grid gap-2 sm:grid-cols-2">
-          <Link
-            href="/app/projects?filter=assigned"
-            className={cn(
-              buttonVariants({ variant: "default" }),
-              "h-auto min-h-[3rem] justify-start gap-2 rounded-xl px-4 py-3 bg-[#1D376A] shadow-sm hover:bg-[#162d57]"
-            )}
-          >
-            <Briefcase className="size-4 shrink-0" aria-hidden />
-            {t("workerDashboard.quickActions.myJobs")}
-          </Link>
-          {firstProject ? (
-            <Link
-              href={`/app/projects/${firstProject.id}`}
-              className={cn(
-                buttonVariants({ variant: "outline" }),
-                appOutlineActionClassName,
-                "h-auto min-h-[3rem] justify-start gap-2 rounded-xl px-4 py-3"
-              )}
-            >
-              <Camera className="size-4 shrink-0" aria-hidden />
-              {t("workerDashboard.quickActions.addPhoto")}
-            </Link>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              disabled
-              className={cn(
-                appOutlineActionClassName,
-                "h-auto min-h-[3rem] justify-start gap-2 rounded-xl px-4 py-3 opacity-60"
-              )}
-            >
-              <Camera className="size-4 shrink-0" aria-hidden />
-              {t("workerDashboard.quickActions.addPhoto")}
-            </Button>
-          )}
-          <Link
-            href="/app/help"
-            className={cn(
-              buttonVariants({ variant: "outline" }),
-              appOutlineActionClassName,
-              "h-auto min-h-[3rem] justify-start gap-2 rounded-xl px-4 py-3"
-            )}
-          >
-            <AlertTriangle className="size-4 shrink-0" aria-hidden />
-            {t("workerDashboard.quickActions.reportProblem")}
-          </Link>
-          <Button
-            type="button"
-            variant="outline"
-            disabled
-            className={cn(
-              appOutlineActionClassName,
-              "h-auto min-h-[3rem] justify-start gap-2 rounded-xl px-4 py-3 opacity-60"
-            )}
-          >
-            <Clock className="size-4 shrink-0" aria-hidden />
-            {t("workerDashboard.quickActions.attendance")}
-          </Button>
+          <DashboardSection title={t("workerDashboard.quickActions.title")}>
+            <div className="flex flex-wrap gap-2">
+              <CompactActionButton
+                label={t("workerDashboard.quickActions.myJobs")}
+                icon={Briefcase}
+                href="/app/projects?filter=assigned"
+              />
+              <CompactActionButton
+                label={t("workerDashboard.quickActions.addPhoto")}
+                icon={Camera}
+                href={firstProject ? `/app/projects/${firstProject.id}` : undefined}
+                disabled={!firstProject}
+              />
+              <CompactActionButton
+                label={t("workerDashboard.quickActions.reportProblem")}
+                icon={AlertTriangle}
+                href="/app/help"
+              />
+              <CompactActionButton
+                label={t("workerDashboard.quickActions.attendance")}
+                icon={Clock}
+                disabled
+              />
+            </div>
+          </DashboardSection>
         </div>
-      </section>
-
-      <Card className={appPanelClassName}>
-        <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-base font-bold text-[#152238]">
-            <User className="size-4 text-[#1D376A]" aria-hidden />
-            {t("workerDashboard.profile.title")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Link
-            href="/app/settings"
-            className={cn(
-              buttonVariants({ variant: "outline", size: "sm" }),
-              appOutlineActionClassName
-            )}
-          >
-            {t("workerDashboard.profile.myProfile")}
-          </Link>
-        </CardContent>
-      </Card>
+      </div>
     </div>
   );
 }

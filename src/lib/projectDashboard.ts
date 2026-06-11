@@ -16,6 +16,7 @@ import {
 export type ProjectDashboardTab =
   | "overview"
   | "tasks"
+  | "workplan"
   | "quote"
   | "documents"
   | "activity";
@@ -328,6 +329,19 @@ export function getProjectSummaryText(project: ProjectDoc): string {
     project.internalNote?.trim() ||
     ""
   );
+}
+
+/** Dashboard / KPI link target for project quote (tab or AI setup). */
+export function getProjectQuoteHref(project: ProjectDoc): string {
+  const id = project.id;
+  const phase = normalizeProjectPhase(project);
+  const qs = project.quoteStatus ?? "none";
+
+  if (phase === "sales" && qs === "none") {
+    return `/app/projects/${id}?setup=ai`;
+  }
+
+  return `/app/projects/${id}?tab=quote`;
 }
 
 export function getListPrimaryAction(project: ProjectDoc): {

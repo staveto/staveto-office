@@ -5,33 +5,58 @@ import type { QuoteDraftItemDoc } from "@/lib/quoteDraftItems";
 import {
   computeAiSetupTotals,
   defaultCalculation,
-  materialRowsFromQuoteItems,
   parseAiSetupMeta,
   plainNotesFromQuoteDraft,
+  resolveSetupMaterialRows,
   workEstimateFromQuoteItems,
 } from "@/components/projects/setup/aiSetupHelpers";
 import type { TaskDoc } from "@/lib/projects";
+import type { MaterialSuggestionDoc } from "@/services/materials/types";
+import { buildProjectQuoteDisplayLines } from "@/lib/projectQuoteDraft";
+import { filterCustomerQuoteItems } from "@/lib/quoteDocumentMeta";
+
+export const PROJECT_DRAFT_QUOTE_ID_PREFIX = "project-draft-";
+
+export function isProjectDraftQuoteId(id: string): boolean {
+  return id.startsWith(PROJECT_DRAFT_QUOTE_ID_PREFIX);
+}
+
+export function projectIdFromDraftQuoteId(id: string): string | null {
+  if (!isProjectDraftQuoteId(id)) return null;
+  return id.slice(PROJECT_DRAFT_QUOTE_ID_PREFIX.length) || null;
+}
 
 export function buildQuoteDocFromProjectDraft(
   project: ProjectDoc,
   quoteItems: QuoteDraftItemDoc[],
   tasks: TaskDoc[] = [],
-  currency = "CHF"
+  currency = "CHF",
+  suggestions: MaterialSuggestionDoc[] = []
 ): QuoteDoc {
-  const materials = materialRowsFromQuoteItems(quoteItems);
   const meta = parseAiSetupMeta(project.quoteDraftNotes);
   const workEstimate = meta?.workEstimate ?? workEstimateFromQuoteItems(quoteItems, tasks);
   const calculation = meta?.calculation ?? defaultCalculation(project.quoteDraftVatPercent);
-  const totals = computeAiSetupTotals(materials, workEstimate, calculation);
+  const materialRows = resolveSetupMaterialRows(quoteItems, suggestions, []);
+  const visibleQuoteItems = filterCustomerQuoteItems(quoteItems, materialRows);
+  const displayLines = buildProjectQuoteDisplayLines(
+    project,
+    visibleQuoteItems,
+    tasks,
+    suggestions
+  );
+  const totals = computeAiSetupTotals(materialRows, workEstimate, calculation);
 
-  const items = quoteItems.map((item) => ({
+  const quoteStatus = project.quoteStatus ?? "draft";
+  const isSentToCustomer = quoteStatus === "sent" || quoteStatus === "accepted";
+
+  const items = displayLines.map((item) => ({
     id: item.id,
     category: item.category,
     name: item.name,
-    qty: item.qty > 0 ? item.qty : 1,
+    qty: item.qty,
     unit: item.unit,
-    unitPrice: item.unitPrice >= 0 ? item.unitPrice : 0,
-    total: computeItemTotal(item.qty > 0 ? item.qty : 1, item.unitPrice >= 0 ? item.unitPrice : 0),
+    unitPrice: item.unitPrice,
+    total: computeItemTotal(item.qty, item.unitPrice),
   }));
 
   const clientName =
@@ -41,13 +66,15 @@ export function buildQuoteDocFromProjectDraft(
     "—";
 
   return {
-    id: `project-draft-${project.id}`,
+    id: `${PROJECT_DRAFT_QUOTE_ID_PREFIX}${project.id}`,
+    updatedAt: project.updatedAt ?? project.createdAt,
+    createdAt: project.createdAt,
     title: project.name?.trim() || "Angebot",
     projectId: project.id,
     projectName: project.name,
     clientName,
     clientEmail: project.customerEmail,
-    status: "draft",
+    status: isSentToCustomer ? "sent" : "draft",
     items,
     subtotal: totals.netTotal,
     vatPercent: calculation.vatPercent,

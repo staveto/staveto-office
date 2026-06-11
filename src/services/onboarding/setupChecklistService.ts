@@ -12,7 +12,11 @@ export type SoftSetupChecklistStepId = Extract<
   "first_offer" | "first_document"
 >;
 
-export type CompanySetupProgress = Partial<Record<SoftSetupChecklistStepId, boolean>>;
+export type CompanySetupProgress = Partial<Record<SoftSetupChecklistStepId, boolean>> & {
+  dismissed?: boolean;
+  dismissedAt?: unknown;
+  updatedAt?: unknown;
+};
 
 export function getCompanySetupProgress(
   profile: UserProfile | null | undefined,
@@ -46,4 +50,25 @@ export function isSetupStepVisited(
   stepId: SoftSetupChecklistStepId
 ): boolean {
   return progress[stepId] === true;
+}
+
+export function isSetupChecklistDismissed(
+  progress: CompanySetupProgress | null | undefined
+): boolean {
+  return progress?.dismissed === true;
+}
+
+export async function dismissSetupChecklist(uid: string, orgId: string): Promise<void> {
+  const org = orgId.trim();
+  if (!org) return;
+
+  await upsertUserProfile(uid, {
+    companySetupProgress: {
+      [org]: {
+        dismissed: true,
+        dismissedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+    },
+  });
 }

@@ -6,6 +6,8 @@ export {
   setQuoteStatus,
   removeQuote,
   listQuotesForWorkspace,
+  listQuotesForWorkspaceEnsured,
+  syncMissingQuotesFromProjects,
   getQuote,
   hasQuoteAccess,
   toLegacyWorkspace,

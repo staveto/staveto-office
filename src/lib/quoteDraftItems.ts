@@ -14,6 +14,8 @@ export type QuoteDraftItemDoc = {
   unit: string;
   unitPrice: number;
   note?: string;
+  /** When false, hidden from customer-facing quote / PDF. */
+  customerVisible?: boolean;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -25,6 +27,7 @@ export type QuoteDraftItemInput = {
   unit: string;
   unitPrice: number;
   note?: string;
+  customerVisible?: boolean;
 };
 
 export const QUOTE_DRAFT_DEFAULT_UNIT = "ks";

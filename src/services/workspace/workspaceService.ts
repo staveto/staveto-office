@@ -7,6 +7,7 @@ import {
   getUserRoleInOrganization,
   isDefaultCompanyRole,
 } from "@/lib/organizations";
+import type { ProjectDoc } from "@/lib/projects";
 import type { ActiveWorkspace, WorkspaceMember, WorkspaceUser } from "@/types/workspace";
 import type { WorkspaceRole } from "@/types/workspace";
 import {
@@ -282,10 +283,36 @@ export function getProjectWorkspaceWriteFields(
   const orgId = workspace.orgId ?? workspace.id;
   return {
     ...base,
+    ownerId: uid,
     orgId,
     workspaceType: "team",
     workspaceId: orgId,
   };
+}
+
+/** Stamp quotes with the same workspace scope as the linked project document. */
+export function getQuoteWorkspaceWriteFieldsFromProject(
+  project: Pick<ProjectDoc, "orgId" | "ownerId" | "workspaceType" | "workspaceId">,
+  fallbackWorkspace: ActiveWorkspace,
+  uid: string
+): Record<string, unknown> {
+  if (project.orgId) {
+    return {
+      source: "web",
+      orgId: project.orgId,
+      workspaceType: project.workspaceType ?? "team",
+      workspaceId: project.workspaceId ?? project.orgId,
+    };
+  }
+  if (project.ownerId) {
+    return {
+      source: "web",
+      ownerId: project.ownerId,
+      workspaceType: project.workspaceType ?? "personal",
+      workspaceId: project.workspaceId ?? project.ownerId,
+    };
+  }
+  return getProjectWorkspaceWriteFields(fallbackWorkspace, uid);
 }
 
 /** Match legacy context workspace id for persistence in sessionStorage. */

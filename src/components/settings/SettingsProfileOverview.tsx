@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   CardContent,
   CardDescription,
@@ -79,6 +80,11 @@ export function SettingsProfileOverview() {
             </>
           ) : null}
         </dl>
+        <p className="mt-4 text-sm">
+          <Link href="/app/settings#project-invites" className="text-[#1D376A] hover:underline font-medium">
+            {t("profile.openInvites")} →
+          </Link>
+        </p>
       </CardContent>
     </SettingsSectionCard>
   );

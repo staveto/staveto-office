@@ -452,16 +452,49 @@ export async function handleCreateProjectFromDraft(
   let order = 0;
   let quoteOrder = 0;
 
+  // Build phases subcollection (mobile/office dashboard reads projects/{id}/phases).
+  const phaseIdByKey = new Map<string, string>();
+  const phaseNamesInOrder: string[] = [];
   for (const task of draft.tasks) {
+    const phaseName = task.phase?.trim() || "";
+    if (!phaseName) continue;
+    const key = phaseName.toLowerCase();
+    if (phaseIdByKey.has(key)) continue;
+    const phaseId = db.collection("_").doc().id;
+    phaseIdByKey.set(key, phaseId);
+    phaseNamesInOrder.push(phaseName);
+    batch.set(db.doc(`projects/${projectId}/phases/${phaseId}`), {
+      projectId,
+      ownerId: authUid,
+      name: phaseName,
+      order: phaseNamesInOrder.length - 1,
+      status: "ACTIVE",
+      createdAt: FieldValue.serverTimestamp(),
+    });
+  }
+
+  for (const task of draft.tasks) {
+    const phaseName = task.phase?.trim() || "";
+    const phaseId = phaseName ? phaseIdByKey.get(phaseName.toLowerCase()) ?? null : null;
     const taskRef = db.collection(`projects/${projectId}/tasks`).doc();
     batch.set(taskRef, {
+      projectId,
+      ownerId: authUid,
       title: task.title,
       description: task.description,
-      phase: task.phase,
+      phase: phaseName || null,
+      phaseTitle: phaseName || null,
+      phaseId,
       priority: task.priority,
       estimatedDuration: task.estimatedDuration,
       status: "OPEN",
       order: order++,
+      required: false,
+      assigneeId: null,
+      assigneeName: null,
+      isActive: true,
+      origin: "CUSTOM",
+      source: "ai",
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });

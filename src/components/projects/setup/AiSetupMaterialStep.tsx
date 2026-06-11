@@ -40,6 +40,7 @@ export function AiSetupMaterialStep({
       <div>
         <h3 className="text-lg font-bold text-[#0F2A4D]">{t("projects.aiSetup.material.title")}</h3>
         <p className="mt-1 text-sm text-[#475569] leading-relaxed">{t("projects.aiSetup.material.lead")}</p>
+        <p className="mt-1 text-xs text-[#64748B]">{t("quotes.print.customerVisibleHint")}</p>
       </div>
 
       {materials.length === 0 ? (
@@ -57,13 +58,23 @@ export function AiSetupMaterialStep({
               )}
             >
               <div className="flex items-start gap-3">
-                <input
-                  type="checkbox"
-                  checked={m.included}
-                  onChange={(e) => update(m.id, { included: e.target.checked })}
-                  className="mt-1 size-5 accent-[#E95F2A] shrink-0"
-                  aria-label={t("projects.aiSetup.col.include")}
-                />
+                <div className="flex flex-col gap-2 mt-0.5 shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={m.included}
+                    onChange={(e) => update(m.id, { included: e.target.checked })}
+                    className="size-5 accent-[#E95F2A]"
+                    aria-label={t("projects.aiSetup.col.include")}
+                  />
+                  <input
+                    type="checkbox"
+                    checked={m.customerVisible !== false}
+                    onChange={(e) => update(m.id, { customerVisible: e.target.checked })}
+                    className="size-5 accent-[#1D376A]"
+                    aria-label={t("quotes.print.customerVisible")}
+                    title={t("quotes.print.customerVisible")}
+                  />
+                </div>
                 <div className="flex-1 min-w-0 space-y-3">
                   <Input
                     value={m.name}
@@ -150,6 +161,7 @@ export function AiSetupMaterialStep({
               unit: "pcs",
               price: 0,
               included: true,
+              customerVisible: true,
             },
           ])
         }

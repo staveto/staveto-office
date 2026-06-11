@@ -1,6 +1,8 @@
 import type { Firestore } from "firebase/firestore";
 import {
   getFirestoreInstance,
+  ensureAuthTokenReady,
+  waitForAuthUser,
   doc,
   getDoc,
   setDoc,
@@ -12,6 +14,7 @@ import {
   getDocs,
   serverTimestamp,
 } from "./firebase";
+import { listOrgMemberProfilesViaCallable } from "@/services/organizations/orgMemberProfilesService";
 
 export type OrgPlan = "TEAM_5" | "TEAM_15" | "TEAM_30";
 
@@ -178,7 +181,7 @@ export async function ensureOrgMemberForOwner(orgId: string, uid: string): Promi
     await setDoc(
       memberRef,
       {
-        role: "admin",
+        role: "owner",
         userId: uid,
         status: "active",
         createdAt: serverTimestamp(),
@@ -438,6 +441,7 @@ async function listMembershipsViaMemberEmail(
 
 async function listMembershipsViaCallable(uid: string): Promise<OrgMembership[]> {
   try {
+    await ensureAuthTokenReady();
     const { getCallable } = await import("./firebase");
     const callable = getCallable<
       Record<string, never>,
@@ -596,6 +600,9 @@ export async function getUserOrgMemberships(
   uid: string,
   options?: GetUserOrgMembershipsOptions
 ): Promise<OrgMembership[]> {
+  await waitForAuthUser();
+  await ensureAuthTokenReady();
+
   const [fromGroup, fromEmail, fromCallableEarly] = await Promise.all([
     listMembershipsViaCollectionGroup(uid),
     listMembershipsViaMemberEmail(uid, options?.email),
@@ -641,24 +648,54 @@ export async function getUserOrgMemberships(
 
 export type OrgMemberRow = OrgMemberWithId & { displayName?: string | null };
 
+function resolveMemberUid(data: OrgMember, memberDocId: string): string {
+  const fromField = typeof data.userId === "string" ? data.userId.trim() : "";
+  return fromField || memberDocId;
+}
+
+function profilesToOrgMemberRows(
+  profiles: Awaited<ReturnType<typeof listOrgMemberProfilesViaCallable>>
+): OrgMemberRow[] {
+  if (!profiles) return [];
+  return profiles.map((p) => ({
+    uid: p.uid,
+    userId: p.uid,
+    role: p.role,
+    status: p.status,
+    email: p.email ?? undefined,
+    displayName: p.displayName ?? undefined,
+  }));
+}
+
 export async function listOrgMembers(orgId: string): Promise<OrgMemberRow[]> {
+  const trimmed = orgId.trim();
+  if (!trimmed) return [];
+
+  // Primary source: admin-backed callable. Client list queries are often partial
+  // because member docs may be keyed by email and rules block reading peers.
+  const fromCallable = await listOrgMemberProfilesViaCallable(trimmed);
+  if (fromCallable && fromCallable.length > 0) {
+    return profilesToOrgMemberRows(fromCallable);
+  }
+
   const db = getFirestoreInstance();
   if (!db) return [];
   try {
-    const membersRef = collection(db, "organizations", orgId, "members");
+    const membersRef = collection(db, "organizations", trimmed, "members");
     const snap = await getDocs(membersRef);
     const result: OrgMemberRow[] = [];
     for (const d of snap.docs) {
       const data = d.data() as OrgMember;
       if (data.status === "removed") continue;
+      const memberUid = resolveMemberUid(data, d.id);
       let displayName: string | null = null;
       try {
-        displayName = await getMemberDisplayName(db, d.id);
+        displayName = await getMemberDisplayName(db, memberUid);
       } catch (e) {
         if (!isFirestorePermissionDenied(e)) throw e;
       }
       result.push({
-        uid: d.id,
+        uid: memberUid,
         ...data,
         displayName: displayName ?? data.displayName ?? undefined,
       });

@@ -30,7 +30,6 @@ export function UserProfileMenu({
   const roleLabel = roleLabelKey
     ? t(roleLabelKey)
     : t("header.context.userProfileLabel");
-
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) {

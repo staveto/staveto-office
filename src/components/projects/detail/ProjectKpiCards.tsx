@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   ClipboardList,
   HardHat,
@@ -16,6 +17,7 @@ import {
   formatMoney,
   getHumanWorkflowStatusKey,
   getNextStepKey,
+  getProjectQuoteHref,
   type QuoteSummary,
 } from "@/lib/projectDashboard";
 import type { TaskDoc } from "@/lib/projects";
@@ -37,16 +39,26 @@ function KpiCard({
   label,
   value,
   highlight,
+  href,
+  linkLabel,
   className,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: string;
   highlight?: boolean;
+  href?: string;
+  linkLabel?: string;
   className?: string;
 }) {
-  return (
-    <Card className={cn("border-border/70 shadow-sm", className)}>
+  const body = (
+    <Card
+      className={cn(
+        "border-border/70 shadow-sm transition-colors",
+        href && "hover:border-[#1D376A]/35 hover:bg-[#1D376A]/[0.02]",
+        className
+      )}
+    >
       <CardContent className="p-4 space-y-2">
         <div className="flex items-center gap-2 text-muted-foreground">
           <Icon className="size-4 shrink-0" aria-hidden />
@@ -55,13 +67,26 @@ function KpiCard({
         <p
           className={cn(
             "text-base font-semibold leading-snug",
-            highlight ? "text-[#e06737]" : "text-[#1D376A]"
+            highlight ? "text-[#e06737]" : "text-[#1D376A]",
+            href && "group-hover:underline"
           )}
         >
           {value}
         </p>
       </CardContent>
     </Card>
+  );
+
+  if (!href) return body;
+
+  return (
+    <Link
+      href={href}
+      className="group block rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1D376A]/40"
+      aria-label={linkLabel}
+    >
+      {body}
+    </Link>
   );
 }
 
@@ -78,6 +103,9 @@ export function ProjectKpiCards({
   const statusKey = getHumanWorkflowStatusKey(project);
   const statusLabel = t(`projects.workflow.status.${statusKey}`);
   const nextStep = t(getNextStepKey(project));
+
+  const quoteHref = getProjectQuoteHref(project);
+  const hasClickableQuote = quoteSummary.hasQuote;
 
   const quoteValue =
     quoteSummary.grossTotal != null && quoteSummary.hasQuote
@@ -118,6 +146,12 @@ export function ProjectKpiCards({
         icon={Receipt}
         label={t("projects.dashboard.kpi.quoteValue")}
         value={quoteValue}
+        href={quoteHref}
+        linkLabel={
+          hasClickableQuote
+            ? t("projects.dashboard.kpi.openQuote", { value: quoteValue })
+            : t("projects.dashboard.action.prepareQuote")
+        }
       />
       <KpiCard icon={HardHat} label={t("projects.dashboard.kpi.work")} value={workValue} />
       <KpiCard icon={Users} label={t("projects.dashboard.kpi.team")} value={teamValue} />

@@ -227,6 +227,36 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if isSignedIn() && request.auth.uid == userId;
 
+      match /projectInvites/{inviteId} {
+        allow read: if isSignedIn() && request.auth.uid == userId;
+        allow create, update: if isSignedIn()
+          && (
+            request.auth.uid == userId
+            || (
+              request.resource.data.orgId != null
+              && canManageOrganization(request.resource.data.orgId)
+            )
+          );
+        allow delete: if isSignedIn() && request.auth.uid == userId;
+      }
+
+      match /notifications/{notificationId} {
+        allow read: if isSignedIn() && request.auth.uid == userId;
+        allow create: if isSignedIn()
+          && (
+            request.auth.uid == userId
+            || (
+              request.resource.data.assignedBy == request.auth.uid
+              && request.resource.data.orgId != null
+              && canManageOrganization(request.resource.data.orgId)
+            )
+          );
+        allow update: if isSignedIn()
+          && request.auth.uid == userId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+        allow delete: if isSignedIn() && request.auth.uid == userId;
+      }
+
       match /equipment/{equipmentId} {
         allow read, write: if isSignedIn() && request.auth.uid == userId;
       }
@@ -364,6 +394,16 @@ service cloud.firestore {
 
       match /documents/{documentId} {
         allow read, write: if canAccessProjectId(projectId);
+      }
+
+      match /members/{memberId} {
+        allow read: if canAccessProjectId(projectId);
+        allow write: if canManageProjectDoc();
+      }
+
+      match /phases/{phaseId} {
+        allow read: if canAccessProjectId(projectId);
+        allow write: if canManageProjectDoc();
       }
     }
 

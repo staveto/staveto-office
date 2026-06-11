@@ -23,12 +23,12 @@ import {
   defaultCalculation,
   freezeCalculationForSave,
   parseAiSetupMeta,
-  plainNotesFromQuoteDraft,
   resolveSetupMaterialRows,
   seedWorkEstimate,
   serializeAiSetupMeta,
   workEstimateFromQuoteItems,
 } from "./aiSetupHelpers";
+import { parseQuoteDocumentMeta, type QuoteDocumentMeta } from "@/lib/quoteDocumentMeta";
 import { syncMaterialRowsToQuoteItems, syncWorkEstimateToQuoteItems } from "./aiSetupPersistence";
 import type {
   AiSetupCalculation,
@@ -62,8 +62,8 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
   const [calculation, setCalculation] = useState<AiSetupCalculation>(() =>
     defaultCalculation(project.quoteDraftVatPercent)
   );
-  const [quoteNotes, setQuoteNotes] = useState(() =>
-    plainNotesFromQuoteDraft(project.quoteDraftNotes)
+  const [documentMeta, setDocumentMeta] = useState<QuoteDocumentMeta>(() =>
+    parseQuoteDocumentMeta(project.quoteDraftNotes)
   );
 
   useEffect(() => {
@@ -89,7 +89,7 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
         const meta = parseAiSetupMeta(project.quoteDraftNotes);
         setWorkEstimate(meta?.workEstimate ?? workEstimateFromQuoteItems(quoteItems, tasks));
         setCalculation(meta?.calculation ?? defaultCalculation(project.quoteDraftVatPercent));
-        setQuoteNotes(plainNotesFromQuoteDraft(project.quoteDraftNotes));
+        setDocumentMeta(parseQuoteDocumentMeta(project.quoteDraftNotes));
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : t("projects.aiSetup.loadError"));
@@ -121,14 +121,18 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
   const persistMeta = useCallback(
     async (calcOverride?: AiSetupCalculation) => {
       const calc = calcOverride ?? calculation;
-      const notes = serializeAiSetupMeta({ workEstimate, calculation: calc }, quoteNotes);
+      const notes = serializeAiSetupMeta(
+        { workEstimate, calculation: calc },
+        undefined,
+        documentMeta
+      );
       const updated = await updateDraftJobFields(project.id, {
         quoteDraftVatPercent: calc.vatPercent,
         quoteDraftNotes: notes,
       });
       onProjectUpdated(updated);
     },
-    [calculation, onProjectUpdated, project.id, quoteNotes, workEstimate]
+    [calculation, documentMeta, onProjectUpdated, project.id, workEstimate]
   );
 
   const goToStep = (step: AiSetupStepId) => setActiveStep(step);
@@ -200,7 +204,8 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
 
       const notes = serializeAiSetupMeta(
         { workEstimate: syncedWork, calculation: frozen },
-        quoteNotes
+        undefined,
+        documentMeta
       );
       const updatedProject = await updateDraftJobFields(project.id, {
         quoteDraftVatPercent: frozen.vatPercent,
@@ -220,8 +225,13 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
         try {
           const quoteId = await upsertQuoteFromProject(activeWorkspace, userId, project.id);
           setSavedQuoteId(quoteId);
-        } catch {
-          // Project draft saved; Firestore quote sync is optional.
+        } catch (syncErr) {
+          console.warn("[AiProjectSetup] quote sync failed:", syncErr);
+          setError(
+            syncErr instanceof Error
+              ? `${t("projects.aiSetup.saveOkQuoteSyncFailed")} ${syncErr.message}`
+              : t("projects.aiSetup.saveOkQuoteSyncFailed")
+          );
         }
       }
     } catch (e) {
@@ -356,8 +366,8 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
               materials={materials}
               work={workEstimate}
               totals={totals}
-              quoteNotes={quoteNotes}
-              onQuoteNotesChange={setQuoteNotes}
+              documentMeta={documentMeta}
+              onDocumentMetaChange={setDocumentMeta}
               onSaveDraft={() => void saveQuoteDraft()}
               onExportPdf={() => void exportPdf()}
               saving={saving}

@@ -18,7 +18,11 @@ import {
 } from "./firebase";
 import type { Workspace } from "./workspace-types";
 import type { ActiveWorkspace } from "@/types/workspace";
-import { getProjectWorkspaceWriteFields } from "@/services/workspace/workspaceService";
+import {
+  getProjectWorkspaceWriteFields,
+  getQuoteWorkspaceWriteFieldsFromProject,
+} from "@/services/workspace/workspaceService";
+import type { ProjectDoc } from "./projects";
 import { computeItemTotal, computeEstimateTotals } from "./estimateUtils";
 import type { QuoteDraftItemCategory } from "./quoteDraftItems";
 
@@ -75,6 +79,7 @@ export type CreateQuoteInput = {
   items: QuoteItemInput[];
   vatPercent?: number;
   notes?: string;
+  currency?: string;
 };
 
 export type UpdateQuoteInput = {
@@ -168,6 +173,50 @@ export function computeQuoteTotals(items: QuoteItemLine[], vatPercent: number) {
   return computeEstimateTotals(items, vatPercent);
 }
 
+function isQuotesIndexError(e: unknown): boolean {
+  const err = e as { code?: string; message?: string };
+  return err?.code === "failed-precondition" || (err?.message?.includes("index") ?? false);
+}
+
+function sortQuotesByUpdatedAt(quotes: QuoteDoc[]): QuoteDoc[] {
+  return [...quotes].sort((a, b) => {
+    const ta = a.updatedAt ? Date.parse(a.updatedAt) : 0;
+    const tb = b.updatedAt ? Date.parse(b.updatedAt) : 0;
+    return tb - ta;
+  });
+}
+
+async function runQuotesQuery(
+  quotesRef: ReturnType<typeof collection>,
+  workspace: Workspace,
+  uid: string,
+  options?: { withOrderBy?: boolean }
+): Promise<QuoteDoc[]> {
+  const withOrderBy = options?.withOrderBy !== false;
+  let q;
+  if (workspace.type === "personal") {
+    q = withOrderBy
+      ? query(
+          quotesRef,
+          where("ownerId", "==", uid),
+          orderBy("updatedAt", "desc"),
+          limit(50)
+        )
+      : query(quotesRef, where("ownerId", "==", uid), limit(50));
+  } else {
+    q = withOrderBy
+      ? query(
+          quotesRef,
+          where("orgId", "==", workspace.id),
+          orderBy("updatedAt", "desc"),
+          limit(50)
+        )
+      : query(quotesRef, where("orgId", "==", workspace.id), limit(50));
+  }
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => toQuoteDoc(d.id, d.data() as Record<string, unknown>));
+}
+
 export async function listQuotesForWorkspace(
   workspace: Workspace,
   uid: string
@@ -176,38 +225,23 @@ export async function listQuotesForWorkspace(
   if (!db) return [];
 
   const quotesRef = collection(db, "quotes");
-  let q;
+
   try {
-    if (workspace.type === "personal") {
-      q = query(
-        quotesRef,
-        where("ownerId", "==", uid),
-        orderBy("updatedAt", "desc"),
-        limit(50)
-      );
-    } else {
-      q = query(
-        quotesRef,
-        where("orgId", "==", workspace.id),
-        orderBy("updatedAt", "desc"),
-        limit(50)
-      );
-    }
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => toQuoteDoc(d.id, d.data() as Record<string, unknown>));
+    return await runQuotesQuery(quotesRef, workspace, uid, { withOrderBy: true });
   } catch (e) {
-    const err = e as { code?: string; message?: string };
-    if (err?.code === "failed-precondition" || err?.message?.includes("index")) {
-      throw new Error(
-        `Index required. Add Firestore index: quotes ${
-          workspace.type === "personal"
-            ? "ownerId (Asc), updatedAt (Desc)"
-            : "orgId (Asc), updatedAt (Desc)"
-        }`
-      );
-    }
-    throw e;
+    if (!isQuotesIndexError(e)) throw e;
+    const quotes = await runQuotesQuery(quotesRef, workspace, uid, { withOrderBy: false });
+    return sortQuotesByUpdatedAt(quotes).slice(0, 50);
   }
+}
+
+export async function listQuotesForProject(projectId: string): Promise<QuoteDoc[]> {
+  const db = getFirestoreInstance();
+  if (!db) return [];
+
+  const q = query(collection(db, "quotes"), where("projectId", "==", projectId));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => toQuoteDoc(d.id, d.data() as Record<string, unknown>));
 }
 
 export async function getQuote(quoteId: string): Promise<QuoteDoc | null> {
@@ -245,7 +279,8 @@ export async function hasQuoteAccess(
 export async function createQuote(
   workspace: ActiveWorkspace,
   uid: string,
-  input: CreateQuoteInput
+  input: CreateQuoteInput,
+  scopeProject?: Pick<ProjectDoc, "orgId" | "ownerId" | "workspaceType" | "workspaceId">
 ): Promise<string> {
   const db = getFirestoreInstance();
   if (!db) throw new Error("Firestore not configured");
@@ -274,11 +309,13 @@ export async function createQuote(
     vatPercent,
     vatAmount: totals.vatAmount,
     grandTotal: totals.grandTotal,
-    currency: "EUR",
+    currency: input.currency?.trim() || "CHF",
     notes: input.notes?.trim() || null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-    ...getProjectWorkspaceWriteFields(workspace, uid),
+    ...(scopeProject
+      ? getQuoteWorkspaceWriteFieldsFromProject(scopeProject, workspace, uid)
+      : getProjectWorkspaceWriteFields(workspace, uid)),
   });
 
   return ref.id;

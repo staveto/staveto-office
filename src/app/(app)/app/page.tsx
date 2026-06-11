@@ -125,6 +125,7 @@ export default function OverviewPage() {
           displayName={displayName}
           stats={stats}
           statsLoading={statsLoading}
+          uid={user.id}
         />
       </div>
     );

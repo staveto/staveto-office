@@ -5,11 +5,15 @@
  */
 import {
   getFirestoreInstance,
+  ensureAuthTokenReady,
+  waitForAuthUser,
   doc,
   getDoc,
   getDocs,
+  getDocsFromServer,
   addDoc,
   collection,
+  collectionGroup,
   query,
   where,
   orderBy,
@@ -19,10 +23,14 @@ import {
   serverTimestamp,
   Timestamp,
 } from "./firebase";
+import { legacyPhaseIdFromName } from "@/services/projects/projectPhasesService";
 import type { Workspace } from "./workspace-types";
 import type { ActiveWorkspace } from "@/types/workspace";
 import { getProjectWorkspaceWriteFields } from "@/services/workspace/workspaceService";
 import { ensureOrgMemberForOwner } from "@/lib/organizations";
+import { isProjectAssignedToUser } from "@/lib/projectOwnership";
+import { listTeamProjectsViaCallable } from "@/services/projects/teamProjectsListService";
+import { ensureProjectOrgLink } from "@/services/projects/businessProjectAssignmentService";
 import { fromLegacyWorkspace } from "./workspace-types";
 
 /** Thrown when a Firestore index is required but missing. */
@@ -110,6 +118,13 @@ export type ProjectDoc = {
   assignedMemberIds?: string[];
 };
 
+export type TaskAssignedTool = {
+  id: string;
+  name: string;
+  type?: string | null;
+  qrCode?: string | null;
+};
+
 export type TaskDoc = {
   id: string;
   projectId: string;
@@ -120,7 +135,11 @@ export type TaskDoc = {
   required?: boolean;
   assigneeId?: string | null;
   assigneeName?: string | null;
+  assignedToolIds?: string[];
+  assignedTools?: TaskAssignedTool[];
   dueDate?: string;
+  plannedStart?: string;
+  plannedEnd?: string;
   createdAt?: string;
   updatedAt?: string;
   isActive?: boolean;
@@ -215,6 +234,8 @@ function toQuoteDraftItemDoc(
     return undefined;
   };
   const category = data.category === "work" ? "work" : "material";
+  const customerVisible =
+    typeof data.customerVisible === "boolean" ? data.customerVisible : undefined;
   return {
     id,
     projectId,
@@ -224,6 +245,7 @@ function toQuoteDraftItemDoc(
     unit: (data.unit as string) || "ks",
     unitPrice: typeof data.unitPrice === "number" ? data.unitPrice : 0,
     note: (data.note as string) || undefined,
+    customerVisible,
     createdAt: toStr(data.createdAt),
     updatedAt: toStr(data.updatedAt),
   };
@@ -259,17 +281,33 @@ function toTaskDoc(id: string, projectId: string, data: Record<string, unknown>)
     }
     return undefined;
   };
+  const legacyPhaseName =
+    (typeof data.phaseTitle === "string" && data.phaseTitle.trim()) ||
+    (typeof data.phase === "string" && data.phase.trim()) ||
+    "";
+  const phaseIdRaw = data.phaseId as string | null | undefined;
+  const phaseId =
+    phaseIdRaw?.trim() ||
+    (legacyPhaseName ? legacyPhaseIdFromName(legacyPhaseName) : undefined);
   return {
     id,
     projectId,
     title: (data.title as string) ?? "",
     status: (data.status as string) ?? "OPEN",
-    phaseId: (data.phaseId as string | null | undefined) ?? undefined,
+    phaseId,
     order: typeof data.order === "number" ? data.order : undefined,
     required: data.required as boolean | undefined,
     assigneeId: (data.assigneeId as string | null) ?? undefined,
     assigneeName: (data.assigneeName as string | null) ?? undefined,
+    assignedToolIds: Array.isArray(data.assignedToolIds)
+      ? (data.assignedToolIds as string[]).filter((id) => typeof id === "string")
+      : undefined,
+    assignedTools: Array.isArray(data.assignedTools)
+      ? (data.assignedTools as TaskAssignedTool[])
+      : undefined,
     dueDate: (data.dueDate as string) || undefined,
+    plannedStart: toStr(data.plannedStart) || toStr(data.dueDate),
+    plannedEnd: toStr(data.plannedEnd),
     createdAt: toStr(data.createdAt),
     updatedAt: toStr(data.updatedAt),
     isActive: data.isActive !== undefined ? (data.isActive as boolean) : undefined,
@@ -308,6 +346,48 @@ function resolveListScope(
   return { mode: "team", orgId: workspace.id };
 }
 
+function sortProjectsByUpdatedAt(projects: ProjectDoc[]): ProjectDoc[] {
+  return [...projects].sort((a, b) => {
+    const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+    const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+    return bTime - aTime;
+  });
+}
+
+function projectMatchesTeamOrg(
+  project: ProjectDoc,
+  orgId: string,
+  uid?: string
+): boolean {
+  if (uid && project.ownerId === uid) return true;
+  const linkedOrgId = project.orgId?.trim() || project.workspaceId?.trim() || "";
+  if (!linkedOrgId) return true;
+  return linkedOrgId === orgId;
+}
+
+async function getQuerySnapshotSmart(q: ReturnType<typeof query>) {
+  try {
+    const snap = await getDocs(q);
+    const fromCache = (snap as { metadata?: { fromCache?: boolean } }).metadata?.fromCache;
+    if (snap.size === 0 && fromCache) {
+      try {
+        return await getDocsFromServer(q);
+      } catch (serverErr) {
+        if (isFirebasePermissionDenied(serverErr)) throw serverErr;
+        return snap;
+      }
+    }
+    return snap;
+  } catch (e) {
+    if (isFirebasePermissionDenied(e)) throw e;
+    try {
+      return await getDocsFromServer(q);
+    } catch {
+      throw e;
+    }
+  }
+}
+
 async function runProjectsQuery(
   projectsRef: ReturnType<typeof collection>,
   scope: { mode: "personal"; uid: string } | { mode: "team"; orgId: string },
@@ -334,9 +414,258 @@ async function runProjectsQuery(
         )
       : query(projectsRef, where("orgId", "==", scope.orgId), limit(50));
   }
-  const snap = await getDocs(q);
+  const snap = await getQuerySnapshotSmart(q);
   return snap.docs
     .map((d) => toProjectDoc(d.id, d.data() as Record<string, unknown>));
+}
+
+async function runWorkspaceIdProjectsQuery(
+  projectsRef: ReturnType<typeof collection>,
+  orgId: string,
+  options?: { withOrderBy?: boolean }
+): Promise<ProjectDoc[]> {
+  const withOrderBy = options?.withOrderBy !== false;
+  const q = withOrderBy
+    ? query(
+        projectsRef,
+        where("workspaceId", "==", orgId),
+        orderBy("updatedAt", "desc"),
+        limit(50)
+      )
+    : query(projectsRef, where("workspaceId", "==", orgId), limit(50));
+  const snap = await getQuerySnapshotSmart(q);
+  return snap.docs.map((d) => toProjectDoc(d.id, d.data() as Record<string, unknown>));
+}
+
+function scheduleOwnedProjectOrgLinks(
+  projects: Iterable<ProjectDoc>,
+  orgId: string,
+  uid: string
+): void {
+  for (const project of projects) {
+    if (project.ownerId !== uid) continue;
+    const linked = project.orgId?.trim() || project.workspaceId?.trim() || "";
+    if (linked) continue;
+    void ensureProjectOrgLink({ projectId: project.id, orgId, actorUid: uid }).catch(() => {
+      /* best-effort repair for legacy rows */
+    });
+  }
+}
+
+async function runAssignedProjectsQuery(
+  projectsRef: ReturnType<typeof collection>,
+  uid: string
+): Promise<ProjectDoc[]> {
+  const q = query(
+    projectsRef,
+    where("assignedMemberIds", "array-contains", uid),
+    limit(50)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => toProjectDoc(d.id, d.data() as Record<string, unknown>));
+}
+
+function projectIdFromMembersDocPath(path: string): string | null {
+  const parts = path.split("/");
+  const projectsIdx = parts.indexOf("projects");
+  if (projectsIdx < 0 || projectsIdx + 1 >= parts.length) return null;
+  return parts[projectsIdx + 1] ?? null;
+}
+
+async function loadProjectsByIds(projectIds: string[]): Promise<ProjectDoc[]> {
+  const db = getFirestoreInstance();
+  if (!db || projectIds.length === 0) return [];
+
+  const unique = [...new Set(projectIds.filter(Boolean))].slice(0, 50);
+  const rows = await Promise.all(
+    unique.map(async (projectId) => {
+      try {
+        const snap = await getDoc(doc(db, "projects", projectId));
+        if (!snap.exists()) return null;
+        return toProjectDoc(snap.id, snap.data() as Record<string, unknown>);
+      } catch {
+        return null;
+      }
+    })
+  );
+  return rows.filter((row): row is ProjectDoc => row != null);
+}
+
+/**
+ * Projects visible to a worker/viewer: assignedMemberIds, active members subcollection,
+ * and projectRefs (mobile-aligned fallbacks).
+ */
+export async function listProjectsAssignedToUser(
+  uid: string,
+  options?: { orgId?: string | null }
+): Promise<ProjectDoc[]> {
+  const db = getFirestoreInstance();
+  if (!db || !uid.trim()) return [];
+
+  await waitForAuthUser();
+  await ensureAuthTokenReady();
+
+  const orgId = options?.orgId?.trim() || null;
+  const byId = new Map<string, ProjectDoc>();
+  const memberAccessIds = new Set<string>();
+
+  const includeProject = (project: ProjectDoc | null): void => {
+    if (!project || project.archivedAt) return;
+    if (orgId && project.orgId?.trim() && project.orgId !== orgId) return;
+    if (
+      project.ownerId === uid ||
+      isProjectAssignedToUser(project, uid) ||
+      memberAccessIds.has(project.id)
+    ) {
+      byId.set(project.id, project);
+    }
+  };
+
+  try {
+    const memberSnap = await getDocs(
+      query(collectionGroup(db, "members"), where("userId", "==", uid), limit(100))
+    );
+    const projectIds: string[] = [];
+    for (const memberDoc of memberSnap.docs) {
+      const projectId = projectIdFromMembersDocPath(memberDoc.ref.path);
+      if (!projectId) continue;
+      const data = memberDoc.data() as Record<string, unknown>;
+      const status = (data.status as string) || "active";
+      if (status === "removed" || status === "invited") continue;
+      memberAccessIds.add(projectId);
+      projectIds.push(projectId);
+    }
+    const fromMembers = await loadProjectsByIds([...new Set(projectIds)]);
+    fromMembers.forEach(includeProject);
+  } catch {
+    /* rules / index */
+  }
+
+  try {
+    const assigned = await runAssignedProjectsQuery(collection(db, "projects"), uid);
+    assigned.forEach(includeProject);
+  } catch {
+    /* rules / index */
+  }
+
+  try {
+    const fromRefs = await listProjectsViaProjectRefs(uid);
+    fromRefs.forEach(includeProject);
+  } catch {
+    /* rules */
+  }
+
+  return [...byId.values()].sort((a, b) => {
+    const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+    const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+    return bTime - aTime;
+  });
+}
+
+/** Mobile parity: users/{uid}/projectRefs + per-doc reads (works when orgId list queries fail). */
+async function listProjectsViaProjectRefs(uid: string): Promise<ProjectDoc[]> {
+  const db = getFirestoreInstance();
+  if (!db) return [];
+
+  const refsQuery = collection(db, "users", uid, "projectRefs");
+  const refsSnap = await getQuerySnapshotSmart(query(refsQuery));
+  const ids = refsSnap.docs.map((refDoc) => {
+    const raw = refDoc.data() as Record<string, unknown>;
+    const fromField =
+      typeof raw.projectId === "string" && raw.projectId.trim()
+        ? raw.projectId.trim()
+        : "";
+    return fromField || refDoc.id;
+  });
+  return loadProjectsByIds(ids);
+}
+
+/** Project membership via collectionGroup — paths filtered to projects members only. */
+async function listProjectIdsViaMembersCollectionGroup(uid: string): Promise<string[]> {
+  const db = getFirestoreInstance();
+  if (!db) return [];
+
+  const snap = await getDocs(
+    query(collectionGroup(db, "members"), where("userId", "==", uid), limit(100))
+  );
+  const ids = new Set<string>();
+  for (const memberDoc of snap.docs) {
+    const projectId = projectIdFromMembersDocPath(memberDoc.ref.path);
+    if (projectId) ids.add(projectId);
+  }
+  return [...ids];
+}
+
+async function listTeamProjectsWithFallback(
+  projectsRef: ReturnType<typeof collection>,
+  orgId: string,
+  uid: string,
+  indexHint: string
+): Promise<ProjectDoc[]> {
+  await ensureOrgMemberForOwner(orgId, uid);
+
+  const merged = new Map<string, ProjectDoc>();
+
+  const mergeRows = (rows: ProjectDoc[]) => {
+    for (const project of rows) {
+      if (!projectMatchesTeamOrg(project, orgId, uid)) continue;
+      merged.set(project.id, project);
+    }
+  };
+
+  const collectCore = async (loader: () => Promise<ProjectDoc[]>) => {
+    try {
+      mergeRows(await loader());
+    } catch (e) {
+      if (!isFirebasePermissionDenied(e)) {
+        wrapIndexError(e, indexHint);
+      }
+    }
+  };
+
+  const collectOptional = async (loader: () => Promise<ProjectDoc[]>) => {
+    try {
+      mergeRows(await loader());
+    } catch (e) {
+      if (!isFirebasePermissionDenied(e)) {
+        wrapIndexError(e, indexHint);
+      }
+    }
+  };
+
+  const teamScope = { mode: "team" as const, orgId };
+  const personalScope = { mode: "personal" as const, uid };
+
+  let callableError: string | undefined;
+
+  await Promise.all([
+    (async () => {
+      const callableResult = await listTeamProjectsViaCallable(orgId);
+      if (callableResult.errorMessage) {
+        callableError = callableResult.errorMessage;
+      }
+      if (callableResult.projects?.length) mergeRows(callableResult.projects);
+    })(),
+    collectOptional(() => runProjectsQuery(projectsRef, personalScope, { withOrderBy: false })),
+    collectOptional(() => listProjectsViaProjectRefs(uid)),
+    collectOptional(async () => {
+      const ids = await listProjectIdsViaMembersCollectionGroup(uid);
+      return loadProjectsByIds(ids);
+    }),
+    collectOptional(() => runAssignedProjectsQuery(projectsRef, uid)),
+  ]);
+
+  await collectCore(() => runProjectsQuery(projectsRef, teamScope, { withOrderBy: true }));
+  await collectCore(() => runProjectsQuery(projectsRef, teamScope, { withOrderBy: false }));
+  await collectOptional(() => runWorkspaceIdProjectsQuery(projectsRef, orgId, { withOrderBy: false }));
+  await collectCore(() => runProjectsQuery(projectsRef, personalScope, { withOrderBy: true }));
+
+  const result = sortProjectsByUpdatedAt([...merged.values()]).slice(0, 50);
+  scheduleOwnedProjectOrgLinks(result, orgId, uid);
+  if (result.length === 0 && callableError && process.env.NODE_ENV === "development") {
+    console.warn("[projects] team list empty; callable error:", callableError);
+  }
+  return result;
 }
 
 /**
@@ -350,44 +679,39 @@ export async function listProjectsForWorkspace(
   const db = getFirestoreInstance();
   if (!db) return [];
 
+  await waitForAuthUser();
+  await ensureAuthTokenReady();
+
   const scope = resolveListScope(workspace, uid);
   const projectsRef = collection(db, "projects");
-
-  if (scope.mode === "team") {
-    await ensureOrgMemberForOwner(scope.orgId, uid);
-  }
-
-  const queryScope =
-    scope.mode === "personal"
-      ? ({ mode: "personal" as const, uid })
-      : ({ mode: "team" as const, orgId: scope.orgId });
 
   const indexHint =
     scope.mode === "personal"
       ? "projects: ownerId (Asc), updatedAt (Desc)"
       : "projects: orgId (Asc), updatedAt (Desc)";
 
+  if (scope.mode === "team") {
+    let rows = await listTeamProjectsWithFallback(projectsRef, scope.orgId, uid, indexHint);
+    if (rows.length === 0) {
+      await ensureAuthTokenReady(true);
+      rows = await listTeamProjectsWithFallback(projectsRef, scope.orgId, uid, indexHint);
+    }
+    return rows;
+  }
+
   try {
-    return await runProjectsQuery(projectsRef, queryScope, { withOrderBy: true });
+    return await runProjectsQuery(projectsRef, { mode: "personal", uid }, { withOrderBy: true });
   } catch (e) {
-    if (isFirebasePermissionDenied(e) && scope.mode === "team") {
-      await ensureOrgMemberForOwner(scope.orgId, uid);
+    if (isFirebasePermissionDenied(e)) {
       try {
-        return await runProjectsQuery(projectsRef, queryScope, { withOrderBy: true });
-      } catch (retryErr) {
-        if (!isFirebasePermissionDenied(retryErr)) {
-          wrapIndexError(retryErr, indexHint);
+        return await runProjectsQuery(projectsRef, { mode: "personal", uid }, { withOrderBy: false });
+      } catch (fallbackErr) {
+        if (isFirebasePermissionDenied(fallbackErr)) {
+          throw new Error(
+            "Missing or insufficient permissions. Deploy Firestore rules from mobile/firestore.rules (see docs/FIRESTORE_RULES_NOTES.md)."
+          );
         }
-        try {
-          return await runProjectsQuery(projectsRef, queryScope, { withOrderBy: false });
-        } catch (fallbackErr) {
-          if (isFirebasePermissionDenied(fallbackErr)) {
-            throw new Error(
-              "Missing or insufficient permissions. Deploy Firestore rules from firestore.rules (see docs/FIRESTORE_RULES_NOTES.md)."
-            );
-          }
-          wrapIndexError(fallbackErr, indexHint);
-        }
+        wrapIndexError(fallbackErr, indexHint);
       }
     }
     wrapIndexError(e, indexHint);
@@ -600,6 +924,7 @@ export async function createQuoteDraftItem(
     unit,
     unitPrice,
     note: input.note?.trim() || null,
+    customerVisible: input.customerVisible === false ? false : true,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
@@ -634,6 +959,7 @@ export async function updateQuoteDraftItem(
     update.category = data.category === "work" ? "work" : "material";
   }
   if (data.note !== undefined) update.note = data.note.trim() || null;
+  if (data.customerVisible !== undefined) update.customerVisible = data.customerVisible;
 
   await updateDoc(ref, update);
   await updateProjectUpdatedAt(projectId);

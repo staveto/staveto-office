@@ -26,6 +26,7 @@ import {
   query,
   where,
   getDocs,
+  getDocsFromServer,
   orderBy,
   limit,
   serverTimestamp,
@@ -74,6 +75,41 @@ export function getAuthInstance() {
 export function getFirestoreInstance() {
   const app = getApp();
   return app ? getFirestore(app) : null;
+}
+
+export function isFirebaseConfigured(): boolean {
+  return !!(firebaseConfig.apiKey && firebaseConfig.appId && firebaseConfig.projectId);
+}
+
+/** Firestore rules need a fresh ID token — avoid reads during the post-login race. */
+export async function ensureAuthTokenReady(forceRefresh = false): Promise<string | null> {
+  const auth = getAuthInstance();
+  const user = auth?.currentUser;
+  if (!user) return null;
+  try {
+    return await user.getIdToken(forceRefresh);
+  } catch {
+    return null;
+  }
+}
+
+export function waitForAuthUser(timeoutMs = 12_000): Promise<User | null> {
+  const auth = getAuthInstance();
+  if (!auth) return Promise.resolve(null);
+  if (auth.currentUser) return Promise.resolve(auth.currentUser);
+
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      unsubscribe();
+      resolve(auth.currentUser);
+    }, timeoutMs);
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      clearTimeout(timer);
+      unsubscribe();
+      resolve(user);
+    });
+  });
 }
 
 export function getStorageInstance(): FirebaseStorage | null {
@@ -191,6 +227,7 @@ export {
   query,
   where,
   getDocs,
+  getDocsFromServer,
   orderBy,
   limit,
   serverTimestamp,

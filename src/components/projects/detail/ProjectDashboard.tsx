@@ -17,13 +17,22 @@ import { ProjectKpiCards } from "./ProjectKpiCards";
 import { ProjectDetailTabs } from "./ProjectDetailTabs";
 import { ProjectOverviewTab } from "./ProjectOverviewTab";
 import { ProjectTasksTab } from "./ProjectTasksTab";
+import { ProjectWorkPlanTab } from "./ProjectWorkPlanTab";
+import { listProjectPhases } from "@/services/projects/projectPhasesService";
+import type { ProjectPhaseRecord } from "@/services/projects/taskPlanningTypes";
 import { ProjectQuoteTab } from "./ProjectQuoteTab";
 import { ProjectDocumentsTab } from "./ProjectDocumentsTab";
 import { ProjectActivityTab } from "./ProjectActivityTab";
 import { ProjectExpensesPanel } from "@/components/projects/ProjectExpensesPanel";
 
 function parseTab(raw: string | null): ProjectDashboardTab {
-  if (raw === "tasks" || raw === "quote" || raw === "documents" || raw === "activity") {
+  if (
+    raw === "tasks" ||
+    raw === "workplan" ||
+    raw === "quote" ||
+    raw === "documents" ||
+    raw === "activity"
+  ) {
     return raw;
   }
   if (raw === "materials" || raw === "expenses") return "quote";
@@ -57,6 +66,7 @@ export function ProjectDashboard({
   const [quoteItems, setQuoteItems] = useState<QuoteDraftItemDoc[]>([]);
   const [documents, setDocuments] = useState<ProjectDocumentRecord[]>([]);
   const [tasksError, setTasksError] = useState<string | null>(null);
+  const [phases, setPhases] = useState<ProjectPhaseRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -70,18 +80,20 @@ export function ProjectDashboard({
       setLoading(true);
       setTasksError(null);
       try {
-        const [tasksList, items, docs] = await Promise.all([
+        const [tasksList, items, docs, phaseList] = await Promise.all([
           listProjectTasks(project.id).catch((e) => {
             if (e instanceof FirestoreIndexError) throw e;
             return [] as TaskDoc[];
           }),
           listProjectQuoteDraftItems(project.id),
           listProjectDocuments(project.id),
+          listProjectPhases(project.id),
         ]);
         if (cancelled) return;
         setTasks(tasksList);
         setQuoteItems(items);
         setDocuments(docs);
+        setPhases(phaseList);
       } catch (e) {
         if (!cancelled) {
           setTasksError(e instanceof FirestoreIndexError ? e.message : null);
@@ -151,6 +163,17 @@ export function ProjectDashboard({
           project={project}
           tasks={tasks}
           tasksError={tasksError}
+          onTasksChange={setTasks}
+          userId={userId}
+          role={role}
+        />
+      ) : activeTab === "workplan" ? (
+        <ProjectWorkPlanTab
+          project={project}
+          tasks={tasks}
+          phases={phases}
+          userId={userId}
+          role={role}
           onTasksChange={setTasks}
         />
       ) : activeTab === "quote" ? (

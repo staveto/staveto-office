@@ -17,7 +17,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatMoney } from "@/lib/format";
-import { listQuotesForWorkspace, toLegacyWorkspace } from "@/services/quotes";
+import { isProjectDraftQuoteId } from "@/lib/projectQuotePrint";
+import { listQuotesForWorkspaceEnsured } from "@/services/quotes";
 import { QuoteStatusBadge } from "@/components/quotes/QuoteStatusBadge";
 import { useSetupChecklistVisit } from "@/hooks/useSetupChecklistVisit";
 
@@ -26,7 +27,7 @@ export default function QuotesPage() {
   useSetupChecklistVisit("first_offer");
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
-  const [quotes, setQuotes] = useState<Awaited<ReturnType<typeof listQuotesForWorkspace>>>([]);
+  const [quotes, setQuotes] = useState<Awaited<ReturnType<typeof listQuotesForWorkspaceEnsured>>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,10 +36,7 @@ export default function QuotesPage() {
     setLoading(true);
     setError(null);
     try {
-      const list = await listQuotesForWorkspace(
-        toLegacyWorkspace(activeWorkspace),
-        user.id
-      );
+      const list = await listQuotesForWorkspaceEnsured(activeWorkspace, user.id);
       setQuotes(list);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("quotes.loadError"));
@@ -109,45 +107,49 @@ export default function QuotesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {quotes.map((q) => (
-                <TableRow key={q.id}>
-                  <TableCell className="font-medium">
-                    <Link
-                      href={`/app/quotes/${q.id}`}
-                      className="hover:underline text-[#1D376A]"
-                    >
-                      {q.title}
-                    </Link>
-                  </TableCell>
-                  <TableCell>{q.clientName}</TableCell>
-                  <TableCell className="text-muted-foreground text-sm">
-                    {q.projectName ? (
-                      <Link
-                        href={`/app/projects/${q.projectId}`}
-                        className="hover:underline"
-                      >
-                        {q.projectName}
+              {quotes.map((q) => {
+                const isProjectDraft = isProjectDraftQuoteId(q.id);
+                const quoteHref = isProjectDraft && q.projectId
+                  ? `/app/projects/${q.projectId}?tab=quote`
+                  : `/app/quotes/${q.id}`;
+
+                return (
+                  <TableRow key={q.id}>
+                    <TableCell className="font-medium">
+                      <Link href={quoteHref} className="hover:underline text-[#1D376A]">
+                        {q.title}
                       </Link>
-                    ) : (
-                      "—"
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <QuoteStatusBadge status={q.status} />
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatMoney(q.grandTotal)}
-                  </TableCell>
-                  <TableCell>
-                    <Link
-                      href={`/app/quotes/${q.id}`}
-                      className={buttonVariants({ variant: "ghost", size: "sm" })}
-                    >
-                      {t("quotes.view")}
-                    </Link>
-                  </TableCell>
-                </TableRow>
-              ))}
+                    </TableCell>
+                    <TableCell>{q.clientName}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {q.projectName && q.projectId ? (
+                        <Link
+                          href={`/app/projects/${q.projectId}?tab=quote`}
+                          className="hover:underline"
+                        >
+                          {q.projectName}
+                        </Link>
+                      ) : (
+                        "—"
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <QuoteStatusBadge status={q.status} />
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatMoney(q.grandTotal, q.currency || "CHF")}
+                    </TableCell>
+                    <TableCell>
+                      <Link
+                        href={quoteHref}
+                        className={buttonVariants({ variant: "ghost", size: "sm" })}
+                      >
+                        {t("quotes.view")}
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>

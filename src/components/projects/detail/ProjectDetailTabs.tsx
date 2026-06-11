@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 const TABS: ProjectDashboardTab[] = [
   "overview",
   "tasks",
+  "workplan",
   "quote",
   "documents",
   "activity",

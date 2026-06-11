@@ -1,18 +1,9 @@
 import {
-  collection,
-  getDocs,
-  limit,
-  query,
-  where,
-} from "@/lib/firebase";
-import { getFirestoreInstance } from "@/lib/firebase";
-import {
   listProjectTasks,
-  toProjectDoc,
+  listProjectsAssignedToUser,
   type ProjectDoc,
   type TaskDoc,
 } from "@/lib/projects";
-import { isProjectAssignedToUser } from "@/lib/projectOwnership";
 import { isActiveJob } from "@/lib/projectLifecycle";
 import type { ActiveWorkspace } from "@/types/workspace";
 import { isCompanyWorkspaceType } from "@/types/workspace";
@@ -46,58 +37,14 @@ export async function listAssignedProjectsForWorker(
   workspace: ActiveWorkspace,
   uid: string
 ): Promise<ProjectDoc[]> {
-  const db = getFirestoreInstance();
-  if (!db || !uid) return [];
+  if (!uid) return [];
 
   const orgId =
     workspace && isCompanyWorkspaceType(workspace.type)
       ? (workspace.orgId ?? workspace.id)
       : null;
 
-  const byId = new Map<string, ProjectDoc>();
-
-  try {
-    const assignedQuery = query(
-      collection(db, "projects"),
-      where("assignedMemberIds", "array-contains", uid),
-      limit(50)
-    );
-    const snap = await getDocs(assignedQuery);
-    for (const docSnap of snap.docs) {
-      const project = toProjectDoc(docSnap.id, (docSnap.data() ?? {}) as Record<string, unknown>);
-      if (project.archivedAt) continue;
-      if (orgId && project.orgId !== orgId) continue;
-      if (!isProjectAssignedToUser(project, uid)) continue;
-      byId.set(project.id, project);
-    }
-  } catch {
-    /* index or rules — fall back below */
-  }
-
-  if (orgId && byId.size === 0) {
-    try {
-      const orgQuery = query(
-        collection(db, "projects"),
-        where("orgId", "==", orgId),
-        limit(100)
-      );
-      const snap = await getDocs(orgQuery);
-      for (const docSnap of snap.docs) {
-        const project = toProjectDoc(docSnap.id, (docSnap.data() ?? {}) as Record<string, unknown>);
-        if (project.archivedAt) continue;
-        if (!isProjectAssignedToUser(project, uid)) continue;
-        byId.set(project.id, project);
-      }
-    } catch {
-      return [];
-    }
-  }
-
-  return [...byId.values()].sort((a, b) => {
-    const aTime = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
-    const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
-    return bTime - aTime;
-  });
+  return listProjectsAssignedToUser(uid, { orgId });
 }
 
 async function loadOpenTasksForProjects(

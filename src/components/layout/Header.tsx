@@ -7,6 +7,8 @@ import { useI18n } from "@/i18n/I18nContext";
 import { isCompanyWorkspaceType } from "@/types/workspace";
 import { shouldShowWorkerDashboard } from "@/lib/workspaceProduct";
 import { ActiveCompanyContextSelector } from "./ActiveCompanyContextSelector";
+import { NotificationsDropdown } from "./NotificationsDropdown";
+import { ThemeToggle } from "./ThemeToggle";
 import { UserProfileMenu } from "./UserProfileMenu";
 
 const PAGE_TITLES: Record<string, string> = {
@@ -69,7 +71,7 @@ export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
   }
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-[#f0f4f8] px-4 md:px-6">
+    <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background/95 px-4 backdrop-blur-sm md:px-6">
       <div className="flex min-w-0 items-center gap-3">
         <button
           type="button"
@@ -86,6 +88,8 @@ export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
       </div>
 
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        <ThemeToggle />
+        <NotificationsDropdown />
         <ActiveCompanyContextSelector />
         <UserProfileMenu />
       </div>

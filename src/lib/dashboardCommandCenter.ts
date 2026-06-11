@@ -61,11 +61,16 @@ export function isOrgTrialing(org: Organization | null | undefined): boolean {
 export function isSetupDashboardMode(
   org: Organization | null | undefined,
   stats: DashboardStats,
-  items: SetupChecklistItem[]
+  items: SetupChecklistItem[],
+  setupProgress?: CompanySetupProgress
 ): boolean {
+  if (setupProgress?.dismissed) return false;
   if (!isOrgTrialing(org)) return false;
   const progress = getSetupProgress(items);
   if (progress.completed >= progress.total) return false;
+  // Keep operations dashboard when projects exist or stats failed to load.
+  if (stats.projectsCount === null) return false;
+  if ((stats.projectsCount ?? 0) > 0) return false;
   return stats.activeJobsCount === 0;
 }
 
@@ -88,7 +93,7 @@ export function resolveSetupDashboardState(
   );
   return {
     items,
-    setupMode: isSetupDashboardMode(org, stats, items),
+    setupMode: isSetupDashboardMode(org, stats, items, setupProgress),
   };
 }
 
@@ -199,6 +204,7 @@ export function getFirstIncompleteSetupItem(
 }
 
 export function isEmptyCompanyMode(stats: DashboardStats): boolean {
+  if (stats.projectsCount === null || stats.quotesCount === null) return false;
   const projects = stats.projectsCount ?? 0;
   const offers = stats.quotesCount ?? 0;
   return projects === 0 && offers === 0 && buildActivityFeed(stats).length === 0;

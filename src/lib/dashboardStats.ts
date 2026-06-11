@@ -114,18 +114,18 @@ export async function fetchDashboardStats(
   let delayedJobs: DashboardJobPreview[] = [];
   let quotesRecent: DashboardQuotePreview[] = [];
 
+  const isCompany =
+    "source" in workspace
+      ? isCompanyWorkspaceType(workspace.type)
+      : (workspace as Workspace).type === "team";
+
   const legacyWorkspace =
     "source" in workspace
       ? toLegacyWorkspace(workspace)
       : (workspace as Workspace);
 
-  const isCompany =
-    "source" in workspace
-      ? isCompanyWorkspaceType(workspace.type)
-      : legacyWorkspace.type === "team";
-
   try {
-    const projects = await listProjectsForWorkspace(legacyWorkspace, uid);
+    const projects = await listProjectsForWorkspace(workspace, uid);
     const active = projects.filter((p) => !p.archivedAt);
     projectsCount = active.length;
 

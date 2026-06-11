@@ -58,6 +58,7 @@ export async function syncMaterialRowsToQuoteItems(
       qty: row.qty > 0 ? row.qty : 1,
       unit: normalizeSetupUnit(row.unit),
       unitPrice: row.price >= 0 ? row.price : 0,
+      customerVisible: row.customerVisible !== false,
     };
 
     const id = await upsertQuoteDraftItem(projectId, row.quoteItemId, payload);

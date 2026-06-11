@@ -31,7 +31,11 @@ export type UserProfile = {
   /** Per-org soft progress for company dashboard setup checklist (visit-based steps). */
   companySetupProgress?: Record<
     string,
-    Partial<Record<"first_offer" | "first_document", boolean>> & { updatedAt?: unknown }
+    Partial<Record<"first_offer" | "first_document", boolean>> & {
+      dismissed?: boolean;
+      dismissedAt?: unknown;
+      updatedAt?: unknown;
+    }
   >;
   onboarding?: {
     purpose?: string;

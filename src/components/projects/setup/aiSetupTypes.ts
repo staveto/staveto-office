@@ -17,6 +17,8 @@ export type AiSetupMaterialRow = {
   unit: string;
   price: number;
   included: boolean;
+  /** Default true — when false, line is hidden on customer PDF. */
+  customerVisible?: boolean;
 };
 
 export type AiSetupWorkEstimate = {

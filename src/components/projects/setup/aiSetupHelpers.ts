@@ -4,6 +4,8 @@ import type { MaterialSuggestionDoc, ProjectMaterialDoc } from "@/services/mater
 import type { MaterialUnit } from "@/services/materials/types";
 import type { QuoteDraftItemDoc } from "@/lib/quoteDraftItems";
 import type { TaskDoc } from "@/lib/projects";
+import type { QuoteDocumentMeta } from "@/lib/quoteDocumentMeta";
+import { isCustomerVisibleItemName } from "@/lib/quoteCustomerItems";
 import type {
   AiSetupCalculation,
   AiSetupMaterialRow,
@@ -41,10 +43,19 @@ function normalizeCalculation(calc: AiSetupCalculation): AiSetupCalculation {
   };
 }
 
-export function serializeAiSetupMeta(meta: AiSetupPersistedMeta, plainNotes?: string): string {
-  const payload: { aiSetupMeta: AiSetupPersistedMeta; plainNotes?: string } = {
-    aiSetupMeta: meta,
-  };
+export function serializeAiSetupMeta(
+  meta: AiSetupPersistedMeta,
+  plainNotes?: string,
+  quoteDocumentMeta?: QuoteDocumentMeta
+): string {
+  const payload: {
+    aiSetupMeta: AiSetupPersistedMeta;
+    quoteDocumentMeta?: QuoteDocumentMeta;
+    plainNotes?: string;
+  } = { aiSetupMeta: meta };
+  if (quoteDocumentMeta && Object.keys(quoteDocumentMeta).length > 0) {
+    payload.quoteDocumentMeta = quoteDocumentMeta;
+  }
   const trimmed = plainNotes?.trim();
   if (trimmed) payload.plainNotes = trimmed;
   return JSON.stringify(payload);
@@ -73,6 +84,7 @@ export function materialRowsFromSuggestions(suggestions: MaterialSuggestionDoc[]
     unit: normalizeSetupUnit(s.unit),
     price: s.estimatedUnitPrice ?? 0,
     included: s.status !== "rejected",
+    customerVisible: isCustomerVisibleItemName(s.name),
   }));
 }
 
@@ -84,6 +96,7 @@ export function materialRowsFromProjectMaterials(materials: ProjectMaterialDoc[]
     unit: normalizeSetupUnit(m.unit),
     price: m.unitPrice ?? 0,
     included: true,
+    customerVisible: isCustomerVisibleItemName(m.name),
   }));
 }
 
@@ -185,6 +198,12 @@ export function materialRowsFromQuoteItems(items: QuoteDraftItemDoc[]): AiSetupM
       unit: normalizeSetupUnit(i.unit),
       price: i.unitPrice,
       included: true,
+      customerVisible:
+        i.customerVisible === false
+          ? false
+          : i.customerVisible === true
+            ? true
+            : isCustomerVisibleItemName(i.name),
     }));
 }
 

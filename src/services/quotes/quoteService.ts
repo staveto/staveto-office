@@ -4,6 +4,7 @@
 import {
   createQuote as createQuoteDoc,
   getQuote,
+  listQuotesForProject,
   listQuotesForWorkspace,
   updateQuote,
   updateQuoteStatus,
@@ -14,7 +15,21 @@ import {
   type QuoteDoc,
   type QuoteStatus,
 } from "@/lib/quotes";
-import { hasProjectAccess, listProjectQuoteDraftItems } from "@/lib/projects";
+import {
+  hasProjectAccess,
+  listProjectQuoteDraftItems,
+  listProjectTasks,
+  listProjectsForWorkspace,
+  type ProjectDoc,
+} from "@/lib/projects";
+import {
+  buildProjectQuoteDisplayLines,
+  projectHasQuoteDraft,
+  resolveProjectQuoteLineItems,
+} from "@/lib/projectQuoteDraft";
+import { buildQuoteDocFromProjectDraft } from "@/lib/projectQuotePrint";
+import { listMaterialSuggestions } from "@/services/materials/projectMaterialsService";
+import { parseAiSetupMeta } from "@/components/projects/setup/aiSetupHelpers";
 import { getFirestoreInstance, doc, updateDoc, serverTimestamp } from "@/lib/firebase";
 import type { ActiveWorkspace } from "@/types/workspace";
 import type { Workspace } from "@/lib/workspace-types";
@@ -95,33 +110,34 @@ export async function createQuoteFromProject(
   }
 
   const project = access.project;
-  const draftItems = await listProjectQuoteDraftItems(projectId);
-  if (draftItems.length === 0) {
+  const lineItems = await resolveProjectQuoteLineItems(project);
+  if (lineItems.length === 0) {
     throw new Error("Add at least one material or work line on the draft job first");
   }
 
+  const meta = parseAiSetupMeta(project.quoteDraftNotes);
   const active = toActiveWorkspace(workspace, uid);
-  const quoteId = await createQuoteDoc(active, uid, {
-    title: project.name || "Cenová ponuka",
-    clientName:
-      project.customerCompanyName?.trim() ||
-      project.customerName?.trim() ||
-      project.name ||
-      "Zákazník",
-    clientEmail: project.customerEmail,
-    projectId,
-    projectName: project.name,
-    status: "draft",
-    vatPercent: project.quoteDraftVatPercent ?? 8.1,
-    notes: plainNotesFromProjectDraft(project.quoteDraftNotes),
-    items: draftItems.map((row) => ({
-      category: row.category,
-      name: row.name,
-      qty: row.qty,
-      unit: row.unit,
-      unitPrice: row.unitPrice,
-    })),
-  });
+  const quoteId = await createQuoteDoc(
+    active,
+    uid,
+    {
+      title: project.name || "Cenová ponuka",
+      clientName:
+        project.customerCompanyName?.trim() ||
+        project.customerName?.trim() ||
+        project.name ||
+        "Zákazník",
+      clientEmail: project.customerEmail,
+      projectId,
+      projectName: project.name,
+      status: "draft",
+      vatPercent: meta?.calculation.vatPercent ?? project.quoteDraftVatPercent ?? 8.1,
+      notes: plainNotesFromProjectDraft(project.quoteDraftNotes),
+      currency: "CHF",
+      items: lineItems,
+    },
+    project
+  );
 
   await syncProjectFromQuote(projectId, quoteId, "draft");
   return quoteId;
@@ -138,15 +154,16 @@ export async function upsertQuoteFromProject(
   }
 
   const project = access.project;
-  const draftItems = await listProjectQuoteDraftItems(projectId);
-  if (draftItems.length === 0) {
+  const lineItems = await resolveProjectQuoteLineItems(project);
+  if (lineItems.length === 0) {
     throw new Error("Add at least one material or work line on the draft job first");
   }
 
-  const active = toActiveWorkspace(workspace, uid);
-  const quotes = await listQuotesForWorkspace(toLegacyWorkspace(active), uid);
-  const existing = quotes.find((q) => q.projectId === projectId && q.status === "draft");
+  const projectQuotes = await listQuotesForProject(projectId);
+  const existing =
+    projectQuotes.find((q) => q.status === "draft") ?? projectQuotes[0];
 
+  const meta = parseAiSetupMeta(project.quoteDraftNotes);
   const clientName =
     project.customerCompanyName?.trim() ||
     project.customerName?.trim() ||
@@ -158,15 +175,9 @@ export async function upsertQuoteFromProject(
     clientName,
     clientEmail: project.customerEmail,
     status: "draft" as const,
-    vatPercent: project.quoteDraftVatPercent ?? 8.1,
+    vatPercent: meta?.calculation.vatPercent ?? project.quoteDraftVatPercent ?? 8.1,
     notes: plainNotesFromProjectDraft(project.quoteDraftNotes),
-    items: draftItems.map((row) => ({
-      category: row.category,
-      name: row.name,
-      qty: row.qty,
-      unit: row.unit,
-      unitPrice: row.unitPrice,
-    })),
+    items: lineItems,
   };
 
   if (existing) {
@@ -176,6 +187,103 @@ export async function upsertQuoteFromProject(
   }
 
   return createQuoteFromProject(workspace, uid, projectId);
+}
+
+function sortQuotesByUpdatedAt(quotes: QuoteDoc[]): QuoteDoc[] {
+  return [...quotes].sort((a, b) => {
+    const ta = a.updatedAt ? Date.parse(a.updatedAt) : 0;
+    const tb = b.updatedAt ? Date.parse(b.updatedAt) : 0;
+    return tb - ta;
+  });
+}
+
+async function buildVirtualQuotesFromProjects(
+  projects: ProjectDoc[],
+  linkedProjectIds: Set<string>
+): Promise<QuoteDoc[]> {
+  const virtual: QuoteDoc[] = [];
+
+  await Promise.all(
+    projects.map(async (project) => {
+      if (linkedProjectIds.has(project.id)) return;
+      if (!projectHasQuoteDraft(project)) return;
+
+      try {
+        const [quoteItems, tasks, suggestions] = await Promise.all([
+          listProjectQuoteDraftItems(project.id),
+          listProjectTasks(project.id).catch(() => []),
+          listMaterialSuggestions(project.id).catch(() => []),
+        ]);
+        const lines = buildProjectQuoteDisplayLines(project, quoteItems, tasks, suggestions);
+        if (lines.length === 0 && (project.quoteStatus ?? "none") === "none") return;
+
+        virtual.push(
+          buildQuoteDocFromProjectDraft(project, quoteItems, tasks, "CHF", suggestions)
+        );
+      } catch {
+        // Skip unreadable project drafts.
+      }
+    })
+  );
+
+  return virtual;
+}
+
+/** Create missing top-level quote docs for projects that already have draft quote items. */
+export async function syncMissingQuotesFromProjects(
+  workspace: Workspace | ActiveWorkspace,
+  uid: string
+): Promise<void> {
+  const active = toActiveWorkspace(workspace, uid);
+  const legacy = toLegacyWorkspace(active);
+  const [quotes, projects] = await Promise.all([
+    listQuotesForWorkspace(legacy, uid),
+    listProjectsForWorkspace(active, uid),
+  ]);
+
+  const linkedProjectIds = new Set(
+    quotes.map((q) => q.projectId).filter((id): id is string => !!id)
+  );
+
+  for (const project of projects) {
+    if (linkedProjectIds.has(project.id)) continue;
+    if (!projectHasQuoteDraft(project)) continue;
+
+    try {
+      await upsertQuoteFromProject(active, uid, project.id);
+      linkedProjectIds.add(project.id);
+    } catch (err) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[quotes] sync failed for project", project.id, err);
+      }
+    }
+  }
+}
+
+export async function listQuotesForWorkspaceEnsured(
+  workspace: Workspace | ActiveWorkspace,
+  uid: string
+): Promise<QuoteDoc[]> {
+  const active = toActiveWorkspace(workspace, uid);
+  const legacy = toLegacyWorkspace(active);
+
+  try {
+    await syncMissingQuotesFromProjects(active, uid);
+  } catch {
+    // Continue with virtual project drafts if Firestore sync fails.
+  }
+
+  const [firestoreQuotes, projects] = await Promise.all([
+    listQuotesForWorkspace(legacy, uid),
+    listProjectsForWorkspace(active, uid),
+  ]);
+
+  const linkedProjectIds = new Set(
+    firestoreQuotes.map((q) => q.projectId).filter((id): id is string => !!id)
+  );
+  const virtualQuotes = await buildVirtualQuotesFromProjects(projects, linkedProjectIds);
+
+  return sortQuotesByUpdatedAt([...firestoreQuotes, ...virtualQuotes]).slice(0, 50);
 }
 
 export async function saveQuote(

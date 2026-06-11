@@ -1,10 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Check, Circle } from "lucide-react";
+import { ArrowRight, Check, Circle, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nContext";
+import { useAuth } from "@/context/AuthContext";
+import { dismissSetupChecklist } from "@/services/onboarding/setupChecklistService";
 import type { CompanyType } from "@/lib/onboardingTypes";
 import {
   buildSetupChecklist,
@@ -22,6 +25,7 @@ import type { CanonicalOrganizationRecord } from "@/lib/companyProfileCompletion
 import type { EnabledModulesMap } from "@/lib/enabledModules";
 
 type SetupDashboardChecklistProps = {
+  orgId: string;
   stats: DashboardStats;
   profile: OrganizationProfile | null;
   modules: EnabledModulesMap;
@@ -105,6 +109,7 @@ function ChecklistRow({
 }
 
 export function SetupDashboardChecklist({
+  orgId,
   stats,
   profile,
   modules,
@@ -112,13 +117,37 @@ export function SetupDashboardChecklist({
   org,
 }: SetupDashboardChecklistProps) {
   const { t } = useI18n();
+  const { user, refreshUser } = useAuth();
+  const [dismissing, setDismissing] = useState(false);
   const items = buildSetupChecklist(stats, profile, modules, companyType, org);
   const progress = getSetupProgress(items);
   const firstIncomplete = getFirstIncompleteSetupItem(items);
 
+  const handleDismiss = async () => {
+    if (!user?.id || dismissing || !orgId.trim()) return;
+    setDismissing(true);
+    try {
+      await dismissSetupChecklist(user.id, orgId);
+      await refreshUser();
+    } finally {
+      setDismissing(false);
+    }
+  };
+
   return (
-    <section className="space-y-5 rounded-2xl bg-gradient-to-br from-[#1D376A]/[0.05] to-transparent p-6 ring-1 ring-[#1D376A]/10">
-      <div className="space-y-3">
+    <section className="relative space-y-5 rounded-2xl bg-gradient-to-br from-[#1D376A]/[0.05] to-transparent p-6 ring-1 ring-[#1D376A]/10">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+        disabled={dismissing}
+        onClick={() => void handleDismiss()}
+        aria-label={t("dashboard.command.setup.dismiss")}
+      >
+        <X className="size-4" aria-hidden />
+      </Button>
+      <div className="space-y-3 pr-10">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold tracking-tight text-[#1D376A]">

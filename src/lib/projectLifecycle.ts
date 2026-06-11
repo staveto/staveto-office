@@ -85,15 +85,51 @@ const CLOSED: ReadonlySet<ProjectLifecycleStatus> = new Set([
   "completed",
 ]);
 
-export function normalizeProjectPhase(project: Pick<ProjectDoc, "phase">): ProjectPhase {
+export type ProjectPhaseInput = Pick<
+  ProjectDoc,
+  "phase" | "lifecycleStatus" | "quoteStatus" | "salesStatus"
+>;
+
+export function normalizeProjectPhase(project: ProjectPhaseInput): ProjectPhase {
   if (project.phase === "sales" || project.phase === "delivery") {
     return project.phase;
   }
+
+  const ls = project.lifecycleStatus;
+  const qs = project.quoteStatus;
+  const ss = project.salesStatus;
+  const inActiveDelivery = ls != null && ACTIVE_DELIVERY.has(ls);
+
+  // Quote / sales signals win over stale delivery lifecycle on legacy mobile rows.
+  if (qs === "draft" || qs === "ready" || qs === "sent" || qs === "rejected" || qs === "expired") {
+    return "sales";
+  }
+  if (qs === "accepted" && !inActiveDelivery) {
+    return "sales";
+  }
+
+  if (
+    ss === "draft" ||
+    ss === "waiting_for_customer" ||
+    ss === "ready_for_quote" ||
+    ss === "quote_sent" ||
+    ss === "rejected"
+  ) {
+    return "sales";
+  }
+  if (ss === "accepted" && !inActiveDelivery) {
+    return "sales";
+  }
+
+  if (ls && SALES_LIFECYCLE.has(ls) && ls !== "converted_to_project" && !inActiveDelivery) {
+    return "sales";
+  }
+
   return "delivery";
 }
 
 export function normalizeLifecycleStatus(
-  project: Pick<ProjectDoc, "phase" | "lifecycleStatus">
+  project: ProjectPhaseInput
 ): ProjectLifecycleStatus {
   const phase = normalizeProjectPhase(project);
   const raw = project.lifecycleStatus;
@@ -111,11 +147,11 @@ function isLifecycleStatus(value: string): value is ProjectLifecycleStatus {
   );
 }
 
-export function isDraftJob(project: Pick<ProjectDoc, "phase" | "lifecycleStatus">): boolean {
+export function isDraftJob(project: ProjectPhaseInput): boolean {
   return normalizeProjectPhase(project) === "sales";
 }
 
-export function isActiveJob(project: Pick<ProjectDoc, "phase" | "lifecycleStatus">): boolean {
+export function isActiveJob(project: ProjectPhaseInput): boolean {
   const phase = normalizeProjectPhase(project);
   const status = normalizeLifecycleStatus(project);
   return phase === "delivery" && ACTIVE_DELIVERY.has(status);

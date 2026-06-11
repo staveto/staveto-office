@@ -58,7 +58,7 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
           onMenuClick={() => setSidebarOpen((o) => !o)}
           sidebarOpen={sidebarOpen}
         />
-        <main className="flex-1 overflow-auto bg-[#e4eaf1] p-4 md:p-6">
+        <main className="flex-1 overflow-auto bg-[#eef2f6] p-4 dark:bg-background md:p-6">
           <div className="mx-auto max-w-6xl">
             <TenantGate>{children}</TenantGate>
           </div>

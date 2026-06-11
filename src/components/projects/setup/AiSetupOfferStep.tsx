@@ -1,10 +1,12 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import Link from "next/link";
 import { useI18n } from "@/i18n/I18nContext";
 import { formatMoney } from "@/lib/format";
+import type { QuoteDocumentMeta } from "@/lib/quoteDocumentMeta";
 import type { ProjectDoc } from "@/lib/projects";
 import { setupUnitLabel } from "./aiSetupHelpers";
 import type { AiSetupMaterialRow, AiSetupTotals, AiSetupWorkEstimate } from "./aiSetupTypes";
@@ -14,8 +16,8 @@ type Props = {
   materials: AiSetupMaterialRow[];
   work: AiSetupWorkEstimate;
   totals: AiSetupTotals;
-  quoteNotes: string;
-  onQuoteNotesChange: (v: string) => void;
+  documentMeta: QuoteDocumentMeta;
+  onDocumentMetaChange: (meta: QuoteDocumentMeta) => void;
   onSaveDraft: () => void;
   onExportPdf: () => void;
   saving?: boolean;
@@ -24,13 +26,23 @@ type Props = {
   exportingPdf?: boolean;
 };
 
+function patchContact(
+  meta: QuoteDocumentMeta,
+  patch: Partial<NonNullable<QuoteDocumentMeta["contactPerson"]>>
+): QuoteDocumentMeta {
+  return {
+    ...meta,
+    contactPerson: { ...meta.contactPerson, ...patch },
+  };
+}
+
 export function AiSetupOfferStep({
   project,
   materials,
   work,
   totals,
-  quoteNotes,
-  onQuoteNotesChange,
+  documentMeta,
+  onDocumentMetaChange,
   onSaveDraft,
   onExportPdf,
   saving,
@@ -43,6 +55,7 @@ export function AiSetupOfferStep({
     project.customerCompanyName?.trim() ||
     project.customerName?.trim() ||
     t("projects.aiSetup.noCustomer");
+  const contact = documentMeta.contactPerson ?? {};
 
   return (
     <div className="space-y-5">
@@ -67,32 +80,38 @@ export function AiSetupOfferStep({
           </div>
         </dl>
 
-        {project.customerRequest?.trim() ? (
-          <section>
-            <h4 className="text-xs font-bold uppercase text-[#64748B] mb-1">
-              {t("projects.aiSetup.quote.scope")}
-            </h4>
-            <p className="text-sm text-[#334155] leading-relaxed">{project.customerRequest.trim()}</p>
-          </section>
-        ) : null}
+        <section className="space-y-2">
+          <h4 className="text-xs font-bold uppercase text-[#64748B]">
+            {t("quotes.print.scopeOfWork")}
+          </h4>
+          <Textarea
+            value={documentMeta.scopeOfWork ?? ""}
+            onChange={(e) => onDocumentMetaChange({ ...documentMeta, scopeOfWork: e.target.value })}
+            rows={5}
+            placeholder={t("projects.aiSetup.quote.scopePlaceholder")}
+            className="text-[15px]"
+          />
+        </section>
 
         <section>
           <h4 className="text-xs font-bold uppercase text-[#64748B] mb-2">
             {t("projects.aiSetup.quote.materials")}
           </h4>
           <ul className="text-sm space-y-1.5">
-            {materials.filter((m) => m.included && m.name.trim()).map((m) => (
-              <li key={m.id} className="flex justify-between gap-3">
-                <span className="text-[#334155]">
-                  {m.name} · {m.qty} {setupUnitLabel(m.unit, t)}
-                </span>
-                {m.price > 0 ? (
-                  <span className="tabular-nums font-medium shrink-0">
-                    {formatMoney(m.qty * m.price, "CHF")}
+            {materials
+              .filter((m) => m.included && m.name.trim() && m.customerVisible !== false)
+              .map((m) => (
+                <li key={m.id} className="flex justify-between gap-3">
+                  <span className="text-[#334155]">
+                    {m.name} · {m.qty} {setupUnitLabel(m.unit, t)}
                   </span>
-                ) : null}
-              </li>
-            ))}
+                  {m.price > 0 ? (
+                    <span className="tabular-nums font-medium shrink-0">
+                      {formatMoney(m.qty * m.price, "CHF")}
+                    </span>
+                  ) : null}
+                </li>
+              ))}
           </ul>
           <p className="text-sm font-semibold text-[#0F2A4D] mt-2 tabular-nums flex justify-between">
             <span>{t("projects.aiSetup.summary.material")}</span>
@@ -124,18 +143,78 @@ export function AiSetupOfferStep({
           </span>
         </section>
 
-        <div className="space-y-2">
-          <h4 className="text-xs font-bold uppercase text-[#64748B]">
-            {t("projects.aiSetup.quote.conditions")}
-          </h4>
-          <Textarea
-            value={quoteNotes}
-            onChange={(e) => onQuoteNotesChange(e.target.value)}
-            rows={4}
-            placeholder={t("projects.aiSetup.quote.conditionsPlaceholder")}
-            className="text-[15px]"
-          />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2 sm:col-span-2">
+            <h4 className="text-xs font-bold uppercase text-[#64748B]">
+              {t("quotes.print.conditions")}
+            </h4>
+            <Textarea
+              value={documentMeta.conditions ?? ""}
+              onChange={(e) => onDocumentMetaChange({ ...documentMeta, conditions: e.target.value })}
+              rows={4}
+              placeholder={t("projects.aiSetup.quote.conditionsPlaceholder")}
+              className="text-[15px]"
+            />
+          </div>
+          <div className="space-y-2">
+            <h4 className="text-xs font-bold uppercase text-[#64748B]">
+              {t("quotes.print.executionPeriod")}
+            </h4>
+            <Input
+              value={documentMeta.executionPeriod ?? ""}
+              onChange={(e) =>
+                onDocumentMetaChange({ ...documentMeta, executionPeriod: e.target.value })
+              }
+              placeholder={t("projects.aiSetup.quote.executionPlaceholder")}
+              className="h-11"
+            />
+          </div>
+          <div className="space-y-2">
+            <h4 className="text-xs font-bold uppercase text-[#64748B]">
+              {t("quotes.print.paymentTerms")}
+            </h4>
+            <Input
+              value={documentMeta.paymentTerms ?? ""}
+              onChange={(e) =>
+                onDocumentMetaChange({ ...documentMeta, paymentTerms: e.target.value })
+              }
+              placeholder={t("projects.aiSetup.quote.paymentPlaceholder")}
+              className="h-11"
+            />
+          </div>
         </div>
+
+        <section className="space-y-3 border-t border-[#E2E8F0] pt-4">
+          <h4 className="text-xs font-bold uppercase text-[#64748B]">
+            {t("quotes.print.yourContact")}
+          </h4>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Input
+              value={contact.name ?? ""}
+              onChange={(e) => onDocumentMetaChange(patchContact(documentMeta, { name: e.target.value }))}
+              placeholder={t("projects.aiSetup.quote.contactName")}
+              className="h-11"
+            />
+            <Input
+              value={contact.role ?? ""}
+              onChange={(e) => onDocumentMetaChange(patchContact(documentMeta, { role: e.target.value }))}
+              placeholder={t("projects.aiSetup.quote.contactRole")}
+              className="h-11"
+            />
+            <Input
+              value={contact.phone ?? ""}
+              onChange={(e) => onDocumentMetaChange(patchContact(documentMeta, { phone: e.target.value }))}
+              placeholder={t("projects.aiSetup.quote.contactPhone")}
+              className="h-11"
+            />
+            <Input
+              value={contact.email ?? ""}
+              onChange={(e) => onDocumentMetaChange(patchContact(documentMeta, { email: e.target.value }))}
+              placeholder={t("projects.aiSetup.quote.contactEmail")}
+              className="h-11"
+            />
+          </div>
+        </section>
       </div>
 
       {saved && savedQuoteId ? (
@@ -157,7 +236,7 @@ export function AiSetupOfferStep({
           disabled={saving || exportingPdf}
           onClick={onExportPdf}
         >
-          {exportingPdf ? t("common.loading") : t("projects.draft.exportPdf")}
+          {exportingPdf ? t("common.loading") : t("quotes.print.printAction")}
         </Button>
         <Button
           type="button"
