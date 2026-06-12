@@ -277,6 +277,13 @@ service cloud.firestore {
         && orgServerFieldsUnchanged();
       allow delete: if isOrgOwnerOrAdmin(orgId);
 
+      match /liveTimers/{memberUid} {
+        allow read: if isOrgMemberActive(orgId);
+        allow create, update, delete: if isSignedIn()
+          && request.auth.uid == memberUid
+          && isOrgMemberActive(orgId);
+      }
+
       match /members/{memberId} {
         allow read: if isOrgMember(orgId);
         allow create: if isSignedIn()

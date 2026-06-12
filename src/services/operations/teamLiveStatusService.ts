@@ -1,13 +1,24 @@
 import {
   getFirestoreInstance,
+  collection,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
 } from "@/lib/firebase";
 import type { OrgMemberRow } from "@/lib/organizations";
+import { getBestUserDisplayName } from "@/lib/userDisplay";
 import type { TimeEntryDoc } from "@/services/attendance/timeTrackingReadService";
 import type { ProjectDoc } from "@/lib/projects";
 import type { TeamLiveStatusItem } from "@/lib/operationsMetrics";
+import { parseGpsPoint, resolveMemberGpsStatus, type ParsedGpsPoint } from "@/lib/operationsGps";
+
+/**
+ * TODO Phase 2 (mobile): extend orgLiveTimer.syncOrgLiveTimer to publish into
+ * organizations/{orgId}/liveTimers/{uid}:
+ *   - gpsStart, gpsAccuracyM, gpsTimestamp, pauseSince, taskTitleSnapshot
+ * Without that mobile change the web dashboard has no reliable live GPS source.
+ */
 
 export type ActiveTimerState = {
   uid: string;
@@ -19,7 +30,8 @@ export type ActiveTimerState = {
   projectNameSnapshot?: string;
   taskId?: string;
   taskTitleSnapshot?: string;
-  gpsStart?: { lat?: number; lng?: number } | null;
+  gpsStart?: ParsedGpsPoint | null;
+  pauseSince?: string;
   pauses?: Array<{ startedAt?: string; endedAt?: string }>;
 };
 
@@ -52,7 +64,8 @@ function parseActiveTimer(uid: string, raw: unknown): ActiveTimerState | null {
     taskId: typeof at.taskId === "string" ? at.taskId : undefined,
     taskTitleSnapshot:
       typeof at.taskTitleSnapshot === "string" ? at.taskTitleSnapshot : undefined,
-    gpsStart: (at.gpsStart as { lat?: number; lng?: number } | null) ?? null,
+    gpsStart: parseGpsPoint(at.gpsStart),
+    pauseSince: toIso(at.pauseSince) ?? (typeof at.pauseSince === "string" ? at.pauseSince : undefined),
     pauses: Array.isArray(at.pauses)
       ? (at.pauses as Array<{ startedAt?: string; endedAt?: string }>)
       : undefined,
@@ -66,6 +79,50 @@ function activeTimerSeconds(timer: ActiveTimerState): number {
   const base = timer.accumulatedMs ?? 0;
   if (timer.status === "paused") return Math.max(0, Math.round(base / 1000));
   return Math.max(0, Math.round((base + Math.max(0, now - runningSinceMs)) / 1000));
+}
+
+/** Crew timers published to organizations/{orgId}/liveTimers/{uid} from mobile. */
+export async function loadOrgLiveTimers(orgId: string): Promise<Map<string, ActiveTimerState>> {
+  const db = getFirestoreInstance();
+  const map = new Map<string, ActiveTimerState>();
+  const normalized = orgId.trim();
+  if (!db || !normalized) return map;
+
+  try {
+    const snap = await getDocs(collection(db, "organizations", normalized, "liveTimers"));
+    for (const d of snap.docs) {
+      const parsed = parseActiveTimer(d.id, d.data());
+      if (parsed) map.set(d.id, parsed);
+    }
+  } catch {
+    /* permission or empty */
+  }
+  return map;
+}
+
+export function subscribeOrgLiveTimers(
+  orgId: string,
+  onUpdate: (map: Map<string, ActiveTimerState>) => void
+): () => void {
+  const db = getFirestoreInstance();
+  const normalized = orgId.trim();
+  if (!db || !normalized) {
+    onUpdate(new Map());
+    return () => {};
+  }
+
+  return onSnapshot(
+    collection(db, "organizations", normalized, "liveTimers"),
+    (snap) => {
+      const map = new Map<string, ActiveTimerState>();
+      for (const d of snap.docs) {
+        const parsed = parseActiveTimer(d.id, d.data());
+        if (parsed) map.set(d.id, parsed);
+      }
+      onUpdate(map);
+    },
+    () => onUpdate(new Map())
+  );
 }
 
 export async function loadActiveTimers(memberIds: string[]): Promise<Map<string, ActiveTimerState>> {
@@ -123,6 +180,22 @@ export function subscribeActiveTimers(
   };
 }
 
+function todayWorkedMinutesForUser(
+  uid: string,
+  todayEntries: TimeEntryDoc[],
+  timerSeconds?: number
+): number {
+  const completed = todayEntries
+    .filter((e) => e.userId === uid)
+    .reduce((sum, e) => sum + Math.max(0, e.durationMinutes || 0), 0);
+  const active = typeof timerSeconds === "number" ? Math.floor(timerSeconds / 60) : 0;
+  return completed + active;
+}
+
+function entriesForUser(uid: string, todayEntries: TimeEntryDoc[]): TimeEntryDoc[] {
+  return todayEntries.filter((e) => e.userId === uid);
+}
+
 export function resolveTeamLiveStatus(input: {
   members: OrgMemberRow[];
   projects: ProjectDoc[];
@@ -133,9 +206,24 @@ export function resolveTeamLiveStatus(input: {
   const projectById = new Map(input.projects.map((p) => [p.id, p]));
   const latestEntryByUser = new Map<string, TimeEntryDoc>();
   for (const entry of input.todayEntries) {
-    if (!entry.userId || latestEntryByUser.has(entry.userId)) continue;
-    latestEntryByUser.set(entry.userId, entry);
+    if (!entry.userId) continue;
+    const prev = latestEntryByUser.get(entry.userId);
+    if (!prev) {
+      latestEntryByUser.set(entry.userId, entry);
+      continue;
+    }
+    const prevMs = new Date(prev.endedAt || prev.startedAt).getTime();
+    const curMs = new Date(entry.endedAt || entry.startedAt).getTime();
+    if (curMs > prevMs) latestEntryByUser.set(entry.userId, entry);
   }
+
+  const resolveName = (member: OrgMemberRow, entry?: TimeEntryDoc) =>
+    getBestUserDisplayName({
+      displayName: member.displayName,
+      userNameSnapshot: entry?.userNameSnapshot,
+      email: member.email,
+      uid: member.uid,
+    });
 
   return input.members
     .filter((m) => m.status !== "removed")
@@ -143,51 +231,68 @@ export function resolveTeamLiveStatus(input: {
       const uid = member.uid;
       const timer = input.activeTimers.get(uid);
       const absent = input.todayAbsentUserIds.has(uid);
+      const userEntries = entriesForUser(uid, input.todayEntries);
 
       if (absent) {
+        const last = latestEntryByUser.get(uid);
         return {
           uid,
-          name: member.displayName ?? member.email ?? uid,
+          name: resolveName(member, last),
           email: member.email,
           status: "absent" as const,
+          todayWorkedMinutes: todayWorkedMinutesForUser(uid, input.todayEntries),
+          gpsStatus: "none" as const,
         } satisfies TeamLiveStatusItem;
       }
 
       if (timer) {
-        const pauseSince = timer.status === "paused" ? timer.pauses?.at(-1)?.startedAt : undefined;
+        const pauseSince =
+          timer.status === "paused"
+            ? timer.pauseSince ?? timer.pauses?.at(-1)?.startedAt
+            : undefined;
         const projectName =
           timer.projectNameSnapshot ||
           (timer.projectId ? projectById.get(timer.projectId)?.name : undefined);
+        const timerSeconds = activeTimerSeconds(timer);
+        const status = (timer.status === "paused" ? "paused" : "working") as "paused" | "working";
         return {
           uid,
-          name: member.displayName ?? member.email ?? uid,
+          name: resolveName(member, userEntries[userEntries.length - 1]),
           email: member.email,
-          status: (timer.status === "paused" ? "paused" : "working") as
-            | "paused"
-            | "working",
+          status,
           projectId: timer.projectId,
           projectName,
           taskId: timer.taskId,
           taskName: timer.taskTitleSnapshot,
-          timerSeconds: activeTimerSeconds(timer),
+          timerSeconds,
+          startedAt: timer.startedAt ?? timer.runningSince,
           pauseSince,
-          locationLabel:
-            typeof timer.gpsStart?.lat === "number" && typeof timer.gpsStart?.lng === "number"
-              ? `${timer.gpsStart.lat.toFixed(3)}, ${timer.gpsStart.lng.toFixed(3)}`
-              : undefined,
+          todayWorkedMinutes: todayWorkedMinutesForUser(uid, input.todayEntries, timerSeconds),
+          gpsStatus: resolveMemberGpsStatus({
+            status,
+            liveGpsStart: timer.gpsStart ?? null,
+            todayEntriesForUser: userEntries,
+          }),
         } satisfies TeamLiveStatusItem;
       }
 
       const last = latestEntryByUser.get(uid);
+      const status = (last ? "offline" : "not_started") as "offline" | "not_started";
       return {
         uid,
-        name: member.displayName ?? member.email ?? uid,
+        name: resolveName(member, last),
         email: member.email,
-        status: (last ? "offline" : "not_started") as "offline" | "not_started",
+        status,
         projectId: last?.projectId,
         projectName: last?.projectNameSnapshot,
         taskId: last?.taskId ?? undefined,
         taskName: last?.taskTitleSnapshot ?? undefined,
+        todayWorkedMinutes: todayWorkedMinutesForUser(uid, input.todayEntries),
+        gpsStatus: resolveMemberGpsStatus({
+          status,
+          liveGpsStart: null,
+          todayEntriesForUser: userEntries,
+        }),
       } satisfies TeamLiveStatusItem;
     })
     .sort((a, b) => a.name.localeCompare(b.name));

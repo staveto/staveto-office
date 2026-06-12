@@ -1,83 +1,80 @@
 "use client";
 
+import { useMemo, useState } from "react";
+import {
+  CheckCircle2,
+  Clock,
+  FileText,
+  FolderGit2,
+  Receipt,
+  Users,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { ProjectDoc } from "@/lib/projects";
-import { getManagerStatusKey } from "@/lib/projectDashboard";
+import { Button } from "@/components/ui/button";
+import type { ProjectDoc, TaskDoc } from "@/lib/projects";
+import type { TimeEntryDoc } from "@/services/attendance/timeTrackingReadService";
+import type { ProjectDocumentRecord } from "@/services/projects/projectDocuments";
+import {
+  buildProjectActivity,
+  type ProjectActivityEvent,
+  type ProjectActivityType,
+} from "@/lib/projectActivity";
 import { useI18n } from "@/i18n/I18nContext";
-
-type ActivityEntry = {
-  id: string;
-  date: string;
-  labelKey: string;
-  detail?: string;
-};
-
-function buildActivity(project: ProjectDoc): ActivityEntry[] {
-  const entries: ActivityEntry[] = [];
-
-  if (project.createdAt) {
-    entries.push({
-      id: "created",
-      date: project.createdAt,
-      labelKey: "projects.dashboard.activity.created",
-    });
-  }
-
-  const qs = project.quoteStatus ?? "none";
-  if (qs !== "none") {
-    entries.push({
-      id: `quote-${qs}`,
-      date: project.updatedAt ?? project.createdAt ?? "",
-      labelKey: `projects.dashboard.activity.quote.${qs}`,
-    });
-  }
-
-  const statusKey = getManagerStatusKey(project);
-  if (project.lifecycleStatus && project.lifecycleStatus !== "new_request") {
-    entries.push({
-      id: `lifecycle-${project.lifecycleStatus}`,
-      date: project.updatedAt ?? "",
-      labelKey: "projects.dashboard.activity.statusChanged",
-      detail: statusKey,
-    });
-  }
-
-  if (project.convertedAt) {
-    entries.push({
-      id: "converted",
-      date: project.convertedAt,
-      labelKey: "projects.dashboard.activity.converted",
-    });
-  }
-
-  if (project.internalNote?.trim()) {
-    entries.push({
-      id: "note",
-      date: project.updatedAt ?? project.createdAt ?? "",
-      labelKey: "projects.dashboard.activity.note",
-      detail: project.internalNote.trim().slice(0, 120),
-    });
-  }
-
-  return entries
-    .filter((e) => e.date)
-    .sort((a, b) => b.date.localeCompare(a.date));
-}
+import { cn } from "@/lib/utils";
 
 type ProjectActivityTabProps = {
   project: ProjectDoc;
+  tasks: TaskDoc[];
+  timeEntries: TimeEntryDoc[];
+  documents: ProjectDocumentRecord[];
 };
 
-export function ProjectActivityTab({ project }: ProjectActivityTabProps) {
+const TYPE_ICON: Record<ProjectActivityType, typeof CheckCircle2> = {
+  task: CheckCircle2,
+  time: Clock,
+  document: FileText,
+  crew: Users,
+  quote: Receipt,
+  project: FolderGit2,
+};
+
+const TYPE_TONE: Record<ProjectActivityType, string> = {
+  task: "bg-emerald-50 text-emerald-600",
+  time: "bg-blue-50 text-blue-600",
+  document: "bg-violet-50 text-violet-600",
+  crew: "bg-amber-50 text-amber-600",
+  quote: "bg-[#e06737]/10 text-[#e06737]",
+  project: "bg-[#1D376A]/10 text-[#1D376A]",
+};
+
+type FilterKey = "all" | ProjectActivityType;
+
+export function ProjectActivityTab({
+  project,
+  tasks,
+  timeEntries,
+  documents,
+}: ProjectActivityTabProps) {
   const { t } = useI18n();
-  const activity = buildActivity(project);
+  const [filter, setFilter] = useState<FilterKey>("all");
+
+  const events = useMemo(
+    () => buildProjectActivity({ project, tasks, timeEntries, documents }),
+    [project, tasks, timeEntries, documents]
+  );
+
+  const filtered = useMemo(
+    () => (filter === "all" ? events : events.filter((e) => e.type === filter)),
+    [events, filter]
+  );
+
+  const filters: FilterKey[] = ["all", "task", "time", "document", "quote"];
 
   const formatDate = (iso: string) => {
     try {
       return new Date(iso).toLocaleString(undefined, {
         day: "2-digit",
         month: "short",
-        year: "numeric",
         hour: "2-digit",
         minute: "2-digit",
       });
@@ -92,30 +89,81 @@ export function ProjectActivityTab({ project }: ProjectActivityTabProps) {
         <CardTitle className="text-base text-[#1D376A]">
           {t("projects.dashboard.tab.activity")}
         </CardTitle>
+        <div className="flex flex-wrap gap-1.5 pt-2">
+          {filters.map((key) => (
+            <Button
+              key={key}
+              type="button"
+              size="sm"
+              variant={filter === key ? "default" : "outline"}
+              className={cn("h-7 px-2.5 text-xs", filter === key && "bg-[#1D376A]")}
+              onClick={() => setFilter(key)}
+            >
+              {t(`projects.activity.filter.${key}`)}
+            </Button>
+          ))}
+        </div>
       </CardHeader>
       <CardContent>
-        {activity.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
+        {filtered.length === 0 ? (
+          <p className="py-10 text-center text-sm text-muted-foreground">
             {t("projects.draft.activityPlaceholder")}
           </p>
         ) : (
-          <ul className="space-y-4">
-            {activity.map((entry) => (
-              <li key={entry.id} className="flex gap-4 text-sm">
-                <time className="text-xs text-muted-foreground shrink-0 w-32">
-                  {formatDate(entry.date)}
-                </time>
-                <div>
-                  <p className="font-medium">{t(entry.labelKey)}</p>
-                  {entry.detail ? (
-                    <p className="text-muted-foreground text-xs mt-0.5">{entry.detail}</p>
-                  ) : null}
-                </div>
-              </li>
+          <ol className="relative space-y-1">
+            {filtered.map((event, index) => (
+              <ActivityRow
+                key={event.id}
+                event={event}
+                isLast={index === filtered.length - 1}
+                formatDate={formatDate}
+                t={t}
+              />
             ))}
-          </ul>
+          </ol>
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function ActivityRow({
+  event,
+  isLast,
+  formatDate,
+  t,
+}: {
+  event: ProjectActivityEvent;
+  isLast: boolean;
+  formatDate: (iso: string) => string;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}) {
+  const Icon = TYPE_ICON[event.type];
+  return (
+    <li className="relative flex gap-3 pb-4">
+      {!isLast ? (
+        <span
+          className="absolute left-[15px] top-8 h-[calc(100%-1rem)] w-px bg-border"
+          aria-hidden
+        />
+      ) : null}
+      <span
+        className={cn(
+          "z-10 flex size-8 shrink-0 items-center justify-center rounded-full",
+          TYPE_TONE[event.type]
+        )}
+      >
+        <Icon className="size-4" />
+      </span>
+      <div className="min-w-0 flex-1 pt-1">
+        <p className="text-sm text-foreground">{t(event.titleKey, event.params)}</p>
+        {event.detail ? (
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">{event.detail}</p>
+        ) : null}
+        <time className="mt-0.5 block text-xs text-muted-foreground">
+          {formatDate(event.date)}
+        </time>
+      </div>
+    </li>
   );
 }

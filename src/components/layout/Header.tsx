@@ -23,6 +23,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/app/expenses": "expenses.title",
   "/app/expenses/new": "expenses.new",
   "/app/attendance": "attendance.title",
+  "/app/operations": "operations.title",
   "/app/equipment": "equipment.title",
   "/app/billing": "nav.billing",
   "/app/settings": "nav.settings",

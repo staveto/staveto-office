@@ -176,6 +176,8 @@ export function CompanyDashboardView({
         loading={missionLoading}
         displayName={displayName}
         orgName={activeWorkspace.name}
+        workspace={activeWorkspace}
+        uid={uid}
       />
     </div>
   );

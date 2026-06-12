@@ -102,6 +102,12 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
         href: "/app/planning",
         managementOnly: true,
       },
+      {
+        id: "planning-operations",
+        labelKey: "sidebar.item.planning.operations",
+        href: "/app/operations",
+        managementOnly: true,
+      },
     ],
   },
   {
@@ -181,6 +187,12 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
         id: "team-attendance",
         labelKey: "sidebar.item.team.attendance",
         href: "/app/attendance",
+        managementOnly: true,
+      },
+      {
+        id: "team-live",
+        labelKey: "sidebar.item.team.live",
+        href: "/app/operations",
         managementOnly: true,
       },
       {

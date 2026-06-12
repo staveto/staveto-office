@@ -1,0 +1,59 @@
+---
+description: Staveto Manager product, UX, a11y, PWA, onboarding, and AI standards
+alwaysApply: true
+---
+
+# Staveto Manager — Product & UX
+
+Full reference: `docs/staveto-manager-product-ux-standards.md`
+
+## Core
+
+- Useful, simple, fast, understandable for owner / manager / accountant / worker on a construction site.
+- Do not ship “because we can” — ship what helps **every day**.
+- SK copy first (`translations.ts`), EN secondary. Friendly, professional, non-technical UI.
+
+## Every screen
+
+- Clear purpose, obvious primary action, logical short forms / steps.
+- Progressive disclosure; contextual help; no long tutorials or bloated onboarding copy.
+- Empty + loading + error + success states; empty states say **what to do next**.
+- Early value; user never stuck wondering “what next?”
+
+## Accessibility
+
+- Labels on inputs/buttons; keyboard + visible focus; contrast; errors beside fields (not color-only).
+- Touch-friendly targets; no tiny critical text.
+
+## Responsive / PWA
+
+- Desktop = office/manager; mobile = field/quick actions. Real responsive layouts, not squeezed desktop.
+- No desktop-only flows without a mobile path.
+
+## Construction product focus
+
+Prioritize: projects, calendar/planning, team, tasks, attendance, docs/photos, site issues, quotes, invoices, expenses, reports, customer comms.
+
+**30s manager test:** today’s work, active projects, assignments, delays, approvals, quotes/invoices/expenses needing action, reported site problems.
+
+## Onboarding (Staveto-specific, not generic SaaS)
+
+6 steps: welcome → profile → personal|company → create/join company → optional features → workspace → `/app`.
+
+- Required: `firstName`, `lastName`, usage type; `companyName` only when creating company.
+- Optional: feature interests. **No** `phoneNumber`, `country`, `companySize`, `companyType` unless mobile-verified or approved.
+- Keep `/join?token=`; minimal fields; service writes only (`src/services/onboarding/`).
+- Match design: navy `#1D376A`, orange `#e06737`, white cards.
+
+## AI (when implemented)
+
+Safe manager assistant: summarize, suggest, drafts — not autonomous risky actions.
+**Confirm before:** email send, final invoices, schedule changes, deletes, invites, permissions, export/share.
+
+## Before implementing a screen
+
+1. User goal 2. Primary action 3. Empty state 4. Loading/error 5. A11y 6. Mobile 7. Minimize fields 8. No unmarked mock data
+
+## New module defaults
+
+Reuse: `DashboardSection`, `EmptyState`, `OnboardingStepShell`, i18n keys, existing Staveto colors/components.

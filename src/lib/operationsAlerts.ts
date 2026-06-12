@@ -64,14 +64,29 @@ export function buildOperationsAlerts(input: {
     });
   }
 
-  const longTimers = input.team.filter((m) => (m.timerSeconds ?? 0) >= 12 * 60 * 60).length;
+  const longTimers = input.team.filter((m) => (m.timerSeconds ?? 0) >= 10 * 60 * 60).length;
   if (longTimers > 0) {
     alerts.push({
       id: "long-timers",
-      severity: "info",
-      labelKey: "operations.alerts.longTimers",
+      severity: "warning",
+      labelKey: "operations.alerts.timerLongRunning",
       count: longTimers,
-      href: "/app/attendance",
+      href: "/app/operations",
+    });
+  }
+
+  const longPauses = input.team.filter((m) => {
+    if (m.status !== "paused" || !m.pauseSince) return false;
+    const ms = Date.now() - new Date(m.pauseSince).getTime();
+    return ms >= 60 * 60 * 1000;
+  }).length;
+  if (longPauses > 0) {
+    alerts.push({
+      id: "long-pauses",
+      severity: "info",
+      labelKey: "operations.alerts.pauseTooLong",
+      count: longPauses,
+      href: "/app/operations",
     });
   }
 

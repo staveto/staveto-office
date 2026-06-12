@@ -1,0 +1,1155 @@
+.shell {
+  --ops-navy: #1d376a;
+  --ops-orange: #e06737;
+  --ops-card-shadow: 0 1px 3px rgb(15 23 42 / 6%), 0 8px 24px rgb(15 23 42 / 4%);
+}
+
+.sectionCard {
+  border-radius: 16px;
+  border: 1px solid rgb(226 232 240 / 80%);
+  background: #fff;
+  box-shadow: var(--ops-card-shadow);
+  padding: 1.25rem;
+}
+
+:global(.dark) .sectionCard {
+  background: rgb(30 41 59 / 95%);
+  border-color: rgb(51 65 85 / 60%);
+}
+
+.sectionTitle {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ops-navy);
+}
+
+:global(.dark) .sectionTitle {
+  color: rgb(226 232 240);
+}
+
+.heroGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .heroGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .heroGrid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.heroTile {
+  border-radius: 14px;
+  border: 1px solid rgb(226 232 240 / 70%);
+  background: linear-gradient(180deg, #fff 0%, #f8fafc 100%);
+  padding: 1rem 0.85rem;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.heroTile:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgb(29 55 106 / 8%);
+}
+
+.heroIcon {
+  font-size: 1.25rem;
+  line-height: 1;
+  margin-bottom: 0.35rem;
+}
+
+.heroValue {
+  font-size: 1.75rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--ops-navy);
+  font-variant-numeric: tabular-nums;
+}
+
+.heroLabel {
+  margin-top: 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: rgb(100 116 139);
+}
+
+.teamGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .teamGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1280px) {
+  .teamGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.memberCard {
+  border-radius: 14px;
+  border: 1px solid rgb(226 232 240 / 80%);
+  background: #fff;
+  padding: 1rem;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.memberCard:hover {
+  box-shadow: 0 8px 24px rgb(15 23 42 / 6%);
+  border-color: rgb(29 55 106 / 15%);
+}
+
+.memberCardWorking {
+  border-left: 3px solid #16a34a;
+}
+
+.memberCardPaused {
+  border-left: 3px solid #d97706;
+}
+
+.memberCardAbsent {
+  border-left: 3px solid #f43f5e;
+}
+
+.memberCardIdle {
+  border-left: 3px solid #94a3b8;
+}
+
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #1d376a 0%, #2d4a8a 100%);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.timerDisplay {
+  font-size: 1.35rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #16a34a;
+}
+
+.timerPaused {
+  color: #d97706;
+}
+
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.statusDot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+}
+
+.workloadBar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgb(226 232 240);
+  overflow: hidden;
+}
+
+.workloadFill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--ops-navy) 0%, #3b5bdb 100%);
+  transition: width 0.3s ease;
+}
+
+.investmentCard {
+  border-radius: 14px;
+  border: 1px solid rgb(226 232 240 / 80%);
+  padding: 1rem;
+  background: #fafbfc;
+}
+
+.progressRing {
+  height: 6px;
+  border-radius: 999px;
+  background: rgb(226 232 240);
+  overflow: hidden;
+}
+
+.progressRingFill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--ops-orange);
+}
+
+.timelineItem {
+  display: grid;
+  grid-template-columns: 3.5rem 1fr;
+  gap: 0.75rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid rgb(226 232 240 / 60%);
+}
+
+.timelineItem:last-child {
+  border-bottom: none;
+}
+
+.timelineTime {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ops-navy);
+  font-variant-numeric: tabular-nums;
+}
+
+.attentionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  transition: background 0.12s ease;
+}
+
+.attentionRow:hover {
+  background: rgb(254 243 199 / 50%);
+}
+
+.crewCard {
+  border-radius: 12px;
+  border: 1px solid rgb(226 232 240 / 80%);
+  padding: 0.85rem;
+  background: #fff;
+}
+
+.crewChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  background: rgb(241 245 249);
+  padding: 0.25rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.mapCompact {
+  min-height: 200px;
+  max-height: 260px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgb(226 232 240 / 80%);
+}
+
+.mapCompact > div {
+  max-height: 260px;
+  overflow: hidden;
+}
+
+/* —— Asymmetric manager dashboard —— */
+.opsDashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.opsRowSplit {
+  display: grid;
+  gap: 1rem;
+  align-items: stretch;
+}
+
+@media (max-width: 1023px) {
+  .opsRowSplit {
+    grid-template-columns: 1fr;
+  }
+
+  .opsColLive {
+    order: -1;
+  }
+}
+
+@media (min-width: 1024px) {
+  .opsRow40_60 {
+    grid-template-columns: 2fr 3fr;
+  }
+
+  .opsRow50_50 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.opsColHero,
+.opsColLive,
+.opsColHalf {
+  min-width: 0;
+}
+
+.sectionIntent {
+  margin: 0 0 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: rgb(100 116 139);
+}
+
+:global(.dark) .sectionIntent {
+  color: rgb(148 163 184);
+}
+
+.presenceBoardShell {
+  min-height: 420px;
+}
+
+.presenceBoardDominant {
+  min-height: 480px;
+  padding: 1.5rem 1.65rem;
+  border-radius: 20px;
+  box-shadow: 0 12px 40px rgb(29 55 106 / 10%);
+}
+
+@media (min-width: 1024px) {
+  .presenceBoardDominant {
+    min-height: 560px;
+  }
+
+  .presenceBoardDominant .sectionTitle {
+    font-size: 0.95rem;
+  }
+
+  .presenceBoardDominant .presenceGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1440px) {
+  .presenceBoardDominant .presenceGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+  }
+}
+
+.attentionProminent {
+  min-height: 260px;
+  padding: 1.35rem 1.5rem;
+  border-radius: 18px;
+}
+
+.heroCompact .heroGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (min-width: 1280px) {
+  .heroCompact .heroGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.opsRowFull {
+  width: 100%;
+}
+
+.opsPanelSecondary {
+  opacity: 0.98;
+}
+
+.timelineDeemphasized {
+  padding: 1rem 1.25rem;
+  border-radius: 14px;
+  background: rgb(248 250 252);
+  border-color: rgb(226 232 240 / 60%);
+  box-shadow: none;
+}
+
+:global(.dark) .timelineDeemphasized {
+  background: rgb(30 41 59 / 50%);
+}
+
+.presenceGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+}
+
+@media (min-width: 768px) {
+  .presenceGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1280px) {
+  .presenceGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.presenceCard {
+  border-radius: 16px;
+  border: 1px solid rgb(226 232 240 / 85%);
+  background: #fff;
+  padding: 1.15rem 1.25rem;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 4%);
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.presenceCard:hover {
+  box-shadow: 0 8px 24px rgb(15 23 42 / 8%);
+  transform: translateY(-1px);
+}
+
+.presenceCardWorking {
+  border-left: 4px solid #16a34a;
+}
+
+.presenceCardPaused {
+  border-left: 4px solid #d97706;
+}
+
+.presenceCardAbsent {
+  border-left: 4px solid #f43f5e;
+}
+
+.presenceCardIdle {
+  border-left: 4px solid #94a3b8;
+}
+
+.presenceCardOffline {
+  border-left: 4px solid #6366f1;
+}
+
+.presenceAvatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #1d376a 0%, #2d4a8a 100%);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.presenceStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: rgb(241 245 249);
+  padding: 0.25rem 0.6rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #334155;
+}
+
+
+/* —— Map / visual view —— */
+.opsMapViewShell {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.opsMapViewHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.opsWhoIsWhere {
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--ops-navy);
+}
+
+:global(.dark) .opsWhoIsWhere {
+  color: rgb(226 232 240);
+}
+
+.opsMapViewGrid {
+  display: grid;
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (min-width: 1024px) {
+  .opsMapViewGrid {
+    grid-template-columns: minmax(0, 13fr) minmax(280px, 7fr);
+    min-height: 520px;
+  }
+}
+
+.opsBubbleColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-height: 78vh;
+  overflow-y: auto;
+  padding-right: 0.35rem;
+}
+
+.opsProjectGroupTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: var(--ops-navy);
+}
+
+:global(.dark) .opsProjectGroupTitle {
+  color: rgb(226 232 240);
+}
+
+/* —— Worker cards (Map View) —— */
+.opsWorkerCard {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 168px;
+  border-radius: 18px;
+  border: 1px solid rgb(226 232 240 / 90%);
+  background: linear-gradient(145deg, #fff 0%, #f8fafc 100%);
+  box-shadow: 0 4px 16px rgb(15 23 42 / 5%);
+  overflow: hidden;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+
+.opsWorkerCard:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 16px 36px rgb(15 23 42 / 12%);
+}
+
+.opsWorkerCardSelected {
+  border-color: rgb(224 103 55 / 55%);
+  box-shadow:
+    0 0 0 2px rgb(224 103 55 / 22%),
+    0 12px 32px rgb(224 103 55 / 12%);
+}
+
+.opsWorkerCardMain {
+  display: flex;
+  width: 100%;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: 1.15rem 1.25rem 0.85rem;
+  text-align: left;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  position: relative;
+}
+
+.opsWorkerCardMain:hover {
+  background: linear-gradient(145deg, rgb(255 255 255) 0%, rgb(241 245 249 / 80%) 100%);
+}
+
+.opsWorkerHoverHint {
+  display: block;
+  margin-top: 0.65rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: rgb(224 103 55);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.opsWorkerCard:hover .opsWorkerHoverHint {
+  opacity: 1;
+}
+
+.opsWorkerCardAvatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #1d376a 0%, #2d4a8a 100%);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 800;
+  flex-shrink: 0;
+  box-shadow: 0 4px 14px rgb(29 55 106 / 28%);
+}
+
+.opsWorkerCardName {
+  font-size: 1.1rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--ops-navy);
+}
+
+:global(.dark) .opsWorkerCardName {
+  color: rgb(241 245 249);
+}
+
+.opsWorkerCardRow,
+.opsWorkerCardTimerRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+  margin-top: 0.45rem;
+  align-items: baseline;
+}
+
+.opsWorkerCardLabel {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgb(100 116 139);
+}
+
+.opsWorkerCardValue {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: rgb(29 55 106);
+}
+
+:global(.dark) .opsWorkerCardValue {
+  color: rgb(226 232 240);
+}
+
+.opsWorkerCardTimer {
+  font-size: 1.65rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.opsWorkerCardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0 1.1rem 1rem;
+  border-top: 1px solid rgb(226 232 240 / 70%);
+  background: rgb(248 250 252 / 80%);
+}
+
+:global(.dark) .opsWorkerCardActions {
+  background: rgb(30 41 59 / 40%);
+}
+
+.opsStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.opsStatusBadgeWorking {
+  background: rgb(220 252 231);
+  color: #166534;
+}
+
+.opsStatusBadgePaused {
+  background: rgb(254 243 199);
+  color: #b45309;
+}
+
+.opsStatusBadgeAbsent {
+  background: rgb(243 232 255);
+  color: #7e22ce;
+}
+
+.opsStatusBadgeIdle {
+  background: rgb(241 245 249);
+  color: #475569;
+}
+
+.opsStatusBadgeOffline {
+  background: rgb(243 244 246);
+  color: #6b7280;
+}
+
+.opsWorkerCard.opsBubbleRingWorking:hover {
+  border-color: rgb(22 163 74 / 45%);
+}
+
+.opsWorkerCard.opsBubbleRingPaused:hover {
+  border-color: rgb(217 119 6 / 45%);
+}
+
+.opsWorkerCard.opsBubbleRingAbsent:hover {
+  border-color: rgb(126 34 206 / 40%);
+}
+
+.opsWorkerCard.opsBubbleRingIdle:hover {
+  border-color: rgb(100 116 139 / 45%);
+}
+
+.opsWorkerCard.opsBubbleRingOffline:hover {
+  border-color: rgb(107 114 128 / 45%);
+}
+
+.opsBubbleRingWorking {
+  border-left: 4px solid #16a34a;
+}
+
+.opsBubbleRingPaused {
+  border-left: 4px solid #d97706;
+}
+
+.opsBubbleRingAbsent {
+  border-left: 4px solid #f43f5e;
+}
+
+.opsBubbleRingIdle {
+  border-left: 4px solid #94a3b8;
+}
+
+.opsBubbleRingOffline {
+  border-left: 4px solid #6366f1;
+}
+
+.opsLocationChip {
+  display: inline-block;
+  margin-top: 0.5rem;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.opsLocationChipOk {
+  background: rgb(220 252 231);
+  color: #166534;
+}
+
+.opsLocationChipMuted {
+  background: rgb(241 245 249);
+  color: #64748b;
+}
+
+.opsMapMain {
+  min-height: 380px;
+  max-height: 78vh;
+}
+
+.opsMapFrame {
+  position: relative;
+  height: 100%;
+  min-height: 380px;
+  max-height: 78vh;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid rgb(226 232 240 / 90%);
+  box-shadow: 0 8px 32px rgb(15 23 42 / 8%);
+  background: #f1f5f9;
+}
+
+.opsMapCanvas {
+  width: 100%;
+  height: 100%;
+  min-height: 380px;
+}
+
+.opsMapSkeleton {
+  width: 100%;
+  min-height: 420px;
+  background: linear-gradient(90deg, #e2e8f0 0%, #f1f5f9 50%, #e2e8f0 100%);
+  background-size: 200% 100%;
+  animation: opsMapShimmer 1.4s ease infinite;
+}
+
+@keyframes opsMapShimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
+.opsMapEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 420px;
+  border-radius: 20px;
+  border: 2px dashed rgb(226 232 240);
+  background: linear-gradient(180deg, #fafbfc 0%, #f1f5f9 100%);
+  padding: 2rem;
+  text-align: center;
+}
+
+.opsLocationBoard {
+  min-height: 420px;
+  border-radius: 20px;
+  border: 1px solid rgb(226 232 240 / 90%);
+  background: linear-gradient(180deg, #fff 0%, #f8fafc 100%);
+  padding: 1.5rem;
+  box-shadow: var(--ops-card-shadow);
+}
+
+.opsLocationBoardProject {
+  padding-bottom: 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid rgb(226 232 240 / 70%);
+}
+
+.opsDetailPanelProminent {
+  border-radius: 20px;
+  border: 2px solid rgb(224 103 55 / 35%);
+  background: linear-gradient(180deg, #fff 0%, #fffaf7 100%);
+  padding: 1.25rem 1.35rem;
+  margin-bottom: 0.5rem;
+  box-shadow: 0 12px 36px rgb(224 103 55 / 10%);
+}
+
+:global(.dark) .opsDetailPanelProminent {
+  background: linear-gradient(180deg, rgb(30 41 59) 0%, rgb(30 41 59 / 90%) 100%);
+}
+
+.opsDetailEyebrow {
+  margin: 0 0 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgb(224 103 55);
+}
+
+.opsDetailHeader {
+  display: flex;
+  gap: 0.85rem;
+  align-items: center;
+}
+
+.opsDetailAvatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #1d376a 0%, #2d4a8a 100%);
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.opsDetailTitle {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--ops-navy);
+}
+
+:global(.dark) .opsDetailTitle {
+  color: rgb(241 245 249);
+}
+
+.opsDetailCards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.65rem;
+  margin-top: 1rem;
+}
+
+.opsDetailCard {
+  border-radius: 12px;
+  border: 1px solid rgb(226 232 240 / 80%);
+  background: rgb(248 250 252 / 80%);
+  padding: 0.65rem 0.75rem;
+}
+
+.opsDetailCardLabel {
+  margin: 0;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgb(100 116 139);
+}
+
+.opsDetailCardValue {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: rgb(15 23 42);
+}
+
+.opsDetailGpsSection {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgb(226 232 240 / 70%);
+}
+
+.opsDetailSectionTitle {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgb(100 116 139);
+}
+
+.opsDetailGpsCard {
+  border-radius: 12px;
+  border: 1px solid rgb(187 247 208);
+  background: rgb(240 253 244);
+  padding: 0.75rem 0.85rem;
+}
+
+.opsDetailActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.opsMapPopup {
+  min-width: 180px;
+}
+
+.opsMapSelectedChip {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  z-index: 500;
+  border-radius: 999px;
+  background: rgb(29 55 106 / 92%);
+  color: #fff;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+:global(.opsMapMarkerWorker) {
+  background: transparent !important;
+  border: none !important;
+}
+
+.opsMapMarkerWorkerDot {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #e06737;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 35%);
+}
+
+:global(.opsMapMarkerProject) {
+  background: transparent !important;
+  border: none !important;
+}
+
+.opsMapMarkerProjectDot {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #1d376a;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 30%);
+}
+
+/* —— Operations page header controls —— */
+.opsPageHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+@media (min-width: 1024px) {
+  .opsPageHeader {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1.5rem;
+  }
+}
+
+.opsPageHeaderTitle {
+  min-width: 0;
+}
+
+.opsHeaderControls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  width: 100%;
+}
+
+@media (min-width: 640px) {
+  .opsHeaderControls {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 1rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .opsHeaderControls {
+    width: auto;
+    justify-content: flex-end;
+  }
+}
+
+.opsControlGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+@media (max-width: 639px) {
+  .opsControlGroup {
+    width: 100%;
+  }
+}
+
+.opsControlLabel {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgb(100 116 139);
+}
+
+.opsSegmentTrack {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  padding: 0.3rem;
+  border-radius: 999px;
+  border: 1px solid rgb(226 232 240);
+  background: rgb(248 250 252);
+  min-height: 44px;
+  align-items: center;
+}
+
+@media (max-width: 639px) {
+  .opsSegmentTrack {
+    width: 100%;
+  }
+}
+
+.opsSegmentTrackView {
+  border-color: rgb(29 55 106 / 20%);
+  background: rgb(241 245 249);
+}
+
+.opsSegmentBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 40px;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgb(71 85 105);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.12s ease,
+    box-shadow 0.15s ease;
+}
+
+@media (max-width: 639px) {
+  .opsSegmentBtn {
+    flex: 1 1 auto;
+  }
+}
+
+.opsSegmentBtn:hover {
+  background: rgb(255 255 255 / 90%);
+  color: rgb(29 55 106);
+}
+
+.opsSegmentBtn:focus-visible {
+  outline: 2px solid rgb(29 55 106 / 45%);
+  outline-offset: 2px;
+}
+
+.opsSegmentBtnViewActive {
+  background: #1d376a;
+  border-color: #1d376a;
+  color: #fff;
+  font-weight: 800;
+  box-shadow: 0 4px 14px rgb(29 55 106 / 28%);
+}
+
+.opsSegmentBtnViewActive:hover {
+  background: #162d57;
+  color: #fff;
+}
+
+.opsSegmentBtnPeriodActive {
+  background: #fff;
+  border-color: rgb(29 55 106 / 25%);
+  color: #1d376a;
+  font-weight: 800;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 8%);
+}
+
+.opsHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+@media (max-width: 639px) {
+  .opsHeaderActions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+  }
+}
+
+.opsRefreshBtn {
+  min-height: 44px;
+  padding-left: 1rem;
+  padding-right: 1rem;
+  font-weight: 700;
+  gap: 0.5rem;
+}

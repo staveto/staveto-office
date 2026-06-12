@@ -23,6 +23,9 @@ import { AttendanceMonthNav } from "@/components/attendance/AttendanceMonthNav";
 import { AttendanceKpiCard } from "@/components/attendance/AttendanceKpiCard";
 import { AttendanceByPersonTable } from "@/components/attendance/AttendanceByPersonTable";
 import { AttendanceByProjectTable } from "@/components/attendance/AttendanceByProjectTable";
+import { TeamLiveStatusPanel } from "@/components/operations/TeamLiveStatusPanel";
+import { useTeamLiveStatus } from "@/hooks/useTeamLiveStatus";
+import { canViewOperationsDashboard } from "@/lib/operationsPermissions";
 import { cn } from "@/lib/utils";
 
 type TabId = "person" | "project";
@@ -32,6 +35,8 @@ export default function AttendancePage() {
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
   const { role, isCompany } = useWorkspaceProduct();
+  const { activeWorkers, loading: liveLoading } = useTeamLiveStatus(activeWorkspace, user?.id, role);
+  const showLiveCrew = canViewOperationsDashboard(role);
 
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -150,6 +155,16 @@ export default function AttendancePage() {
         onNext={goNextMonth}
         disableNext={isFutureMonth}
       />
+
+      {showLiveCrew ? (
+        <div className="space-y-2">
+          <TeamLiveStatusPanel members={activeWorkers} t={t} />
+          {!liveLoading && activeWorkers.length === 0 ? (
+            <p className="text-xs text-muted-foreground">{t("attendance.liveNowEmpty")}</p>
+          ) : null}
+          <p className="text-xs text-muted-foreground">{t("attendance.liveNowHint")}</p>
+        </div>
+      ) : null}
 
       {loading && (
         <div className="flex justify-center py-16">

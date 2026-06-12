@@ -4,8 +4,11 @@ import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { useI18n } from "@/i18n/I18nContext";
 import { useWorkspaceProduct } from "@/hooks/useWorkspaceProduct";
+import { useTeamLiveStatus } from "@/hooks/useTeamLiveStatus";
 import { getGreetingKey } from "@/lib/dashboardCommandCenter";
 import type { MissionControlData } from "@/lib/missionControlData";
+import type { ActiveWorkspace } from "@/types/workspace";
+import { TeamLiveStatusPanel } from "@/components/operations/TeamLiveStatusPanel";
 import { MissionControlAttention } from "./MissionControlAttention";
 import { MissionControlKpis } from "./MissionControlKpis";
 import { MissionControlToday } from "./MissionControlToday";
@@ -21,6 +24,8 @@ type MissionControlDashboardProps = {
   loading: boolean;
   displayName: string;
   orgName?: string;
+  workspace?: ActiveWorkspace | null;
+  uid?: string;
 };
 
 function formatHeaderDate(): string {
@@ -36,9 +41,12 @@ export function MissionControlDashboard({
   loading,
   displayName,
   orgName,
+  workspace,
+  uid,
 }: MissionControlDashboardProps) {
   const { t } = useI18n();
   const { isOwner, canManage, role } = useWorkspaceProduct();
+  const { activeWorkers } = useTeamLiveStatus(workspace, uid, role);
   const showFinance = isOwner || role === "accountant";
 
   if (loading || !data) {
@@ -108,6 +116,17 @@ export function MissionControlDashboard({
               />
             </div>
             <div className="space-y-4 lg:col-span-2">
+              {activeWorkers.length > 0 ? (
+                <div className="space-y-2">
+                  <TeamLiveStatusPanel members={activeWorkers} t={t} />
+                  <Link
+                    href="/app/operations"
+                    className="text-xs font-medium text-primary hover:underline"
+                  >
+                    {t("operations.title")} →
+                  </Link>
+                </div>
+              ) : null}
               <MissionControlTeam team={data.team} />
               <MissionControlWorkload workloads={data.workloads} />
               <MissionControlVehicles vehicles={data.vehicles} />

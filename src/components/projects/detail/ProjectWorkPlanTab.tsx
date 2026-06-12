@@ -19,7 +19,6 @@ import {
 import {
   computeMemberWorkloads,
   computePlanningKpis,
-  countUnassignedOpenTasks,
 } from "@/lib/taskPlanningMetrics";
 import {
   detectToolConflicts,
@@ -45,9 +44,13 @@ import type { ProjectMemberRecord, ProjectPhaseRecord, TaskToolSnapshot } from "
 import type { WorkspaceRole } from "@/types/workspace";
 import { ProjectPlanningKpis } from "./ProjectPlanningKpis";
 import { ProjectPlanningConflictAlerts } from "./ProjectPlanningConflictAlerts";
-import { ProjectWorkloadPanel } from "./ProjectWorkloadPanel";
-import { ProjectWorkBoard, buildConflictTaskIdSet } from "./ProjectWorkBoard";
+import { buildConflictTaskIdSet } from "./ProjectWorkBoard";
+import { ProjectWorkerBoard } from "./ProjectWorkerBoard";
 import { ProjectBulkPlanningToolbar } from "./ProjectBulkPlanningToolbar";
+import {
+  loadActiveTimers,
+  type ActiveTimerState,
+} from "@/services/operations/teamLiveStatusService";
 import { TaskAssigneePicker } from "./TaskAssigneePicker";
 import { TaskToolsPicker } from "./TaskToolsPicker";
 import { ProjectEquipmentPanel } from "./ProjectEquipmentPanel";
@@ -74,6 +77,7 @@ export function ProjectWorkPlanTab({
 }: Props) {
   const { t, locale } = useI18n();
   const [members, setMembers] = useState<ProjectMemberRecord[]>([]);
+  const [activeTimers, setActiveTimers] = useState<Map<string, ActiveTimerState>>(new Map());
   const [tools, setTools] = useState<TaskToolSnapshot[]>([]);
   const [availableTools, setAvailableTools] = useState<ProjectToolRecord[]>([]);
   const [projectTools, setProjectTools] = useState<ProjectToolRecord[]>([]);
@@ -88,7 +92,14 @@ export function ProjectWorkPlanTab({
   const [dateDialogOpen, setDateDialogOpen] = useState(false);
   const [bulkDate, setBulkDate] = useState("");
 
-  const canManage = canManageTaskPlanning(project, userId, role);
+  const myMemberRecord = useMemo(
+    () => members.find((m) => m.userId === userId) ?? null,
+    [members, userId]
+  );
+  const canManage = useMemo(
+    () => canManageTaskPlanning(project, userId, role, myMemberRecord),
+    [project, userId, role, myMemberRecord]
+  );
   const localeTag =
     locale === "de" ? "de-DE" : locale === "en" ? "en-GB" : "sk-SK";
 
@@ -118,6 +129,8 @@ export function ProjectWorkPlanTab({
         await reloadTools();
         setLoadingMeta(false);
       }
+      const timers = await loadActiveTimers(m.map((x) => x.userId));
+      if (!cancelled) setActiveTimers(timers);
     })();
     return () => {
       cancelled = true;
@@ -135,8 +148,6 @@ export function ProjectWorkPlanTab({
     () => computeMemberWorkloads(visibleTasks, members, workerConflictUserIds(workerConflicts)),
     [visibleTasks, members, workerConflicts]
   );
-  const unassignedCount = useMemo(() => countUnassignedOpenTasks(visibleTasks), [visibleTasks]);
-
   const patchTasks = (patches: Map<string, Partial<TaskDoc>>) => {
     onTasksChange(
       tasks.map((task) => {
@@ -333,40 +344,29 @@ export function ProjectWorkPlanTab({
         t={t}
       />
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(200px,240px)_minmax(0,1fr)]">
-        <div className="lg:sticky lg:top-4 lg:self-start">
-          <div className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-visible pb-1 lg:pb-0">
-            <ProjectWorkloadPanel
-              workloads={workloads}
-              unassignedCount={unassignedCount}
-              t={t}
-            />
-          </div>
-        </div>
-
-        <ProjectWorkBoard
-          tasks={visibleTasks}
-          phases={phases}
-          canManage={canManage}
-          userId={userId}
-          selectedIds={selectedIds}
-          togglingTaskId={togglingTaskId}
-          conflictTaskIds={conflictTaskIds}
-          locale={localeTag}
-          onToggleSelect={toggleSelect}
-          onToggleStatus={(task) => void handleToggleStatus(task)}
-          onOpenAssignee={(task) => {
-            setPickerMode("single");
-            setAssigneeTask(task);
-          }}
-          onOpenTools={(task) => {
-            setPickerMode("single");
-            setToolsTask(task);
-          }}
-          canToggleStatus={(task) => canWorkerToggleTaskStatus(task, userId, canManage)}
-          t={t}
-        />
-      </div>
+      <ProjectWorkerBoard
+        tasks={visibleTasks}
+        members={members}
+        phases={phases}
+        workloads={workloads}
+        activeTimers={activeTimers}
+        canManage={canManage}
+        selectedIds={selectedIds}
+        togglingTaskId={togglingTaskId}
+        conflictTaskIds={conflictTaskIds}
+        locale={localeTag}
+        onToggleSelect={toggleSelect}
+        onToggleStatus={(task) => void handleToggleStatus(task)}
+        onOpenAssignee={(task) => {
+          setPickerMode("single");
+          setAssigneeTask(task);
+        }}
+        onOpenTools={(task) => {
+          setPickerMode("single");
+          setToolsTask(task);
+        }}
+        canToggleStatus={(task) => canWorkerToggleTaskStatus(task, userId, canManage)}
+      />
 
       {canManage ? (
         <ProjectBulkPlanningToolbar

@@ -1,6 +1,8 @@
 import type { ProjectDoc, TaskDoc } from "@/lib/projects";
 import type { TimeEntryDoc } from "@/services/attendance/timeTrackingReadService";
 
+import type { GpsDisplayStatus } from "@/lib/operationsGps";
+
 export type TeamStatus = "working" | "paused" | "not_started" | "absent" | "offline";
 
 export type TeamLiveStatusItem = {
@@ -13,8 +15,37 @@ export type TeamLiveStatusItem = {
   taskId?: string;
   taskName?: string;
   timerSeconds?: number;
+  startedAt?: string;
   pauseSince?: string;
-  locationLabel?: string;
+  todayWorkedMinutes?: number;
+  gpsStatus?: GpsDisplayStatus;
+};
+
+export type TeamWorkloadRow = {
+  uid: string;
+  name: string;
+  totalMinutes: number;
+  status: TeamStatus;
+};
+
+export type ProjectInvestmentCard = {
+  projectId: string;
+  projectName: string;
+  totalMinutes: number;
+  completionPercent: number;
+  taskCount: number;
+  doneCount: number;
+  byMember: { userId: string; userName: string; minutes: number }[];
+};
+
+export type DayTimelineEvent = {
+  id: string;
+  time: string;
+  timeSort: number;
+  actorName: string;
+  kind: "timer_started" | "timer_paused" | "timer_stopped" | "entry_logged";
+  projectName?: string;
+  detail?: string;
 };
 
 export type TodayOverviewMetrics = {
@@ -25,6 +56,8 @@ export type TodayOverviewMetrics = {
   unassignedTasks: number;
   runningTimers: number;
   trackedMinutesToday: number;
+  tasksWithoutTools: number;
+  projectsWithoutCrew: number;
 };
 
 export type TimeInvestmentByProject = {
@@ -88,6 +121,10 @@ export function summarizeTodayOverview(
   const unassignedTasks = tasks.filter((t) => t.status !== "DONE" && !t.assigneeId).length;
   const trackedMinutesToday = todayEntries.reduce((sum, e) => sum + Math.max(0, e.durationMinutes || 0), 0);
 
+  const tasksWithoutTools = tasks.filter(
+    (t) => t.status !== "DONE" && (t.assignedToolIds ?? t.assignedTools ?? []).length === 0
+  ).length;
+
   return {
     activeWorkers: team.filter((m) => m.status === "working").length,
     onBreak: team.filter((m) => m.status === "paused").length,
@@ -96,7 +133,30 @@ export function summarizeTodayOverview(
     unassignedTasks,
     runningTimers: team.filter((m) => m.status === "working" || m.status === "paused").length,
     trackedMinutesToday,
+    tasksWithoutTools,
+    projectsWithoutCrew: 0,
   };
+}
+
+export function formatTimerHms(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+export function formatTimeShort(iso?: string): string {
+  if (!iso?.trim()) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+export function memberInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 1).toUpperCase();
+  return `${parts[0].slice(0, 1)}${parts[1].slice(0, 1)}`.toUpperCase();
 }
 
 export function computeUnassignedWork(projects: ProjectDoc[], tasks: TaskDoc[]): UnassignedWorkGroup[] {

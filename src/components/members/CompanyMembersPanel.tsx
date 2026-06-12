@@ -73,11 +73,17 @@ import { InviteMemberDialog } from "@/components/members/InviteMemberDialog";
 import { InviteCodeViewDialog } from "@/components/members/InviteCodeViewDialog";
 import { Users, Loader2, Plus, Trash2, UserMinus, Mail, Copy, Link2, QrCode } from "lucide-react";
 import { getFirestoreInstance } from "@/lib/firebase";
+import { useWorkspaceProduct } from "@/hooks/useWorkspaceProduct";
+import { useTeamLiveStatus } from "@/hooks/useTeamLiveStatus";
+import { TeamLiveStatusPanel } from "@/components/operations/TeamLiveStatusPanel";
+import { canViewOperationsDashboard } from "@/lib/operationsPermissions";
 
 export function CompanyMembersPanel() {
   const { t } = useI18n();
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
+  const { role } = useWorkspaceProduct();
+  const { activeWorkers } = useTeamLiveStatus(activeWorkspace, user?.id, role);
 
   const orgId =
     activeWorkspace && isCompanyWorkspaceType(activeWorkspace.type)
@@ -363,6 +369,10 @@ export function CompanyMembersPanel() {
           pendingInvites={pendingInvites}
           seatsFull={seatsFull}
         />
+      ) : null}
+
+      {canViewOperationsDashboard(role) && activeWorkers.length > 0 ? (
+        <TeamLiveStatusPanel members={activeWorkers} t={t} />
       ) : null}
 
       {canInvite ? (

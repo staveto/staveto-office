@@ -31,6 +31,7 @@ export type TimerPause = {
 export type GpsPoint = {
   lat: number;
   lng: number;
+  accuracyM?: number;
   accuracy?: number;
 };
 
@@ -48,6 +49,11 @@ export type TimeEntryDoc = {
   note?: string;
   gpsStart?: GpsPoint | null;
   gpsEnd?: GpsPoint | null;
+  gpsStartHidden?: boolean;
+  gpsEndHidden?: boolean;
+  gpsHiddenReason?: string;
+  gpsHiddenBy?: string;
+  gpsHiddenAt?: string;
   flags?: { reminded?: boolean; autoStopped?: boolean; lowAccuracy?: boolean };
   phaseId?: string | null;
   phaseNameSnapshot?: string | null;
@@ -248,6 +254,11 @@ export function parseTimeEntryDoc(id: string, data: Record<string, unknown>): Ti
     note: typeof data.note === "string" ? data.note : undefined,
     gpsStart: (data.gpsStart as GpsPoint | null) ?? null,
     gpsEnd: (data.gpsEnd as GpsPoint | null) ?? null,
+    gpsStartHidden: data.gpsStartHidden === true,
+    gpsEndHidden: data.gpsEndHidden === true,
+    gpsHiddenReason: typeof data.gpsHiddenReason === "string" ? data.gpsHiddenReason : undefined,
+    gpsHiddenBy: typeof data.gpsHiddenBy === "string" ? data.gpsHiddenBy : undefined,
+    gpsHiddenAt: toIso(data.gpsHiddenAt),
     phaseId: (data.phaseId as string) ?? undefined,
     phaseNameSnapshot: (data.phaseNameSnapshot as string) ?? undefined,
     taskId: (data.taskId as string) ?? undefined,

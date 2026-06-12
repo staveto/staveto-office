@@ -38,3 +38,7 @@ export function filterTasksForWorkerView(tasks: TaskDoc[], userId: string): Task
     return !assignee || assignee === userId;
   });
 }
+
+export function countDoneTasks(tasks: Pick<TaskDoc, "status">[]): number {
+  return tasks.filter((t) => (t.status ?? "OPEN").toUpperCase() === "DONE").length;
+}
