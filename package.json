@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "node scripts/with-ca.mjs dev",
+    "build": "node scripts/with-ca.mjs build",
     "start": "next start",
     "lint": "eslint",
     "test:e2e": "playwright test",

@@ -41,6 +41,16 @@ export type Organization = {
   planCode?: string;
   companyType?: string;
   enabledModules?: Partial<import("./enabledModules").EnabledModulesMap>;
+  /** Optional integration statuses (App Center v1). Merged on write — unknown keys preserved. */
+  integrations?: Record<
+    string,
+    {
+      status?: string;
+      mode?: string;
+      connectedAt?: unknown;
+      note?: string;
+    }
+  >;
 };
 
 export type OrgMembership = {

@@ -105,6 +105,17 @@ export type CreateExpenseInput = {
   supplierName?: string;
   supplierIco?: string;
   travel?: TravelExpenseData | null;
+  /** Provenance — defaults to MANUAL; set to DOCUMENT for OCR/invoice-scanned expenses. */
+  source?: ExpenseSource;
+  /** OCR audit fields (only persisted for DOCUMENT source). */
+  ocrInvoiceNumber?: string | null;
+  ocrIssueDate?: string | null;
+  ocrTotalAmount?: number | null;
+  ocrVatAmount?: number | null;
+  ocrCurrency?: string | null;
+  ocrSupplierName?: string | null;
+  filePath?: string | null;
+  mimeType?: string | null;
 };
 
 export type UpdateExpenseInput = Partial<CreateExpenseInput>;
@@ -305,7 +316,7 @@ export async function createExpense(
     date: dateTimestamp,
     category: data.category ?? null,
     note: data.note?.trim() ?? null,
-    source: "MANUAL",
+    source: data.source ?? "MANUAL",
     status: "READY",
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -313,6 +324,18 @@ export async function createExpense(
 
   if (data.supplierName?.trim()) payload.supplierName = data.supplierName.trim();
   if (data.supplierIco?.trim()) payload.supplierIco = data.supplierIco.trim();
+
+  if (data.source === "DOCUMENT") {
+    if (data.filePath?.trim()) payload.filePath = data.filePath.trim();
+    if (data.mimeType?.trim()) payload.mimeType = data.mimeType.trim();
+    if (data.ocrInvoiceNumber?.trim()) payload.ocrInvoiceNumber = data.ocrInvoiceNumber.trim();
+    if (data.ocrIssueDate?.trim()) payload.ocrIssueDate = data.ocrIssueDate.trim();
+    if (typeof data.ocrTotalAmount === "number") payload.ocrTotalAmount = data.ocrTotalAmount;
+    if (typeof data.ocrVatAmount === "number") payload.ocrVatAmount = data.ocrVatAmount;
+    if (data.ocrCurrency?.trim()) payload.ocrCurrency = data.ocrCurrency.trim();
+    if (data.ocrSupplierName?.trim()) payload.ocrSupplierName = data.ocrSupplierName.trim();
+    payload.ocrStatus = "success";
+  }
   if (data.category === "TRAVEL" && data.travel) {
     payload.travel = {
       fromAddress: data.travel.fromAddress.trim(),

@@ -59,22 +59,40 @@ export default function SettingsPage() {
       <CompanyRegistrationPlaceholder />
       <LanguageSettings />
       {canEditModules ? (
-        <SettingsSectionCard>
-          <CardHeader>
-            <CardTitle>{t("settings.modules.linkTitle")}</CardTitle>
-            <CardDescription className="text-[#4a5568]">
-              {t("settings.modules.linkDescription")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Link
-              href="/app/settings/modules"
-              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-            >
-              {t("settings.modules.manage")}
-            </Link>
-          </CardContent>
-        </SettingsSectionCard>
+        <>
+          <SettingsSectionCard>
+            <CardHeader>
+              <CardTitle>{t("settings.modules.linkTitle")}</CardTitle>
+              <CardDescription className="text-[#4a5568]">
+                {t("settings.modules.linkDescription")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Link
+                href="/app/settings/modules"
+                className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+              >
+                {t("settings.modules.manage")}
+              </Link>
+            </CardContent>
+          </SettingsSectionCard>
+          <SettingsSectionCard>
+            <CardHeader>
+              <CardTitle>{t("appCenter.title")}</CardTitle>
+              <CardDescription className="text-[#4a5568]">
+                {t("appCenter.subtitle")}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Link
+                href="/app/settings/app-center"
+                className={cn(buttonVariants({ variant: "default", size: "sm" }), "bg-[#e06737] hover:bg-[#c9562d]")}
+              >
+                {t("appCenter.open")}
+              </Link>
+            </CardContent>
+          </SettingsSectionCard>
+        </>
       ) : null}
       <SettingsSectionCard>
         <CardHeader>

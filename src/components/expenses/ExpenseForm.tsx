@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -17,6 +18,8 @@ import {
   type ExpenseCategory,
   type TravelExpenseData,
 } from "@/lib/expenses";
+import { calculateRouteDistanceKm } from "@/services/distance";
+import { Loader2, Route } from "lucide-react";
 
 export type ExpenseFormValues = {
   title: string;
@@ -60,11 +63,60 @@ type ExpenseFormProps = {
   values: ExpenseFormValues;
   onChange: (values: ExpenseFormValues) => void;
   idPrefix?: string;
+  /**
+   * Controls which categories are offered:
+   * - "all": every category incl. TRAVEL (default, used in the project panel modal)
+   * - "invoice": MATERIAL / WORK / OTHER only (TRAVEL hidden)
+   * - "travel": category locked to TRAVEL, category select hidden
+   */
+  mode?: "all" | "invoice" | "travel";
 };
 
-export function ExpenseForm({ values, onChange, idPrefix = "exp" }: ExpenseFormProps) {
+export function ExpenseForm({ values, onChange, idPrefix = "exp", mode = "all" }: ExpenseFormProps) {
   const { t } = useI18n();
   const [amountTouched, setAmountTouched] = useState(false);
+  const [calculatingKm, setCalculatingKm] = useState(false);
+  const [kmError, setKmError] = useState<string | null>(null);
+
+  const canCalculateKm =
+    values.travel.fromAddress.trim().length >= 3 &&
+    values.travel.toAddress.trim().length >= 3;
+
+  const mapDistanceErrorToMessage = (err: unknown): string => {
+    const code = err instanceof Error ? err.message : "";
+    switch (code) {
+      case "INVALID_ADDRESS":
+        return t("expenses.travel.calcErrorInvalid");
+      case "MAPS_KEY_MISSING":
+        return t("expenses.travel.calcErrorNoKey");
+      case "ADDRESS_NOT_FOUND":
+        return t("expenses.travel.calcErrorAddress");
+      case "DISTANCE_UNAVAILABLE":
+        return t("expenses.travel.calcErrorUnavailable");
+      default:
+        return t("expenses.travel.calcErrorFailed");
+    }
+  };
+
+  const handleCalculateKm = async () => {
+    if (!canCalculateKm || calculatingKm) return;
+    setCalculatingKm(true);
+    setKmError(null);
+    try {
+      const km = await calculateRouteDistanceKm(
+        values.travel.fromAddress,
+        values.travel.toAddress
+      );
+      onChange({
+        ...values,
+        travel: { ...values.travel, distanceKm: String(km) },
+      });
+    } catch (err) {
+      setKmError(mapDistanceErrorToMessage(err));
+    } finally {
+      setCalculatingKm(false);
+    }
+  };
 
   const travelPreview = useMemo((): TravelExpenseData | null => {
     const km = parseFloat(values.travel.distanceKm);
@@ -86,6 +138,11 @@ export function ExpenseForm({ values, onChange, idPrefix = "exp" }: ExpenseFormP
     onChange({ ...values, amount: String(computed) });
   }, [values.category, travelPreview, amountTouched]);
 
+  const categoryOptions = useMemo<ExpenseCategory[]>(
+    () => (mode === "invoice" ? EXPENSE_CATEGORIES.filter((c) => c !== "TRAVEL") : EXPENSE_CATEGORIES),
+    [mode]
+  );
+
   const setField = <K extends keyof ExpenseFormValues>(key: K, value: ExpenseFormValues[K]) => {
     onChange({ ...values, [key]: value });
   };
@@ -98,7 +155,7 @@ export function ExpenseForm({ values, onChange, idPrefix = "exp" }: ExpenseFormP
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 [&_input:not([type=checkbox])]:mt-1 [&_input:not([type=checkbox])]:h-10 [&_input:not([type=checkbox])]:bg-background [&_input:not([type=checkbox])]:border-foreground/20 [&_input:not([type=checkbox])]:shadow-sm [&_[data-slot=select-trigger]]:mt-1 [&_[data-slot=select-trigger]]:h-10 [&_[data-slot=select-trigger]]:bg-background [&_[data-slot=select-trigger]]:border-foreground/20 [&_[data-slot=select-trigger]]:shadow-sm">
       <div>
         <Label htmlFor={`${idPrefix}-title`}>{t("estimates.titleCol")} *</Label>
         <Input
@@ -140,7 +197,7 @@ export function ExpenseForm({ values, onChange, idPrefix = "exp" }: ExpenseFormP
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className={mode === "travel" ? "" : "grid grid-cols-2 gap-4"}>
         <div>
           <Label htmlFor={`${idPrefix}-date`}>{t("projects.expenseDate")}</Label>
           <Input
@@ -150,24 +207,30 @@ export function ExpenseForm({ values, onChange, idPrefix = "exp" }: ExpenseFormP
             onChange={(e) => setField("date", e.target.value)}
           />
         </div>
-        <div>
-          <Label htmlFor={`${idPrefix}-category`}>{t("projects.expenseCategory")}</Label>
-          <Select
-            value={values.category}
-            onValueChange={(v) => setField("category", (v ?? "OTHER") as ExpenseCategory)}
-          >
-            <SelectTrigger id={`${idPrefix}-category`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {EXPENSE_CATEGORIES.map((c) => (
-                <SelectItem key={c} value={c}>
-                  {t(`projects.expenseCategory.${c}`)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {mode !== "travel" && (
+          <div>
+            <Label htmlFor={`${idPrefix}-category`}>{t("projects.expenseCategory")}</Label>
+            <Select
+              value={values.category}
+              onValueChange={(v) => setField("category", (v ?? "OTHER") as ExpenseCategory)}
+            >
+              <SelectTrigger id={`${idPrefix}-category`}>
+                <SelectValue>
+                  {(value: string | null) =>
+                    value ? t(`projects.expenseCategory.${value}`) : t("projects.expenseCategory")
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {categoryOptions.map((c) => (
+                  <SelectItem key={c} value={c}>
+                    {t(`projects.expenseCategory.${c}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -210,6 +273,30 @@ export function ExpenseForm({ values, onChange, idPrefix = "exp" }: ExpenseFormP
                 onChange={(e) => setTravelField("toAddress", e.target.value)}
               />
             </div>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="w-fit"
+              disabled={!canCalculateKm || calculatingKm}
+              onClick={() => void handleCalculateKm()}
+            >
+              {calculatingKm ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  {t("expenses.travel.calculating")}
+                </>
+              ) : (
+                <>
+                  <Route className="size-4" />
+                  {t("expenses.travel.calculate")}
+                </>
+              )}
+            </Button>
+            <p className="text-xs text-muted-foreground">{t("expenses.travel.calcHelper")}</p>
+            {kmError && <p className="text-xs text-destructive">{kmError}</p>}
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>

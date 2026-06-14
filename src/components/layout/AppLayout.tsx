@@ -8,12 +8,16 @@ import { TenantGate } from "@/components/tenant/TenantGate";
 import { cn } from "@/lib/utils";
 import { SidebarLayoutProvider, useSidebarLayout } from "@/context/SidebarLayoutContext";
 import { BusinessMessagingDrawer } from "@/components/business-chat/BusinessMessagingDrawer";
+import { SettingsSidebar } from "@/components/settings/SettingsSidebar";
+import { isSettingsAreaPath } from "@/lib/settingsNavigation";
 
 function AppLayoutInner({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
   const { widthPx, setExpanded } = useSidebarLayout();
   const isNewJobFlow = pathname.startsWith("/app/projects/new");
+  const isSettingsMode = isSettingsAreaPath(pathname);
+  const settingsSidebarWidth = 280;
 
   useEffect(() => {
     queueMicrotask(() => setSidebarOpen(false));
@@ -28,11 +32,11 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
       <div
         className={cn(
           "hidden md:block sticky top-0 z-40 h-screen shrink-0 overflow-visible transition-[width,opacity] duration-200 ease-out",
-          isNewJobFlow && "opacity-70"
+          isNewJobFlow && !isSettingsMode && "opacity-70"
         )}
-        style={{ width: widthPx }}
+        style={{ width: isSettingsMode ? settingsSidebarWidth : widthPx }}
       >
-        <Sidebar isMobile={false} />
+        {isSettingsMode ? <SettingsSidebar /> : <Sidebar isMobile={false} />}
       </div>
 
       {/* Mobile sidebar overlay */}
@@ -44,10 +48,11 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
             aria-hidden
           />
           <div className="fixed inset-y-0 left-0 z-50 md:hidden">
-            <Sidebar
-              onClose={() => setSidebarOpen(false)}
-              isMobile={true}
-            />
+            {isSettingsMode ? (
+              <SettingsSidebar onNavigate={() => setSidebarOpen(false)} />
+            ) : (
+              <Sidebar onClose={() => setSidebarOpen(false)} isMobile={true} />
+            )}
           </div>
         </>
       )}
@@ -59,11 +64,11 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
           sidebarOpen={sidebarOpen}
         />
         <main className="flex-1 overflow-auto bg-[#eef2f6] p-4 dark:bg-background md:p-6">
-          <div className="mx-auto max-w-6xl">
+          <div className={cn("mx-auto", isSettingsMode ? "max-w-6xl" : "max-w-6xl")}>
             <TenantGate>{children}</TenantGate>
           </div>
         </main>
-        <BusinessMessagingDrawer />
+        {!isSettingsMode ? <BusinessMessagingDrawer /> : null}
       </div>
     </div>
   );
