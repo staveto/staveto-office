@@ -19,8 +19,12 @@ export const metadata: Metadata = {
   title: "Staveto Office",
   description: "Manage estimates and quotes for Staveto",
   icons: {
-    icon: [{ url: "/favicon.png", type: "image/png" }],
-    apple: [{ url: "/favicon.png", type: "image/png" }],
+    icon: [
+      { url: "/favicon.png?v=2", type: "image/png", sizes: "192x192" },
+      { url: "/favicon.png?v=2", type: "image/png", sizes: "32x32" },
+    ],
+    shortcut: "/favicon.png?v=2",
+    apple: [{ url: "/favicon.png?v=2", type: "image/png" }],
   },
 };
 
