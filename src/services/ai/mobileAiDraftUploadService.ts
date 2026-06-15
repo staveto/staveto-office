@@ -31,13 +31,22 @@ const ALLOWED_TYPES = new Set([
 export function isStorageUploadPermissionError(err: unknown): boolean {
   const code = (err as { code?: string })?.code ?? "";
   const message = String((err as { message?: string })?.message ?? "").toLowerCase();
+  if (code.startsWith("firestore/")) return false;
   return (
     code === "storage/unauthorized" ||
     code === "storage/unauthenticated" ||
     (code === "storage/unknown" && message.includes("permission")) ||
-    message.includes("permission-denied") ||
-    message.includes("unauthorized") ||
-    message.includes("insufficient permissions")
+    message.includes("storage/unauthorized")
+  );
+}
+
+export function isFirestorePermissionError(err: unknown): boolean {
+  const code = (err as { code?: string })?.code ?? "";
+  const message = String((err as { message?: string })?.message ?? "").toLowerCase();
+  return (
+    code === "permission-denied" ||
+    code === "firestore/permission-denied" ||
+    message.includes("missing or insufficient permissions")
   );
 }
 
@@ -65,21 +74,33 @@ export async function uploadMobileAiDraftFile(
   await uploadBytes(storageRef, file, { contentType: mime });
 
   const wsKey = getWorkspaceStorageKey(workspace, uid);
-  const fileRef = await addDoc(collection(db, "workspaces", wsKey, "aiDraftFiles"), {
-    fileName: file.name,
-    mimeType: mime,
-    storagePath,
-    uploadedBy: uid,
-    workspaceId: wsKey,
-    uploadSessionId: sessionId,
-    source: "mobile_ai_draft",
-    createdAt: serverTimestamp(),
-  });
+  try {
+    const fileRef = await addDoc(collection(db, "workspaces", wsKey, "aiDraftFiles"), {
+      fileName: file.name,
+      mimeType: mime,
+      storagePath,
+      uploadedBy: uid,
+      workspaceId: wsKey,
+      uploadSessionId: sessionId,
+      source: "mobile_ai_draft",
+      createdAt: serverTimestamp(),
+    });
 
-  return {
-    id: fileRef.id,
-    fileName: file.name,
-    mimeType: mime,
-    storagePath,
-  };
+    return {
+      id: fileRef.id,
+      fileName: file.name,
+      mimeType: mime,
+      storagePath,
+    };
+  } catch (err) {
+    if (isFirestorePermissionError(err)) {
+      return {
+        id: `path:${storagePath}`,
+        fileName: file.name,
+        mimeType: mime,
+        storagePath,
+      };
+    }
+    throw err;
+  }
 }

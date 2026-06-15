@@ -605,20 +605,17 @@ export function NewJobForm() {
         uploadedFiles: aiUploadedFiles,
       };
 
-      if (aiDraftSource === "mobile") {
-        const customer = await resolveCustomerFields();
-        void enrichProjectAfterAiConfirm({
-          ...enrichPayload,
-          customerId: customer.customerId,
-          customerName: customer.customerName,
-          customerCompanyName: customer.customerCompanyName,
-          customerContactPersonName: customer.customerContactPersonName,
-          customerEmail: customer.customerEmail,
-          customerPhone: customer.customerPhone,
-        }).catch(() => {});
-      } else {
-        void enrichProjectAfterAiConfirm(enrichPayload).catch(() => {});
-      }
+      const customer = await resolveCustomerFields();
+      await enrichProjectAfterAiConfirm({
+        ...enrichPayload,
+        aiDraftId: aiOfficeDraftId ?? undefined,
+        customerId: customer.customerId,
+        customerName: customer.customerName,
+        customerCompanyName: customer.customerCompanyName,
+        customerContactPersonName: customer.customerContactPersonName,
+        customerEmail: customer.customerEmail,
+        customerPhone: customer.customerPhone,
+      });
 
       router.push(`/app/projects/${projectId}?setup=ai`);
     } catch (err) {
@@ -1288,7 +1285,7 @@ export function NewJobForm() {
                   workspace={activeWorkspace}
                   userId={user.id}
                   uploadSessionId={aiUploadSessionId}
-                  useOfficeUploadFallback={aiDraftSource === "office"}
+                  useOfficeUploadFallback
                   uploadedFiles={aiUploadedFiles}
                   onUploadedFilesChange={setAiUploadedFiles}
                   projectName={aiProjectName}

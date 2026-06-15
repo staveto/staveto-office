@@ -1,0 +1,459 @@
+.ganttShell {
+  --gantt-navy: #1d376a;
+  --gantt-orange: #e06737;
+  --gantt-label-width: 280px;
+  --gantt-row-h: 36px;
+}
+
+.headerRow {
+  display: flex;
+  border-bottom: 1px solid rgb(226 232 240);
+  background: #fff;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  min-width: max-content;
+}
+
+.labelCol {
+  width: var(--gantt-label-width);
+  min-width: var(--gantt-label-width);
+  flex-shrink: 0;
+  border-right: 1px solid rgb(226 232 240);
+  background: #f8fafc;
+  position: sticky;
+  left: 0;
+  z-index: 25;
+}
+
+.timelineScroll {
+  overflow-x: auto;
+  flex: 1;
+  min-width: 0;
+}
+
+.timelineInner {
+  position: relative;
+  min-height: 100%;
+}
+
+.gridRow {
+  display: flex;
+  min-height: var(--gantt-row-h);
+  border-bottom: 1px solid rgb(241 245 249);
+  min-width: max-content;
+  transition: background-color 0.12s ease;
+}
+
+.gridRow:hover {
+  background: rgb(248 250 252 / 90%);
+}
+
+.rowLabel {
+  width: var(--gantt-label-width);
+  min-width: var(--gantt-label-width);
+  flex-shrink: 0;
+  border-right: 1px solid rgb(226 232 240);
+  background: #fff;
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  padding: 0 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.rowLabelProject {
+  font-weight: 700;
+  color: var(--gantt-navy);
+}
+
+.rowLabelPhase {
+  padding-left: 1.25rem;
+  font-weight: 600;
+  color: rgb(51 65 85);
+}
+
+.rowLabelTask {
+  padding-left: 2rem;
+  color: rgb(71 85 105);
+}
+
+.rowTimeline {
+  position: relative;
+  flex: 1;
+  min-height: var(--gantt-row-h);
+}
+
+.dayHitLayer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  z-index: 1;
+}
+
+.dayHit {
+  flex-shrink: 0;
+  height: 100%;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+}
+
+.dayHitWeekend {
+  background: rgb(248 250 252 / 40%);
+}
+
+.dayHitActive {
+  background: rgb(224 103 55 / 14%);
+  box-shadow: inset 0 0 0 1px rgb(224 103 55 / 35%);
+}
+
+.dayHitToday.dayHitActive {
+  background: rgb(224 103 55 / 22%);
+}
+
+.dayHitToday:not(.dayHitActive) {
+  background: rgb(255 247 237 / 50%);
+}
+
+.dayHeader {
+  display: flex;
+  height: 52px;
+}
+
+.dayCell {
+  flex-shrink: 0;
+  border-right: 1px solid rgb(241 245 249);
+  text-align: center;
+  font-size: 10px;
+  padding-top: 4px;
+  color: rgb(100 116 139);
+}
+
+.dayCellWeekend {
+  background: rgb(248 250 252);
+}
+
+.dayCellToday {
+  background: rgb(255 247 237);
+  color: var(--gantt-orange);
+  font-weight: 700;
+}
+
+.todayLine {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, var(--gantt-orange), rgb(224 103 55 / 40%));
+  z-index: 4;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgb(224 103 55 / 20%);
+}
+
+.todayLine::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--gantt-orange);
+}
+
+.gridBg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  pointer-events: none;
+}
+
+.gridBgCell {
+  flex-shrink: 0;
+  border-right: 1px solid rgb(248 250 252);
+}
+
+.gridBgCellWeekend {
+  background: rgb(250 250 250 / 80%);
+}
+
+.bar {
+  position: absolute;
+  top: 7px;
+  height: 22px;
+  border-radius: 6px;
+  min-width: 10px;
+  cursor: grab;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 14%), inset 0 1px 0 rgb(255 255 255 / 18%);
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  user-select: none;
+  z-index: 3;
+  background: rgb(241 245 249);
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.bar:hover {
+  box-shadow: 0 2px 8px rgb(15 23 42 / 18%), inset 0 1px 0 rgb(255 255 255 / 22%);
+  z-index: 4;
+}
+
+.barTask {
+  border-radius: 999px;
+}
+
+.barProgress {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  opacity: 0.95;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.barLabel {
+  position: relative;
+  z-index: 1;
+  padding: 0 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.bar:active {
+  cursor: grabbing;
+}
+
+.barDone {
+  opacity: 0.85;
+}
+
+.barOverdue {
+  outline: 1px solid rgb(224 103 55 / 50%);
+}
+
+.barProject {
+  top: 5px;
+  height: 26px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #234785, var(--gantt-navy));
+}
+
+.barPhase {
+  top: 8px;
+  height: 20px;
+  opacity: 0.92;
+  border-radius: 5px;
+}
+
+.milestone {
+  position: absolute;
+  top: 4px;
+  width: 18px;
+  height: 28px;
+  z-index: 3;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.milestoneDiamond {
+  width: 14px;
+  height: 14px;
+  transform: rotate(45deg);
+  border-radius: 2px;
+  border: 2px solid;
+  box-shadow: 0 2px 6px rgb(15 23 42 / 20%);
+}
+
+.hintBanner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  border-radius: 10px;
+  border: 1px solid rgb(226 232 240);
+  background: linear-gradient(180deg, rgb(248 250 252), #fff);
+  padding: 0.65rem 0.85rem;
+  font-size: 12px;
+  color: rgb(71 85 105);
+  line-height: 1.45;
+}
+
+.barDragging {
+  opacity: 0.75;
+  outline: 2px dashed var(--gantt-navy);
+}
+
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  z-index: 3;
+}
+
+.resizeHandleStart {
+  left: 0;
+}
+
+.resizeHandleEnd {
+  right: 0;
+}
+
+.unscheduledPanel {
+  border-radius: 12px;
+  border: 1px dashed rgb(203 213 225);
+  background: rgb(248 250 252);
+  padding: 1rem;
+}
+
+.unscheduledChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 8px;
+  border: 1px solid rgb(226 232 240);
+  background: #fff;
+  padding: 0.35rem 0.6rem;
+  font-size: 12px;
+  cursor: grab;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: 11px;
+  color: rgb(100 116 139);
+}
+
+.legendDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+  margin-right: 4px;
+}
+
+.legendMilestone {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  transform: rotate(45deg);
+  background: #2563eb;
+  border-radius: 1px;
+  vertical-align: middle;
+}
+
+.rowLabelUnscheduled {
+  font-style: italic;
+  color: rgb(100 116 139);
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.filtersRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ganttExpanded {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  margin: 0 !important;
+  max-width: none !important;
+  width: 100vw;
+  height: 100vh;
+  padding: 0.75rem 1rem 1rem;
+  background: hsl(var(--background));
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.ganttShellWide {
+  --gantt-label-width: 340px;
+  --gantt-row-h: 38px;
+}
+
+.ganttExpandedHeader {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.ganttChartFrame {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ganttExpanded .timelineScroll {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-x: hidden;
+}
+
+.ganttChartInner {
+  display: flex;
+  flex-direction: column;
+}
+
+.ganttExpanded .ganttChartInner {
+  width: 100%;
+  min-width: 100%;
+}
+
+.ganttExpanded .headerRow,
+.ganttExpanded .gridRow {
+  width: 100%;
+  min-width: 0;
+}
+
+.timelinePane {
+  flex: 1;
+  min-width: 0;
+}
+
+.rowTimelineFill {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+.ganttExpandedPanel {
+  flex-shrink: 0;
+  max-height: 28vh;
+  overflow-y: auto;
+}

@@ -11,3 +11,15 @@ export {
   type PlanningDataSourceStatus,
   type MemberTodayStatus,
 } from "./planningReadService";
+
+export {
+  fetchGanttPlanningData,
+  updateTaskSchedule,
+  assignTaskScheduleDate,
+  scheduleTaskOnTimeline,
+  moveTaskScheduleByDays,
+  shiftPhaseSchedule,
+  resizeTaskSchedule,
+  type GanttPlanningData,
+  type TaskSchedulePatch,
+} from "./ganttPlanningService";

@@ -49,17 +49,18 @@ export function AiDraftFileUpload({
       const uploads = await Promise.all(
         Array.from(list).map(async (rawFile) => {
           const file = await compressImageForAiUpload(rawFile);
-          if (useOfficeUploadFallback && workspace) {
+          if (!workspace) throw new Error("Missing workspace");
+
+          // Web office: workspace-scoped path first (staveto-office storage.rules).
+          if (useOfficeUploadFallback) {
             return uploadAiDraftFile(workspace, userId, sessionId, file);
           }
+
           try {
-            if (!workspace) throw new Error("Missing workspace");
+            return await uploadAiDraftFile(workspace, userId, sessionId, file);
+          } catch (officeErr) {
+            if (!isStorageUploadPermissionError(officeErr)) throw officeErr;
             return uploadMobileAiDraftFile(workspace, userId, sessionId, file);
-          } catch (mobileErr) {
-            if (workspace && isStorageUploadPermissionError(mobileErr)) {
-              return uploadAiDraftFile(workspace, userId, sessionId, file);
-            }
-            throw mobileErr;
           }
         })
       );

@@ -4,6 +4,8 @@ import {
   isProjectArchived,
   normalizeLifecycleStatus,
   normalizeProjectPhase,
+  isDraftJob,
+  isActiveJob,
 } from "./projectLifecycle";
 import {
   computeAiSetupTotals,
@@ -107,6 +109,35 @@ export function getHumanWorkflowStatusKey(project: ProjectDoc): HumanWorkflowSta
   }
 
   return "entwurf";
+}
+
+/** Tailwind classes for workflow status badges in project lists. */
+export function getWorkflowStatusBadgeClass(
+  statusKey: HumanWorkflowStatusKey
+): string {
+  switch (statusKey) {
+    case "aktiv":
+      return "border-emerald-600/35 bg-emerald-500/15 text-emerald-900 font-semibold dark:text-emerald-100";
+    case "abgeschlossen":
+    case "archiviert":
+      return "border-border bg-muted/60 text-muted-foreground";
+    case "entwurf":
+    case "angebotsphase":
+    case "angebotEntwurf":
+    case "wartenAufKunde":
+    case "angebotBestaetigt":
+      return "border-[#e06737]/40 bg-[#e06737]/12 text-[#9a3d1a] font-semibold dark:text-orange-100";
+    default:
+      return "border-[#e06737]/30 bg-[#e06737]/10 text-[#e06737]";
+  }
+}
+
+/** Subtle row background for quick scan in project tables. */
+export function getProjectListRowClass(project: ProjectDoc): string {
+  if (isProjectArchived(project)) return "opacity-60";
+  if (isActiveJob(project)) return "bg-emerald-50/50 dark:bg-emerald-950/20";
+  if (isDraftJob(project)) return "bg-orange-50/60 dark:bg-orange-950/20";
+  return "";
 }
 
 export function getManagerStatusKey(project: ProjectDoc): string {

@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Loader2,
 } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/context/AuthContext";
@@ -71,7 +72,14 @@ export default function PlanningPage() {
     <div className={`mx-auto max-w-[90rem] space-y-5 pb-8 ${styles.planningShell}`}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <PlanningPageHeader companyName={companyName} isPersonalWorkspace={false} />
-        <Button
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Link
+            href="/app/planning/gantt"
+            className="inline-flex h-8 items-center justify-center rounded-md bg-[#1D376A] px-3 text-sm font-medium text-white hover:bg-[#162d58]"
+          >
+            {t("gantt.openTimeline")}
+          </Link>
+          <Button
           type="button"
           variant="outline"
           size="sm"
@@ -86,6 +94,7 @@ export default function PlanningPage() {
           )}
           <span className="ml-2">{t("planning.refresh")}</span>
         </Button>
+        </div>
       </div>
 
       {error ? (

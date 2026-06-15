@@ -299,6 +299,7 @@ export function getQuoteWorkspaceWriteFieldsFromProject(
   if (project.orgId) {
     return {
       source: "web",
+      ownerId: uid,
       orgId: project.orgId,
       workspaceType: project.workspaceType ?? "team",
       workspaceId: project.workspaceId ?? project.orgId,

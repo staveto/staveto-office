@@ -16,3 +16,14 @@ export function canModerateTimeEntryGps(role: WorkspaceRole | undefined): boolea
 export function isWorkerLikeRole(role: WorkspaceRole | undefined): boolean {
   return role === "worker" || role === "client";
 }
+
+/** Managers see team day reports; workers only their own. */
+export function canViewWorkDayReport(
+  viewerUid: string,
+  targetUserId: string,
+  role: WorkspaceRole | undefined
+): boolean {
+  if (!viewerUid || !targetUserId) return false;
+  if (viewerUid === targetUserId) return true;
+  return canViewOperationsDashboard(role);
+}

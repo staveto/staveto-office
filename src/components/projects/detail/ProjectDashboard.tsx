@@ -5,12 +5,15 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { ProjectDoc, TaskDoc } from "@/lib/projects";
 import {
   FirestoreIndexError,
+  getProject,
   listProjectQuoteDraftItems,
   listProjectTasks,
 } from "@/lib/projects";
 import type { QuoteDraftItemDoc } from "@/lib/quoteDraftItems";
 import type { ProjectDashboardTab } from "@/lib/projectDashboard";
 import { listProjectDocuments, type ProjectDocumentRecord } from "@/services/projects/projectDocuments";
+import { importAiWizardAttachmentsToProjectDetailed } from "@/services/projects/projectAiAttachmentsService";
+import { useWorkspace } from "@/context/WorkspaceContext";
 import { listAssignableProjectMembers } from "@/services/projects/projectMembersService";
 import {
   listTimeEntriesForProjects,
@@ -80,6 +83,7 @@ export function ProjectDashboard({
 }: ProjectDashboardProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { activeWorkspace } = useWorkspace();
   const [activeTab, setActiveTab] = useState<ProjectDashboardTab>(() =>
     parseTab(searchParams.get("tab"))
   );
@@ -104,6 +108,8 @@ export function ProjectDashboard({
       setLoading(true);
       setTasksError(null);
       try {
+        const freshProject = (await getProject(project.id)) ?? project;
+
         const [tasksList, items, docs, phaseList, memberList, entries] = await Promise.all([
           listProjectTasks(project.id).catch((e) => {
             if (e instanceof FirestoreIndexError) throw e;
@@ -112,15 +118,39 @@ export function ProjectDashboard({
           listProjectQuoteDraftItems(project.id),
           listProjectDocuments(project.id),
           listProjectPhases(project.id),
-          listAssignableProjectMembers(project).catch(() => [] as ProjectMemberRecord[]),
+          listAssignableProjectMembers(freshProject).catch(() => [] as ProjectMemberRecord[]),
           listTimeEntriesForProjects([project.id], "1970-01-01", todayYmd()).catch(
             () => [] as TimeEntryDoc[]
           ),
         ]);
+
+        let resolvedDocs = docs;
+        const canImportAiAttachments =
+          resolvedDocs.length === 0 &&
+          activeWorkspace &&
+          (freshProject.createdByAI ||
+            !!freshProject.aiDraftId ||
+            (freshProject.attachedFileIds?.length ?? 0) > 0 ||
+            (freshProject.aiWizardAttachmentPaths?.length ?? 0) > 0);
+
+        if (canImportAiAttachments) {
+          const { imported } = await importAiWizardAttachmentsToProjectDetailed({
+            projectId: project.id,
+            workspace: activeWorkspace,
+            userId,
+            project: freshProject,
+          }).catch(() => ({ imported: [], errors: [] }));
+          if (imported.length > 0) {
+            resolvedDocs = imported;
+          } else {
+            resolvedDocs = await listProjectDocuments(project.id).catch(() => docs);
+          }
+        }
+
         if (cancelled) return;
         setTasks(tasksList);
         setQuoteItems(items);
-        setDocuments(docs);
+        setDocuments(resolvedDocs);
         setPhases(phaseList);
         setMembers(memberList);
         setTimeEntries(entries);
@@ -143,7 +173,7 @@ export function ProjectDashboard({
     return () => {
       cancelled = true;
     };
-  }, [project.id]);
+  }, [project.id, project.createdByAI, project.attachedFileIds, project.aiWizardAttachmentPaths, project.aiDraftId, userId, activeWorkspace]);
 
   const phaseMetrics = useMemo(
     () => computeProjectPhaseMetrics(phases, tasks),

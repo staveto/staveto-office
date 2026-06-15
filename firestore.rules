@@ -7,10 +7,12 @@ service cloud.firestore {
     }
 
     function isOrgMember(orgId) {
-      return isSignedIn() && (
-        exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid))
-        || get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid
-      );
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/organizations/$(orgId))
+        && (
+          exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid))
+          || get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid
+        );
     }
 
     function orgMemberData(orgId) {
@@ -18,16 +20,18 @@ service cloud.firestore {
     }
 
     function isOrgMemberActive(orgId) {
-      return isSignedIn() && (
-        get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid
-        || (
-          exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid))
-          && (
-            !('status' in orgMemberData(orgId))
-            || orgMemberData(orgId).status in ['active', 'pending']
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/organizations/$(orgId))
+        && (
+          get(/databases/$(database)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid
+          || (
+            exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid))
+            && (
+              !('status' in orgMemberData(orgId))
+              || orgMemberData(orgId).status in ['active', 'pending']
+            )
           )
-        )
-      );
+        );
     }
 
     function isOrgOwnerOrAdmin(orgId) {
@@ -200,21 +204,20 @@ service cloud.firestore {
     function canAccessWorkspace(workspaceId) {
       return isSignedIn() && (
         workspaceId == request.auth.uid
-        || isOrgMember(workspaceId)
+        || isOrgMemberActive(workspaceId)
       );
     }
 
     function canAccessOrgScopedDoc() {
       return isSignedIn() && (
-        (resource.data.ownerId == request.auth.uid && (!('orgId' in resource.data) || resource.data.orgId == null))
-        || (resource.data.orgId != null && isOrgMember(resource.data.orgId))
+        resource.data.get('ownerId', null) == request.auth.uid
+        || (resource.data.orgId != null && isOrgMemberActive(resource.data.orgId))
       );
     }
 
     function canCreateOrgScopedDoc() {
       return isSignedIn() && (
-        (request.resource.data.ownerId == request.auth.uid
-          && (!('orgId' in request.resource.data) || request.resource.data.orgId == null))
+        request.resource.data.get('ownerId', null) == request.auth.uid
         || (request.resource.data.orgId != null && isOrgMemberActive(request.resource.data.orgId))
       );
     }
@@ -414,10 +417,32 @@ service cloud.firestore {
       }
     }
 
+    function canReadQuoteDoc() {
+      return isSignedIn() && (
+        resource.data.get('ownerId', null) == request.auth.uid
+        || (resource.data.orgId != null && isOrgMember(resource.data.orgId))
+      );
+    }
+
+    function canWriteQuoteDoc() {
+      return isSignedIn() && (
+        resource.data.get('ownerId', null) == request.auth.uid
+        || (resource.data.orgId != null && canManageOrganization(resource.data.orgId))
+      );
+    }
+
+    function canCreateQuoteDoc() {
+      return isSignedIn() && (
+        request.resource.data.get('ownerId', null) == request.auth.uid
+        || (request.resource.data.orgId != null && canManageOrganization(request.resource.data.orgId))
+        || (request.resource.data.orgId != null && isOrgMemberActive(request.resource.data.orgId))
+      );
+    }
+
     match /quotes/{quoteId} {
-      allow read: if canAccessOrgScopedDoc();
-      allow create: if canCreateOrgScopedDoc();
-      allow update, delete: if canAccessOrgScopedDoc();
+      allow read: if canReadQuoteDoc();
+      allow create: if canCreateQuoteDoc();
+      allow update, delete: if canWriteQuoteDoc();
     }
 
     match /customers/{customerId} {
@@ -434,7 +459,12 @@ service cloud.firestore {
       }
 
       match /aiDraftFiles/{fileId} {
-        allow read, write: if canAccessWorkspace(workspaceId);
+        allow read: if canAccessWorkspace(workspaceId);
+        allow create: if canAccessWorkspace(workspaceId)
+          && request.resource.data.uploadedBy == request.auth.uid
+          && request.resource.data.storagePath is string
+          && request.resource.data.fileName is string;
+        allow update, delete: if canAccessWorkspace(workspaceId);
       }
 
       match /projects/{projectId} {

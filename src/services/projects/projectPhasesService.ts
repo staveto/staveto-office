@@ -1,4 +1,4 @@
-import { getFirestoreInstance, collection, getDocs } from "@/lib/firebase";
+import { getFirestoreInstance, collection, getDocs, addDoc, doc, updateDoc, serverTimestamp, query, orderBy, limit } from "@/lib/firebase";
 import type { ProjectPhaseRecord } from "./taskPlanningTypes";
 
 /** Stable synthetic id for tasks that only have a legacy string `phase` field. */
@@ -66,4 +66,48 @@ export async function listProjectPhases(projectId: string): Promise<ProjectPhase
   } catch {
     return [];
   }
+}
+
+export async function createProjectPhase(
+  projectId: string,
+  name: string,
+  order?: number
+): Promise<ProjectPhaseRecord> {
+  const db = getFirestoreInstance();
+  if (!db) throw new Error("Firestore not configured");
+
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error("Phase name is required");
+
+  let resolvedOrder = order;
+  if (typeof resolvedOrder !== "number") {
+    const snap = await getDocs(
+      query(collection(db, "projects", projectId, "phases"), orderBy("order", "desc"), limit(1))
+    );
+    resolvedOrder = snap.empty ? 0 : ((snap.docs[0].data().order as number) ?? 0) + 1;
+  }
+
+  const ref = await addDoc(collection(db, "projects", projectId, "phases"), {
+    name: trimmed,
+    order: resolvedOrder,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  return { id: ref.id, name: trimmed, order: resolvedOrder };
+}
+
+export async function updateProjectPhase(
+  projectId: string,
+  phaseId: string,
+  patch: { name?: string; order?: number }
+): Promise<void> {
+  const db = getFirestoreInstance();
+  if (!db) throw new Error("Firestore not configured");
+
+  const data: Record<string, unknown> = { updatedAt: serverTimestamp() };
+  if (patch.name?.trim()) data.name = patch.name.trim();
+  if (typeof patch.order === "number") data.order = patch.order;
+
+  await updateDoc(doc(db, "projects", projectId, "phases", phaseId), data);
 }

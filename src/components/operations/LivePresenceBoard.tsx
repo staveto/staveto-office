@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { TeamLiveStatusItem, TeamStatus } from "@/lib/operationsMetrics";
+import { workDayReportHref } from "@/services/operations/workDayReportService";
 import {
   formatTimerHms,
   formatTimeShort,
@@ -18,6 +19,8 @@ type Props = {
   t: (key: string, params?: Record<string, string | number>) => string;
   /** Primary dashboard panel — larger footprint for managers. */
   dominant?: boolean;
+  /** YYYY-MM-DD for work day detail links (defaults to today). */
+  dateYmd?: string;
 };
 
 type StatusFilter = "all" | "working" | "paused" | "absent" | "not_started" | "offline";
@@ -118,10 +121,12 @@ function PresencePersonCard({
   member,
   tick,
   t,
+  dayHref,
 }: {
   member: TeamLiveStatusItem;
   tick: number;
   t: Props["t"];
+  dayHref?: string;
 }) {
   const secs =
     typeof member.timerSeconds === "number" ? member.timerSeconds : null;
@@ -131,8 +136,15 @@ function PresencePersonCard({
     member.status === "working" && secs !== null ? secs + tick : secs;
 
   return (
-    <article className={cn(styles.presenceCard, STATUS_BORDER[member.status])}>
-      <div className="flex items-start gap-4">
+    <article className={cn(styles.presenceCard, "relative", STATUS_BORDER[member.status])}>
+      {dayHref ? (
+        <Link
+          href={dayHref}
+          className="absolute inset-0 z-10 rounded-[inherit]"
+          aria-label={t("workDay.openDayReport", { name: member.name })}
+        />
+      ) : null}
+      <div className="relative flex items-start gap-4">
         <div className={styles.presenceAvatar} aria-hidden>
           {memberInitials(member.name)}
         </div>
@@ -165,10 +177,10 @@ function PresencePersonCard({
                     {t("operations.presence.project")}
                   </dt>
                   <dd className="font-medium text-[#1D376A] dark:text-slate-100">
-                    {member.projectId ? (
+                    {member.projectId && !dayHref ? (
                       <Link
                         href={`/app/projects/${member.projectId}`}
-                        className="hover:underline"
+                        className="relative z-20 hover:underline"
                       >
                         {member.projectName}
                       </Link>
@@ -263,7 +275,16 @@ function PresencePersonCard({
   );
 }
 
-export function LivePresenceBoard({ members, t, dominant = false }: Props) {
+function todayYmdLocal(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+export function LivePresenceBoard({ members, t, dominant = false, dateYmd }: Props) {
+  const resolvedDate = dateYmd ?? todayYmdLocal();
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [groupMode, setGroupMode] = useState<GroupMode>("status");
   const [tick, setTick] = useState(0);
@@ -384,6 +405,7 @@ export function LivePresenceBoard({ members, t, dominant = false }: Props) {
                     member={member}
                     tick={tick}
                     t={t}
+                    dayHref={workDayReportHref(member.uid, resolvedDate)}
                   />
                 ))}
               </div>

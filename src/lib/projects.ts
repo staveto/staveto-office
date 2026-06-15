@@ -114,6 +114,14 @@ export type ProjectDoc = {
   /** Draft quote prep — optional, ignored by mobile until supported */
   quoteDraftVatPercent?: number;
   quoteDraftNotes?: string;
+  /** Set when project was created via AI wizard. */
+  createdByAI?: boolean;
+  /** AI draft file ids from wizard (workspaces/.../aiDraftFiles). */
+  attachedFileIds?: string[];
+  /** Storage paths of wizard attachments for backfill into project documents. */
+  aiWizardAttachmentPaths?: string[];
+  /** Office AI draft id (workspaces/.../projectDrafts) for attachment recovery. */
+  aiDraftId?: string;
   /** Mobile: crew assigned to job (read-only on web). */
   assignedMemberIds?: string[];
 };
@@ -209,6 +217,16 @@ export function toProjectDoc(id: string, data: Record<string, unknown>): Project
     quoteDraftVatPercent:
       typeof data.quoteDraftVatPercent === "number" ? data.quoteDraftVatPercent : undefined,
     quoteDraftNotes: (data.quoteDraftNotes as string) || undefined,
+    createdByAI: data.createdByAI === true || data.creationMethod === "ai",
+    attachedFileIds: Array.isArray(data.attachedFileIds)
+      ? (data.attachedFileIds as string[]).filter((id) => typeof id === "string" && id.length > 0)
+      : undefined,
+    aiWizardAttachmentPaths: Array.isArray(data.aiWizardAttachmentPaths)
+      ? (data.aiWizardAttachmentPaths as string[]).filter((p) => typeof p === "string" && p.length > 0)
+      : undefined,
+    aiDraftId: typeof data.aiDraftId === "string" && data.aiDraftId.length > 0
+      ? data.aiDraftId
+      : undefined,
     assignedMemberIds: [
       ...(Array.isArray(data.assignedMemberIds)
         ? (data.assignedMemberIds as string[]).filter((id) => typeof id === "string" && id.length > 0)
@@ -813,7 +831,13 @@ export async function listProjectTasks(projectId: string): Promise<TaskDoc[]> {
  */
 export async function createTask(
   projectId: string,
-  title: string
+  title: string,
+  options?: {
+    phaseId?: string;
+    assigneeId?: string;
+    assigneeName?: string;
+    plannedDate?: string;
+  }
 ): Promise<string> {
   const db = getFirestoreInstance();
   if (!db) throw new Error("Firestore not configured");
@@ -821,9 +845,16 @@ export async function createTask(
   const trimmed = title?.trim();
   if (!trimmed) throw new Error("Task title is required");
 
+  const planned = options?.plannedDate?.trim().slice(0, 10);
+  const hasPlan = planned && /^\d{4}-\d{2}-\d{2}$/.test(planned);
+
   const ref = await addDoc(collection(db, "projects", projectId, "tasks"), {
     title: trimmed,
     status: "OPEN",
+    ...(options?.phaseId ? { phaseId: options.phaseId } : {}),
+    ...(options?.assigneeId ? { assigneeId: options.assigneeId } : {}),
+    ...(options?.assigneeName ? { assigneeName: options.assigneeName } : {}),
+    ...(hasPlan ? { dueDate: planned, plannedStart: planned } : {}),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     order: 0,

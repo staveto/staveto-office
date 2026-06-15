@@ -157,6 +157,16 @@ export function isActiveJob(project: ProjectPhaseInput): boolean {
   return phase === "delivery" && ACTIVE_DELIVERY.has(status);
 }
 
+/** Gantt / visual planning — broader than isActiveJob (delivery phase work). */
+export function isGanttEligibleProject(project: ProjectDoc): boolean {
+  if (isProjectArchived(project)) return false;
+  const ls = normalizeLifecycleStatus(project);
+  if (ls === "rejected" || ls === "completed") return false;
+  if (isClosedJob(project) && ls !== "paused") return false;
+  if (normalizeProjectPhase(project) === "delivery") return true;
+  return isActiveJob(project);
+}
+
 export function isWaitingForCustomer(
   project: Pick<ProjectDoc, "lifecycleStatus" | "salesStatus">
 ): boolean {
@@ -211,7 +221,6 @@ export function matchesProjectFilter(
       }
       return (
         isActiveJob(project) ||
-        isDraftJob(project) ||
         (normalizeProjectPhase(project) === "delivery" &&
           progress != null &&
           progress < 100)

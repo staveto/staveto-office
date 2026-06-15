@@ -8,6 +8,10 @@ import {
 } from "@/lib/firebase";
 import type { ProjectDoc } from "@/lib/projects";
 import { listOrgMembers } from "@/lib/organizations";
+import {
+  listOrgMemberProfilesViaCallable,
+  orgMemberProfileLookup,
+} from "@/services/organizations/orgMemberProfilesService";
 import type { ProjectMemberRecord } from "./taskPlanningTypes";
 
 function toMemberRecord(
@@ -37,11 +41,20 @@ function toMemberRecord(
   };
   if (sharedItems.tasks === false) return null;
 
+  const rawName =
+    (typeof data.name === "string" && data.name.trim()) ||
+    (typeof data.displayName === "string" && data.displayName.trim()) ||
+    undefined;
+  const rawEmail =
+    (typeof data.email === "string" && data.email.trim()) ||
+    (typeof data.emailLower === "string" && data.emailLower.trim()) ||
+    undefined;
+
   return {
     id,
     userId,
-    email: (data.email as string) || undefined,
-    name: (data.name as string) || undefined,
+    email: rawEmail,
+    name: rawName,
     role: (data.role as "owner" | "member") || "member",
     status: status as ProjectMemberRecord["status"],
     permissionLevel: (data.permissionLevel as "viewer" | "editor") || "editor",
@@ -73,7 +86,9 @@ export async function listAssignableProjectMembers(
   project: ProjectDoc
 ): Promise<ProjectMemberRecord[]> {
   const fromSub = await listProjectMembers(project.id);
-  if (fromSub.length > 0) return fromSub;
+  if (fromSub.length > 0) {
+    return enrichMemberDisplayNames(project, fromSub);
+  }
 
   const members: ProjectMemberRecord[] = [];
   const seen = new Set<string>();
@@ -113,7 +128,7 @@ export async function listAssignableProjectMembers(
     }
   }
 
-  return members;
+  return enrichMemberDisplayNames(project, members);
 }
 
 function dedupeMembers(members: ProjectMemberRecord[]): ProjectMemberRecord[] {
@@ -122,6 +137,59 @@ function dedupeMembers(members: ProjectMemberRecord[]): ProjectMemberRecord[] {
     if (!byUid.has(m.userId)) byUid.set(m.userId, m);
   }
   return [...byUid.values()];
+}
+
+async function enrichMemberDisplayNames(
+  project: ProjectDoc,
+  members: ProjectMemberRecord[]
+): Promise<ProjectMemberRecord[]> {
+  if (members.length === 0) return members;
+
+  const needsEnrichment = members.some((m) => !m.name?.trim() && !m.email?.trim());
+  if (!needsEnrichment) return members;
+
+  const effectiveOrgId = project.orgId?.trim() || project.workspaceId?.trim();
+  const userIds = members.map((m) => m.userId);
+
+  const orgProfiles = effectiveOrgId
+    ? await listOrgMemberProfilesViaCallable(effectiveOrgId, userIds)
+    : null;
+  const profileByKey = orgMemberProfileLookup(orgProfiles ?? []);
+  const resolveProfile = (id: string) =>
+    profileByKey.get(id) ?? profileByKey.get(id.toLowerCase());
+
+  let orgMemberByUid = new Map<string, { name?: string; email?: string }>();
+  if (!orgProfiles?.length && effectiveOrgId) {
+    try {
+      const rows = await listOrgMembers(effectiveOrgId);
+      orgMemberByUid = new Map(
+        rows.map((r) => [
+          r.uid,
+          { name: r.displayName?.trim() || undefined, email: r.email?.trim() || undefined },
+        ])
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return members.map((m) => {
+    const profile = resolveProfile(m.userId);
+    const orgRow = orgMemberByUid.get(m.userId);
+    return {
+      ...m,
+      name:
+        m.name?.trim() ||
+        profile?.displayName?.trim() ||
+        orgRow?.name ||
+        undefined,
+      email:
+        m.email?.trim() ||
+        profile?.email?.trim() ||
+        orgRow?.email ||
+        undefined,
+    };
+  });
 }
 
 export type UpsertProjectMemberInput = {

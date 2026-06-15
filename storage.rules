@@ -30,9 +30,21 @@ service firebase.storage {
     }
 
     match /workspaces/{workspaceId}/ai-drafts/{sessionId}/{fileName} {
-      allow read: if isSignedIn();
+      allow read: if isSignedIn() && (
+        request.auth.uid == workspaceId
+        || isOrgMemberActive(workspaceId)
+      );
       allow write: if isSignedIn()
+        && (
+          request.auth.uid == workspaceId
+          || isOrgMemberActive(workspaceId)
+        )
         && request.resource.size < 25 * 1024 * 1024;
+      allow delete: if isSignedIn()
+        && (
+          request.auth.uid == workspaceId
+          || isOrgMemberActive(workspaceId)
+        );
     }
 
     match /projects/{projectId}/documents/{fileName} {

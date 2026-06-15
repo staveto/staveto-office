@@ -9,6 +9,7 @@ import {
 } from "@/lib/firebase";
 import { getWorkspaceStorageKey } from "@/lib/workspaceStorage";
 import type { ActiveWorkspace } from "@/types/workspace";
+import { isFirestorePermissionError } from "@/services/ai/mobileAiDraftUploadService";
 
 export type UploadedAiDraftFile = {
   id: string;
@@ -17,9 +18,9 @@ export type UploadedAiDraftFile = {
   storagePath: string;
 };
 
-/** Firestore `workspaces/{ws}/aiDraftFiles/{id}` — not a raw Storage path used as id. */
+/** Firestore `workspaces/{ws}/aiDraftFiles/{id}` — excludes storage-path fallback ids. */
 export function isRegisteredAiDraftFile(file: UploadedAiDraftFile): boolean {
-  return !file.id.includes("/");
+  return !file.id.startsWith("path:") && !file.id.includes("/");
 }
 
 /** @deprecated Use isRegisteredAiDraftFile */
@@ -46,6 +47,19 @@ export function createAiUploadSessionId(): string {
   return `sess_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function createStorageOnlyDraftFile(
+  storagePath: string,
+  fileName: string,
+  mimeType: string
+): UploadedAiDraftFile {
+  return {
+    id: `path:${storagePath}`,
+    fileName,
+    mimeType,
+    storagePath,
+  };
+}
+
 export async function uploadAiDraftFile(
   workspace: ActiveWorkspace,
   uid: string,
@@ -70,15 +84,22 @@ export async function uploadAiDraftFile(
   const storageRef = ref(storage, storagePath);
   await uploadBytes(storageRef, file, { contentType: mime });
 
-  const fileRef = await addDoc(collection(db, "workspaces", wsKey, "aiDraftFiles"), {
-    fileName: file.name,
-    mimeType: mime,
-    storagePath,
-    uploadedBy: uid,
-    workspaceId: wsKey,
-    uploadSessionId: sessionId,
-    createdAt: serverTimestamp(),
-  });
+  try {
+    const fileRef = await addDoc(collection(db, "workspaces", wsKey, "aiDraftFiles"), {
+      fileName: file.name,
+      mimeType: mime,
+      storagePath,
+      uploadedBy: uid,
+      workspaceId: wsKey,
+      uploadSessionId: sessionId,
+      createdAt: serverTimestamp(),
+    });
 
-  return { id: fileRef.id, fileName: file.name, mimeType: mime, storagePath };
+    return { id: fileRef.id, fileName: file.name, mimeType: mime, storagePath };
+  } catch (err) {
+    if (isFirestorePermissionError(err)) {
+      return createStorageOnlyDraftFile(storagePath, file.name, mime);
+    }
+    throw err;
+  }
 }

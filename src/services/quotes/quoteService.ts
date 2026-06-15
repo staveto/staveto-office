@@ -117,6 +117,12 @@ export async function createQuoteFromProject(
 
   const meta = parseAiSetupMeta(project.quoteDraftNotes);
   const active = toActiveWorkspace(workspace, uid);
+  const scopeProject = {
+    orgId: project.orgId ?? active.orgId ?? (active.type === "company" ? active.id : undefined),
+    ownerId: project.ownerId ?? uid,
+    workspaceType: project.workspaceType,
+    workspaceId: project.workspaceId,
+  };
   const quoteId = await createQuoteDoc(
     active,
     uid,
@@ -136,7 +142,7 @@ export async function createQuoteFromProject(
       currency: "CHF",
       items: lineItems,
     },
-    project
+    scopeProject
   );
 
   await syncProjectFromQuote(projectId, quoteId, "draft");
@@ -154,12 +160,18 @@ export async function upsertQuoteFromProject(
   }
 
   const project = access.project;
+  const active = toActiveWorkspace(workspace, uid);
   const lineItems = await resolveProjectQuoteLineItems(project);
   if (lineItems.length === 0) {
     throw new Error("Add at least one material or work line on the draft job first");
   }
 
-  const projectQuotes = await listQuotesForProject(projectId);
+  const quoteScope = {
+    orgId: project.orgId ?? active.orgId ?? (active.type === "company" ? active.id : null),
+    ownerId: project.ownerId ?? uid,
+  };
+
+  const projectQuotes = await listQuotesForProject(projectId, quoteScope);
   const existing =
     projectQuotes.find((q) => q.status === "draft") ?? projectQuotes[0];
 

@@ -108,6 +108,12 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
         href: "/app/operations",
         managementOnly: true,
       },
+      {
+        id: "planning-gantt",
+        labelKey: "sidebar.item.planning.gantt",
+        href: "/app/planning/gantt",
+        managementOnly: true,
+      },
     ],
   },
   {

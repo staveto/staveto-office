@@ -235,13 +235,51 @@ export async function listQuotesForWorkspace(
   }
 }
 
-export async function listQuotesForProject(projectId: string): Promise<QuoteDoc[]> {
+export async function listQuotesForProject(
+  projectId: string,
+  scope?: { orgId?: string | null; ownerId?: string | null }
+): Promise<QuoteDoc[]> {
   const db = getFirestoreInstance();
   if (!db) return [];
 
-  const q = query(collection(db, "quotes"), where("projectId", "==", projectId));
-  const snap = await getDocs(q);
-  return snap.docs.map((d) => toQuoteDoc(d.id, d.data() as Record<string, unknown>));
+  const quotesRef = collection(db, "quotes");
+  const orgId = scope?.orgId?.trim();
+  const ownerId = scope?.ownerId?.trim();
+
+  try {
+    if (orgId) {
+      const q = query(
+        quotesRef,
+        where("orgId", "==", orgId),
+        where("projectId", "==", projectId)
+      );
+      const snap = await getDocs(q);
+      return snap.docs.map((d) => toQuoteDoc(d.id, d.data() as Record<string, unknown>));
+    }
+    if (ownerId) {
+      const q = query(
+        quotesRef,
+        where("ownerId", "==", ownerId),
+        where("projectId", "==", projectId)
+      );
+      const snap = await getDocs(q);
+      return snap.docs.map((d) => toQuoteDoc(d.id, d.data() as Record<string, unknown>));
+    }
+  } catch (e) {
+    if (!isFirestorePermissionError(e) && !isQuotesIndexError(e)) throw e;
+  }
+
+  return [];
+}
+
+function isFirestorePermissionError(err: unknown): boolean {
+  const code = (err as { code?: string })?.code ?? "";
+  const message = String((err as { message?: string })?.message ?? "").toLowerCase();
+  return (
+    code === "permission-denied" ||
+    code === "firestore/permission-denied" ||
+    message.includes("missing or insufficient permissions")
+  );
 }
 
 export async function getQuote(quoteId: string): Promise<QuoteDoc | null> {
@@ -297,7 +335,11 @@ export async function createQuote(
   const vatPercent = input.vatPercent ?? 20;
   const totals = computeQuoteTotals(items, vatPercent);
 
-  const ref = await addDoc(collection(db, "quotes"), {
+  const workspaceFields = scopeProject
+    ? getQuoteWorkspaceWriteFieldsFromProject(scopeProject, workspace, uid)
+    : getProjectWorkspaceWriteFields(workspace, uid);
+
+  const payload: Record<string, unknown> = {
     title,
     clientName,
     clientEmail: input.clientEmail?.trim() || null,
@@ -313,12 +355,22 @@ export async function createQuote(
     notes: input.notes?.trim() || null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-    ...(scopeProject
-      ? getQuoteWorkspaceWriteFieldsFromProject(scopeProject, workspace, uid)
-      : getProjectWorkspaceWriteFields(workspace, uid)),
-  });
+    ...workspaceFields,
+  };
 
-  return ref.id;
+  try {
+    const ref = await addDoc(collection(db, "quotes"), payload);
+    return ref.id;
+  } catch (err) {
+    if (!isFirestorePermissionError(err) || workspaceFields.orgId == null) throw err;
+    const legacyPayload = { ...payload };
+    delete legacyPayload.orgId;
+    legacyPayload.ownerId = uid;
+    legacyPayload.workspaceType = workspaceFields.workspaceType ?? "personal";
+    legacyPayload.workspaceId = workspaceFields.workspaceId ?? uid;
+    const ref = await addDoc(collection(db, "quotes"), legacyPayload);
+    return ref.id;
+  }
 }
 
 export async function updateQuote(

@@ -324,7 +324,7 @@ export function OperationsDashboard({ workspace, uid, role, t }: Props) {
           </div>
 
           <div className={styles.opsRowFull}>
-            <DayTimelineFeed events={data.timeline} t={t} />
+            <DayTimelineFeed events={data.timeline} t={t} dateYmd={data.todayIso} />
           </div>
         </div>
       )}

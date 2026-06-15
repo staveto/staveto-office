@@ -15,10 +15,10 @@ import type { TaskDoc } from "@/lib/projects";
 import type { PhaseMetric, ProjectPhaseMetrics } from "@/lib/projectPhaseMetrics";
 import {
   getTaskPlanDate,
-  getTaskToolsLabel,
   taskMissingAssignee,
   taskMissingTools,
 } from "@/lib/taskPlanningDisplay";
+import { ProjectTaskQuickAdd } from "./ProjectTaskQuickAdd";
 import { useI18n } from "@/i18n/I18nContext";
 import { cn } from "@/lib/utils";
 
@@ -32,14 +32,25 @@ type Handlers = {
   onOpenAssignee: (task: TaskDoc) => void;
   onOpenTools: (task: TaskDoc) => void;
   onPlanDateChange: (task: TaskDoc, date: string) => void;
+  onQuickAddTask?: (phaseId: string | null, title: string) => void;
+  quickAddBusy?: boolean;
 };
 
 type Props = Handlers & {
   tasks: TaskDoc[];
   phaseMetrics: ProjectPhaseMetrics;
+  /** When set, only this phase group is rendered. */
+  focusPhaseId?: string | null;
+  showEmptyPhases?: boolean;
 };
 
-export function ProjectTaskGroups({ tasks, phaseMetrics, ...handlers }: Props) {
+export function ProjectTaskGroups({
+  tasks,
+  phaseMetrics,
+  focusPhaseId,
+  showEmptyPhases = false,
+  ...handlers
+}: Props) {
   const { t } = useI18n();
 
   const knownPhaseIds = useMemo(
@@ -55,8 +66,12 @@ export function ProjectTaskGroups({ tasks, phaseMetrics, ...handlers }: Props) {
           : tasks.filter((task) => task.phaseId?.trim() === phase.id);
         return { phase, tasks: phaseTasks };
       })
-      .filter((g) => g.tasks.length > 0);
-  }, [tasks, phaseMetrics, knownPhaseIds]);
+      .filter((g) => {
+        if (focusPhaseId && g.phase.id !== focusPhaseId) return false;
+        if (showEmptyPhases) return !g.phase.isGeneral || g.tasks.length > 0;
+        return g.tasks.length > 0;
+      });
+  }, [tasks, phaseMetrics, knownPhaseIds, focusPhaseId, showEmptyPhases]);
 
   if (groups.length === 0) return null;
 
@@ -67,7 +82,7 @@ export function ProjectTaskGroups({ tasks, phaseMetrics, ...handlers }: Props) {
           key={group.phase.id}
           phase={group.phase}
           tasks={group.tasks}
-          defaultOpen={index === 0 || group.phase.isActive}
+          defaultOpen={index === 0 || group.phase.isActive || !!focusPhaseId}
           handlers={handlers}
           t={t}
         />
@@ -91,6 +106,7 @@ function PhaseGroupCard({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const name = phase.isGeneral ? t("projects.dashboard.phaseGeneral") : phase.name;
+  const phaseIdForAdd = phase.isGeneral ? null : phase.id;
 
   return (
     <div
@@ -130,11 +146,29 @@ function PhaseGroupCard({
       </button>
 
       {open ? (
-        <ul className="divide-y divide-border/60">
-          {tasks.map((task) => (
-            <TaskRow key={task.id} task={task} handlers={handlers} t={t} />
-          ))}
-        </ul>
+        <>
+          {tasks.length === 0 ? (
+            <p className="px-4 py-3 text-sm text-muted-foreground">
+              {t("projects.planning.noTasksInPhase")}
+            </p>
+          ) : (
+            <ul className="divide-y divide-border/60">
+              {tasks.map((task) => (
+                <TaskRow key={task.id} task={task} handlers={handlers} t={t} />
+              ))}
+            </ul>
+          )}
+          {handlers.canManage && handlers.onQuickAddTask ? (
+            <div className="border-t border-border/60 bg-muted/10 px-3 py-2">
+              <ProjectTaskQuickAdd
+                phaseLabel={name}
+                busy={handlers.quickAddBusy}
+                t={t}
+                onSubmit={(title) => handlers.onQuickAddTask?.(phaseIdForAdd, title)}
+              />
+            </div>
+          ) : null}
+        </>
       ) : null}
     </div>
   );
@@ -164,7 +198,6 @@ function TaskRow({
   const missingPerson = taskMissingAssignee(task);
   const missingTool = taskMissingTools(task);
   const planDate = getTaskPlanDate(task);
-  const toolsLabel = getTaskToolsLabel(task);
   const canToggle = canToggleStatus(task);
   const saving = savingTaskId === task.id;
 
@@ -197,61 +230,60 @@ function TaskRow({
 
       <div className="flex flex-wrap items-center gap-1.5">
         {canManage ? (
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() => onOpenAssignee(task)}
-            className={cn(
-              "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors hover:bg-muted/60",
-              missingPerson ? "border-amber-300 text-amber-700" : "border-border text-foreground"
-            )}
-            title={missingPerson ? t("projects.tasks.missingAssignee") : undefined}
-          >
-            <UserRound className="size-3.5" />
-            <span className="max-w-[120px] truncate">
-              {task.assigneeName?.trim() || t("projects.tasks.unassigned")}
-            </span>
-          </button>
-        ) : (
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-            <UserRound className="size-3.5" />
-            {task.assigneeName?.trim() || t("projects.tasks.unassigned")}
-          </span>
-        )}
-
-        {canManage ? (
-          <button
-            type="button"
-            disabled={saving}
-            onClick={() => onOpenTools(task)}
-            className={cn(
-              "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors hover:bg-muted/60",
-              missingTool ? "border-amber-300 text-amber-700" : "border-border text-foreground"
-            )}
-            title={missingTool ? t("projects.tasks.missingTools") : undefined}
-          >
-            <Wrench className="size-3.5 shrink-0" />
-            <span className="max-w-[120px] truncate">
-              {toolsLabel || t("projects.tasks.noTools")}
-            </span>
-          </button>
-        ) : null}
-
-        {canManage ? (
-          <span className="inline-flex items-center">
+          <>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => onOpenAssignee(task)}
+              className={cn(
+                "inline-flex size-7 items-center justify-center rounded-md border transition-colors hover:bg-muted/60",
+                missingPerson ? "border-amber-300 text-amber-700" : "border-transparent text-muted-foreground"
+              )}
+              title={
+                missingPerson
+                  ? t("projects.tasks.missingAssignee")
+                  : task.assigneeName?.trim() || t("projects.tasks.unassigned")
+              }
+            >
+              <UserRound className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => onOpenTools(task)}
+              className={cn(
+                "inline-flex size-7 items-center justify-center rounded-md border transition-colors hover:bg-muted/60",
+                missingTool ? "border-amber-300 text-amber-700" : "border-transparent text-muted-foreground"
+              )}
+              title={missingTool ? t("projects.tasks.missingTools") : t("projects.tasks.tools")}
+            >
+              <Wrench className="size-3.5" />
+            </button>
             <Input
               type="date"
-              className="h-8 w-[140px] text-xs"
+              className="h-8 w-[132px] text-xs"
               value={planDate ?? ""}
               disabled={saving}
               onChange={(e) => onPlanDateChange(task, e.target.value)}
             />
-          </span>
+          </>
         ) : (
-          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-            <CalendarClock className="size-3.5" />
-            {planDate ?? "—"}
-          </span>
+          <>
+            {missingPerson ? (
+              <span title={t("projects.tasks.missingAssignee")}>
+                <UserRound className="size-3.5 text-amber-600" />
+              </span>
+            ) : null}
+            {missingTool ? (
+              <span title={t("projects.tasks.missingTools")}>
+                <Wrench className="size-3.5 text-amber-600" />
+              </span>
+            ) : null}
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+              <CalendarClock className="size-3.5" />
+              {planDate ?? "—"}
+            </span>
+          </>
         )}
 
         <span

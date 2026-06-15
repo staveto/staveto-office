@@ -1,0 +1,240 @@
+.page {
+  --wd-navy: #1d376a;
+  --wd-orange: #e06737;
+  --wd-card-shadow: 0 1px 3px rgb(15 23 42 / 6%), 0 8px 24px rgb(15 23 42 / 4%);
+}
+
+.card {
+  border-radius: 16px;
+  border: 1px solid rgb(226 232 240 / 80%);
+  background: #fff;
+  box-shadow: var(--wd-card-shadow);
+  padding: 1.25rem;
+}
+
+:global(.dark) .card {
+  background: rgb(30 41 59 / 95%);
+  border-color: rgb(51 65 85 / 60%);
+}
+
+.sectionTitle {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--wd-navy);
+}
+
+.summaryGrid {
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .summaryGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .summaryGrid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.summaryCard {
+  border-radius: 16px;
+  border: 1px solid rgb(226 232 240 / 80%);
+  background: #fff;
+  box-shadow: var(--wd-card-shadow);
+  padding: 1rem;
+  min-height: 7.5rem;
+}
+
+.mainGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+@media (min-width: 1024px) {
+  .mainGrid {
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+  }
+  .colTimeline {
+    grid-column: span 5;
+  }
+  .colMap {
+    grid-column: span 4;
+  }
+  .colSide {
+    grid-column: span 3;
+  }
+  .colPhotos {
+    grid-column: span 8;
+  }
+  .colSummary {
+    grid-column: span 4;
+  }
+  .colNotes {
+    grid-column: span 6;
+  }
+  .colMaterials {
+    grid-column: span 6;
+  }
+}
+
+.timelineList {
+  position: relative;
+  padding-left: 1.5rem;
+}
+
+.timelineList::before {
+  content: "";
+  position: absolute;
+  left: 0.4rem;
+  top: 0.25rem;
+  bottom: 0.25rem;
+  width: 2px;
+  background: rgb(226 232 240);
+  border-radius: 1px;
+}
+
+.timelineRow {
+  position: relative;
+  padding-bottom: 1rem;
+}
+
+.timelineDot {
+  position: absolute;
+  left: -1.35rem;
+  top: 0.35rem;
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 9999px;
+  background: var(--wd-navy);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgb(226 232 240);
+}
+
+.timelineDotStart {
+  background: #16a34a;
+}
+
+.timelineDotStop {
+  background: #dc2626;
+}
+
+.timelineDotProblem {
+  background: #dc2626;
+}
+
+.timelineDotPhoto {
+  background: var(--wd-orange);
+}
+
+.mapFrame {
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid rgb(226 232 240 / 80%);
+  min-height: 220px;
+}
+
+.mapCanvas {
+  width: 100%;
+  height: 220px;
+}
+
+.photoStrip {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.photoThumb {
+  flex: 0 0 auto;
+  width: 96px;
+  height: 72px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid rgb(226 232 240);
+  position: relative;
+  background: rgb(248 250 252);
+}
+
+.photoThumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.photoTime {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: rgb(0 0 0 / 55%);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.taskRow {
+  border-radius: 10px;
+  border: 1px solid rgb(241 245 249);
+  padding: 0.65rem 0.75rem;
+  background: rgb(248 250 252 / 60%);
+}
+
+.progressTrack {
+  height: 6px;
+  border-radius: 9999px;
+  background: rgb(226 232 240);
+  overflow: hidden;
+}
+
+.progressFill {
+  height: 100%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, var(--wd-navy), #2d4a8a);
+}
+
+.badgeApproved {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 9999px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: rgb(220 252 231);
+  color: #15803d;
+}
+
+.badgePending {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 9999px;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: rgb(254 243 199);
+  color: #b45309;
+}
+
+.avatar {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 9999px;
+  background: var(--wd-navy);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 800;
+}

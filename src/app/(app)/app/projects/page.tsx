@@ -38,7 +38,13 @@ import {
   type ProjectListFilter,
 } from "@/lib/projectLifecycle";
 import { loadTaskProgressBatch } from "@/lib/projectTaskProgress";
-import { getListPrimaryAction, getHumanWorkflowStatusKey, getQuoteStatusKey } from "@/lib/projectDashboard";
+import {
+  getListPrimaryAction,
+  getHumanWorkflowStatusKey,
+  getQuoteStatusKey,
+  getWorkflowStatusBadgeClass,
+  getProjectListRowClass,
+} from "@/lib/projectDashboard";
 import { JobSourceBadge } from "@/components/jobs/JobSourceBadge";
 import { ProjectActionsMenu } from "@/components/projects/ProjectActionsMenu";
 import { Badge } from "@/components/ui/badge";
@@ -340,7 +346,16 @@ export default function ProjectsPage() {
               aria-selected={filter === f}
               onClick={() => setFilter(f)}
               className={cn(
-                filter === f && "border-[#1D376A]/30 bg-[#1D376A]/8 text-[#1D376A]"
+                filter === f &&
+                  f === "concepts" &&
+                  "border-[#e06737]/40 bg-[#e06737]/12 text-[#9a3d1a] font-semibold dark:text-orange-100",
+                filter === f &&
+                  f === "active" &&
+                  "border-emerald-600/35 bg-emerald-500/15 text-emerald-900 font-semibold dark:text-emerald-100",
+                filter === f &&
+                  f !== "concepts" &&
+                  f !== "active" &&
+                  "border-[#1D376A]/30 bg-[#1D376A]/8 text-[#1D376A]"
               )}
             >
               {t(f === "assigned" ? "projects.filter.assigned" : `projects.filter.${f}`)}
@@ -471,7 +486,7 @@ export default function ProjectsPage() {
                   return (
                   <TableRow
                     key={p.id}
-                    className={cn(archived && "opacity-60")}
+                    className={cn(getProjectListRowClass(p))}
                   >
                     <TableCell>
                       <div className="space-y-1.5">
@@ -496,7 +511,13 @@ export default function ProjectsPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <Badge variant="outline" className="font-normal text-xs border-[#1D376A]/25 bg-[#1D376A]/5 text-[#1D376A]">
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-xs",
+                            getWorkflowStatusBadgeClass(statusKey)
+                          )}
+                        >
                           {t(`projects.workflow.status.${statusKey}`)}
                         </Badge>
                         <JobSourceBadge project={p} />

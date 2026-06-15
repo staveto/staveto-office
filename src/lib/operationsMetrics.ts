@@ -43,6 +43,7 @@ export type DayTimelineEvent = {
   time: string;
   timeSort: number;
   actorName: string;
+  userId?: string;
   kind: "timer_started" | "timer_paused" | "timer_stopped" | "entry_logged";
   projectName?: string;
   detail?: string;
