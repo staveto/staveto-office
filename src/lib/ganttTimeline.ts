@@ -15,7 +15,19 @@ export type GanttDay = {
   ymd: string;
   isWeekend: boolean;
   isToday: boolean;
+  isPast: boolean;
+  isMonthStart: boolean;
   shortLabel: string;
+  dayNum: string;
+  weekdayLabel: string;
+};
+
+/** A grouped header band segment (month or week) sitting above the day cells. */
+export type GanttHeaderSegment = {
+  key: string;
+  label: string;
+  leftPx: number;
+  widthPx: number;
 };
 
 export type GanttTimeline = {
@@ -23,6 +35,7 @@ export type GanttTimeline = {
   startYmd: string;
   endYmd: string;
   days: GanttDay[];
+  months: GanttHeaderSegment[];
   dayWidthPx: number;
   totalWidthPx: number;
   todayYmd: string;
@@ -106,6 +119,7 @@ export function buildTimelineDays(
 ): GanttTimeline {
   const todayYmd = toIsoDateLocal(new Date());
   const days: GanttDay[] = [];
+  const weekdayFmt = new Intl.DateTimeFormat(undefined, { weekday: "short" });
   let cur = parseIsoDateLocal(startYmd);
   const end = parseIsoDateLocal(endYmd);
   while (cur <= end) {
@@ -115,15 +129,38 @@ export function buildTimelineDays(
       ymd,
       isWeekend: dow === 0 || dow === 6,
       isToday: ymd === todayYmd,
+      isPast: ymd < todayYmd,
+      isMonthStart: cur.getDate() === 1,
       shortLabel: cur.toLocaleDateString(undefined, { day: "numeric", month: "short" }),
+      dayNum: String(cur.getDate()),
+      weekdayLabel: weekdayFmt.format(cur).replace(/\.$/, "").slice(0, 2),
     });
     cur = addDays(cur, 1);
   }
+
+  const months: GanttHeaderSegment[] = [];
+  for (let i = 0; i < days.length; i += 1) {
+    const d = parseIsoDateLocal(days[i].ymd);
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    const last = months[months.length - 1];
+    if (last && last.key === key) {
+      last.widthPx += dayWidthPx;
+    } else {
+      months.push({
+        key,
+        label: d.toLocaleDateString(undefined, { month: "long", year: "numeric" }),
+        leftPx: i * dayWidthPx,
+        widthPx: dayWidthPx,
+      });
+    }
+  }
+
   return {
     viewMode,
     startYmd,
     endYmd,
     days,
+    months,
     dayWidthPx,
     totalWidthPx: days.length * dayWidthPx,
     todayYmd,

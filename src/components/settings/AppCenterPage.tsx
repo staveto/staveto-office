@@ -24,8 +24,14 @@ import {
 } from "@/services/organizations/appCenterSettings";
 import type { OrganizationIntegrations } from "@/lib/appCenterTypes";
 import { AppCenterCard } from "@/components/settings/AppCenterCard";
+import { GmailManageDialog } from "@/components/settings/GmailManageDialog";
 import { AppCenterCategoryNav } from "@/components/settings/AppCenterCategoryNav";
 import { settingsInputClassName } from "@/components/settings/settingsStyles";
+import {
+  startGmailOAuth,
+  notifyGmailOAuthPopupResult,
+} from "@/services/email/gmailIntegrationService";
+import { resolveGmailError } from "@/lib/gmail/errors";
 
 type Props = {
   canEdit: boolean;
@@ -52,11 +58,13 @@ export function AppCenterPage({ canEdit }: Props) {
   const [probe, setProbe] = useState<ServerFeatureProbe>({
     googleMapsConfigured: false,
     aiInvoiceOcrAvailable: true,
+    gmailConfigured: false,
   });
   const [planCode, setPlanCode] = useState<string | undefined>();
   const [orgStatus, setOrgStatus] = useState<string | undefined>();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [gmailManageOpen, setGmailManageOpen] = useState(false);
 
   useEffect(() => {
     const cat = parseAppCenterCategory(searchParams.get("category"));
@@ -91,6 +99,18 @@ export function AppCenterPage({ canEdit }: Props) {
     void refresh();
   }, [refresh]);
 
+  useEffect(() => {
+    const gmail = searchParams.get("gmail");
+    const oauthPopup = searchParams.get("oauth_popup") === "1";
+    if (notifyGmailOAuthPopupResult(gmail, oauthPopup)) return;
+
+    if (gmail === "connected") {
+      void refresh();
+    } else if (gmail === "failed" || gmail === "error" || gmail === "state" || gmail === "no_refresh" || gmail === "token") {
+      setError(t(gmail === "token" ? "gmail.error.tokenExchange" : "gmail.error.connect"));
+    }
+  }, [searchParams, t, refresh]);
+
   const filteredItems = useMemo(() => {
     const byCat = filterCatalogByCategory(APP_CENTER_CATALOG, category);
     return filterCatalogBySearch(byCat, search, t);
@@ -103,6 +123,32 @@ export function AppCenterPage({ canEdit }: Props) {
     }
     return counts;
   }, []);
+
+  const handleGmailAction = async (itemId: string, action: string) => {
+    if (!orgId || !canEdit) return;
+    setBusyId(itemId);
+    setError(null);
+    try {
+      if (action === "connect") {
+        await startGmailOAuth(orgId, "/app/settings/app-center?category=communication");
+        await refresh();
+        return;
+      }
+      if (action === "manage") {
+        if (integrations.gmail?.status === "connected") {
+          setGmailManageOpen(true);
+          return;
+        }
+        if (probe.gmailConfigured) {
+          await startGmailOAuth(orgId, "/app/settings/app-center?category=communication");
+        }
+      }
+    } catch (e) {
+      setError(resolveGmailError(e, t));
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const handleModuleToggle = async (itemId: string, moduleKey: keyof EnabledModulesMap, enable: boolean) => {
     if (!orgId || !canEdit) return;
@@ -204,9 +250,15 @@ export function AppCenterPage({ canEdit }: Props) {
                   integrations,
                   probe,
                 });
-                const statusDetail = resolved.statusDetailKey
-                  ? t(resolved.statusDetailKey)
-                  : undefined;
+                const gmailEntry = integrations.gmail;
+                const gmailEmail =
+                  typeof gmailEntry?.email === "string" ? gmailEntry.email : undefined;
+                const statusDetail =
+                  item.id === "gmail" && gmailEntry?.status === "connected" && gmailEmail
+                    ? gmailEmail
+                    : resolved.statusDetailKey
+                      ? t(resolved.statusDetailKey)
+                      : undefined;
 
                 return (
                   <AppCenterCard
@@ -220,8 +272,14 @@ export function AppCenterPage({ canEdit }: Props) {
                     action={resolved.action}
                     canEdit={canEdit}
                     loading={busyId === item.id}
-                    oauthNote={item.oauthNote}
+                    oauthNote={
+                      item.oauthNote && gmailEntry?.status !== "connected"
+                    }
                     onAction={() => {
+                      if (item.id === "gmail" && (resolved.action === "connect" || resolved.action === "manage")) {
+                        void handleGmailAction(item.id, resolved.action);
+                        return;
+                      }
                       if (item.moduleKey && (resolved.action === "enable" || resolved.action === "disable")) {
                         void handleModuleToggle(
                           item.id,
@@ -239,6 +297,18 @@ export function AppCenterPage({ canEdit }: Props) {
       </div>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
+
+      <GmailManageDialog
+        open={gmailManageOpen}
+        onOpenChange={setGmailManageOpen}
+        orgId={orgId}
+        email={
+          typeof integrations.gmail?.email === "string"
+            ? integrations.gmail.email
+            : undefined
+        }
+        onUpdated={refresh}
+      />
     </div>
   );
 }

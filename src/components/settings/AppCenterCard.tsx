@@ -101,8 +101,7 @@ export function AppCenterCard({
     !canEdit ||
     loading ||
     action === "coming_soon" ||
-    action === "none" ||
-    action === "connect";
+    action === "none";
 
   return (
     <Card
@@ -144,7 +143,7 @@ export function AppCenterCard({
           <Button
             type="button"
             variant={
-              action === "disable" || action === "manage" || action === "coming_soon"
+              action === "disable" || action === "manage" || action === "coming_soon" || action === "connect"
                 ? "outline"
                 : "default"
             }
@@ -152,8 +151,10 @@ export function AppCenterCard({
             disabled={actionDisabled}
             onClick={onAction}
             className={cn(
-              action === "enable"
-                ? "bg-[#e06737] hover:bg-[#c9562d]"
+              action === "enable" ? "bg-[#e06737] hover:bg-[#c9562d]" : undefined,
+              action === "connect" ? "border-[#1D376A] text-[#1D376A]" : undefined,
+              action === "manage" && status === "connected"
+                ? "border-[#1D376A] bg-[#1D376A] text-white hover:bg-[#152a52]"
                 : undefined
             )}
           >

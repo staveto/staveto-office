@@ -16,7 +16,8 @@ export type UserNotificationType =
   | "TASK_ASSIGNED"
   | "COMMENT_ADDED"
   | "REPORT_CREATED"
-  | "ABSENCE_APPROVED";
+  | "ABSENCE_APPROVED"
+  | "INCOMING_EMAIL";
 
 export type UserNotification = {
   id: string;
@@ -30,6 +31,11 @@ export type UserNotification = {
   assignedBy?: string;
   assignedByName?: string;
   orgId?: string;
+  inquiryId?: string;
+  subject?: string;
+  fromEmail?: string;
+  intent?: string;
+  confidence?: number;
   createdAt?: string;
   read: boolean;
 };
@@ -64,6 +70,11 @@ function toNotification(id: string, data: Record<string, unknown>): UserNotifica
     assignedBy: typeof data.assignedBy === "string" ? data.assignedBy : undefined,
     assignedByName: typeof data.assignedByName === "string" ? data.assignedByName : undefined,
     orgId: typeof data.orgId === "string" ? data.orgId : undefined,
+    inquiryId: typeof data.inquiryId === "string" ? data.inquiryId : undefined,
+    subject: typeof data.subject === "string" ? data.subject : undefined,
+    fromEmail: typeof data.fromEmail === "string" ? data.fromEmail : undefined,
+    intent: typeof data.intent === "string" ? data.intent : undefined,
+    confidence: typeof data.confidence === "number" ? data.confidence : undefined,
     createdAt: toIso(data.createdAt),
     read: data.read === true,
   };
@@ -203,6 +214,9 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
 }
 
 export function getNotificationProjectHref(notification: UserNotification): string | null {
+  if (notification.type === "INCOMING_EMAIL" && notification.inquiryId) {
+    return `/app/inbox/${notification.inquiryId}`;
+  }
   if (notification.type === "PROJECT_INVITED") {
     return "/app/settings#project-invites";
   }

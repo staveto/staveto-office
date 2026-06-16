@@ -120,3 +120,68 @@ export async function unassignToolFromProject(
 ): Promise<void> {
   await setUserEquipmentProjectAssignment(currentUserId, equipmentId, null);
 }
+
+export type WorkspaceEquipmentItem = {
+  id: string;
+  name: string;
+  type: string | null;
+  status: string;
+  assignedProjectId: string | null;
+  ownerId: string;
+};
+
+/**
+ * Equipment available across the active workspace projects — current user's own
+ * equipment plus best-effort reads of project owners' / members' equipment.
+ * Used by the Gantt resource panel for drag-and-drop assignment.
+ */
+export async function listWorkspaceEquipment(
+  projects: ProjectDoc[],
+  currentUserId: string
+): Promise<WorkspaceEquipmentItem[]> {
+  const seen = new Set<string>();
+  const out: WorkspaceEquipmentItem[] = [];
+
+  const pushRows = (rows: UserEquipmentDoc[], ownerId: string) => {
+    for (const row of rows) {
+      if (row.status === "inactive") continue;
+      if (seen.has(row.id)) continue;
+      seen.add(row.id);
+      out.push({
+        id: row.id,
+        name: row.name,
+        type: (row.category as string) ?? null,
+        status: row.status,
+        assignedProjectId: row.assignedProjectId ?? null,
+        ownerId,
+      });
+    }
+  };
+
+  try {
+    pushRows(await listMyEquipment({ status: "all" }), currentUserId);
+  } catch {
+    /* ignore */
+  }
+
+  const uids = new Set<string>();
+  for (const p of projects) {
+    if (p.ownerId) uids.add(p.ownerId);
+    for (const u of p.assignedMemberIds ?? []) {
+      if (u) uids.add(u);
+    }
+  }
+
+  await Promise.all(
+    [...uids].map(async (uid) => {
+      if (uid === currentUserId) return;
+      try {
+        pushRows(await listUserEquipment(uid, { status: "all" }), uid);
+      } catch {
+        /* permission denied for other user's equipment */
+      }
+    })
+  );
+
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}

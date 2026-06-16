@@ -43,9 +43,33 @@ import { GanttInteractiveTimeline } from "./GanttInteractiveTimeline";
 import { GanttBar } from "./GanttBar";
 import { GanttLegend } from "./GanttLegend";
 import { GanttUnscheduledPanel } from "./GanttUnscheduledPanel";
+import {
+  GanttResourcePanel,
+  GANTT_RESOURCE_MIME,
+  type GanttEmployeeResource,
+  type GanttResourceDragPayload,
+} from "./GanttResourcePanel";
 import { PersonalPlanningPlaceholder } from "./PersonalPlanningPlaceholder";
+import {
+  listWorkspaceEquipment,
+  type WorkspaceEquipmentItem,
+} from "@/services/projects/projectToolsService";
+import { updateTaskAssignee } from "@/services/projects/taskAssignmentService";
+import { updateTaskTools } from "@/services/projects/taskToolsService";
+import type { TaskToolSnapshot } from "@/services/projects/taskPlanningTypes";
 import styles from "./gantt.module.css";
 import { cn } from "@/lib/utils";
+
+function formatGanttRange(startYmd?: string, endYmd?: string): string | undefined {
+  if (!startYmd) return undefined;
+  const fmt = (ymd: string) =>
+    parseIsoDateLocal(ymd).toLocaleDateString(undefined, {
+      day: "numeric",
+      month: "short",
+    });
+  if (!endYmd || endYmd === startYmd) return fmt(startYmd);
+  return `${fmt(startYmd)} – ${fmt(endYmd)}`;
+}
 
 type DragKind = "task" | "phase";
 
@@ -81,6 +105,9 @@ export function GanttPlanningPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [chartExpanded, setChartExpanded] = useState(false);
   const [chartAreaWidth, setChartAreaWidth] = useState(0);
+  const [resourcesOpen, setResourcesOpen] = useState(true);
+  const [equipment, setEquipment] = useState<WorkspaceEquipmentItem[]>([]);
+  const [equipmentLoading, setEquipmentLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const chartFrameRef = useRef<HTMLDivElement>(null);
 
@@ -225,6 +252,91 @@ export function GanttPlanningPage() {
     data?.tasksByProject[projectId]?.find((t) => t.id === taskId);
 
   const reloadAfterMutation = useCallback(() => load(), [load]);
+
+  const employees = useMemo<GanttEmployeeResource[]>(() => {
+    if (!data) return [];
+    const counts = new Map<string, { task: number; overdue: number }>();
+    for (const p of data.projects) {
+      for (const ph of p.phases) {
+        for (const tk of ph.tasks) {
+          if (!tk.assigneeId) continue;
+          const c = counts.get(tk.assigneeId) ?? { task: 0, overdue: 0 };
+          c.task += 1;
+          if (tk.barStatus === "overdue") c.overdue += 1;
+          counts.set(tk.assigneeId, c);
+        }
+      }
+    }
+    const list: GanttEmployeeResource[] = data.teamMembers.map((m) => ({
+      id: m.id,
+      name: m.name,
+      taskCount: counts.get(m.id)?.task ?? 0,
+      overdueCount: counts.get(m.id)?.overdue ?? 0,
+    }));
+    for (const [id, c] of counts) {
+      if (list.some((e) => e.id === id)) continue;
+      const name = workerOptions.find((w) => w.id === id)?.name ?? id.slice(0, 8);
+      list.push({ id, name, taskCount: c.task, overdueCount: c.overdue });
+    }
+    return list.sort((a, b) => a.name.localeCompare(b.name));
+  }, [data, workerOptions]);
+
+  useEffect(() => {
+    if (!data || !resourcesOpen || !user?.id) return;
+    let cancelled = false;
+    setEquipmentLoading(true);
+    listWorkspaceEquipment(data.projectList, user.id)
+      .then((rows) => {
+        if (!cancelled) setEquipment(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setEquipment([]);
+      })
+      .finally(() => {
+        if (!cancelled) setEquipmentLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [data, resourcesOpen, user?.id]);
+
+  const handleDropResource = useCallback(
+    async (payload: GanttResourceDragPayload, projectId: string, taskIds: string[]) => {
+      if (!data?.canEdit || taskIds.length === 0) return;
+      try {
+        setActionError(null);
+        if (payload.kind === "employee") {
+          await Promise.all(
+            taskIds.map((tid) =>
+              updateTaskAssignee(projectId, tid, payload.id, payload.name)
+            )
+          );
+        } else {
+          await Promise.all(
+            taskIds.map((tid) => {
+              const taskDoc = data.tasksByProject[projectId]?.find((t) => t.id === tid);
+              const existing = taskDoc?.assignedTools ?? [];
+              if (existing.some((tl) => tl.id === payload.id)) return Promise.resolve();
+              const merged: TaskToolSnapshot[] = [
+                ...existing,
+                {
+                  id: payload.id,
+                  name: payload.name,
+                  type: payload.type ?? null,
+                  qrCode: null,
+                },
+              ];
+              return updateTaskTools(projectId, tid, merged);
+            })
+          );
+        }
+        await reloadAfterMutation();
+      } catch (e) {
+        setActionError(e instanceof Error ? e.message : t("gantt.updateError"));
+      }
+    },
+    [data, reloadAfterMutation, t]
+  );
 
   const phaseOptions = useMemo(() => {
     if (!data || filters.projectId === "all") return [];
@@ -418,6 +530,8 @@ export function GanttPlanningPage() {
         onNext={() => setAnchor((d) => addDays(d, viewMode === "week" ? 7 : viewMode === "month" ? 30 : 90))}
         chartExpanded={chartExpanded}
         onToggleChartExpanded={toggleChartExpanded}
+        resourcesOpen={resourcesOpen}
+        onToggleResources={() => setResourcesOpen((v) => !v)}
         t={t}
       />
       </div>
@@ -442,10 +556,12 @@ export function GanttPlanningPage() {
           <Loader2 className="size-8 animate-spin text-[#1D376A]" />
         </div>
       ) : (
+        <div className={cn(styles.ganttBody, chartExpanded && styles.ganttBodyExpanded)}>
         <div
           ref={chartFrameRef}
           className={cn(
-            "rounded-xl border border-border/70 bg-card shadow-sm overflow-hidden w-full",
+            "rounded-xl border border-border/70 bg-card shadow-sm overflow-hidden min-w-0",
+            styles.ganttChartFlex,
             chartExpanded && styles.ganttChartFrame
           )}
         >
@@ -525,12 +641,26 @@ export function GanttPlanningPage() {
                         );
                       }
                     }}
+                    onDropResource={
+                      data?.canEdit ? handleDropResource : undefined
+                    }
                     t={t}
                   />
                 ))
               )}
             </div>
           </div>
+        </div>
+        {resourcesOpen ? (
+          <GanttResourcePanel
+            employees={employees}
+            equipment={equipment}
+            canEdit={data?.canEdit ?? false}
+            loading={equipmentLoading}
+            onClose={() => setResourcesOpen(false)}
+            t={t}
+          />
+        ) : null}
         </div>
       )}
 
@@ -585,6 +715,53 @@ export function GanttPlanningPage() {
   return shell;
 }
 
+function DroppableRow({
+  enabled,
+  onDropPayload,
+  className,
+  children,
+}: {
+  enabled: boolean;
+  onDropPayload: (payload: GanttResourceDragPayload) => void;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const [over, setOver] = useState(false);
+
+  if (!enabled) {
+    return <div className={className}>{children}</div>;
+  }
+
+  return (
+    <div
+      className={cn(className, over && styles.rowDropActive)}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes(GANTT_RESOURCE_MIME)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        if (!over) setOver(true);
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        setOver(false);
+      }}
+      onDrop={(e) => {
+        const raw = e.dataTransfer.getData(GANTT_RESOURCE_MIME);
+        setOver(false);
+        if (!raw) return;
+        e.preventDefault();
+        try {
+          onDropPayload(JSON.parse(raw) as GanttResourceDragPayload);
+        } catch {
+          /* ignore malformed payload */
+        }
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 function GanttProjectRows({
   project,
   timeline,
@@ -597,6 +774,7 @@ function GanttProjectRows({
   onPhaseDragStart,
   onScheduleTask,
   onResize,
+  onDropResource,
   t,
 }: {
   project: GanttProjectNode;
@@ -615,14 +793,26 @@ function GanttProjectRows({
     edge: "start" | "end",
     newDate: string
   ) => void;
+  onDropResource?: (
+    payload: GanttResourceDragPayload,
+    projectId: string,
+    taskIds: string[]
+  ) => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const pKey = `p-${project.id}`;
   const isCollapsed = collapsed.has(pKey);
+  const allTaskIds = project.phases.flatMap((ph) => ph.tasks.map((tk) => tk.id));
 
   return (
     <>
-      <div className={styles.gridRow}>
+      <DroppableRow
+        enabled={!!onDropResource && allTaskIds.length > 0}
+        onDropPayload={(payload) =>
+          onDropResource?.(payload, project.id, allTaskIds)
+        }
+        className={styles.gridRow}
+      >
         <div className={cn(styles.rowLabel, styles.rowLabelProject)}>
           <button type="button" className="mr-1 shrink-0" onClick={() => onToggleCollapse(pKey)}>
             {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
@@ -642,10 +832,15 @@ function GanttProjectRows({
             timeline={timeline}
             canEdit={false}
             href={`/app/projects/${project.id}`}
-            tooltip={`${project.name} · ${project.progress}% · ${t("gantt.projectDragSoon")}`}
+            tooltipData={{
+              title: project.name,
+              dateRange: formatGanttRange(project.startYmd, project.endYmd),
+              statusLabel: `${project.progress}% ${t("gantt.tooltip.complete")}`,
+              meta: `${project.doneTasks}/${project.totalTasks} ${t("gantt.tooltip.tasks")}`,
+            }}
           />
         </GanttInteractiveTimeline>
-      </div>
+      </DroppableRow>
 
       {!isCollapsed
         ? project.phases.map((phase) => {
@@ -660,9 +855,17 @@ function GanttProjectRows({
                 ? drag.offsetPx
                 : 0;
 
+            const phaseTaskIds = phase.tasks.map((tk) => tk.id);
+
             return (
               <div key={phase.id}>
-                <div className={styles.gridRow}>
+                <DroppableRow
+                  enabled={!!onDropResource && phaseTaskIds.length > 0}
+                  onDropPayload={(payload) =>
+                    onDropResource?.(payload, project.id, phaseTaskIds)
+                  }
+                  className={styles.gridRow}
+                >
                   <div className={cn(styles.rowLabel, styles.rowLabelPhase)}>
                     <button type="button" className="mr-1" onClick={() => onToggleCollapse(phKey)}>
                       {phCollapsed ? (
@@ -685,10 +888,14 @@ function GanttProjectRows({
                       dragOffsetPx={phaseDrag}
                       isDragging={phaseDrag !== 0}
                       onDragStart={(e) => onPhaseDragStart(project.id, phase.id, e)}
-                      tooltip={`${phaseName} · ${phase.done}/${phase.total}`}
+                      tooltipData={{
+                        title: phaseName,
+                        dateRange: formatGanttRange(phase.startYmd, phase.endYmd),
+                        meta: `${phase.done}/${phase.total} ${t("gantt.tooltip.tasks")}`,
+                      }}
                     />
                   </GanttInteractiveTimeline>
-                </div>
+                </DroppableRow>
                 {!phCollapsed
                   ? phase.tasks.map((task) => {
                       const taskDrag =
@@ -698,7 +905,14 @@ function GanttProjectRows({
                           ? drag.offsetPx
                           : 0;
                       return (
-                        <div key={task.id} className={styles.gridRow}>
+                        <DroppableRow
+                          key={task.id}
+                          enabled={!!onDropResource}
+                          onDropPayload={(payload) =>
+                            onDropResource?.(payload, project.id, [task.id])
+                          }
+                          className={styles.gridRow}
+                        >
                           <div className={cn(styles.rowLabel, styles.rowLabelTask, task.isUnscheduled && styles.rowLabelUnscheduled)}>
                             <div className="min-w-0">
                               <span className="block truncate">{task.title}</span>
@@ -753,16 +967,18 @@ function GanttProjectRows({
                                 window.addEventListener("mouseup", onUp);
                               }}
                               href={`/app/projects/${project.id}?tab=tasks`}
-                              tooltip={[
-                                task.title,
-                                task.assigneeName ?? t("projects.tasks.unassigned"),
-                                task.toolSummary,
-                              ]
-                                .filter(Boolean)
-                                .join(" · ")}
+                              assigneeName={task.assigneeName}
+                              tooltipData={{
+                                title: task.title,
+                                dateRange: formatGanttRange(task.startYmd, task.endYmd),
+                                assignee:
+                                  task.assigneeName ?? t("projects.tasks.unassigned"),
+                                statusLabel: t(`gantt.legend.${task.barStatus}`),
+                                meta: task.toolSummary,
+                              }}
                             />
                           </GanttInteractiveTimeline>
-                        </div>
+                        </DroppableRow>
                       );
                     })
                   : null}

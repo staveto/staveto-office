@@ -53,6 +53,10 @@ function notificationMessage(
       });
     case "ABSENCE_APPROVED":
       return t("notifications.absenceApproved");
+    case "INCOMING_EMAIL":
+      return n.subject
+        ? t("notifications.incomingEmail", { subject: n.subject })
+        : t("notifications.incomingEmailGeneric");
     default:
       return t("notifications.generic");
   }
@@ -226,7 +230,19 @@ export function NotificationsDropdown() {
                           {notificationMessage(n, t)}
                         </p>
                         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-                          {projectHref && (n.type === "PROJECT_ASSIGNED" || n.type === "PROJECT_INVITED") ? (
+                          {projectHref && n.type === "INCOMING_EMAIL" ? (
+                            <Link
+                              href={projectHref}
+                              role="menuitem"
+                              onClick={() => {
+                                void handleMarkRead(n);
+                                setOpen(false);
+                              }}
+                              className="inline-flex h-7 items-center rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                            >
+                              {t("notifications.openInbox")}
+                            </Link>
+                          ) : projectHref && (n.type === "PROJECT_ASSIGNED" || n.type === "PROJECT_INVITED") ? (
                             <Link
                               href={projectHref}
                               role="menuitem"

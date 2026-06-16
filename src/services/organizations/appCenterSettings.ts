@@ -16,7 +16,7 @@ import type {
 const DEFAULT_INTEGRATIONS: OrganizationIntegrations = {
   googleMaps: { status: "not_connected", mode: "server_side" },
   aiInvoiceOcr: { status: "enabled" },
-  gmail: { status: "coming_soon" },
+  gmail: { status: "not_connected", mode: "oauth" },
 };
 
 function mergeIntegrations(
@@ -90,21 +90,28 @@ export async function toggleAppCenterModule(
 export type ServerFeatureProbe = {
   googleMapsConfigured: boolean;
   aiInvoiceOcrAvailable: boolean;
+  gmailConfigured: boolean;
 };
 
 /** Client-side probe of server-side features (no API keys exposed). */
 export async function probeServerFeatures(): Promise<ServerFeatureProbe> {
   try {
-    const res = await fetch("/api/distance");
-    if (!res.ok) {
-      return { googleMapsConfigured: false, aiInvoiceOcrAvailable: true };
-    }
-    const data = (await res.json()) as { configured?: boolean; aiInvoiceOcr?: boolean };
+    const [distanceRes, gmailRes] = await Promise.all([
+      fetch("/api/distance"),
+      fetch("/api/gmail"),
+    ]);
+    const distance = distanceRes.ok
+      ? ((await distanceRes.json()) as { configured?: boolean; aiInvoiceOcr?: boolean })
+      : {};
+    const gmail = gmailRes.ok
+      ? ((await gmailRes.json()) as { configured?: boolean })
+      : {};
     return {
-      googleMapsConfigured: data.configured === true,
-      aiInvoiceOcrAvailable: data.aiInvoiceOcr !== false,
+      googleMapsConfigured: distance.configured === true,
+      aiInvoiceOcrAvailable: distance.aiInvoiceOcr !== false,
+      gmailConfigured: gmail.configured !== false,
     };
   } catch {
-    return { googleMapsConfigured: false, aiInvoiceOcrAvailable: true };
+    return { googleMapsConfigured: false, aiInvoiceOcrAvailable: true, gmailConfigured: false };
   }
 }

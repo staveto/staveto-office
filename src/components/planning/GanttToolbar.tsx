@@ -8,6 +8,7 @@ import {
   Maximize2,
   Minimize2,
   Sparkles,
+  Users,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -50,6 +51,8 @@ type Props = {
   onNext: () => void;
   chartExpanded?: boolean;
   onToggleChartExpanded?: () => void;
+  resourcesOpen?: boolean;
+  onToggleResources?: () => void;
   t: (key: string) => string;
 };
 
@@ -71,6 +74,8 @@ export function GanttToolbar({
   onNext,
   chartExpanded = false,
   onToggleChartExpanded,
+  resourcesOpen = false,
+  onToggleResources,
   t,
 }: Props) {
   return (
@@ -105,6 +110,20 @@ export function GanttToolbar({
           <Button type="button" size="sm" variant="outline" onClick={onZoomIn}>
             <ZoomIn className="size-4" />
           </Button>
+          {onToggleResources ? (
+            <Button
+              type="button"
+              size="sm"
+              variant={resourcesOpen ? "default" : "outline"}
+              className={resourcesOpen ? "bg-[#1D376A] hover:bg-[#162d58]" : ""}
+              onClick={onToggleResources}
+              title={t("gantt.resources.toggle")}
+              aria-pressed={resourcesOpen}
+            >
+              <Users className="size-4" />
+              <span className="ml-1.5 hidden lg:inline">{t("gantt.resources.toggle")}</span>
+            </Button>
+          ) : null}
           {onToggleChartExpanded ? (
             <Button
               type="button"
@@ -160,70 +179,116 @@ export function GanttToolbar({
       </div>
 
       <div className={styles.filtersRow}>
-        <Select
-          value={filters.projectId}
-          onValueChange={(v) => onFiltersChange({ projectId: v ?? "all" })}
-        >
-          <SelectTrigger className="h-8 w-[160px] text-xs">
-            <SelectValue placeholder={t("gantt.filter.project")} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t("gantt.filter.allProjects")}</SelectItem>
-            {projectOptions.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                {p.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={filters.workerId}
-          onValueChange={(v) => onFiltersChange({ workerId: v ?? "all" })}
-        >
-          <SelectTrigger className="h-8 w-[140px] text-xs">
-            <SelectValue placeholder={t("gantt.filter.worker")} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t("gantt.filter.allWorkers")}</SelectItem>
-            {workerOptions.map((w) => (
-              <SelectItem key={w.id} value={w.id}>
-                {w.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {phaseOptions.length > 0 ? (
+        <label className={styles.filterGroup}>
+          <span className={styles.filterLabel}>{t("gantt.filter.project")}</span>
           <Select
-            value={filters.phaseId}
-            onValueChange={(v) => onFiltersChange({ phaseId: v ?? "all" })}
+            value={filters.projectId}
+            onValueChange={(v) => onFiltersChange({ projectId: v ?? "all" })}
           >
-            <SelectTrigger className="h-8 w-[140px] text-xs">
-              <SelectValue placeholder={t("gantt.filter.phase")} />
+            <SelectTrigger className="h-8 w-[160px] text-xs">
+              <SelectValue>
+                {(value: string | null) =>
+                  !value || value === "all"
+                    ? t("gantt.filter.allProjects")
+                    : projectOptions.find((p) => p.id === value)?.name ??
+                      t("gantt.filter.allProjects")
+                }
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">{t("gantt.filter.allPhases")}</SelectItem>
-              {phaseOptions.map((ph) => (
-                <SelectItem key={ph.id} value={ph.id}>
-                  {ph.name}
+              <SelectItem value="all">{t("gantt.filter.allProjects")}</SelectItem>
+              {projectOptions.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+        </label>
+        <label className={styles.filterGroup}>
+          <span className={styles.filterLabel}>{t("gantt.filter.worker")}</span>
+          <Select
+            value={filters.workerId}
+            onValueChange={(v) => onFiltersChange({ workerId: v ?? "all" })}
+          >
+            <SelectTrigger className="h-8 w-[140px] text-xs">
+              <SelectValue>
+                {(value: string | null) =>
+                  !value || value === "all"
+                    ? t("gantt.filter.allWorkers")
+                    : workerOptions.find((w) => w.id === value)?.name ??
+                      t("gantt.filter.allWorkers")
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("gantt.filter.allWorkers")}</SelectItem>
+              {workerOptions.map((w) => (
+                <SelectItem key={w.id} value={w.id}>
+                  {w.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+        {phaseOptions.length > 0 ? (
+          <label className={styles.filterGroup}>
+            <span className={styles.filterLabel}>{t("gantt.filter.phase")}</span>
+            <Select
+              value={filters.phaseId}
+              onValueChange={(v) => onFiltersChange({ phaseId: v ?? "all" })}
+            >
+              <SelectTrigger className="h-8 w-[140px] text-xs">
+                <SelectValue>
+                  {(value: string | null) =>
+                    !value || value === "all"
+                      ? t("gantt.filter.allPhases")
+                      : phaseOptions.find((ph) => ph.id === value)?.name ??
+                        t("gantt.filter.allPhases")
+                  }
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("gantt.filter.allPhases")}</SelectItem>
+                {phaseOptions.map((ph) => (
+                  <SelectItem key={ph.id} value={ph.id}>
+                    {ph.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
         ) : null}
-        <Select
-          value={filters.status}
-          onValueChange={(v) => onFiltersChange({ status: v ?? "all" })}
-        >
-          <SelectTrigger className="h-8 w-[120px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{t("gantt.filter.allStatus")}</SelectItem>
-            <SelectItem value="open">{t("projects.tasks.statusOpen")}</SelectItem>
-            <SelectItem value="done">{t("projects.tasks.statusDone")}</SelectItem>
-            <SelectItem value="blocked">{t("gantt.legend.blocked")}</SelectItem>
-          </SelectContent>
-        </Select>
+        <label className={styles.filterGroup}>
+          <span className={styles.filterLabel}>{t("gantt.filter.statusLabel")}</span>
+          <Select
+            value={filters.status}
+            onValueChange={(v) => onFiltersChange({ status: v ?? "all" })}
+          >
+            <SelectTrigger className="h-8 w-[130px] text-xs">
+              <SelectValue>
+                {(value: string | null) => {
+                  switch (value) {
+                    case "open":
+                      return t("projects.tasks.statusOpen");
+                    case "done":
+                      return t("projects.tasks.statusDone");
+                    case "blocked":
+                      return t("gantt.legend.blocked");
+                    default:
+                      return t("gantt.filter.allStatus");
+                  }
+                }}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("gantt.filter.allStatus")}</SelectItem>
+              <SelectItem value="open">{t("projects.tasks.statusOpen")}</SelectItem>
+              <SelectItem value="done">{t("projects.tasks.statusDone")}</SelectItem>
+              <SelectItem value="blocked">{t("gantt.legend.blocked")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </label>
         <Button
           type="button"
           size="sm"

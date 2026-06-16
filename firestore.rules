@@ -58,6 +58,47 @@ service cloud.firestore {
       );
     }
 
+    /** Live operations dashboard: owner, admin, manager, accountant. */
+    function canViewOrgOperations(orgId) {
+      let org = get(/databases/$(database)/documents/organizations/$(orgId)).data;
+      return isSignedIn() && isOrgMemberActive(orgId) && (
+        org.ownerUid == request.auth.uid
+        || (
+          exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid))
+          && get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data.role in ['admin', 'owner', 'manager', 'accountant']
+        )
+      );
+    }
+
+    function canReadTimeEntry() {
+      return isSignedIn() && (
+        resource.data.userId == request.auth.uid
+        || (
+          resource.data.projectId is string
+          && exists(/databases/$(database)/documents/projects/$(resource.data.projectId))
+          && (
+            get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.ownerId == request.auth.uid
+            || (
+              get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.orgId != null
+              && canViewOrgOperations(
+                get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.orgId
+              )
+            )
+          )
+        )
+      );
+    }
+
+    function timeEntryGpsHideUpdateValid() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return changed.hasOnly(['gpsStartHidden', 'gpsEndHidden', 'gpsHiddenReason', 'gpsHiddenBy', 'gpsHiddenAt', 'updatedAt'])
+        && request.resource.data.gpsHiddenBy == request.auth.uid
+        && (
+          request.resource.data.gpsStartHidden == true
+          || request.resource.data.gpsEndHidden == true
+        );
+    }
+
     function isDirectChatParticipant(chatData) {
       return chatData.type == 'direct'
         && chatData.participantUids is list
@@ -351,6 +392,21 @@ service cloud.firestore {
           allow delete: if false;
         }
       }
+
+      match /gmailConnections/{connectionId} {
+        allow read, write: if false;
+      }
+
+      match /emailInquiries/{inquiryId} {
+        allow read: if isOrgMemberActive(orgId);
+        allow create, update: if canManageOrganization(orgId);
+        allow delete: if isOrgOwnerOrAdmin(orgId);
+
+        match /messages/{messageId} {
+          allow read: if isOrgMemberActive(orgId);
+          allow write: if canManageOrganization(orgId);
+        }
+      }
     }
 
     match /invites/{inviteId} {
@@ -443,6 +499,44 @@ service cloud.firestore {
       allow read: if canReadQuoteDoc();
       allow create: if canCreateQuoteDoc();
       allow update, delete: if canWriteQuoteDoc();
+    }
+
+    match /absences/{absenceId} {
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid
+        || (resource.data.orgId != null && canViewOrgOperations(resource.data.orgId))
+      );
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.orgId is string
+        && isOrgMemberActive(request.resource.data.orgId);
+      allow update, delete: if isSignedIn() && (
+        resource.data.userId == request.auth.uid
+        || (resource.data.orgId != null && canManageOrganization(resource.data.orgId))
+      );
+    }
+
+    match /timeEntries/{entryId} {
+      allow read: if canReadTimeEntry();
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.projectId is string
+        && canAccessProjectId(request.resource.data.projectId);
+      allow update: if isSignedIn() && (
+        resource.data.userId == request.auth.uid
+        || (
+          timeEntryGpsHideUpdateValid()
+          && resource.data.projectId is string
+          && exists(/databases/$(database)/documents/projects/$(resource.data.projectId))
+          && (
+            get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.orgId != null
+            && canManageOrganization(
+              get(/databases/$(database)/documents/projects/$(resource.data.projectId)).data.orgId
+            )
+          )
+        )
+      );
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
 
     match /customers/{customerId} {

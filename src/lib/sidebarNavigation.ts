@@ -85,6 +85,12 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
         hideForFieldWorker: true,
       },
       { id: "jobs-new", labelKey: "sidebar.item.jobs.new", href: "/app/projects/new", managementOnly: true },
+      {
+        id: "jobs-inbox",
+        labelKey: "sidebar.item.jobs.inbox",
+        href: "/app/inbox",
+        managementOnly: true,
+      },
       { id: "jobs-tasks", labelKey: "sidebar.item.jobs.tasks", comingSoon: true },
       { id: "jobs-issues", labelKey: "sidebar.item.jobs.issues", comingSoon: true, moduleKey: "issues", hideForFieldWorker: true },
     ],

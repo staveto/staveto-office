@@ -89,7 +89,7 @@ export const APP_CENTER_CATALOG: AppCenterCatalogItem[] = [
   { id: "invoices", category: "core", nameKey: "appCenter.apps.invoices.name", descriptionKey: "appCenter.apps.invoices.desc", icon: DollarSign, moduleKey: "billing", required: true },
 
   // Communication
-  { id: "gmail", category: "communication", nameKey: "appCenter.apps.gmail.name", descriptionKey: "appCenter.apps.gmail.desc", icon: Mail, integrationKey: "gmail", comingSoon: true, oauthNote: true },
+  { id: "gmail", category: "communication", nameKey: "appCenter.apps.gmail.name", descriptionKey: "appCenter.apps.gmail.desc", icon: Mail, integrationKey: "gmail", oauthNote: true },
   { id: "outlook", category: "communication", nameKey: "appCenter.apps.outlook.name", descriptionKey: "appCenter.apps.outlook.desc", icon: Mail, integrationKey: "outlook", comingSoon: true },
   { id: "whatsapp", category: "communication", nameKey: "appCenter.apps.whatsapp.name", descriptionKey: "appCenter.apps.whatsapp.desc", icon: MessageCircle, integrationKey: "whatsapp", comingSoon: true },
   { id: "teams", category: "communication", nameKey: "appCenter.apps.teams.name", descriptionKey: "appCenter.apps.teams.desc", icon: MessageSquare, integrationKey: "teams", comingSoon: true },

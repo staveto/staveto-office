@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import {
   Card,
   CardContent,
@@ -234,8 +235,14 @@ export function DraftJobWorkspace({
         <CardHeader className="pb-2">
           <CardTitle className="text-base">{t("projects.draft.sectionEmail")}</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-2">
           <p className="text-sm text-muted-foreground">{t("projects.draft.emailPlaceholder")}</p>
+          <Link
+            href="/app/inbox"
+            className="inline-flex text-sm font-medium text-[#1D376A] hover:underline"
+          >
+            {t("inbox.title")} →
+          </Link>
         </CardContent>
       </Card>
 

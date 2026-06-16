@@ -7,6 +7,7 @@ import {
   handleUpdateProjectDraftWithAI,
 } from "./handlers";
 import { handleCreateBusinessOrg } from "./businessOrg";
+import { gmailBuildAuthUrl, gmailOAuthCallback } from "./gmail";
 import { isGeminiOverloadedError, isGeminiQuotaError } from "./gemini";
 import { functionsPermissionError } from "./permissions";
 
@@ -111,3 +112,5 @@ export const createBusinessOrg = onCall(
     }
   }
 );
+
+export { gmailOAuthCallback, gmailBuildAuthUrl };

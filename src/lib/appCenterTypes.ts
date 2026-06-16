@@ -11,6 +11,8 @@ export type IntegrationEntry = {
   status: IntegrationStatus;
   mode?: "server_side" | "oauth";
   connectedAt?: unknown;
+  email?: string;
+  connectedByUid?: string;
   note?: string;
 };
 
