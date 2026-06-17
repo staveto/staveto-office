@@ -1,6 +1,14 @@
 import { waitForAuthUser } from "@/lib/firebase";
 import type { EmailInquiry, EmailInquiryMessage } from "@/lib/emailInquiryTypes";
 
+export const EMAIL_INBOX_CHANGED_EVENT = "staveto:email-inbox-changed";
+
+export function notifyEmailInboxChanged(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(EMAIL_INBOX_CHANGED_EVENT));
+  }
+}
+
 async function authHeaders(): Promise<HeadersInit> {
   const user = await waitForAuthUser();
   if (!user) throw new Error("NOT_SIGNED_IN");
@@ -105,6 +113,7 @@ export async function markEmailInquiryRead(orgId: string, inquiryId: string): Pr
     const data = (await res.json().catch(() => ({}))) as { errorCode?: string };
     throw new Error(data.errorCode || "UPDATE_FAILED");
   }
+  notifyEmailInboxChanged();
 }
 
 export async function ignoreEmailInquiry(orgId: string, inquiryId: string): Promise<void> {
@@ -118,6 +127,7 @@ export async function ignoreEmailInquiry(orgId: string, inquiryId: string): Prom
     const data = (await res.json().catch(() => ({}))) as { errorCode?: string };
     throw new Error(data.errorCode || "UPDATE_FAILED");
   }
+  notifyEmailInboxChanged();
 }
 
 export function getEmailInquiryHref(inquiryId: string): string {

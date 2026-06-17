@@ -1,23 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { useI18n } from "@/i18n/I18nContext";
 import { useSidebarLayout } from "@/context/SidebarLayoutContext";
-import {
-  SIDEBAR_NAV_SECTIONS,
-  filterNavSections,
-  getActiveSectionId,
-  getNavSectionLabelKey,
-  isItemActive,
-} from "@/lib/sidebarNavigation";
+import { SIDEBAR_NAV_SECTIONS, filterNavSections } from "@/lib/sidebarNavigation";
 import { canManageCompanyOperations, shouldShowWorkerDashboard } from "@/lib/workspaceProduct";
 import { useEnabledModules } from "@/context/EnabledModulesContext";
-import { IconSidebarItem } from "./IconSidebarItem";
 import { ExpandedSidebarNav } from "./ExpandedSidebarNav";
+import { SidebarRailNav } from "./SidebarRailNav";
 import { SidebarFooter } from "./SidebarFooter";
 import { SidebarExpandButton } from "./SidebarExpandButton";
 import { SidebarBrand } from "./SidebarBrand";
@@ -35,9 +28,6 @@ export function IconSidebar({ onNavigate }: IconSidebarProps) {
   const { t } = useI18n();
   const { expanded } = useSidebarLayout();
 
-  const activeSectionId = getActiveSectionId(pathname, SIDEBAR_NAV_SECTIONS, search);
-  const [openSectionId, setOpenSectionId] = useState<string | null>(null);
-
   const isPersonalWorkspace = activeWorkspace?.type === "personal";
   const canManage = canManageCompanyOperations(activeWorkspace?.role);
   const isFieldWorker =
@@ -52,29 +42,6 @@ export function IconSidebar({ onNavigate }: IconSidebarProps) {
   const navSections = filterNavSections(SIDEBAR_NAV_SECTIONS, navFilterOpts);
   const comingSoonLabel = t("sidebar.comingSoon");
 
-  const handleOpen = useCallback(
-    (sectionId: string) => {
-      if (!expanded) setOpenSectionId(sectionId);
-    },
-    [expanded]
-  );
-
-  const handleClose = useCallback(() => {
-    setOpenSectionId(null);
-  }, []);
-
-  useEffect(() => {
-    if (expanded) setOpenSectionId(null);
-  }, [expanded]);
-
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpenSectionId(null);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-
   const handleLogout = async () => {
     await logout();
     if (typeof window !== "undefined") {
@@ -86,7 +53,8 @@ export function IconSidebar({ onNavigate }: IconSidebarProps) {
     <aside
       className={cn(
         "flex h-full w-full min-w-0 flex-col",
-        "border-r border-white/[0.08] bg-[#132743] text-white"
+        "border-r border-white/[0.08] bg-[#132743] text-white",
+        !expanded && "overflow-visible"
       )}
       role="navigation"
       aria-label={t("sidebar.ariaLabel")}
@@ -102,7 +70,12 @@ export function IconSidebar({ onNavigate }: IconSidebarProps) {
         <SidebarExpandButton collapsed={!expanded} variant="icon" />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+      <div
+        className={cn(
+          "min-h-0 flex-1",
+          expanded ? "overflow-x-hidden overflow-y-auto" : "flex flex-col overflow-visible"
+        )}
+      >
         {expanded ? (
           <div className="flex h-full min-h-0 flex-col">
             <ExpandedSidebarNav
@@ -119,36 +92,19 @@ export function IconSidebar({ onNavigate }: IconSidebarProps) {
           />
           </div>
         ) : (
-          <div className="flex flex-col gap-1 overflow-visible py-3">
-            {navSections.map((section) => {
-              const isSectionActive = section.items.some((item) =>
-                isItemActive(pathname, item, search)
-              );
-              const isOpen = openSectionId === section.id;
-
-              return (
-                <IconSidebarItem
-                  key={section.id}
-                  section={section}
-                  sectionLabel={t(getNavSectionLabelKey(section, isPersonalWorkspace, isFieldWorker))}
-                  pathname={pathname}
-                  search={search}
-                  comingSoonLabel={comingSoonLabel}
-                  isPersonalWorkspace={isPersonalWorkspace}
-                  canManage={canManage}
-                  isFieldWorker={isFieldWorker}
-                  enabledModules={isPersonalWorkspace ? null : enabledModules}
-                  isSectionActive={isSectionActive || activeSectionId === section.id}
-                  isOpen={isOpen}
-                  t={t}
-                  onOpen={() => handleOpen(section.id)}
-                  onClose={handleClose}
-                  onNavigate={onNavigate}
-                  onLogout={handleLogout}
-                />
-              );
-            })}
-          </div>
+          <SidebarRailNav
+            sections={navSections}
+            pathname={pathname}
+            search={search}
+            isPersonalWorkspace={isPersonalWorkspace}
+            canManage={canManage}
+            isFieldWorker={isFieldWorker}
+            enabledModules={isPersonalWorkspace ? null : enabledModules}
+            comingSoonLabel={comingSoonLabel}
+            t={t}
+            onNavigate={onNavigate}
+            onLogout={handleLogout}
+          />
         )}
       </div>
 

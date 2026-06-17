@@ -8,9 +8,16 @@ import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/context/AuthContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
-import { fetchEmailInquiries } from "@/services/email/emailInquiryService";
+import {
+  fetchEmailInquiries,
+  notifyEmailInboxChanged,
+} from "@/services/email/emailInquiryService";
 import type { EmailInquiry } from "@/lib/emailInquiryTypes";
-import { startGmailOAuth, syncGmailInbox, notifyGmailOAuthPopupResult } from "@/services/email/gmailIntegrationService";
+import {
+  startGmailOAuth,
+  notifyGmailOAuthPopupResult,
+} from "@/services/email/gmailIntegrationService";
+import { autoSyncGmailInbox } from "@/services/email/gmailAutoSync";
 import { loadAppCenterSettings } from "@/services/organizations/appCenterSettings";
 import { GmailConnectCard } from "@/components/inbox/GmailConnectCard";
 import { resolveGmailError } from "@/lib/gmail/errors";
@@ -87,6 +94,7 @@ export function EmailInboxPage() {
       } else {
         setTotalCount(data.length);
       }
+      notifyEmailInboxChanged();
     } catch (e) {
       setError(resolveGmailError(e, t));
     } finally {
@@ -117,42 +125,53 @@ export function EmailInboxPage() {
 
   const hiddenCount = Math.max(0, totalCount - rows.length);
 
-  const handleSync = useCallback(async () => {
-    if (!orgId) return;
-    setSyncing(true);
-    setError(null);
-    try {
-      const result = await syncGmailInbox(orgId);
-      if (result.threadsFound === 0) {
-        setSuccess(t("inbox.syncSuccessEmpty"));
-      } else if (result.newInquiries > 0) {
-        setSuccess(
-          result.filteredOut > 0
-            ? t("inbox.syncSuccessNewFiltered", {
-                count: result.newInquiries,
-                filtered: result.filteredOut,
-              })
-            : t("inbox.syncSuccessNew", { count: result.newInquiries })
-        );
-      } else if (result.failed > 0) {
-        setSuccess(t("inbox.syncSuccessPartial", { synced: result.synced, failed: result.failed }));
-      } else {
-        setSuccess(t("inbox.syncSuccessWithCount", { count: result.synced }));
+  const handleSync = useCallback(
+    async (options?: { force?: boolean; quiet?: boolean }) => {
+      if (!orgId) return;
+      setSyncing(true);
+      if (!options?.quiet) setError(null);
+      try {
+        const result = await autoSyncGmailInbox(orgId, { force: options?.force ?? true });
+        if (!result) {
+          await loadInquiries();
+          return;
+        }
+        if (!options?.quiet) {
+          if (result.threadsFound === 0) {
+            setSuccess(t("inbox.syncSuccessEmpty"));
+          } else if (result.newInquiries > 0) {
+            setSuccess(
+              result.filteredOut > 0
+                ? t("inbox.syncSuccessNewFiltered", {
+                    count: result.newInquiries,
+                    filtered: result.filteredOut,
+                  })
+                : t("inbox.syncSuccessNew", { count: result.newInquiries })
+            );
+          } else if (result.failed > 0) {
+            setSuccess(
+              t("inbox.syncSuccessPartial", { synced: result.synced, failed: result.failed })
+            );
+          } else {
+            setSuccess(t("inbox.syncSuccessWithCount", { count: result.synced }));
+          }
+        }
+        await refreshGmailStatus();
+        await loadInquiries();
+      } catch (e) {
+        if (!options?.quiet) setError(resolveGmailError(e, t));
+      } finally {
+        setSyncing(false);
       }
-      await refreshGmailStatus();
-      await loadInquiries();
-    } catch (e) {
-      setError(resolveGmailError(e, t));
-    } finally {
-      setSyncing(false);
-    }
-  }, [orgId, t, refreshGmailStatus, loadInquiries]);
+    },
+    [orgId, t, refreshGmailStatus, loadInquiries]
+  );
 
   useEffect(() => {
-    if (gmailStatus === "connected" && orgId && gmailConnected) {
-      void handleSync();
-    }
-  }, [gmailStatus, orgId, gmailConnected, handleSync]);
+    if (!gmailConnected || !orgId || authLoading || !user) return;
+    void handleSync({ force: gmailStatus === "connected", quiet: gmailStatus !== "connected" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run when connection becomes available
+  }, [gmailConnected, orgId, authLoading, user, gmailStatus]);
 
   if (!orgId) {
     return <p className="text-sm text-muted-foreground">{t("inbox.error.noCompany")}</p>;
@@ -177,8 +196,7 @@ export function EmailInboxPage() {
           connected
           connectedEmail={gmailEmail}
           syncing={syncing}
-          onConnect={() => void handleConnect()}
-          onSync={() => void handleSync()}
+          onSync={() => void handleSync({ force: true })}
         />
       )}
 

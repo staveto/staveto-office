@@ -7,6 +7,7 @@ import { useI18n } from "@/i18n/I18nContext";
 import { isCompanyWorkspaceType } from "@/types/workspace";
 import { shouldShowWorkerDashboard } from "@/lib/workspaceProduct";
 import { ActiveCompanyContextSelector } from "./ActiveCompanyContextSelector";
+import { EmailInboxHeaderLink } from "./EmailInboxHeaderLink";
 import { NotificationsDropdown } from "./NotificationsDropdown";
 import { ThemeToggle } from "./ThemeToggle";
 import { UserProfileMenu } from "./UserProfileMenu";
@@ -33,6 +34,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/app/settings/security": "settings.security.title",
   "/app/settings/audit-logs": "settings.auditLogs.title",
   "/app/help": "nav.help",
+  "/app/inbox": "inbox.title",
   "/estimates": "nav.estimates",
   "/subscription": "nav.subscription",
 };
@@ -95,6 +97,7 @@ export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
 
       <div className="flex min-w-0 shrink items-center gap-1.5 sm:gap-2">
         <ThemeToggle />
+        <EmailInboxHeaderLink />
         <NotificationsDropdown />
         <ActiveCompanyContextSelector />
         <UserProfileMenu />

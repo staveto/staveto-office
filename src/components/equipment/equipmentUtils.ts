@@ -70,11 +70,29 @@ export function equipmentMatchesSearch(item: UserEquipmentDoc, q: string): boole
 export function computeEquipmentStats(items: UserEquipmentDoc[]) {
   let assigned = 0;
   let inService = 0;
+  let available = 0;
   for (const row of items) {
     if (row.status === "assigned") assigned += 1;
     if (row.status === "in_service") inService += 1;
+    if (row.status === "available") available += 1;
   }
-  return { total: items.length, assigned, inService };
+  return { total: items.length, assigned, inService, available };
+}
+
+export function computeEquipmentFilterCounts(
+  items: UserEquipmentDoc[],
+  search: string
+): Record<EquipmentFilterKey, number> {
+  const matchesSearch = (row: UserEquipmentDoc) => equipmentMatchesSearch(row, search);
+  const searched = items.filter(matchesSearch);
+
+  return {
+    all: searched.length,
+    available: searched.filter((r) => r.status === "available").length,
+    assigned: searched.filter((r) => r.status === "assigned").length,
+    in_service: searched.filter((r) => r.status === "in_service").length,
+    inactive: searched.filter((r) => r.status === "inactive").length,
+  };
 }
 
 export function formatEquipmentDate(iso: string): string {

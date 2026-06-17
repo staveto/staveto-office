@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import type { NavSectionConfig } from "@/lib/sidebarNavigation";
 import { sectionHasFlyout } from "@/lib/sidebarNavigation";
 import { SidebarFlyout } from "./SidebarFlyout";
+import { useEmailInboxBadge } from "@/context/EmailInboxBadgeContext";
 
 type IconSidebarItemProps = {
   section: NavSectionConfig;
@@ -44,6 +45,9 @@ export function IconSidebarItem({
   onLogout,
 }: IconSidebarItemProps) {
   const Icon = section.icon;
+  const { unreadCount, visible: inboxBadgeVisible } = useEmailInboxBadge();
+  const showJobsInboxBadge =
+    inboxBadgeVisible && section.id === "jobs" && unreadCount > 0;
   const flyoutId = `sidebar-flyout-${section.id}`;
   const filterOpts = { isPersonalWorkspace, canManage, isFieldWorker, enabledModules };
   const showFlyout = sectionHasFlyout(section, filterOpts);
@@ -94,6 +98,9 @@ export function IconSidebarItem({
           aria-current={isSectionActive ? "page" : undefined}
         >
           <Icon className="size-5" aria-hidden />
+          {showJobsInboxBadge ? (
+            <span className="absolute right-1 top-1 size-2 rounded-full bg-[#e06737] ring-2 ring-[#132743]" aria-hidden />
+          ) : null}
         </Link>
       ) : (
         <button
@@ -106,6 +113,9 @@ export function IconSidebarItem({
           onClick={handleMenuClick}
         >
           <Icon className="size-5" aria-hidden />
+          {showJobsInboxBadge ? (
+            <span className="absolute right-1 top-1 size-2 rounded-full bg-[#e06737] ring-2 ring-[#132743]" aria-hidden />
+          ) : null}
         </button>
       )}
 

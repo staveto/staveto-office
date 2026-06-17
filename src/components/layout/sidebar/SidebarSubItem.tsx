@@ -4,13 +4,15 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import type { NavItemConfig } from "@/lib/sidebarNavigation";
 import { LanguageSelectCompact } from "@/components/settings/LanguageSettings";
+import { NavCountBadge } from "@/components/layout/NavCountBadge";
 
 type SidebarSubItemProps = {
   item: NavItemConfig;
   label: string;
   comingSoonLabel: string;
   isActive: boolean;
-  variant?: "inline" | "flyout";
+  variant?: "inline" | "flyout" | "rail";
+  badgeCount?: number;
   onNavigate?: () => void;
   onLogout?: () => void;
   quietComingSoon?: boolean;
@@ -23,16 +25,18 @@ export function SidebarSubItem({
   isActive,
   variant = "inline",
   quietComingSoon = false,
+  badgeCount = 0,
   onNavigate,
   onLogout,
 }: SidebarSubItemProps) {
   const isFlyout = variant === "flyout";
+  const isRail = variant === "rail";
 
   const baseClass = cn(
     "flex w-full items-center justify-between gap-2 rounded-md py-2 text-sm transition-colors duration-150",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e06737]/50",
-    isFlyout ? "px-3 text-foreground/90" : "pl-9 pr-2",
-    !isFlyout &&
+    isFlyout ? "px-3 text-foreground/90" : isRail ? "pl-3 pr-2 text-white/88" : "pl-9 pr-2",
+    !isFlyout && !isRail &&
       "focus-visible:ring-offset-2 focus-visible:ring-offset-[#1D376A]"
   );
 
@@ -44,6 +48,16 @@ export function SidebarSubItem({
             {label}
           </p>
           <LanguageSelectCompact />
+        </li>
+      );
+    }
+    if (isRail) {
+      return (
+        <li className="py-1">
+          <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-white/45">
+            {label}
+          </p>
+          <LanguageSelectCompact className="px-3 [&_button]:text-white/85 [&_button:hover]:bg-white/10 [&_button[aria-pressed=true]]:bg-white/15 [&_button[aria-pressed=true]]:text-white" />
         </li>
       );
     }
@@ -67,7 +81,9 @@ export function SidebarSubItem({
             baseClass,
             isFlyout
               ? "hover:bg-muted/80 text-foreground"
-              : "text-white/85 hover:bg-white/8 hover:text-white"
+              : isRail
+                ? "text-white/88 hover:bg-white/10 hover:text-white"
+                : "text-white/85 hover:bg-white/8 hover:text-white"
           )}
         >
           <span>{label}</span>
@@ -86,10 +102,14 @@ export function SidebarSubItem({
             quietComingSoon
               ? isFlyout
                 ? "text-muted-foreground/70 text-sm"
-                : "text-white/30 text-sm pl-9"
-              : isFlyout
-                ? "cursor-not-allowed text-muted-foreground"
-                : "cursor-not-allowed text-white/45"
+                : isRail
+                  ? "text-white/30 text-sm"
+                  : "text-white/30 text-sm pl-9"
+              : isRail
+                ? "cursor-not-allowed text-white/35"
+                : isFlyout
+                  ? "cursor-not-allowed text-muted-foreground"
+                  : "cursor-not-allowed text-white/45"
           )}
           aria-disabled="true"
         >
@@ -120,13 +140,18 @@ export function SidebarSubItem({
             ? isActive
               ? "bg-[#1D376A]/8 font-medium text-[#1D376A] border-l-2 border-[#e06737]"
               : "hover:bg-muted/70 border-l-2 border-transparent"
-            : isActive
-              ? "bg-white/12 text-white font-medium border-l-2 border-[#e06737] pl-[calc(2.25rem-2px)]"
-              : "text-white/85 hover:bg-white/8 hover:text-white border-l-2 border-transparent"
+            : isRail
+              ? isActive
+                ? "bg-white/12 font-medium text-white border-l-2 border-[#e06737]"
+                : "text-white/88 hover:bg-white/10 hover:text-white border-l-2 border-transparent"
+              : isActive
+                ? "bg-white/12 text-white font-medium border-l-2 border-[#e06737] pl-[calc(2.25rem-2px)]"
+                : "text-white/85 hover:bg-white/8 hover:text-white border-l-2 border-transparent"
         )}
         aria-current={isActive ? "page" : undefined}
       >
-        <span>{label}</span>
+        <span className="min-w-0 truncate">{label}</span>
+        <NavCountBadge count={badgeCount} variant={isFlyout ? "flyout" : "sidebar"} />
       </Link>
     </li>
   );

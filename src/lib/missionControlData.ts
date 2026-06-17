@@ -2,11 +2,7 @@
  * Mission Control dashboard aggregation — reuses planning, stats, tasks, equipment.
  * No new backend collections.
  */
-import {
-  listProjectTasks,
-  type ProjectDoc,
-  type TaskDoc,
-} from "@/lib/projects";
+import { type TaskDoc } from "@/lib/projects";
 import { fetchDashboardStats, type DashboardStats } from "@/lib/dashboardStats";
 import {
   getPlanningDashboardData,
@@ -121,22 +117,6 @@ function formatTimeFromIso(raw?: string | null): string {
 
 function taskDocTimeLabel(task: TaskDoc): string {
   return formatTimeFromIso(task.plannedStart ?? task.dueDate);
-}
-
-async function loadTaskDocsForProjects(projects: ProjectDoc[]): Promise<TaskDoc[]> {
-  const batch = projects.slice(0, 30);
-  const all: TaskDoc[] = [];
-  await Promise.all(
-    batch.map(async (project) => {
-      try {
-        const tasks = await listProjectTasks(project.id);
-        all.push(...tasks);
-      } catch {
-        /* skip */
-      }
-    })
-  );
-  return all;
 }
 
 function planningTaskHref(item: PlanningTaskItem): string {
@@ -450,9 +430,9 @@ export async function fetchMissionControlData(
   }
   const planning = planningRaw;
 
-  const taskDocs = await loadTaskDocsForProjects(
-    planning.activeProjects.map((p) => p.project)
-  );
+  // Reuse the task documents already loaded by the planning pipeline instead of
+  // re-reading tasks for every active project a second time.
+  const taskDocs = planning.allTaskDocs;
   const taskMetrics = computePlanningKpis(taskDocs);
 
   const memberRecords: ProjectMemberRecord[] = planning.members.map((m) => ({

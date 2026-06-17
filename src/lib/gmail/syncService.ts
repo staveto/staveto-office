@@ -154,6 +154,18 @@ export async function syncGmailInbox(orgId: string, uid: string): Promise<{
     }
   }
 
+  await db.doc(`organizations/${orgId}`).set(
+    {
+      integrations: {
+        gmail: {
+          lastSyncedAt: FieldValue.serverTimestamp(),
+        },
+      },
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
   return { synced, newInquiries, threadsFound: threadIds.length, failed, filteredOut };
 }
 

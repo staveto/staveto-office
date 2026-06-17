@@ -9,6 +9,10 @@ import {
   isItemActive,
   type NavSectionConfig,
 } from "@/lib/sidebarNavigation";
+import {
+  getEmailInboxBadgeForItem,
+  useEmailInboxBadge,
+} from "@/context/EmailInboxBadgeContext";
 
 type SidebarSectionProps = {
   section: NavSectionConfig;
@@ -49,6 +53,7 @@ export function SidebarSection({
   onNavigate,
   onLogout,
 }: SidebarSectionProps) {
+  const { unreadCount, visible: inboxBadgeVisible } = useEmailInboxBadge();
   const filterOpts = { isPersonalWorkspace, canManage, isFieldWorker, enabledModules };
   const items = filterNavItems(section.items, filterOpts);
   const Icon = section.icon;
@@ -99,6 +104,7 @@ export function SidebarSection({
               label={t(item.labelKey)}
               comingSoonLabel={comingSoonLabel}
               isActive={isItemActive(pathname, item, search)}
+              badgeCount={getEmailInboxBadgeForItem(item.id, unreadCount, inboxBadgeVisible)}
               onNavigate={onNavigate}
               onLogout={onLogout}
             />

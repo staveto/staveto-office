@@ -9,6 +9,7 @@ export function gmailErrorMessageKey(code: string): string {
     case "GMAIL_NOT_CONFIGURED":
       return "gmail.error.notConfigured";
     case "GMAIL_ADMIN_NOT_CONFIGURED":
+    case "ADMIN_NOT_CONFIGURED":
       return "gmail.error.adminNotConfigured";
     case "token":
     case "OAUTH_TOKEN_FAILED":
@@ -18,6 +19,12 @@ export function gmailErrorMessageKey(code: string): string {
     case "LOAD_FAILED":
     case "UPDATE_FAILED":
       return "inbox.error.loadList";
+    case "SYNC_FAILED":
+      return "inbox.error.syncFailed";
+    case "GMAIL_NOT_CONNECTED":
+      return "inbox.error.notConnected";
+    case "TOKEN_REFRESH_FAILED":
+      return "gmail.error.tokenRefresh";
     default:
       return "gmail.error.connect";
   }

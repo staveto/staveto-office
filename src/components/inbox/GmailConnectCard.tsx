@@ -10,7 +10,7 @@ type Props = {
   connectedEmail?: string;
   loading?: boolean;
   syncing?: boolean;
-  onConnect: () => void;
+  onConnect?: () => void;
   onSync?: () => void;
   className?: string;
   compact?: boolean;
@@ -40,6 +40,7 @@ export function GmailConnectCard({
         {connectedEmail ? (
           <p className="mt-1 text-sm text-emerald-800">{connectedEmail}</p>
         ) : null}
+        <p className="mt-2 text-xs text-emerald-800/80">{t("inbox.autoSyncHint")}</p>
         {onSync ? (
           <Button
             type="button"
@@ -50,7 +51,7 @@ export function GmailConnectCard({
             onClick={onSync}
           >
             {syncing ? <Loader2 className="mr-1.5 size-4 animate-spin" /> : null}
-            {t("inbox.sync")}
+            {t("inbox.syncNow")}
           </Button>
         ) : null}
       </div>
@@ -81,7 +82,7 @@ export function GmailConnectCard({
           "mt-4 bg-white text-[#1D376A] ring-1 ring-[#dadce0] hover:bg-[#f8f9fa]",
           !compact && "h-12 px-8 text-base font-semibold"
         )}
-        onClick={onConnect}
+        onClick={() => onConnect?.()}
       >
         {loading ? (
           <Loader2 className="mr-2 size-5 animate-spin" />

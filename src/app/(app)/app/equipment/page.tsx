@@ -2,31 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Loader2, Plus, RefreshCw, Search, Wrench } from "lucide-react";
+import { Loader2, Plus, RefreshCw, Wrench } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/context/AuthContext";
 import { listMyEquipment, type UserEquipmentDoc } from "@/services/equipment";
 import { EquipmentKpiCards } from "@/components/equipment/EquipmentKpiCards";
 import { EquipmentListItem } from "@/components/equipment/EquipmentListItem";
+import { EquipmentListToolbar } from "@/components/equipment/EquipmentListToolbar";
 import {
+  computeEquipmentFilterCounts,
   computeEquipmentStats,
   equipmentMatchesSearch,
   type EquipmentFilterKey,
-  EQUIPMENT_STATUS_FILTERS,
 } from "@/components/equipment/equipmentUtils";
-import { eqCategoryPill } from "@/components/equipment/equipmentFormStyles";
 import { cn } from "@/lib/utils";
-
-const FILTER_LABEL_KEYS: Record<EquipmentFilterKey, string> = {
-  all: "equipmentTab.filterAll",
-  available: "equipmentTab.filterAvailable",
-  assigned: "equipmentTab.filterAssigned",
-  in_service: "equipmentTab.filterInService",
-  inactive: "equipmentTab.status.inactive",
-};
 
 export default function EquipmentListPage() {
   const { t } = useI18n();
@@ -57,6 +48,10 @@ export default function EquipmentListPage() {
   }, [load]);
 
   const stats = useMemo(() => computeEquipmentStats(items), [items]);
+  const filterCounts = useMemo(
+    () => computeEquipmentFilterCounts(items, search),
+    [items, search]
+  );
 
   const filtered = useMemo(() => {
     return items.filter((row) => {
@@ -65,24 +60,24 @@ export default function EquipmentListPage() {
     });
   }, [items, filter, search]);
 
-  const visibleFilters = EQUIPMENT_STATUS_FILTERS.filter((f) => f !== "inactive");
-
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-5xl space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-[#0F2A4D]">{t("equipmentTab.listIntroTitle")}</h1>
-          <p className="text-sm text-muted-foreground mt-1 max-w-xl">
+        <div className="space-y-1">
+          <h1 className="text-2xl font-bold tracking-tight text-[#0F2A4D]">
+            {t("equipmentTab.listIntroTitle")}
+          </h1>
+          <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
             {t("equipmentTab.listIntroSubtitle")}
           </p>
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex shrink-0 gap-2">
           <Button type="button" variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
-            <RefreshCw className={cn("size-4 mr-2", loading && "animate-spin")} />
+            <RefreshCw className={cn("mr-2 size-4", loading && "animate-spin")} />
             {t("common.refresh")}
           </Button>
           <Link href="/app/equipment/new" className={buttonVariants({ size: "sm" })}>
-            <Plus className="size-4 mr-2" />
+            <Plus className="mr-2 size-4" />
             {t("equipment.add")}
           </Link>
         </div>
@@ -93,57 +88,53 @@ export default function EquipmentListPage() {
           total={stats.total}
           assigned={stats.assigned}
           inService={stats.inService}
+          activeFilter={filter}
+          onFilterChange={setFilter}
         />
       )}
 
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder={t("equipmentTab.searchPlaceholder")}
-          className="pl-9"
+      {!loading && items.length > 0 && (
+        <EquipmentListToolbar
+          search={search}
+          onSearchChange={setSearch}
+          filter={filter}
+          onFilterChange={setFilter}
+          filterCounts={filterCounts}
+          shownCount={filtered.length}
+          totalCount={items.length}
         />
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        {visibleFilters.map((f) => (
-          <button
-            key={f}
-            type="button"
-            onClick={() => setFilter(f)}
-            className={cn(eqCategoryPill(filter === f), "px-4 py-2 text-sm")}
-          >
-            {t(FILTER_LABEL_KEYS[f])}
-          </button>
-        ))}
-      </div>
+      )}
 
       {loading && items.length === 0 ? (
-        <div className="flex justify-center py-16">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+        <div className="flex justify-center py-20">
+          <Loader2 className="size-7 animate-spin text-muted-foreground" />
         </div>
       ) : error ? (
         <Card className="border-destructive/50">
-          <CardContent className="py-8 text-center text-destructive">{error}</CardContent>
+          <CardContent className="py-10 text-center text-destructive">{error}</CardContent>
         </Card>
       ) : filtered.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Wrench className="size-10 mx-auto text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">
+        <Card className="overflow-hidden border-[#E2E8F0] shadow-sm">
+          <CardContent className="py-14 text-center">
+            <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-2xl bg-[#F8FAFC]">
+              <Wrench className="size-8 text-[#94A3B8]" />
+            </div>
+            <p className="text-base font-medium text-[#0F2A4D]">
               {items.length === 0 ? t("equipment.empty") : t("equipmentTab.emptySearch")}
             </p>
             {items.length === 0 && (
-              <Link href="/app/equipment/new" className={buttonVariants({ size: "sm" }) + " mt-4 inline-flex"}>
-                <Plus className="size-4 mr-2" />
+              <Link
+                href="/app/equipment/new"
+                className={buttonVariants({ size: "sm" }) + " mt-5 inline-flex"}
+              >
+                <Plus className="mr-2 size-4" />
                 {t("equipment.add")}
               </Link>
             )}
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-3">
+        <div className="grid gap-3">
           {filtered.map((item) => (
             <EquipmentListItem key={item.id} item={item} />
           ))}

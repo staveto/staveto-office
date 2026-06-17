@@ -15,6 +15,7 @@ import {
   serverTimestamp,
 } from "./firebase";
 import { listOrgMemberProfilesViaCallable } from "@/services/organizations/orgMemberProfilesService";
+import { dedupeInflight } from "@/lib/inflightCache";
 
 export type OrgPlan = "TEAM_5" | "TEAM_15" | "TEAM_30";
 
@@ -620,7 +621,14 @@ function profilesToOrgMemberRows(
   }));
 }
 
-export async function listOrgMembers(orgId: string): Promise<OrgMemberRow[]> {
+export function listOrgMembers(orgId: string): Promise<OrgMemberRow[]> {
+  const trimmed = orgId.trim();
+  if (!trimmed) return Promise.resolve([]);
+  // Merge concurrent identical member-list reads (dashboard + planning + stats).
+  return dedupeInflight(`orgMembers:${trimmed}`, () => listOrgMembersUncached(trimmed));
+}
+
+async function listOrgMembersUncached(orgId: string): Promise<OrgMemberRow[]> {
   const trimmed = orgId.trim();
   if (!trimmed) return [];
 

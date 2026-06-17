@@ -10,6 +10,7 @@ type Props = {
   timeline: GanttTimeline;
   canEdit: boolean;
   fillWidth?: boolean;
+  resourceDragActive?: boolean;
   /** When set, empty rows show clickable day cells (ClickUp-style scheduling). */
   onPickDay?: (ymd: string) => void;
   pickHint?: string;
@@ -21,13 +22,14 @@ export function GanttInteractiveTimeline({
   timeline,
   canEdit,
   fillWidth = false,
+  resourceDragActive = false,
   onPickDay,
   pickHint,
   children,
   className,
 }: Props) {
   const [hoverYmd, setHoverYmd] = useState<string | null>(null);
-  const interactive = canEdit && !!onPickDay;
+  const interactive = canEdit && !!onPickDay && !resourceDragActive;
 
   return (
     <div
@@ -35,9 +37,16 @@ export function GanttInteractiveTimeline({
       style={fillWidth ? undefined : { width: timeline.totalWidthPx }}
     >
       <GanttGridBackground timeline={timeline} fillWidth={fillWidth} />
-      {interactive ? (
-        <div className={styles.dayHitLayer} aria-hidden={false}>
-          {timeline.days.map((day) => (
+      {canEdit && onPickDay ? (
+        <div
+          className={cn(
+            styles.dayHitLayer,
+            resourceDragActive && styles.dayHitLayerPassthrough
+          )}
+          aria-hidden={!interactive}
+        >
+          {interactive
+            ? timeline.days.map((day) => (
             <button
               key={day.ymd}
               type="button"
@@ -54,7 +63,8 @@ export function GanttInteractiveTimeline({
               onMouseLeave={() => setHoverYmd(null)}
               onClick={() => onPickDay?.(day.ymd)}
             />
-          ))}
+          ))
+            : null}
         </div>
       ) : null}
       {children}

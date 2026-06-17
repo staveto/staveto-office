@@ -32,6 +32,7 @@ import { isProjectAssignedToUser } from "@/lib/projectOwnership";
 import { listTeamProjectsViaCallable } from "@/services/projects/teamProjectsListService";
 import { ensureProjectOrgLink } from "@/services/projects/businessProjectAssignmentService";
 import { fromLegacyWorkspace } from "./workspace-types";
+import { dedupeInflight } from "./inflightCache";
 
 /** Thrown when a Firestore index is required but missing. */
 export class FirestoreIndexError extends Error {
@@ -690,7 +691,21 @@ async function listTeamProjectsWithFallback(
  * List projects for the active workspace.
  * Uses indexed query: ownerId/orgId + orderBy(updatedAt desc) + limit(50).
  */
-export async function listProjectsForWorkspace(
+export function listProjectsForWorkspace(
+  workspace: Workspace | ActiveWorkspace,
+  uid: string
+): Promise<ProjectDoc[]> {
+  const wsKey =
+    "orgId" in workspace && workspace.orgId
+      ? `org:${workspace.orgId}`
+      : `${workspace.type}:${workspace.id}`;
+  // Merge concurrent identical project-list reads (dashboard fires several).
+  return dedupeInflight(`projects:${uid}:${wsKey}`, () =>
+    listProjectsForWorkspaceUncached(workspace, uid)
+  );
+}
+
+async function listProjectsForWorkspaceUncached(
   workspace: Workspace | ActiveWorkspace,
   uid: string
 ): Promise<ProjectDoc[]> {

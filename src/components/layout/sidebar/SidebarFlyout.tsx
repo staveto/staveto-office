@@ -7,6 +7,10 @@ import {
   type NavSectionConfig,
 } from "@/lib/sidebarNavigation";
 import { SidebarSubItem } from "./SidebarSubItem";
+import {
+  getEmailInboxBadgeForItem,
+  useEmailInboxBadge,
+} from "@/context/EmailInboxBadgeContext";
 
 type SidebarFlyoutProps = {
   section: NavSectionConfig;
@@ -41,6 +45,7 @@ export function SidebarFlyout({
   onLogout,
   id,
 }: SidebarFlyoutProps) {
+  const { unreadCount, visible: inboxBadgeVisible } = useEmailInboxBadge();
   const items = filterNavItems(section.items, {
     isPersonalWorkspace,
     canManage,
@@ -79,6 +84,7 @@ export function SidebarFlyout({
               comingSoonLabel={comingSoonLabel}
               isActive={isItemActive(pathname, item, search)}
               variant="flyout"
+              badgeCount={getEmailInboxBadgeForItem(item.id, unreadCount, inboxBadgeVisible)}
               onNavigate={onNavigate}
               onLogout={onLogout}
             />

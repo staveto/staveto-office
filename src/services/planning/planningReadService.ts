@@ -117,6 +117,8 @@ export type PlanningDashboardData = {
   tasksDueThisMonth: PlanningTaskItem[];
   /** All open tasks with a due date (for week calendar navigation). */
   allTasksWithDueDate: PlanningTaskItem[];
+  /** Raw task documents loaded for active projects (reused by Mission Control). */
+  allTaskDocs: TaskDoc[];
   absencesToday: PlanningAbsenceItem[];
   absencesInWeek: PlanningAbsenceItem[];
   absencesInMonth: PlanningAbsenceItem[];
@@ -162,14 +164,16 @@ function taskToPlanningItem(task: TaskDoc, projectName: string): PlanningTaskIte
 
 async function loadTasksForProjects(
   projects: ProjectDoc[]
-): Promise<PlanningTaskItem[]> {
+): Promise<{ items: PlanningTaskItem[]; docs: TaskDoc[] }> {
   const items: PlanningTaskItem[] = [];
+  const docs: TaskDoc[] = [];
   const batch = projects.slice(0, 30);
   await Promise.all(
     batch.map(async (project) => {
       try {
         const tasks = await listProjectTasks(project.id);
         for (const task of tasks) {
+          docs.push(task);
           const item = taskToPlanningItem(task, project.name);
           if (item) items.push(item);
         }
@@ -178,7 +182,8 @@ async function loadTasksForProjects(
       }
     })
   );
-  return items.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  items.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  return { items, docs };
 }
 
 async function tryLoadAbsences(
@@ -410,7 +415,7 @@ export async function getPlanningDashboardData(
     for (const id of ps.assignedMemberIds) assignedWorkerIds.add(id);
   }
 
-  const allTasks = await loadTasksForProjects(activeProjects);
+  const { items: allTasks, docs: allTaskDocs } = await loadTasksForProjects(activeProjects);
   const tasksDueToday = allTasks.filter((t) => t.dueDate === todayIso);
   const tasksDueThisWeek = allTasks.filter((t) =>
     isDateInRange(t.dueDate, weekStartIso, weekEndIso)
@@ -527,6 +532,7 @@ export async function getPlanningDashboardData(
     tasksDueThisWeek,
     tasksDueThisMonth,
     allTasksWithDueDate: allTasks,
+    allTaskDocs,
     absencesToday,
     absencesInWeek,
     absencesInMonth,

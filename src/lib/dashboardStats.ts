@@ -14,6 +14,7 @@ import {
 } from "./projectLifecycle";
 import { listQuotesForWorkspace, type QuoteDoc, type QuoteStatus } from "./quotes";
 import { listOrgMembers } from "./organizations";
+import { dedupeInflight } from "./inflightCache";
 
 export type DashboardJobPreview = {
   id: string;
@@ -94,26 +95,128 @@ function toQuotePreview(quote: QuoteDoc): DashboardQuotePreview {
   };
 }
 
-export async function fetchDashboardStats(
+type ProjectStats = Pick<
+  DashboardStats,
+  | "projectsCount"
+  | "recentJobs"
+  | "activeJobsCount"
+  | "draftJobsCount"
+  | "waitingCustomerCount"
+  | "activeJobs"
+  | "draftJobs"
+  | "delayedJobsCount"
+  | "delayedJobs"
+>;
+
+type QuoteStats = Pick<
+  DashboardStats,
+  "quotesCount" | "quotesAwaitingCount" | "quotesAwaiting" | "quotesRecent"
+>;
+
+async function loadProjectStats(
+  workspace: Workspace | ActiveWorkspace,
+  uid: string
+): Promise<ProjectStats> {
+  try {
+    const projects = await listProjectsForWorkspace(workspace, uid);
+    const active = projects.filter((p) => !p.archivedAt);
+    const sorted = [...active].sort(sortJobsByRecency);
+    const drafts = active.filter((p) => isDraftJob(p));
+    const deliveryActive = active.filter((p) => isActiveJob(p));
+    const waiting = drafts.filter((p) => isWaitingForCustomer(p));
+    const paused = active.filter((p) => normalizeLifecycleStatus(p) === "paused");
+
+    return {
+      projectsCount: active.length,
+      recentJobs: sorted.slice(0, RECENT_JOBS_LIMIT).map(toJobPreview),
+      draftJobsCount: drafts.length,
+      activeJobsCount: deliveryActive.length,
+      waitingCustomerCount: waiting.length,
+      draftJobs: drafts.slice(0, RECENT_JOBS_LIMIT).map(toJobPreview),
+      activeJobs: deliveryActive.slice(0, RECENT_JOBS_LIMIT).map(toJobPreview),
+      delayedJobsCount: paused.length,
+      delayedJobs: paused.slice(0, RECENT_JOBS_LIMIT).map(toJobPreview),
+    };
+  } catch {
+    return {
+      projectsCount: null,
+      recentJobs: [],
+      activeJobsCount: 0,
+      draftJobsCount: 0,
+      waitingCustomerCount: 0,
+      activeJobs: [],
+      draftJobs: [],
+      delayedJobsCount: 0,
+      delayedJobs: [],
+    };
+  }
+}
+
+async function loadQuoteStats(
+  legacyWorkspace: Workspace,
+  uid: string
+): Promise<QuoteStats> {
+  try {
+    const quotes = await listQuotesForWorkspace(legacyWorkspace, uid);
+    const sortedQuotes = [...quotes].sort(sortJobsByRecency);
+    const awaiting = quotes.filter((q) => QUOTES_NEEDING_ACTION.has(q.status));
+    return {
+      quotesCount: quotes.length,
+      quotesRecent: sortedQuotes.slice(0, RECENT_JOBS_LIMIT).map(toQuotePreview),
+      quotesAwaitingCount: awaiting.length,
+      quotesAwaiting: awaiting.slice(0, QUOTES_ACTION_LIMIT).map(toQuotePreview),
+    };
+  } catch {
+    return {
+      quotesCount: null,
+      quotesAwaitingCount: 0,
+      quotesAwaiting: [],
+      quotesRecent: [],
+    };
+  }
+}
+
+async function loadEstimatesCount(): Promise<number | null> {
+  try {
+    const res = await fetch("/api/estimates");
+    if (!res.ok) return null;
+    const data: unknown = await res.json();
+    return Array.isArray(data) ? data.length : null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadTeamCount(orgId: string | undefined): Promise<number | null> {
+  if (!orgId) return null;
+  try {
+    const members = await listOrgMembers(orgId);
+    return members.filter((m) => m.status === "active").length;
+  } catch {
+    return null;
+  }
+}
+
+function workspaceCacheId(workspace: Workspace | ActiveWorkspace): string {
+  if ("orgId" in workspace && workspace.orgId) return `org:${workspace.orgId}`;
+  return `${workspace.type}:${workspace.id}`;
+}
+
+export function fetchDashboardStats(
   workspace: Workspace | ActiveWorkspace,
   uid: string
 ): Promise<DashboardStats> {
-  let projectsCount: number | null = null;
-  let estimatesCount: number | null = null;
-  let recentJobs: DashboardJobPreview[] = [];
-  let activeJobsCount = 0;
-  let draftJobsCount = 0;
-  let waitingCustomerCount = 0;
-  let activeJobs: DashboardJobPreview[] = [];
-  let draftJobs: DashboardJobPreview[] = [];
-  let quotesCount: number | null = null;
-  let quotesAwaitingCount = 0;
-  let quotesAwaiting: DashboardQuotePreview[] = [];
-  let teamCount: number | null = null;
-  let delayedJobsCount = 0;
-  let delayedJobs: DashboardJobPreview[] = [];
-  let quotesRecent: DashboardQuotePreview[] = [];
+  // The company dashboard requests stats from several widgets at once; merge
+  // those concurrent calls into a single read pass.
+  return dedupeInflight(`dashboardStats:${uid}:${workspaceCacheId(workspace)}`, () =>
+    computeDashboardStats(workspace, uid)
+  );
+}
 
+async function computeDashboardStats(
+  workspace: Workspace | ActiveWorkspace,
+  uid: string
+): Promise<DashboardStats> {
   const isCompany =
     "source" in workspace
       ? isCompanyWorkspaceType(workspace.type)
@@ -124,59 +227,6 @@ export async function fetchDashboardStats(
       ? toLegacyWorkspace(workspace)
       : (workspace as Workspace);
 
-  try {
-    const projects = await listProjectsForWorkspace(workspace, uid);
-    const active = projects.filter((p) => !p.archivedAt);
-    projectsCount = active.length;
-
-    const sorted = [...active].sort(sortJobsByRecency);
-    recentJobs = sorted.slice(0, RECENT_JOBS_LIMIT).map(toJobPreview);
-
-    const drafts = active.filter((p) => isDraftJob(p));
-    const deliveryActive = active.filter((p) => isActiveJob(p));
-    const waiting = drafts.filter((p) => isWaitingForCustomer(p));
-
-    draftJobsCount = drafts.length;
-    activeJobsCount = deliveryActive.length;
-    waitingCustomerCount = waiting.length;
-
-    draftJobs = drafts.slice(0, RECENT_JOBS_LIMIT).map(toJobPreview);
-    activeJobs = deliveryActive.slice(0, RECENT_JOBS_LIMIT).map(toJobPreview);
-
-    const paused = active.filter(
-      (p) => normalizeLifecycleStatus(p) === "paused"
-    );
-    delayedJobsCount = paused.length;
-    delayedJobs = paused.slice(0, RECENT_JOBS_LIMIT).map(toJobPreview);
-  } catch {
-    projectsCount = null;
-    recentJobs = [];
-  }
-
-  try {
-    const quotes = await listQuotesForWorkspace(legacyWorkspace, uid);
-    quotesCount = quotes.length;
-    const sortedQuotes = [...quotes].sort(sortJobsByRecency);
-    quotesRecent = sortedQuotes.slice(0, RECENT_JOBS_LIMIT).map(toQuotePreview);
-    const awaiting = quotes.filter((q) => QUOTES_NEEDING_ACTION.has(q.status));
-    quotesAwaitingCount = awaiting.length;
-    quotesAwaiting = awaiting.slice(0, QUOTES_ACTION_LIMIT).map(toQuotePreview);
-  } catch {
-    quotesCount = null;
-    quotesAwaiting = [];
-    quotesRecent = [];
-  }
-
-  try {
-    const res = await fetch("/api/estimates");
-    if (res.ok) {
-      const data: unknown = await res.json();
-      estimatesCount = Array.isArray(data) ? data.length : null;
-    }
-  } catch {
-    estimatesCount = null;
-  }
-
   const orgId =
     "orgId" in workspace && workspace.orgId
       ? workspace.orgId
@@ -184,30 +234,19 @@ export async function fetchDashboardStats(
         ? legacyWorkspace.id
         : undefined;
 
-  if (isCompany && orgId) {
-    try {
-      const members = await listOrgMembers(orgId);
-      teamCount = members.filter((m) => m.status === "active").length;
-    } catch {
-      teamCount = null;
-    }
-  }
+  // All four reads are independent — run them in parallel so the dashboard
+  // resolves at the speed of the slowest query instead of their sum.
+  const [projectStats, quoteStats, estimatesCount, teamCount] = await Promise.all([
+    loadProjectStats(workspace, uid),
+    loadQuoteStats(legacyWorkspace, uid),
+    loadEstimatesCount(),
+    isCompany ? loadTeamCount(orgId) : Promise.resolve<number | null>(null),
+  ]);
 
   return {
-    projectsCount,
+    ...projectStats,
+    ...quoteStats,
     estimatesCount,
-    recentJobs,
-    activeJobsCount,
-    draftJobsCount,
-    waitingCustomerCount,
-    activeJobs,
-    draftJobs,
-    quotesCount,
-    quotesAwaitingCount,
-    quotesAwaiting,
     teamCount,
-    delayedJobsCount,
-    delayedJobs,
-    quotesRecent,
   };
 }

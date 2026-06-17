@@ -43,6 +43,12 @@ export type GanttTimeline = {
 
 export type GanttBarStatus = "done" | "active" | "open" | "blocked" | "overdue" | "unassigned";
 
+export type GanttAssignedTool = {
+  id: string;
+  name: string;
+  type?: string | null;
+};
+
 export type GanttTaskNode = {
   id: string;
   projectId: string;
@@ -51,6 +57,7 @@ export type GanttTaskNode = {
   assigneeId?: string;
   assigneeName?: string;
   toolSummary?: string;
+  assignedTools?: GanttAssignedTool[];
   status: string;
   startYmd?: string;
   endYmd?: string;
@@ -242,7 +249,8 @@ export function getGanttStatusColor(status: GanttBarStatus): string {
 
 function taskToNode(task: TaskDoc, todayYmd: string): GanttTaskNode {
   const range = getTaskDateRange(task);
-  const tools = task.assignedTools?.map((t) => t.name).filter(Boolean) ?? [];
+  const tools = task.assignedTools ?? [];
+  const toolNames = tools.map((t) => t.name).filter(Boolean);
   return {
     id: task.id,
     projectId: task.projectId,
@@ -250,7 +258,11 @@ function taskToNode(task: TaskDoc, todayYmd: string): GanttTaskNode {
     phaseId: task.phaseId ?? undefined,
     assigneeId: task.assigneeId ?? undefined,
     assigneeName: task.assigneeName ?? undefined,
-    toolSummary: tools.length > 0 ? tools.join(", ") : undefined,
+    toolSummary: toolNames.length > 0 ? toolNames.join(", ") : undefined,
+    assignedTools:
+      tools.length > 0
+        ? tools.map((t) => ({ id: t.id, name: t.name, type: t.type ?? null }))
+        : undefined,
     status: task.status ?? "OPEN",
     startYmd: range.startYmd,
     endYmd: range.endYmd,

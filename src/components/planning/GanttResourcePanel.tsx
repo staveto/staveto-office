@@ -1,29 +1,82 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, HardHat, Search, Wrench, X } from "lucide-react";
+import Image from "next/image";
+import {
+  Building2,
+  Car,
+  ChevronDown,
+  ChevronRight,
+  Cog,
+  GripVertical,
+  HardHat,
+  Package,
+  Plus,
+  Search,
+  Wrench,
+  X,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { WorkspaceEquipmentItem } from "@/services/projects/projectToolsService";
 import { cn } from "@/lib/utils";
+import { GanttResourceBasket } from "./GanttResourceBasket";
+import { basketItemKey, handleResourceDragEnd, setResourceDragData } from "./ganttResourceDrag";
 import styles from "./gantt.module.css";
 
 export type GanttResourceDragPayload =
   | { kind: "employee"; id: string; name: string }
   | { kind: "equipment"; id: string; name: string; type: string | null };
 
-export const GANTT_RESOURCE_MIME = "application/x-gantt-resource";
+export { GANTT_RESOURCE_MIME, GANTT_BASKET_MIME } from "./ganttResourceDrag";
 
 export type GanttEmployeeResource = {
   id: string;
   name: string;
   taskCount: number;
   overdueCount: number;
+  photoUrl?: string;
 };
+
+const AVATAR_COLORS = [
+  "#1D376A",
+  "#E06737",
+  "#0F766E",
+  "#7C3AED",
+  "#B45309",
+  "#0369A1",
+  "#9D174D",
+  "#15803D",
+];
+
+function avatarColor(seed: string): string {
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length];
+}
+
+const CATEGORY_ICON: Record<string, LucideIcon> = {
+  vehicle: Car,
+  machine: Cog,
+  tool: Wrench,
+  building: Building2,
+  other: Package,
+};
+
+function equipmentIcon(type: string | null): LucideIcon {
+  return (type && CATEGORY_ICON[type]) || Package;
+}
 
 type Props = {
   employees: GanttEmployeeResource[];
   equipment: WorkspaceEquipmentItem[];
   canEdit: boolean;
   loading?: boolean;
+  basketItems: GanttResourceDragPayload[];
+  onAddToBasket: (item: GanttResourceDragPayload) => void;
+  onRemoveFromBasket: (key: string) => void;
+  onClearBasket: () => void;
   onClose: () => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 };
@@ -55,6 +108,10 @@ export function GanttResourcePanel({
   equipment,
   canEdit,
   loading,
+  basketItems,
+  onAddToBasket,
+  onRemoveFromBasket,
+  onClearBasket,
   onClose,
   t,
 }: Props) {
@@ -72,15 +129,24 @@ export function GanttResourcePanel({
     [equipment, q]
   );
 
-  const setDragData = (e: React.DragEvent, payload: GanttResourceDragPayload) => {
-    e.dataTransfer.setData(GANTT_RESOURCE_MIME, JSON.stringify(payload));
-    e.dataTransfer.effectAllowed = "copy";
+  const basketKeys = useMemo(
+    () => new Set(basketItems.map(basketItemKey)),
+    [basketItems]
+  );
+
+  const startDrag = (e: React.DragEvent, payload: GanttResourceDragPayload) => {
+    setResourceDragData(e, payload);
   };
 
   return (
     <aside className={styles.resourcePanel} aria-label={t("gantt.resources.title")}>
       <div className={styles.resourceHeader}>
-        <span className={styles.resourceTitle}>{t("gantt.resources.title")}</span>
+        <span className={styles.resourceTitle}>
+          <span className={styles.resourceTitleIcon} aria-hidden>
+            <HardHat className="size-4" />
+          </span>
+          {t("gantt.resources.title")}
+        </span>
         <button
           type="button"
           className={styles.resourceClose}
@@ -92,7 +158,7 @@ export function GanttResourcePanel({
       </div>
 
       {canEdit ? (
-        <p className={styles.resourceHint}>{t("gantt.resources.hint")}</p>
+        <p className={styles.resourceHint}>{t("gantt.resources.hintBasket")}</p>
       ) : (
         <p className={styles.resourceHint}>{t("gantt.resources.readonly")}</p>
       )}
@@ -115,11 +181,13 @@ export function GanttResourcePanel({
           onClick={() => setShowEmployees((v) => !v)}
         >
           {showEmployees ? (
-            <ChevronDown className="size-3.5" />
+            <ChevronDown className="size-4" />
           ) : (
-            <ChevronRight className="size-3.5" />
+            <ChevronRight className="size-4" />
           )}
-          <HardHat className="size-3.5" />
+          <span className={cn(styles.resourceSectionIcon, styles.resourceSectionIconTeam)}>
+            <HardHat className="size-4" />
+          </span>
           <span>{t("gantt.resources.employees")}</span>
           <span className={styles.resourceCount}>{filteredEmployees.length}</span>
         </button>
@@ -129,18 +197,56 @@ export function GanttResourcePanel({
             {filteredEmployees.length === 0 ? (
               <p className={styles.resourceEmpty}>{t("gantt.resources.noEmployees")}</p>
             ) : (
-              filteredEmployees.map((emp) => (
+              filteredEmployees.map((emp) => {
+                const payload: GanttResourceDragPayload = {
+                  kind: "employee",
+                  id: emp.id,
+                  name: emp.name,
+                };
+                const inBasket = basketKeys.has(basketItemKey(payload));
+                const statusColor =
+                  emp.overdueCount > 0 ? "#e06737" : emp.taskCount > 0 ? "#2563eb" : "#16a34a";
+                return (
                 <div
                   key={emp.id}
                   className={cn(styles.resourceChip, canEdit && styles.resourceChipDraggable)}
-                  draggable={canEdit}
-                  onDragStart={(e) =>
-                    setDragData(e, { kind: "employee", id: emp.id, name: emp.name })
-                  }
-                  title={canEdit ? t("gantt.resources.dragEmployee") : undefined}
                 >
-                  <span className={styles.resourceAvatar} aria-hidden>
-                    {initials(emp.name)}
+                  {canEdit ? (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className={styles.resourceDragHandle}
+                      draggable
+                      onDragStart={(e) => startDrag(e, payload)}
+                      onDragEnd={handleResourceDragEnd}
+                      title={t("gantt.resources.dragEmployee")}
+                      aria-label={t("gantt.resources.dragEmployee")}
+                    >
+                      <GripVertical className="size-4" aria-hidden />
+                    </span>
+                  ) : null}
+                  <span
+                    className={styles.resourceAvatar}
+                    style={{ background: avatarColor(emp.id) }}
+                    aria-hidden
+                  >
+                    {emp.photoUrl ? (
+                      <Image
+                        src={emp.photoUrl}
+                        alt=""
+                        fill
+                        sizes="40px"
+                        className="pointer-events-none object-cover select-none"
+                        draggable={false}
+                        unoptimized
+                      />
+                    ) : (
+                      initials(emp.name)
+                    )}
+                    <span
+                      className={styles.resourceAvatarDot}
+                      style={{ background: statusColor }}
+                    />
                   </span>
                   <span className={styles.resourceChipBody}>
                     <span className={styles.resourceChipName}>{emp.name}</span>
@@ -153,19 +259,21 @@ export function GanttResourcePanel({
                         : ""}
                     </span>
                   </span>
-                  <span
-                    className={styles.resourceStatusDot}
-                    style={{
-                      background: emp.overdueCount > 0
-                        ? "#e06737"
-                        : emp.taskCount > 0
-                          ? "#2563eb"
-                          : "#16a34a",
-                    }}
-                    aria-hidden
-                  />
+                  {canEdit ? (
+                    <button
+                      type="button"
+                      className={cn(styles.resourceAddBtn, inBasket && styles.resourceAddBtnActive)}
+                      onClick={() => onAddToBasket(payload)}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      title={t(inBasket ? "gantt.basket.inBasket" : "gantt.basket.add")}
+                      aria-pressed={inBasket}
+                    >
+                      <Plus className="size-4" />
+                    </button>
+                  ) : null}
                 </div>
-              ))
+              );
+              })
             )}
           </div>
         ) : null}
@@ -176,11 +284,13 @@ export function GanttResourcePanel({
           onClick={() => setShowEquipment((v) => !v)}
         >
           {showEquipment ? (
-            <ChevronDown className="size-3.5" />
+            <ChevronDown className="size-4" />
           ) : (
-            <ChevronRight className="size-3.5" />
+            <ChevronRight className="size-4" />
           )}
-          <Wrench className="size-3.5" />
+          <span className={cn(styles.resourceSectionIcon, styles.resourceSectionIconEquip)}>
+            <Wrench className="size-4" />
+          </span>
           <span>{t("gantt.resources.equipment")}</span>
           <span className={styles.resourceCount}>{filteredEquipment.length}</span>
         </button>
@@ -192,23 +302,52 @@ export function GanttResourcePanel({
             ) : filteredEquipment.length === 0 ? (
               <p className={styles.resourceEmpty}>{t("gantt.resources.noEquipment")}</p>
             ) : (
-              filteredEquipment.map((eq) => (
+              filteredEquipment.map((eq) => {
+                const payload: GanttResourceDragPayload = {
+                  kind: "equipment",
+                  id: eq.id,
+                  name: eq.name,
+                  type: eq.type,
+                };
+                const inBasket = basketKeys.has(basketItemKey(payload));
+                const EquipIcon = equipmentIcon(eq.type);
+                return (
                 <div
                   key={eq.id}
                   className={cn(styles.resourceChip, canEdit && styles.resourceChipDraggable)}
-                  draggable={canEdit}
-                  onDragStart={(e) =>
-                    setDragData(e, {
-                      kind: "equipment",
-                      id: eq.id,
-                      name: eq.name,
-                      type: eq.type,
-                    })
-                  }
-                  title={canEdit ? t("gantt.resources.dragEquipment") : undefined}
                 >
-                  <span className={styles.resourceEquipIcon} aria-hidden>
-                    <Wrench className="size-3.5" />
+                  {canEdit ? (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className={styles.resourceDragHandle}
+                      draggable
+                      onDragStart={(e) => startDrag(e, payload)}
+                      onDragEnd={handleResourceDragEnd}
+                      title={t("gantt.resources.dragEquipment")}
+                      aria-label={t("gantt.resources.dragEquipment")}
+                    >
+                      <GripVertical className="size-4" aria-hidden />
+                    </span>
+                  ) : null}
+                  <span className={styles.resourceEquipThumb} aria-hidden>
+                    {eq.photoUrl ? (
+                      <Image
+                        src={eq.photoUrl}
+                        alt=""
+                        fill
+                        sizes="40px"
+                        className="pointer-events-none object-cover select-none"
+                        draggable={false}
+                        unoptimized
+                      />
+                    ) : (
+                      <EquipIcon className="size-5" strokeWidth={2} />
+                    )}
+                    <span
+                      className={styles.resourceAvatarDot}
+                      style={{ background: equipmentStatusColor(eq.status) }}
+                    />
                   </span>
                   <span className={styles.resourceChipBody}>
                     <span className={styles.resourceChipName}>{eq.name}</span>
@@ -220,18 +359,33 @@ export function GanttResourcePanel({
                       </span>
                     ) : null}
                   </span>
-                  <span
-                    className={styles.resourceStatusDot}
-                    style={{ background: equipmentStatusColor(eq.status) }}
-                    title={t(`gantt.resources.status.${eq.status}`)}
-                    aria-hidden
-                  />
+                  {canEdit ? (
+                    <button
+                      type="button"
+                      className={cn(styles.resourceAddBtn, inBasket && styles.resourceAddBtnActive)}
+                      onClick={() => onAddToBasket(payload)}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      title={t(inBasket ? "gantt.basket.inBasket" : "gantt.basket.add")}
+                      aria-pressed={inBasket}
+                    >
+                      <Plus className="size-4" />
+                    </button>
+                  ) : null}
                 </div>
-              ))
+              );
+              })
             )}
           </div>
         ) : null}
       </div>
+
+      <GanttResourceBasket
+        items={basketItems}
+        canEdit={canEdit}
+        onRemove={onRemoveFromBasket}
+        onClear={onClearBasket}
+        t={t}
+      />
     </aside>
   );
 }

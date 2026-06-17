@@ -128,6 +128,7 @@ export type WorkspaceEquipmentItem = {
   status: string;
   assignedProjectId: string | null;
   ownerId: string;
+  photoUrl?: string;
 };
 
 /**
@@ -154,6 +155,7 @@ export async function listWorkspaceEquipment(
         status: row.status,
         assignedProjectId: row.assignedProjectId ?? null,
         ownerId,
+        photoUrl: row.photoUrl,
       });
     }
   };

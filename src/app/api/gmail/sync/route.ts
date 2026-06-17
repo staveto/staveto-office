@@ -39,6 +39,16 @@ export async function POST(request: NextRequest) {
     if (msg === "GMAIL_NOT_CONNECTED") {
       return NextResponse.json({ errorCode: "GMAIL_NOT_CONNECTED" }, { status: 400 });
     }
+    if (msg === "TOKEN_REFRESH_FAILED") {
+      return NextResponse.json({ errorCode: "TOKEN_REFRESH_FAILED" }, { status: 401 });
+    }
+    if (msg === "GMAIL_NOT_CONFIGURED") {
+      return NextResponse.json({ errorCode: "GMAIL_NOT_CONFIGURED" }, { status: 503 });
+    }
+    if (msg === "ADMIN_NOT_CONFIGURED") {
+      return NextResponse.json({ errorCode: "GMAIL_ADMIN_NOT_CONFIGURED" }, { status: 503 });
+    }
+    console.error("[gmail/sync]", e);
     return NextResponse.json({ errorCode: "SYNC_FAILED", message: msg }, { status: 502 });
   }
 }

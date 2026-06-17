@@ -45,10 +45,10 @@ import { GanttLegend } from "./GanttLegend";
 import { GanttUnscheduledPanel } from "./GanttUnscheduledPanel";
 import {
   GanttResourcePanel,
-  GANTT_RESOURCE_MIME,
   type GanttEmployeeResource,
   type GanttResourceDragPayload,
 } from "./GanttResourcePanel";
+import { basketItemKey, isResourceDrag, readDropPayloads, subscribeGanttResourceDrag, isGanttResourceDragSessionActive } from "./ganttResourceDrag";
 import { PersonalPlanningPlaceholder } from "./PersonalPlanningPlaceholder";
 import {
   listWorkspaceEquipment,
@@ -82,6 +82,16 @@ type DragState = {
   offsetPx: number;
 };
 
+type ResizeState = {
+  projectId: string;
+  taskId: string;
+  edge: "start" | "end";
+  startX: number;
+  offsetPx: number;
+  startYmd: string;
+  endYmd: string;
+};
+
 export function GanttPlanningPage() {
   const { t } = useI18n();
   const { user } = useAuth();
@@ -96,6 +106,9 @@ export function GanttPlanningPage() {
   const [zoom, setZoom] = useState(1);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [drag, setDrag] = useState<DragState | null>(null);
+  const [resize, setResize] = useState<ResizeState | null>(null);
+  const scheduleDragRef = useRef<DragState | null>(null);
+  const scheduleResizeRef = useRef<ResizeState | null>(null);
   const [phaseShift, setPhaseShift] = useState<{
     projectId: string;
     phaseId: string;
@@ -108,6 +121,8 @@ export function GanttPlanningPage() {
   const [resourcesOpen, setResourcesOpen] = useState(true);
   const [equipment, setEquipment] = useState<WorkspaceEquipmentItem[]>([]);
   const [equipmentLoading, setEquipmentLoading] = useState(false);
+  const [resourceBasket, setResourceBasket] = useState<GanttResourceDragPayload[]>([]);
+  const [resourceDragActive, setResourceDragActive] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const chartFrameRef = useRef<HTMLDivElement>(null);
 
@@ -300,32 +315,44 @@ export function GanttPlanningPage() {
     };
   }, [data, resourcesOpen, user?.id]);
 
+  useEffect(() => {
+    return subscribeGanttResourceDrag(() => {
+      setResourceDragActive(isGanttResourceDragSessionActive());
+    });
+  }, []);
+
   const handleDropResource = useCallback(
-    async (payload: GanttResourceDragPayload, projectId: string, taskIds: string[]) => {
-      if (!data?.canEdit || taskIds.length === 0) return;
+    async (payloads: GanttResourceDragPayload[], projectId: string, taskIds: string[]) => {
+      if (!data?.canEdit || taskIds.length === 0 || payloads.length === 0) return;
+      const employees = payloads.filter((p) => p.kind === "employee");
+      const equipmentItems = payloads.filter((p) => p.kind === "equipment");
+
       try {
         setActionError(null);
-        if (payload.kind === "employee") {
+        if (employees.length > 0) {
           await Promise.all(
-            taskIds.map((tid) =>
-              updateTaskAssignee(projectId, tid, payload.id, payload.name)
-            )
+            taskIds.map((tid, idx) => {
+              const emp = employees[idx % employees.length];
+              return updateTaskAssignee(projectId, tid, emp.id, emp.name);
+            })
           );
-        } else {
+        }
+        if (equipmentItems.length > 0) {
           await Promise.all(
             taskIds.map((tid) => {
               const taskDoc = data.tasksByProject[projectId]?.find((t) => t.id === tid);
               const existing = taskDoc?.assignedTools ?? [];
-              if (existing.some((tl) => tl.id === payload.id)) return Promise.resolve();
-              const merged: TaskToolSnapshot[] = [
-                ...existing,
-                {
-                  id: payload.id,
-                  name: payload.name,
-                  type: payload.type ?? null,
+              const merged: TaskToolSnapshot[] = [...existing];
+              for (const eq of equipmentItems) {
+                if (merged.some((tl) => tl.id === eq.id)) continue;
+                merged.push({
+                  id: eq.id,
+                  name: eq.name,
+                  type: eq.type ?? null,
                   qrCode: null,
-                },
-              ];
+                });
+              }
+              if (merged.length === existing.length) return Promise.resolve();
               return updateTaskTools(projectId, tid, merged);
             })
           );
@@ -338,6 +365,20 @@ export function GanttPlanningPage() {
     [data, reloadAfterMutation, t]
   );
 
+  const addToResourceBasket = useCallback((item: GanttResourceDragPayload) => {
+    const key = basketItemKey(item);
+    setResourceBasket((prev) => {
+      if (prev.some((p) => basketItemKey(p) === key)) return prev;
+      return [...prev, item];
+    });
+  }, []);
+
+  const removeFromResourceBasket = useCallback((key: string) => {
+    setResourceBasket((prev) => prev.filter((p) => basketItemKey(p) !== key));
+  }, []);
+
+  const clearResourceBasket = useCallback(() => setResourceBasket([]), []);
+
   const phaseOptions = useMemo(() => {
     if (!data || filters.projectId === "all") return [];
     const project = data.projects.find((p) => p.id === filters.projectId);
@@ -348,34 +389,53 @@ export function GanttPlanningPage() {
     }));
   }, [data, filters.projectId, t]);
 
+  const dragSessionKey = drag
+    ? `${drag.kind}:${drag.projectId}:${drag.taskId ?? ""}:${drag.phaseId ?? ""}`
+    : null;
+  const resizeSessionKey = resize
+    ? `${resize.projectId}:${resize.taskId}:${resize.edge}`
+    : null;
+
   useEffect(() => {
-    if (!drag || !data?.canEdit) return;
+    if (!dragSessionKey || !data?.canEdit) return;
+
+    scheduleDragRef.current = drag;
 
     const onMove = (e: MouseEvent) => {
-      setDrag((d) => (d ? { ...d, offsetPx: e.clientX - d.startX } : null));
+      const current = scheduleDragRef.current;
+      if (!current) return;
+      const next = { ...current, offsetPx: e.clientX - current.startX };
+      scheduleDragRef.current = next;
+      setDrag(next);
     };
 
     const onUp = async () => {
-      if (!drag) return;
-      const deltaDays = Math.round(drag.offsetPx / timeline.dayWidthPx);
+      const current = scheduleDragRef.current;
+      scheduleDragRef.current = null;
       setDrag(null);
+      if (!current || !data?.canEdit) return;
+
+      const deltaDays = Math.round(current.offsetPx / timeline.dayWidthPx);
       if (deltaDays === 0) return;
 
       try {
         setActionError(null);
-        if (drag.kind === "task" && drag.taskId) {
-          const doc = findTaskDoc(drag.projectId, drag.taskId);
+        if (current.kind === "task" && current.taskId) {
+          const doc = findTaskDoc(current.projectId, current.taskId);
           if (!doc) return;
-          await moveTaskScheduleByDays(drag.projectId, doc, deltaDays, true);
+          await moveTaskScheduleByDays(current.projectId, doc, deltaDays, true);
           await reloadAfterMutation();
-        } else if (drag.kind === "phase" && drag.phaseId) {
+        } else if (current.kind === "phase" && current.phaseId) {
           const phase = data.projects
-            .find((p) => p.id === drag.projectId)
-            ?.phases.find((ph) => ph.id === drag.phaseId);
+            .find((p) => p.id === current.projectId)
+            ?.phases.find((ph) => ph.id === current.phaseId);
           setPhaseShift({
-            projectId: drag.projectId,
-            phaseId: drag.phaseId,
-            phaseName: phase?.name === "__general__" ? t("projects.dashboard.phaseGeneral") : phase?.name ?? "",
+            projectId: current.projectId,
+            phaseId: current.phaseId,
+            phaseName:
+              phase?.name === "__general__"
+                ? t("projects.dashboard.phaseGeneral")
+                : phase?.name ?? "",
             days: deltaDays,
           });
         }
@@ -391,7 +451,53 @@ export function GanttPlanningPage() {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [drag, data, timeline.dayWidthPx, t, reloadAfterMutation]);
+  }, [dragSessionKey, data, timeline.dayWidthPx, t, reloadAfterMutation]);
+
+  useEffect(() => {
+    if (!resizeSessionKey || !data?.canEdit) return;
+
+    scheduleResizeRef.current = resize;
+
+    const onMove = (e: MouseEvent) => {
+      const current = scheduleResizeRef.current;
+      if (!current) return;
+      const next = { ...current, offsetPx: e.clientX - current.startX };
+      scheduleResizeRef.current = next;
+      setResize(next);
+    };
+
+    const onUp = async () => {
+      const current = scheduleResizeRef.current;
+      scheduleResizeRef.current = null;
+      setResize(null);
+      if (!current || !data?.canEdit) return;
+
+      const delta = Math.round(current.offsetPx / timeline.dayWidthPx);
+      if (delta === 0) return;
+
+      const base = current.edge === "start" ? current.startYmd : current.endYmd;
+      const nextDate = toIsoDateLocal(addDays(parseIsoDateLocal(base), delta));
+
+      try {
+        setActionError(null);
+        const doc = findTaskDoc(current.projectId, current.taskId);
+        if (!doc) return;
+        await resizeTaskSchedule(current.projectId, doc, current.edge, nextDate);
+        await reloadAfterMutation();
+      } catch (e) {
+        setActionError(
+          e instanceof Error ? e.message : t("gantt.resizeNotAllowed")
+        );
+      }
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [resizeSessionKey, data, timeline.dayWidthPx, t, reloadAfterMutation]);
 
   const confirmPhaseShift = async () => {
     if (!phaseShift || !data) return;
@@ -562,7 +668,8 @@ export function GanttPlanningPage() {
           className={cn(
             "rounded-xl border border-border/70 bg-card shadow-sm overflow-hidden min-w-0",
             styles.ganttChartFlex,
-            chartExpanded && styles.ganttChartFrame
+            chartExpanded && styles.ganttChartFrame,
+            resourceDragActive && styles.ganttChartDropReady
           )}
         >
           <div className={styles.timelineScroll} ref={scrollRef}>
@@ -611,12 +718,30 @@ export function GanttPlanningPage() {
                     onTaskDragStart={(projectId, taskId, e) => {
                       if (!data?.canEdit) return;
                       e.preventDefault();
-                      setDrag({ kind: "task", projectId, taskId, startX: e.clientX, offsetPx: 0 });
+                      e.stopPropagation();
+                      const state: DragState = {
+                        kind: "task",
+                        projectId,
+                        taskId,
+                        startX: e.clientX,
+                        offsetPx: 0,
+                      };
+                      scheduleDragRef.current = state;
+                      setDrag(state);
                     }}
                     onPhaseDragStart={(projectId, phaseId, e) => {
                       if (!data?.canEdit) return;
                       e.preventDefault();
-                      setDrag({ kind: "phase", projectId, phaseId, startX: e.clientX, offsetPx: 0 });
+                      e.stopPropagation();
+                      const state: DragState = {
+                        kind: "phase",
+                        projectId,
+                        phaseId,
+                        startX: e.clientX,
+                        offsetPx: 0,
+                      };
+                      scheduleDragRef.current = state;
+                      setDrag(state);
                     }}
                     onScheduleTask={async (projectId, taskId, startYmd) => {
                       try {
@@ -629,21 +754,27 @@ export function GanttPlanningPage() {
                         );
                       }
                     }}
-                    onResize={async (projectId, taskId, edge, newDate) => {
-                      const doc = findTaskDoc(projectId, taskId);
-                      if (!doc) return;
-                      try {
-                        await resizeTaskSchedule(projectId, doc, edge, newDate);
-                        await reloadAfterMutation();
-                      } catch (e) {
-                        setActionError(
-                          e instanceof Error ? e.message : t("gantt.resizeNotAllowed")
-                        );
-                      }
+                    onTaskResizeStart={(projectId, taskId, edge, startYmd, endYmd, e) => {
+                      if (!data?.canEdit) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const state: ResizeState = {
+                        projectId,
+                        taskId,
+                        edge,
+                        startX: e.clientX,
+                        offsetPx: 0,
+                        startYmd,
+                        endYmd,
+                      };
+                      scheduleResizeRef.current = state;
+                      setResize(state);
                     }}
+                    resize={resize}
                     onDropResource={
                       data?.canEdit ? handleDropResource : undefined
                     }
+                    resourceDragActive={resourceDragActive}
                     t={t}
                   />
                 ))
@@ -657,6 +788,10 @@ export function GanttPlanningPage() {
             equipment={equipment}
             canEdit={data?.canEdit ?? false}
             loading={equipmentLoading}
+            basketItems={resourceBasket}
+            onAddToBasket={addToResourceBasket}
+            onRemoveFromBasket={removeFromResourceBasket}
+            onClearBasket={clearResourceBasket}
             onClose={() => setResourcesOpen(false)}
             t={t}
           />
@@ -717,12 +852,12 @@ export function GanttPlanningPage() {
 
 function DroppableRow({
   enabled,
-  onDropPayload,
+  onDropPayloads,
   className,
   children,
 }: {
   enabled: boolean;
-  onDropPayload: (payload: GanttResourceDragPayload) => void;
+  onDropPayloads: (payloads: GanttResourceDragPayload[]) => void;
   className?: string;
   children: React.ReactNode;
 }) {
@@ -735,26 +870,35 @@ function DroppableRow({
   return (
     <div
       className={cn(className, over && styles.rowDropActive)}
-      onDragOver={(e) => {
-        if (!e.dataTransfer.types.includes(GANTT_RESOURCE_MIME)) return;
+      onDragEnter={(e) => {
+        if (!isResourceDrag(e)) return;
         e.preventDefault();
+        if (!over) setOver(true);
+      }}
+      onDragOver={(e) => {
+        if (!isResourceDrag(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
         e.dataTransfer.dropEffect = "copy";
         if (!over) setOver(true);
+      }}
+      onDragOverCapture={(e) => {
+        if (!isResourceDrag(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
       }}
       onDragLeave={(e) => {
         if (e.currentTarget.contains(e.relatedTarget as Node)) return;
         setOver(false);
       }}
       onDrop={(e) => {
-        const raw = e.dataTransfer.getData(GANTT_RESOURCE_MIME);
         setOver(false);
-        if (!raw) return;
+        if (!isResourceDrag(e)) return;
+        const payloads = readDropPayloads(e);
+        if (payloads.length === 0) return;
         e.preventDefault();
-        try {
-          onDropPayload(JSON.parse(raw) as GanttResourceDragPayload);
-        } catch {
-          /* ignore malformed payload */
-        }
+        e.stopPropagation();
+        onDropPayloads(payloads);
       }}
     >
       {children}
@@ -773,8 +917,10 @@ function GanttProjectRows({
   onTaskDragStart,
   onPhaseDragStart,
   onScheduleTask,
-  onResize,
+  onTaskResizeStart,
+  resize,
   onDropResource,
+  resourceDragActive,
   t,
 }: {
   project: GanttProjectNode;
@@ -787,17 +933,21 @@ function GanttProjectRows({
   onTaskDragStart: (projectId: string, taskId: string, e: React.MouseEvent) => void;
   onPhaseDragStart: (projectId: string, phaseId: string, e: React.MouseEvent) => void;
   onScheduleTask: (projectId: string, taskId: string, startYmd: string) => void;
-  onResize: (
+  onTaskResizeStart: (
     projectId: string,
     taskId: string,
     edge: "start" | "end",
-    newDate: string
+    startYmd: string,
+    endYmd: string,
+    e: React.MouseEvent
   ) => void;
+  resize: ResizeState | null;
   onDropResource?: (
-    payload: GanttResourceDragPayload,
+    payloads: GanttResourceDragPayload[],
     projectId: string,
     taskIds: string[]
   ) => void;
+  resourceDragActive?: boolean;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const pKey = `p-${project.id}`;
@@ -808,8 +958,8 @@ function GanttProjectRows({
     <>
       <DroppableRow
         enabled={!!onDropResource && allTaskIds.length > 0}
-        onDropPayload={(payload) =>
-          onDropResource?.(payload, project.id, allTaskIds)
+        onDropPayloads={(payloads) =>
+          onDropResource?.(payloads, project.id, allTaskIds)
         }
         className={styles.gridRow}
       >
@@ -821,7 +971,7 @@ function GanttProjectRows({
             {project.name}
           </Link>
         </div>
-        <GanttInteractiveTimeline timeline={timeline} canEdit={false} fillWidth={fillWidth}>
+        <GanttInteractiveTimeline timeline={timeline} canEdit={false} fillWidth={fillWidth} resourceDragActive={resourceDragActive}>
           <GanttBar
             kind="project"
             label={project.name}
@@ -861,8 +1011,8 @@ function GanttProjectRows({
               <div key={phase.id}>
                 <DroppableRow
                   enabled={!!onDropResource && phaseTaskIds.length > 0}
-                  onDropPayload={(payload) =>
-                    onDropResource?.(payload, project.id, phaseTaskIds)
+                  onDropPayloads={(payloads) =>
+                    onDropResource?.(payloads, project.id, phaseTaskIds)
                   }
                   className={styles.gridRow}
                 >
@@ -876,7 +1026,7 @@ function GanttProjectRows({
                     </button>
                     <span className="truncate">{phaseName}</span>
                   </div>
-                  <GanttInteractiveTimeline timeline={timeline} canEdit={canEdit} fillWidth={fillWidth}>
+                  <GanttInteractiveTimeline timeline={timeline} canEdit={canEdit} fillWidth={fillWidth} resourceDragActive={resourceDragActive}>
                     <GanttBar
                       kind="phase"
                       label={phaseName}
@@ -904,12 +1054,16 @@ function GanttProjectRows({
                         drag.taskId === task.id
                           ? drag.offsetPx
                           : 0;
+                      const taskResize =
+                        resize?.projectId === project.id && resize.taskId === task.id
+                          ? resize
+                          : null;
                       return (
                         <DroppableRow
                           key={task.id}
                           enabled={!!onDropResource}
-                          onDropPayload={(payload) =>
-                            onDropResource?.(payload, project.id, [task.id])
+                          onDropPayloads={(payloads) =>
+                            onDropResource?.(payloads, project.id, [task.id])
                           }
                           className={styles.gridRow}
                         >
@@ -927,6 +1081,7 @@ function GanttProjectRows({
                             timeline={timeline}
                             canEdit={canEdit}
                             fillWidth={fillWidth}
+                            resourceDragActive={resourceDragActive}
                             onPickDay={
                               task.isUnscheduled && canEdit
                                 ? (ymd) => onScheduleTask(project.id, task.id, ymd)
@@ -947,27 +1102,26 @@ function GanttProjectRows({
                               canResize={task.canResize}
                               dragOffsetPx={taskDrag}
                               isDragging={taskDrag !== 0}
+                              resizeEdge={taskResize?.edge ?? null}
+                              resizeOffsetPx={taskResize?.offsetPx ?? 0}
+                              isResizing={!!taskResize}
                               onDragStart={(e) => onTaskDragStart(project.id, task.id, e)}
                               onResizeStart={(edge, e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
                                 if (!task.canResize || !task.startYmd || !task.endYmd) return;
-                                const startX = e.clientX;
-                                const onUp = async (ev: MouseEvent) => {
-                                  window.removeEventListener("mouseup", onUp);
-                                  const delta = Math.round(
-                                    (ev.clientX - startX) / timeline.dayWidthPx
-                                  );
-                                  if (delta === 0) return;
-                                  const base =
-                                    edge === "start" ? task.startYmd! : task.endYmd!;
-                                  const d = addDays(parseIsoDateLocal(base), delta);
-                                  await onResize(project.id, task.id, edge, toIsoDateLocal(d));
-                                };
-                                window.addEventListener("mouseup", onUp);
+                                onTaskResizeStart(
+                                  project.id,
+                                  task.id,
+                                  edge,
+                                  task.startYmd,
+                                  task.endYmd,
+                                  e
+                                );
                               }}
-                              href={`/app/projects/${project.id}?tab=tasks`}
+                              href={
+                                canEdit ? undefined : `/app/projects/${project.id}?tab=tasks`
+                              }
                               assigneeName={task.assigneeName}
+                              assignedTools={task.assignedTools}
                               tooltipData={{
                                 title: task.title,
                                 dateRange: formatGanttRange(task.startYmd, task.endYmd),

@@ -7,6 +7,7 @@ import { Header } from "./Header";
 import { TenantGate } from "@/components/tenant/TenantGate";
 import { cn } from "@/lib/utils";
 import { SidebarLayoutProvider, useSidebarLayout } from "@/context/SidebarLayoutContext";
+import { EmailInboxBadgeProvider } from "@/context/EmailInboxBadgeContext";
 import { BusinessMessagingDrawer } from "@/components/business-chat/BusinessMessagingDrawer";
 import { SettingsSidebar } from "@/components/settings/SettingsSidebar";
 import { isSettingsAreaPath } from "@/lib/settingsNavigation";
@@ -31,7 +32,7 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen bg-background">
       <div
         className={cn(
-          "hidden md:block sticky top-0 z-40 h-screen shrink-0 overflow-visible transition-[width,opacity] duration-200 ease-out",
+          "hidden md:block sticky top-0 z-50 h-screen shrink-0 overflow-visible transition-[width,opacity] duration-200 ease-out",
           isNewJobFlow && !isSettingsMode && "opacity-70"
         )}
         style={{ width: isSettingsMode ? settingsSidebarWidth : widthPx }}
@@ -77,7 +78,9 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
 export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SidebarLayoutProvider>
-      <AppLayoutInner>{children}</AppLayoutInner>
+      <EmailInboxBadgeProvider>
+        <AppLayoutInner>{children}</AppLayoutInner>
+      </EmailInboxBadgeProvider>
     </SidebarLayoutProvider>
   );
 }
