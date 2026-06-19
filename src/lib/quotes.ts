@@ -246,30 +246,32 @@ export async function listQuotesForProject(
   const orgId = scope?.orgId?.trim();
   const ownerId = scope?.ownerId?.trim();
 
-  try {
-    if (orgId) {
-      const q = query(
-        quotesRef,
-        where("orgId", "==", orgId),
-        where("projectId", "==", projectId)
-      );
-      const snap = await getDocs(q);
-      return snap.docs.map((d) => toQuoteDoc(d.id, d.data() as Record<string, unknown>));
-    }
-    if (ownerId) {
-      const q = query(
-        quotesRef,
-        where("ownerId", "==", ownerId),
-        where("projectId", "==", projectId)
-      );
-      const snap = await getDocs(q);
-      return snap.docs.map((d) => toQuoteDoc(d.id, d.data() as Record<string, unknown>));
-    }
-  } catch (e) {
-    if (!isFirestorePermissionError(e) && !isQuotesIndexError(e)) throw e;
-  }
+  // Check both org- and owner-scoped quotes so that legacy quotes (created
+  // before the project moved into a company org, i.e. stored with ownerId and
+  // no orgId) are still matched. Missing this caused upsert to create a second
+  // duplicate quote doc for the same project.
+  const found = new Map<string, QuoteDoc>();
 
-  return [];
+  const runScoped = async (field: "orgId" | "ownerId", value: string) => {
+    try {
+      const q = query(
+        quotesRef,
+        where(field, "==", value),
+        where("projectId", "==", projectId)
+      );
+      const snap = await getDocs(q);
+      for (const d of snap.docs) {
+        found.set(d.id, toQuoteDoc(d.id, d.data() as Record<string, unknown>));
+      }
+    } catch (e) {
+      if (!isFirestorePermissionError(e) && !isQuotesIndexError(e)) throw e;
+    }
+  };
+
+  if (orgId) await runScoped("orgId", orgId);
+  if (ownerId) await runScoped("ownerId", ownerId);
+
+  return [...found.values()];
 }
 
 function isFirestorePermissionError(err: unknown): boolean {

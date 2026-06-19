@@ -43,7 +43,7 @@ import {
 } from "@/lib/projects";
 import { QUOTE_DRAFT_UNITS } from "@/lib/quoteDraftItems";
 import { updateDraftJobFields } from "@/services/projects";
-import { createQuoteFromProject } from "@/services/quotes";
+import { upsertQuoteFromProject } from "@/services/quotes";
 import { useWorkspace } from "@/context/WorkspaceContext";
 
 type DraftQuoteItemsPanelProps = {
@@ -448,7 +448,7 @@ export function DraftQuoteItemsPanel({
     setCreatingQuote(true);
     setError(null);
     try {
-      const quoteId = await createQuoteFromProject(activeWorkspace, userId, project.id);
+      const quoteId = await upsertQuoteFromProject(activeWorkspace, userId, project.id);
       router.push(`/app/quotes/${quoteId}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("quotes.createError"));

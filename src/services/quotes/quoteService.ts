@@ -209,6 +209,44 @@ function sortQuotesByUpdatedAt(quotes: QuoteDoc[]): QuoteDoc[] {
   });
 }
 
+const QUOTE_STATUS_RANK: Record<QuoteStatus, number> = {
+  accepted: 3,
+  sent: 2,
+  draft: 1,
+  rejected: 0,
+};
+
+function preferQuote(a: QuoteDoc, b: QuoteDoc): QuoteDoc {
+  const ra = QUOTE_STATUS_RANK[a.status] ?? 0;
+  const rb = QUOTE_STATUS_RANK[b.status] ?? 0;
+  if (ra !== rb) return ra > rb ? a : b;
+  const ta = a.updatedAt ? Date.parse(a.updatedAt) : 0;
+  const tb = b.updatedAt ? Date.parse(b.updatedAt) : 0;
+  return tb > ta ? b : a;
+}
+
+/**
+ * Collapse multiple quote docs that point at the same project into a single
+ * entry. A project should surface one quote in the list — if duplicates exist
+ * in Firestore we keep the most relevant one (accepted/sent over draft, then
+ * most recently updated). Standalone quotes (no projectId) are always kept.
+ */
+function dedupeQuotesByProject(quotes: QuoteDoc[]): QuoteDoc[] {
+  const byProject = new Map<string, QuoteDoc>();
+  const standalone: QuoteDoc[] = [];
+
+  for (const quote of quotes) {
+    if (!quote.projectId) {
+      standalone.push(quote);
+      continue;
+    }
+    const existing = byProject.get(quote.projectId);
+    byProject.set(quote.projectId, existing ? preferQuote(existing, quote) : quote);
+  }
+
+  return [...standalone, ...byProject.values()];
+}
+
 async function buildVirtualQuotesFromProjects(
   projects: ProjectDoc[],
   linkedProjectIds: Set<string>
@@ -285,13 +323,15 @@ export async function listQuotesForWorkspaceEnsured(
     // Continue with virtual project drafts if Firestore sync fails.
   }
 
-  const [firestoreQuotes, projects] = await Promise.all([
+  const [firestoreQuotesRaw, projects] = await Promise.all([
     listQuotesForWorkspace(legacy, uid),
     listProjectsForWorkspace(active, uid),
   ]);
 
+  const firestoreQuotes = dedupeQuotesByProject(firestoreQuotesRaw);
+
   const linkedProjectIds = new Set(
-    firestoreQuotes.map((q) => q.projectId).filter((id): id is string => !!id)
+    firestoreQuotesRaw.map((q) => q.projectId).filter((id): id is string => !!id)
   );
   const virtualQuotes = await buildVirtualQuotesFromProjects(projects, linkedProjectIds);
 

@@ -53,6 +53,23 @@ function notificationMessage(
       });
     case "ABSENCE_APPROVED":
       return t("notifications.absenceApproved");
+    case "PROBLEM_REPORTED": {
+      const title = n.subject?.trim();
+      if (n.escalated) {
+        return title
+          ? t("notifications.problemEscalated", { title })
+          : t("notifications.problemEscalatedGeneric");
+      }
+      return title
+        ? t("notifications.problemReported", { title })
+        : t("notifications.problemReportedGeneric");
+    }
+    case "PROBLEM_ASSIGNED": {
+      const title = n.subject?.trim();
+      return title
+        ? t("notifications.problemAssigned", { title })
+        : t("notifications.problemAssignedGeneric");
+    }
     case "INCOMING_EMAIL":
       return n.subject
         ? t("notifications.incomingEmail", { subject: n.subject })

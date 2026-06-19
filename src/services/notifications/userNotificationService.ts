@@ -17,7 +17,9 @@ export type UserNotificationType =
   | "COMMENT_ADDED"
   | "REPORT_CREATED"
   | "ABSENCE_APPROVED"
-  | "INCOMING_EMAIL";
+  | "INCOMING_EMAIL"
+  | "PROBLEM_REPORTED"
+  | "PROBLEM_ASSIGNED";
 
 export type UserNotification = {
   id: string;
@@ -28,6 +30,8 @@ export type UserNotification = {
   taskName?: string;
   commentId?: string;
   reportId?: string;
+  problemId?: string;
+  escalated?: boolean;
   assignedBy?: string;
   assignedByName?: string;
   orgId?: string;
@@ -67,6 +71,8 @@ function toNotification(id: string, data: Record<string, unknown>): UserNotifica
     taskName: typeof data.taskName === "string" ? data.taskName : undefined,
     commentId: typeof data.commentId === "string" ? data.commentId : undefined,
     reportId: typeof data.reportId === "string" ? data.reportId : undefined,
+    problemId: typeof data.problemId === "string" ? data.problemId : undefined,
+    escalated: data.escalated === true,
     assignedBy: typeof data.assignedBy === "string" ? data.assignedBy : undefined,
     assignedByName: typeof data.assignedByName === "string" ? data.assignedByName : undefined,
     orgId: typeof data.orgId === "string" ? data.orgId : undefined,
