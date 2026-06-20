@@ -178,7 +178,11 @@ export function MissionControlDashboard({
           vehiclesAvailable={view.capacity.vehiclesAvailable}
         />
         {showFinance ? <OpsFinance rows={view.finance} /> : null}
-        <OpsFieldProof />
+        <OpsFieldProof
+          photos={data.fieldProof.photos}
+          docs={data.fieldProof.docs}
+          openProblems={data.fieldProof.openProblems}
+        />
       </div>
     </div>
   );

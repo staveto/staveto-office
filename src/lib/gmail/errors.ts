@@ -11,6 +11,8 @@ export function gmailErrorMessageKey(code: string): string {
     case "GMAIL_ADMIN_NOT_CONFIGURED":
     case "ADMIN_NOT_CONFIGURED":
       return "gmail.error.adminNotConfigured";
+    case "ADMIN_UNAVAILABLE":
+      return "gmail.error.adminUnavailable";
     case "token":
     case "OAUTH_TOKEN_FAILED":
       return "gmail.error.tokenExchange";

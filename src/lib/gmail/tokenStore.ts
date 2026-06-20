@@ -127,7 +127,8 @@ export async function getValidAccessToken(
 export async function disconnectGmail(orgId: string, uid: string): Promise<void> {
   const db = getAdminDb();
   if (!db) throw new Error("ADMIN_NOT_CONFIGURED");
-  await db.doc(connectionPath(orgId, uid)).delete();
+  const actorUid = (await resolveGmailActorUid(orgId, uid)) ?? uid;
+  await db.doc(connectionPath(orgId, actorUid)).delete();
   await db.doc(`organizations/${orgId}`).set(
     {
       integrations: {

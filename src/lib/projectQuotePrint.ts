@@ -47,7 +47,16 @@ export function buildQuoteDocFromProjectDraft(
   const totals = computeAiSetupTotals(materialRows, workEstimate, calculation);
 
   const quoteStatus = project.quoteStatus ?? "draft";
-  const isSentToCustomer = quoteStatus === "sent" || quoteStatus === "accepted";
+  const status: QuoteDoc["status"] =
+    quoteStatus === "accepted"
+      ? "accepted"
+      : quoteStatus === "sent"
+        ? "sent"
+        : quoteStatus === "rejected"
+          ? "rejected"
+          : project.phase === "delivery" || project.salesStatus === "accepted"
+            ? "accepted"
+            : "draft";
 
   const items = displayLines.map((item) => ({
     id: item.id,
@@ -74,7 +83,7 @@ export function buildQuoteDocFromProjectDraft(
     projectName: project.name,
     clientName,
     clientEmail: project.customerEmail,
-    status: isSentToCustomer ? "sent" : "draft",
+    status,
     items,
     subtotal: totals.netTotal,
     vatPercent: calculation.vatPercent,

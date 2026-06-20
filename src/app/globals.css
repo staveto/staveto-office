@@ -81,6 +81,17 @@
   --sidebar-accent-foreground: #ffffff;
   --sidebar-border: rgba(255,255,255,0.15);
   --sidebar-ring: #e06737;
+  /* Project Command View */
+  --po-app-bg: #EEF2F6;
+  --po-card-bg: #FFFFFF;
+  --po-card-bg-elevated: #FFFFFF;
+  --po-card-muted: #F8FAFC;
+  --po-card-border: #D8E1EA;
+  --po-text-primary: #0F172A;
+  --po-text-secondary: #334155;
+  --po-text-muted: #64748B;
+  --po-primary: #C9481D;
+  --po-primary-hover: #B8431D;
 }
 
 .dark {
@@ -115,9 +126,23 @@
   --sidebar-accent-foreground: #ffffff;
   --sidebar-border: rgba(255,255,255,0.15);
   --sidebar-ring: #e06737;
+  /* Project Command View */
+  --po-app-bg: #0B1117;
+  --po-card-bg: #1E293B;
+  --po-card-bg-elevated: #243247;
+  --po-card-muted: #1a2332;
+  --po-card-border: #334155;
+  --po-text-primary: #F8FAFC;
+  --po-text-secondary: #CBD5E1;
+  --po-text-muted: #94A3B8;
+  --po-primary: #C9481D;
+  --po-primary-hover: #B8431D;
 }
 
 @layer base {
+  .project-command {
+    --background: var(--po-app-bg);
+  }
   * {
     @apply border-border outline-ring/50;
   }

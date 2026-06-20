@@ -25,10 +25,17 @@ import {
 } from "@/services/operations/teamLiveStatusService";
 import type { ProjectMemberRecord } from "@/services/projects/taskPlanningTypes";
 import type { WorkspaceRole } from "@/types/workspace";
+import { isDraftJob } from "@/lib/projectLifecycle";
+import { buildPhaseLabelMap } from "@/lib/taskPlanningDisplay";
+import { buildProjectOverviewViewModel } from "@/lib/projectOverviewViewModel";
 import { ProjectCompactHeader } from "./ProjectCompactHeader";
 import { ProjectPhaseWorkflow } from "./ProjectPhaseWorkflow";
 import { ProjectDetailTabs, type TabBadge } from "./ProjectDetailTabs";
-import { ProjectOverviewTab } from "./ProjectOverviewTab";
+import {
+  ProjectOverviewTab,
+  ProjectOverviewNextActionStrip,
+} from "./ProjectOverviewTab";
+import { po } from "./overview/poStyles";
 import { ProjectTasksTab } from "./ProjectTasksTab";
 import { ProjectWorkPlanTab } from "./ProjectWorkPlanTab";
 import { listProjectPhases } from "@/services/projects/projectPhasesService";
@@ -41,6 +48,7 @@ import { computeProjectPhaseMetrics } from "@/lib/projectPhaseMetrics";
 import { computeProjectHealth } from "@/lib/projectHealth";
 import { buildProjectActivity } from "@/lib/projectActivity";
 import { taskMissingAssignee } from "@/lib/taskPlanningDisplay";
+import { cn } from "@/lib/utils";
 
 function parseTab(raw: string | null): ProjectDashboardTab {
   if (
@@ -196,6 +204,21 @@ export function ProjectDashboard({
     [project, tasks, phaseMetrics, members.length]
   );
 
+  const overviewVm = useMemo(() => {
+    if (isDraftJob(project)) return null;
+    return buildProjectOverviewViewModel({
+      project,
+      tasks,
+      phaseMetrics,
+      members,
+      timeEntries,
+      documents,
+      activeTimers,
+      health,
+      phaseLabels: buildPhaseLabelMap(phases),
+    });
+  }, [project, tasks, phaseMetrics, members, timeEntries, documents, activeTimers, health, phases]);
+
   const badges = useMemo<Partial<Record<ProjectDashboardTab, TabBadge>>>(() => {
     const active = tasks.filter((x) => x.isActive !== false);
     const openUnassigned = active.filter(
@@ -228,90 +251,118 @@ export function ProjectDashboard({
   };
 
   const showExpenses = searchParams.get("tab") === "expenses";
+  const showOverviewCommand = activeTab === "overview" && overviewVm && !overviewVm.project.isDraft;
 
   return (
-    <div className="space-y-5">
+    <div className={cn("project-command flex flex-col gap-4", po.page)}>
       {toastMessage ? (
-        <div className="rounded-lg border border-[#1D376A]/20 bg-[#1D376A]/5 px-4 py-2 text-sm text-[#1D376A]">
+        <div className="rounded-lg border border-[var(--po-card-border)] bg-[var(--po-card-muted)] px-4 py-2 text-sm text-[var(--po-text-primary)]">
           {toastMessage}
         </div>
       ) : null}
 
-      <ProjectCompactHeader
-        project={project}
-        userId={userId}
-        role={role}
-        health={health}
-        phaseMetrics={phaseMetrics}
-        crewCount={members.length}
-        investedMinutes={investedMinutes}
-        onProjectUpdated={onProjectUpdated}
-        onActionToast={handleActionToast}
-        onNavigate={handleTabChange}
-      />
-
-      {phaseMetrics.phases.length > 0 ? (
-        <ProjectPhaseWorkflow metrics={phaseMetrics} />
-      ) : null}
-
-      <ProjectDetailTabs
-        activeTab={activeTab}
-        onTabChange={handleTabChange}
-        badges={badges}
-      />
-
-      {loading && activeTab !== "overview" ? (
-        <div className="py-12 text-center text-sm text-muted-foreground">…</div>
-      ) : showExpenses ? (
-        <ProjectExpensesPanel project={project} />
-      ) : activeTab === "overview" ? (
-        <ProjectOverviewTab
+      <div className="order-1">
+        <ProjectCompactHeader
           project={project}
           userId={userId}
-          tasks={tasks}
+          role={role}
+          health={health}
           phaseMetrics={phaseMetrics}
-          members={members}
-          timeEntries={timeEntries}
-          documents={documents}
-          activeTimers={activeTimers}
+          crewCount={members.length}
+          investedMinutes={investedMinutes}
           onProjectUpdated={onProjectUpdated}
+          onActionToast={handleActionToast}
           onNavigate={handleTabChange}
         />
-      ) : activeTab === "tasks" ? (
-        <ProjectTasksTab
-          project={project}
-          tasks={tasks}
-          tasksError={tasksError}
-          onTasksChange={setTasks}
-          userId={userId}
-          role={role}
-        />
-      ) : activeTab === "workplan" ? (
-        <ProjectWorkPlanTab
-          project={project}
-          tasks={tasks}
-          phases={phases}
-          userId={userId}
-          role={role}
-          onTasksChange={setTasks}
-        />
-      ) : activeTab === "quote" ? (
-        <ProjectQuoteTab project={project} quoteItems={quoteItems} tasks={tasks} />
-      ) : activeTab === "documents" ? (
-        <ProjectDocumentsTab
-          project={project}
-          documents={documents}
-          userId={userId}
-          onDocumentsChange={setDocuments}
-        />
-      ) : activeTab === "activity" ? (
-        <ProjectActivityTab
-          project={project}
-          tasks={tasks}
-          timeEntries={timeEntries}
-          documents={documents}
+      </div>
+
+      {showOverviewCommand ? (
+        <ProjectOverviewNextActionStrip
+          vm={overviewVm}
+          onNavigate={handleTabChange}
+          className="order-2 lg:hidden"
         />
       ) : null}
+
+      {phaseMetrics.phases.length > 0 ? (
+        <div className="order-3 lg:order-2">
+          <ProjectPhaseWorkflow metrics={phaseMetrics} phaseStatuses={overviewVm?.phases} />
+        </div>
+      ) : null}
+
+      <div className="order-4 lg:order-3">
+        <ProjectDetailTabs
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+          badges={badges}
+        />
+      </div>
+
+      {showOverviewCommand ? (
+        <ProjectOverviewNextActionStrip
+          vm={overviewVm}
+          onNavigate={handleTabChange}
+          className="order-5 hidden lg:block"
+        />
+      ) : null}
+
+      <div className="order-6 lg:order-5">
+        {loading && activeTab !== "overview" ? (
+          <div className="py-12 text-center text-sm text-[var(--po-text-muted)]">…</div>
+        ) : showExpenses ? (
+          <ProjectExpensesPanel project={project} />
+        ) : activeTab === "overview" ? (
+          <ProjectOverviewTab
+            project={project}
+            userId={userId}
+            tasks={tasks}
+            phases={phases}
+            phaseMetrics={phaseMetrics}
+            members={members}
+            timeEntries={timeEntries}
+            documents={documents}
+            activeTimers={activeTimers}
+            health={health}
+            onProjectUpdated={onProjectUpdated}
+            onNavigate={handleTabChange}
+            hideNextActionStrip
+          />
+        ) : activeTab === "tasks" ? (
+          <ProjectTasksTab
+            project={project}
+            tasks={tasks}
+            tasksError={tasksError}
+            onTasksChange={setTasks}
+            userId={userId}
+            role={role}
+          />
+        ) : activeTab === "workplan" ? (
+          <ProjectWorkPlanTab
+            project={project}
+            tasks={tasks}
+            phases={phases}
+            userId={userId}
+            role={role}
+            onTasksChange={setTasks}
+          />
+        ) : activeTab === "quote" ? (
+          <ProjectQuoteTab project={project} quoteItems={quoteItems} tasks={tasks} />
+        ) : activeTab === "documents" ? (
+          <ProjectDocumentsTab
+            project={project}
+            documents={documents}
+            userId={userId}
+            onDocumentsChange={setDocuments}
+          />
+        ) : activeTab === "activity" ? (
+          <ProjectActivityTab
+            project={project}
+            tasks={tasks}
+            timeEntries={timeEntries}
+            documents={documents}
+          />
+        ) : null}
+      </div>
     </div>
   );
 }

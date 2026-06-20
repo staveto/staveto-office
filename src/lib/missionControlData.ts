@@ -26,6 +26,8 @@ import {
   type PlanningKpiMetrics,
 } from "@/lib/taskPlanningMetrics";
 import type { ProjectMemberRecord } from "@/services/projects/taskPlanningTypes";
+import { listProjectsForWorkspace } from "@/lib/projects";
+import { countOpenProblemsForProjects } from "@/services/projects/projectProblemsReadService";
 
 export type MissionControlAttentionItem = {
   id: string;
@@ -91,12 +93,19 @@ export type VehicleRow = {
   href: string;
 };
 
+export type MissionControlFieldProof = {
+  photos: number;
+  docs: number;
+  openProblems: number;
+};
+
 export type MissionControlData = {
   planning: PlanningDashboardData;
   stats: DashboardStats;
   kpis: MissionControlKpi[];
   attention: MissionControlAttentionItem[];
   notifications: MissionControlNotification[];
+  fieldProof: MissionControlFieldProof;
   todayRows: TodayAgendaRow[];
   agendaGroups: AgendaDayGroup[];
   team: TeamMemberRow[];
@@ -269,9 +278,20 @@ function buildVehicles(equipment: UserEquipmentDoc[]): VehicleRow[] {
 function buildAttention(
   planning: PlanningDashboardData,
   stats: DashboardStats,
-  taskMetrics: PlanningKpiMetrics
+  taskMetrics: PlanningKpiMetrics,
+  openProblems: number
 ): MissionControlAttentionItem[] {
   const items: MissionControlAttentionItem[] = [];
+
+  if (openProblems > 0) {
+    items.push({
+      id: "open-problems",
+      labelKey: "dashboard.attention.openProblems",
+      count: openProblems,
+      href: "/app/projects",
+      kind: "warning",
+    });
+  }
 
   if (taskMetrics.withoutWorker > 0) {
     items.push({
@@ -419,10 +439,11 @@ export async function fetchMissionControlData(
   const weekStart = startOfWeekMonday(today);
   const monthDayList = monthDays(today);
 
-  const [planningRaw, stats, equipment] = await Promise.all([
+  const [planningRaw, stats, equipment, workspaceProjects] = await Promise.all([
     getPlanningDashboardData(workspace, uid),
     fetchDashboardStats(workspace, uid),
     listMyEquipment().catch(() => [] as UserEquipmentDoc[]),
+    listProjectsForWorkspace(workspace, uid).catch(() => []),
   ]);
 
   if (!planningRaw) {
@@ -443,7 +464,11 @@ export async function fetchMissionControlData(
   }));
   const workloads = computeMemberWorkloads(taskDocs, memberRecords);
 
-  const attention = buildAttention(planning, stats, taskMetrics);
+  const openProblems = await countOpenProblemsForProjects(workspaceProjects.map((p) => p.id)).catch(
+    () => 0
+  );
+
+  const attention = buildAttention(planning, stats, taskMetrics, openProblems);
   const daysWithEvents = [
     ...new Set([
       ...planning.allTasksWithDueDate.map((t) => t.dueDate),
@@ -457,6 +482,7 @@ export async function fetchMissionControlData(
     kpis: buildKpis(planning, stats, taskMetrics),
     attention,
     notifications: buildNotifications(attention),
+    fieldProof: { photos: 0, docs: 0, openProblems },
     todayRows: buildTodayRows(planning, taskDocs, todayIso),
     agendaGroups: buildAgendaGroups(planning, taskDocs, weekStart, todayIso),
     team: buildTeamRows(planning),

@@ -12,7 +12,8 @@ import {
   isWaitingForCustomer,
   normalizeLifecycleStatus,
 } from "./projectLifecycle";
-import { listQuotesForWorkspace, type QuoteDoc, type QuoteStatus } from "./quotes";
+import { listQuotesForWorkspaceEnsured } from "@/services/quotes";
+import type { QuoteDoc, QuoteStatus } from "./quotes";
 import { listOrgMembers } from "./organizations";
 import { dedupeInflight } from "./inflightCache";
 
@@ -153,11 +154,11 @@ async function loadProjectStats(
 }
 
 async function loadQuoteStats(
-  legacyWorkspace: Workspace,
+  workspace: Workspace | ActiveWorkspace,
   uid: string
 ): Promise<QuoteStats> {
   try {
-    const quotes = await listQuotesForWorkspace(legacyWorkspace, uid);
+    const quotes = await listQuotesForWorkspaceEnsured(workspace, uid);
     const sortedQuotes = [...quotes].sort(sortJobsByRecency);
     const awaiting = quotes.filter((q) => QUOTES_NEEDING_ACTION.has(q.status));
     return {
@@ -238,7 +239,7 @@ async function computeDashboardStats(
   // resolves at the speed of the slowest query instead of their sum.
   const [projectStats, quoteStats, estimatesCount, teamCount] = await Promise.all([
     loadProjectStats(workspace, uid),
-    loadQuoteStats(legacyWorkspace, uid),
+    loadQuoteStats(workspace, uid),
     loadEstimatesCount(),
     isCompany ? loadTeamCount(orgId) : Promise.resolve<number | null>(null),
   ]);

@@ -1,234 +1,159 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ArrowRight } from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { useMemo } from "react";
 import type { ProjectDoc, TaskDoc } from "@/lib/projects";
 import type { ProjectDashboardTab } from "@/lib/projectDashboard";
-import { excerptText, getProjectSummaryText } from "@/lib/projectDashboard";
 import type { ProjectPhaseMetrics } from "@/lib/projectPhaseMetrics";
+import type { ProjectHealth } from "@/lib/projectHealth";
 import type { ProjectMemberRecord } from "@/services/projects/taskPlanningTypes";
 import type { TimeEntryDoc } from "@/services/attendance/timeTrackingReadService";
 import type { ProjectDocumentRecord } from "@/services/projects/projectDocuments";
 import type { ActiveTimerState } from "@/services/operations/teamLiveStatusService";
-import { buildProjectActivity, recentProjectActivity } from "@/lib/projectActivity";
+import type { ProjectPhaseRecord } from "@/services/projects/taskPlanningTypes";
+import { buildPhaseLabelMap } from "@/lib/taskPlanningDisplay";
+import { buildProjectOverviewViewModel } from "@/lib/projectOverviewViewModel";
 import { ProjectNextActions } from "./ProjectNextActions";
-import { ProjectPhaseWorkflow } from "./ProjectPhaseWorkflow";
-import { ProjectTodayActionsPanel } from "./ProjectTodayActionsPanel";
-import { ProjectCrewSummary } from "./ProjectCrewSummary";
-import { ProjectTimeInvestmentPanel } from "./ProjectTimeInvestmentPanel";
-import { useI18n } from "@/i18n/I18nContext";
+import { ProjectNextActionStrip } from "./overview/ProjectNextActionStrip";
+import { ProjectActivePhaseWorkBoard } from "./overview/ProjectActivePhaseWorkBoard";
+import { ProjectHealthCard } from "./overview/ProjectHealthCard";
+import { ProjectTeamCard } from "./overview/ProjectTeamCard";
+import { ProjectTimeCard } from "./overview/ProjectTimeCard";
+import { ProjectDocumentsProofCard } from "./overview/ProjectDocumentsProofCard";
+import { ProjectActivityPreview } from "./overview/ProjectActivityPreview";
+import {
+  ProjectContactCard,
+  ProjectSummaryCard,
+} from "./overview/ProjectSummaryContactCards";
 
 type ProjectOverviewTabProps = {
   project: ProjectDoc;
   userId: string;
   tasks: TaskDoc[];
+  phases: ProjectPhaseRecord[];
   phaseMetrics: ProjectPhaseMetrics;
   members: ProjectMemberRecord[];
   timeEntries: TimeEntryDoc[];
   documents: ProjectDocumentRecord[];
   activeTimers: Map<string, ActiveTimerState>;
+  health: ProjectHealth;
   onProjectUpdated: (project: ProjectDoc) => void;
   onNavigate: (tab: ProjectDashboardTab) => void;
+  /** When true, next-action strip is rendered by the parent (mobile order). */
+  hideNextActionStrip?: boolean;
 };
 
 export function ProjectOverviewTab({
   project,
   userId,
   tasks,
+  phases,
   phaseMetrics,
   members,
   timeEntries,
   documents,
   activeTimers,
+  health,
   onProjectUpdated,
   onNavigate,
+  hideNextActionStrip = false,
 }: ProjectOverviewTabProps) {
-  const { t } = useI18n();
-  const [infoOpen, setInfoOpen] = useState(false);
-  const fullSummary = getProjectSummaryText(project);
-  const excerpt = excerptText(fullSummary, 220);
-  const hasMore = fullSummary.length > excerpt.length;
+  const phaseLabels = useMemo(() => buildPhaseLabelMap(phases), [phases]);
 
-  const recent = useMemo(
+  const vm = useMemo(
     () =>
-      recentProjectActivity(
-        buildProjectActivity({ project, tasks, timeEntries, documents }),
-        5
-      ),
-    [project, tasks, timeEntries, documents]
+      buildProjectOverviewViewModel({
+        project,
+        tasks,
+        phaseMetrics,
+        members,
+        timeEntries,
+        documents,
+        activeTimers,
+        health,
+        phaseLabels,
+      }),
+    [
+      project,
+      tasks,
+      phaseMetrics,
+      members,
+      timeEntries,
+      documents,
+      activeTimers,
+      health,
+      phaseLabels,
+    ]
   );
 
-  const formatDate = (iso: string) => {
-    try {
-      return new Date(iso).toLocaleString(undefined, {
-        day: "2-digit",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch {
-      return iso;
-    }
-  };
+  if (vm.project.isDraft) {
+    return (
+      <div className="space-y-5">
+        <ProjectNextActions
+          project={project}
+          userId={userId}
+          onProjectUpdated={onProjectUpdated}
+        />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-5">
-      <ProjectNextActions
-        project={project}
-        userId={userId}
-        onProjectUpdated={onProjectUpdated}
-      />
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <ProjectTodayActionsPanel
-          tasks={tasks}
-          onOpenTasks={() => onNavigate("tasks")}
-          onOpenWorkPlan={() => onNavigate("workplan")}
-        />
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-            <CardTitle className="text-base text-[#1D376A]">
-              {t("projects.overview.progress")}
-            </CardTitle>
-            <Button
-              variant="link"
-              className="h-auto p-0 text-xs text-[#e06737]"
-              onClick={() => onNavigate("tasks")}
-            >
-              {t("projects.overview.openTasks")}
-              <ArrowRight className="ml-1 size-3.5" />
-            </Button>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-baseline justify-between">
-              <span className="text-3xl font-bold text-[#1D376A]">
-                {phaseMetrics.overallPercent}%
-              </span>
-              <span className="text-sm text-muted-foreground">
-                {t("projects.dashboard.kpi.tasksDone", {
-                  done: String(phaseMetrics.doneTasks),
-                  total: String(phaseMetrics.totalTasks),
-                })}
-              </span>
-            </div>
-            <ProjectPhaseWorkflow metrics={phaseMetrics} compact />
-          </CardContent>
-        </Card>
-
-        <ProjectCrewSummary
-          members={members}
-          tasks={tasks}
-          activeTimers={activeTimers}
-          onAssignCrew={() => onNavigate("workplan")}
-        />
-
-        <ProjectTimeInvestmentPanel entries={timeEntries} />
-      </div>
-
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-          <CardTitle className="text-base text-[#1D376A]">
-            {t("projects.overview.recentActivity")}
-          </CardTitle>
-          <Button
-            variant="link"
-            className="h-auto p-0 text-xs text-[#e06737]"
-            onClick={() => onNavigate("activity")}
-          >
-            {t("projects.overview.viewAll")}
-            <ArrowRight className="ml-1 size-3.5" />
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {recent.length === 0 ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              {t("projects.draft.activityPlaceholder")}
-            </p>
-          ) : (
-            <ul className="space-y-3">
-              {recent.map((event) => (
-                <li key={event.id} className="flex items-start justify-between gap-3 text-sm">
-                  <span className="min-w-0 flex-1 text-foreground">
-                    {t(event.titleKey, event.params)}
-                    {event.detail ? (
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {event.detail}
-                      </span>
-                    ) : null}
-                  </span>
-                  <time className="shrink-0 text-xs text-muted-foreground">
-                    {formatDate(event.date)}
-                  </time>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      {excerpt ? (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base text-[#1D376A]">
-              {t("projects.dashboard.summary.title")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <p className="text-sm leading-relaxed text-foreground">{excerpt}</p>
-            {hasMore ? (
-              <Button
-                variant="link"
-                className="h-auto p-0 text-[#e06737]"
-                onClick={() => setInfoOpen(true)}
-              >
-                {t("projects.dashboard.summary.showMore")}
-              </Button>
-            ) : null}
-          </CardContent>
-        </Card>
+    <div className="flex flex-col gap-4">
+      {!hideNextActionStrip ? (
+        <ProjectNextActionStrip nextAction={vm.nextAction} onNavigate={onNavigate} />
       ) : null}
 
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base text-[#1D376A]">
-            {t("projects.dashboard.contactCard.title")}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <dl className="grid gap-3 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-muted-foreground">{t("projects.draft.customerEmail")}</dt>
-              <dd className="mt-0.5 font-medium">
-                {project.customerEmail?.trim() || t("projects.dashboard.notSet")}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-muted-foreground">{t("projects.draft.customerPhone")}</dt>
-              <dd className="mt-0.5 font-medium">
-                {project.customerPhone?.trim() || t("projects.dashboard.notSet")}
-              </dd>
-            </div>
-          </dl>
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.85fr)_minmax(0,1fr)]">
+        <div className="lg:col-start-1 lg:row-start-1">
+          <ProjectActivePhaseWorkBoard
+            activePhaseName={vm.progress.activePhaseName}
+            tasks={vm.activePhaseTasks}
+            onNavigate={onNavigate}
+          />
+        </div>
+        <div className="lg:col-start-2 lg:row-start-1">
+          <ProjectHealthCard progress={vm.progress} />
+        </div>
+        <div className="lg:col-start-2 lg:row-start-2">
+          <ProjectTeamCard team={vm.team} onNavigate={onNavigate} />
+        </div>
+        <div className="lg:col-start-2 lg:row-start-3">
+          <ProjectTimeCard time={vm.time} />
+        </div>
+        <div className="lg:col-start-2 lg:row-start-4">
+          <ProjectDocumentsProofCard documents={vm.documents} onNavigate={onNavigate} />
+        </div>
+        <div className="lg:col-start-1 lg:row-start-2">
+          <ProjectActivityPreview activity={vm.activity} onNavigate={onNavigate} />
+        </div>
+        <div className="lg:col-start-1 lg:row-start-3">
+          <ProjectSummaryCard project={project} />
+        </div>
+        <div className="lg:col-start-2 lg:row-start-5">
+          <ProjectContactCard
+            project={project}
+            customerName={vm.project.customerName}
+            location={vm.project.location}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
 
-      <Dialog open={infoOpen} onOpenChange={setInfoOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{t("projects.dashboard.summary.modalTitle")}</DialogTitle>
-          </DialogHeader>
-          <p className="whitespace-pre-wrap text-sm leading-relaxed">{fullSummary}</p>
-        </DialogContent>
-      </Dialog>
+export function ProjectOverviewNextActionStrip({
+  vm,
+  onNavigate,
+  className,
+}: {
+  vm: ReturnType<typeof buildProjectOverviewViewModel>;
+  onNavigate: (tab: ProjectDashboardTab) => void;
+  className?: string;
+}) {
+  if (vm.project.isDraft) return null;
+  return (
+    <div className={className}>
+      <ProjectNextActionStrip nextAction={vm.nextAction} onNavigate={onNavigate} />
     </div>
   );
 }

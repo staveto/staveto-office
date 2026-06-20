@@ -1,134 +1,58 @@
 import type { EmailAiClassification } from "@/lib/emailInquiryTypes";
+import {
+  buildChecklist,
+  buildSmartReplyDraft,
+  detectLocale,
+  extractJobData,
+  type RequestLocale,
+} from "./requestInsights";
 
-export type ReplyDraftLocale = "sk" | "de" | "en";
+export type ReplyDraftLocale = RequestLocale;
 
-const DEFAULT_MISSING_SK = [
-  "presná adresa realizácie",
-  "preferovaný termín / naliehavosť",
-  "rozsah prác a špecifikácia",
-  "kontaktné telefónne číslo",
-];
-
-const DEFAULT_MISSING_DE = [
-  "genaue Adresse des Objekts",
-  "gewünschter Zeitraum / Dringlichkeit",
-  "Umfang der Arbeiten und technische Details",
-  "Telefonnummer für Rückfragen",
-];
-
-const DEFAULT_MISSING_EN = [
-  "exact site address",
-  "preferred timeline / urgency",
-  "scope of work and technical details",
-  "phone number for follow-up",
-];
-
-function detectLocale(text: string): ReplyDraftLocale {
-  const t = text.toLowerCase();
-  if (/[äöüß]|möchte|vielen dank|guten tag|wohnung|montage|angebot/.test(t)) return "de";
-  if (/ďakuj|dobrý deň|ponuk|montáž|potrebujem|žiadosť/.test(t)) return "sk";
-  return "en";
-}
-
-function customerSalutation(name: string | undefined, locale: ReplyDraftLocale): string {
-  if (!name?.trim()) {
-    if (locale === "de") return "Guten Tag";
-    if (locale === "en") return "Hello";
-    return "Dobrý deň";
-  }
-  const first = name.trim().split(/\s+/)[0]!;
-  if (locale === "de") return `Guten Tag ${first}`;
-  if (locale === "en") return `Hello ${first}`;
-  return `Dobrý deň ${first}`;
-}
-
-function defaultMissing(locale: ReplyDraftLocale): string[] {
-  if (locale === "de") return DEFAULT_MISSING_DE;
-  if (locale === "en") return DEFAULT_MISSING_EN;
-  return DEFAULT_MISSING_SK;
-}
+export { detectLocale };
 
 export function buildHeuristicReplyDraft(opts: {
   companyName: string;
   customerName?: string;
+  customerEmail?: string;
   subject: string;
   threadBody: string;
   ai?: EmailAiClassification;
   locale?: ReplyDraftLocale;
 }): { draft: string; missingInfo: string[] } {
   const locale = opts.locale ?? detectLocale(`${opts.subject}\n${opts.threadBody}`);
-  const missing =
-    opts.ai?.missingInfo?.filter(Boolean).length
-      ? opts.ai.missingInfo!.filter(Boolean)
-      : defaultMissing(locale);
+  const extracted =
+    opts.ai?.extracted ??
+    extractJobData({
+      subject: opts.subject,
+      threadText: opts.threadBody,
+      customerName: opts.customerName,
+      customerEmail: opts.customerEmail,
+      locale,
+    });
+  const { missing } = buildChecklist(extracted, locale);
 
-  const salutation = customerSalutation(opts.customerName, locale);
-  const company = opts.companyName.trim() || "Staveto";
-
-  const bullets = missing.map((m) => `- ${m}`).join("\n");
-
-  if (locale === "de") {
-    return {
-      missingInfo: missing,
-      draft: `${salutation},
-
-vielen Dank für Ihre Anfrage${opts.subject ? ` („${opts.subject}“)` : ""}.
-
-Damit wir Ihnen ein passendes Angebot erstellen können, benötigen wir noch folgende Angaben:
-
-${bullets}
-
-Sobald wir diese Informationen haben, melden wir uns zeitnah mit den nächsten Schritten.
-
-Mit freundlichen Grüßen
-${company}`,
-    };
-  }
-
-  if (locale === "en") {
-    return {
-      missingInfo: missing,
-      draft: `${salutation},
-
-thank you for your inquiry${opts.subject ? ` regarding "${opts.subject}"` : ""}.
-
-To prepare a tailored quote, we still need a few details:
-
-${bullets}
-
-Once we have this information, we will get back to you promptly with next steps.
-
-Best regards
-${company}`,
-    };
-  }
-
-  return {
-    missingInfo: missing,
-    draft: `${salutation},
-
-ďakujeme za Váš dopyt${opts.subject ? ` k téme „${opts.subject}"` : ""}.
-
-Aby sme Vám mohli pripraviť presnú ponuku, potrebujeme ešte tieto informácie:
-
-${bullets}
-
-Hneď ako ich budeme mať, ozveme sa Vám s ďalšími krokmi.
-
-S pozdravom
-${company}`,
-  };
+  return buildSmartReplyDraft({
+    companyName: opts.companyName,
+    customerName: opts.customerName,
+    extracted,
+    missing,
+    locale,
+  });
 }
 
 const REPLY_DRAFT_PROMPT = `You write professional B2B email replies for a construction / HVAC company on behalf of the company (not as AI).
-The customer emailed asking for work. Information is incomplete — write a polite reply that:
-1. Thanks them for the inquiry
-2. Briefly acknowledges what they already shared (1 sentence)
-3. Lists clear bullet questions for missing info needed to prepare a quote
-4. Promises follow-up after they reply
-5. Signs with the company name provided
+You are given the customer's email thread plus structured data already EXTRACTED from it and a list of STILL-MISSING fields.
 
-Match the customer's language (Slovak, German, or English). Plain text only, no markdown.
+Hard rules:
+1. Reply in the SAME language as the customer's email (Slovak, German, or English).
+2. Thank the customer briefly.
+3. Confirm the information already provided (address, phone, timeframe, system, issue) in a short bullet list.
+4. Ask ONLY for the fields listed as missing. NEVER ask for data that is already known
+   (if address is known, do not ask for address; same for phone and timeframe).
+5. Keep it short, professional and friendly. Plain text only, no markdown, do not quote the thread.
+6. Sign with the company name provided.
+
 Return ONLY valid JSON:
 {
   "draft": "full email body with line breaks",
@@ -148,8 +72,25 @@ export async function generateInquiryReplyDraft(opts: {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   const locale = opts.locale ?? detectLocale(`${opts.subject}\n${opts.threadBody}`);
 
+  const extracted =
+    opts.ai?.extracted ??
+    extractJobData({
+      subject: opts.subject,
+      threadText: opts.threadBody,
+      customerName: opts.customerName,
+      customerEmail: opts.customerEmail,
+      locale,
+    });
+  const { completed, missing } = buildChecklist(extracted, locale);
+
   if (!apiKey) {
-    return buildHeuristicReplyDraft(opts);
+    return buildSmartReplyDraft({
+      companyName: opts.companyName,
+      customerName: opts.customerName,
+      extracted,
+      missing,
+      locale,
+    });
   }
 
   const model = process.env.GEMINI_MODEL?.trim() || "gemini-2.0-flash";
@@ -157,16 +98,18 @@ export async function generateInquiryReplyDraft(opts: {
     `Company name (sign as): ${opts.companyName}`,
     `Customer: ${opts.customerName ?? "unknown"} <${opts.customerEmail}>`,
     `Subject: ${opts.subject}`,
-    `Preferred reply language: ${locale}`,
-    opts.ai?.summary ? `AI summary: ${opts.ai.summary}` : "",
-    opts.ai?.missingInfo?.length
-      ? `Known gaps: ${opts.ai.missingInfo.join(", ")}`
-      : "",
+    `Reply language: ${locale}`,
     "",
-    "Customer email:",
+    "Already known (do NOT ask for these again):",
+    ...completed.map((c) => `- ${c.label}: ${c.value}`),
+    "",
+    "Still missing (ask only for these):",
+    ...missing.map((m) => `- ${m.label}`),
+    "",
+    "Customer email thread:",
     opts.threadBody.slice(0, 6000),
   ]
-    .filter(Boolean)
+    .filter((line) => line !== undefined)
     .join("\n");
 
   try {
@@ -182,22 +125,36 @@ export async function generateInquiryReplyDraft(opts: {
       }
     );
 
-    if (!res.ok) return buildHeuristicReplyDraft(opts);
+    if (!res.ok) {
+      return buildSmartReplyDraft({
+        companyName: opts.companyName,
+        customerName: opts.customerName,
+        extracted,
+        missing,
+        locale,
+      });
+    }
 
     const data = (await res.json()) as {
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
     };
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) return buildHeuristicReplyDraft(opts);
+    if (!text) throw new Error("empty");
 
     const parsed = JSON.parse(text) as { draft?: string; missingInfo?: string[] };
-    if (!parsed.draft?.trim()) return buildHeuristicReplyDraft(opts);
+    if (!parsed.draft?.trim()) throw new Error("empty draft");
 
     return {
       draft: parsed.draft.trim(),
-      missingInfo: parsed.missingInfo?.length ? parsed.missingInfo : defaultMissing(locale),
+      missingInfo: parsed.missingInfo?.length ? parsed.missingInfo : missing.map((m) => m.label),
     };
   } catch {
-    return buildHeuristicReplyDraft(opts);
+    return buildSmartReplyDraft({
+      companyName: opts.companyName,
+      customerName: opts.customerName,
+      extracted,
+      missing,
+      locale,
+    });
   }
 }

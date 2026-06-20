@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyApiAuth, assertOrgManager } from "@/lib/apiAuth";
+import { verifyApiAuth, guardOrgManager } from "@/lib/apiAuth";
 import { replyToInquiry } from "@/lib/gmail/inquiryActions";
 
 export async function POST(
@@ -25,10 +25,8 @@ export async function POST(
     return NextResponse.json({ errorCode: "BAD_REQUEST" }, { status: 400 });
   }
 
-  const allowed = await assertOrgManager(orgId, auth.uid);
-  if (!allowed) {
-    return NextResponse.json({ errorCode: "FORBIDDEN" }, { status: 403 });
-  }
+  const denied = await guardOrgManager(orgId, auth.uid, auth.email);
+  if (denied) return denied;
 
   try {
     await replyToInquiry({ orgId, uid: auth.uid, inquiryId: id, body: text });

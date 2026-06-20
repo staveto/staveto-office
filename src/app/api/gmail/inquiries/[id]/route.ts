@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
-import { verifyApiAuth, assertOrgMemberActive, requireAdminConfigured } from "@/lib/apiAuth";
+import { verifyApiAuth, guardOrgMember, requireAdminConfigured } from "@/lib/apiAuth";
 import { getAdminDb } from "@/lib/firebaseAdmin";
 import {
   getEmailInquiryForOrg,
@@ -26,10 +26,8 @@ export async function GET(
     return NextResponse.json({ errorCode: "BAD_REQUEST" }, { status: 400 });
   }
 
-  const allowed = await assertOrgMemberActive(orgId, auth.uid);
-  if (!allowed) {
-    return NextResponse.json({ errorCode: "FORBIDDEN" }, { status: 403 });
-  }
+  const denied = await guardOrgMember(orgId, auth.uid, auth.email);
+  if (denied) return denied;
 
   try {
     const [inquiry, messages] = await Promise.all([
@@ -72,10 +70,8 @@ export async function PATCH(
     return NextResponse.json({ errorCode: "BAD_REQUEST" }, { status: 400 });
   }
 
-  const allowed = await assertOrgMemberActive(orgId, auth.uid);
-  if (!allowed) {
-    return NextResponse.json({ errorCode: "FORBIDDEN" }, { status: 403 });
-  }
+  const denied = await guardOrgMember(orgId, auth.uid, auth.email);
+  if (denied) return denied;
 
   const db = getAdminDb();
   if (!db) {

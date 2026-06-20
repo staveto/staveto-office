@@ -18,17 +18,18 @@ const CONFIG: Record<
   ON_TRACK: {
     icon: CheckCircle2,
     labelKey: "projects.health.onTrack",
-    className: "border-emerald-300 bg-emerald-50 text-emerald-700",
+    className:
+      "border-emerald-500/35 bg-emerald-500/10 text-emerald-800 dark:text-emerald-100",
   },
   ATTENTION: {
     icon: AlertTriangle,
     labelKey: "projects.health.attention",
-    className: "border-amber-300 bg-amber-50 text-amber-800",
+    className: "border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-100",
   },
   BLOCKED: {
     icon: OctagonAlert,
     labelKey: "projects.health.blocked",
-    className: "border-red-300 bg-red-50 text-red-700",
+    className: "border-red-500/40 bg-red-500/10 text-red-800 dark:text-red-200",
   },
 };
 

@@ -67,3 +67,13 @@ export async function listProblemsForProjects(projectIds: string[]): Promise<Pro
   const chunks = await Promise.all(projectIds.map((id) => listProjectProblems(id)));
   return chunks.flat();
 }
+
+const OPEN_PROBLEM_STATUSES = new Set(["open", "in_progress"]);
+
+/** Count non-archived open/in-progress problems across workspace projects. */
+export async function countOpenProblemsForProjects(projectIds: string[]): Promise<number> {
+  if (projectIds.length === 0) return 0;
+  const uniqueIds = [...new Set(projectIds.filter(Boolean))].slice(0, 80);
+  const all = await listProblemsForProjects(uniqueIds);
+  return all.filter((p) => OPEN_PROBLEM_STATUSES.has(String(p.status).toLowerCase())).length;
+}

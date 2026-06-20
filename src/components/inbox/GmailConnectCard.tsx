@@ -32,21 +32,21 @@ export function GmailConnectCard({
     return (
       <div
         className={cn(
-          "rounded-xl border border-emerald-200 bg-emerald-50/80 p-4",
+          "rounded-xl border border-emerald-200 bg-emerald-50/80 p-4 dark:border-emerald-800/50 dark:bg-emerald-950/40",
           className
         )}
       >
-        <p className="text-sm font-semibold text-emerald-900">{t("inbox.connectedTitle")}</p>
+        <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-200">{t("inbox.connectedTitle")}</p>
         {connectedEmail ? (
-          <p className="mt-1 text-sm text-emerald-800">{connectedEmail}</p>
+          <p className="mt-1 text-sm text-emerald-800 dark:text-emerald-300">{connectedEmail}</p>
         ) : null}
-        <p className="mt-2 text-xs text-emerald-800/80">{t("inbox.autoSyncHint")}</p>
+        <p className="mt-2 text-xs text-emerald-800/80 dark:text-emerald-300/80">{t("inbox.autoSyncHint")}</p>
         {onSync ? (
           <Button
             type="button"
             size="sm"
             variant="outline"
-            className="mt-3 border-emerald-300 bg-white"
+            className="mt-3 border-emerald-300 bg-white dark:border-emerald-700 dark:bg-transparent dark:text-emerald-200 dark:hover:bg-emerald-900/30"
             disabled={syncing}
             onClick={onSync}
           >

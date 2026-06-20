@@ -17,7 +17,7 @@ import {
   startGmailOAuth,
   notifyGmailOAuthPopupResult,
 } from "@/services/email/gmailIntegrationService";
-import { autoSyncGmailInbox } from "@/services/email/gmailAutoSync";
+import { autoSyncGmailInbox, GMAIL_INBOX_ACTIVE_SYNC_INTERVAL_MS } from "@/services/email/gmailAutoSync";
 import { loadAppCenterSettings } from "@/services/organizations/appCenterSettings";
 import { GmailConnectCard } from "@/components/inbox/GmailConnectCard";
 import { resolveGmailError } from "@/lib/gmail/errors";
@@ -173,6 +173,31 @@ export function EmailInboxPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run when connection becomes available
   }, [gmailConnected, orgId, authLoading, user, gmailStatus]);
 
+  useEffect(() => {
+    if (!gmailConnected || !orgId) return;
+
+    const syncQuiet = () => {
+      if (document.visibilityState !== "visible") return;
+      void handleSync({ force: false, quiet: true });
+    };
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void handleSync({ force: true, quiet: true });
+      }
+    };
+
+    const timer = window.setInterval(syncQuiet, GMAIL_INBOX_ACTIVE_SYNC_INTERVAL_MS);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [gmailConnected, orgId, handleSync]);
+
   if (!orgId) {
     return <p className="text-sm text-muted-foreground">{t("inbox.error.noCompany")}</p>;
   }
@@ -180,7 +205,7 @@ export function EmailInboxPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-6 pb-10">
       <header>
-        <h1 className="text-2xl font-bold text-[#1D376A]">{t("inbox.title")}</h1>
+        <h1 className="text-2xl font-bold text-[#1D376A] dark:text-[#9db8e8]">{t("inbox.title")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{t("inbox.subtitleFiltered")}</p>
         {unreadCount > 0 ? (
           <p className="mt-2 text-sm font-medium text-[#e06737]">
@@ -201,7 +226,7 @@ export function EmailInboxPage() {
       )}
 
       {success ? (
-        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900 dark:border-emerald-800/50 dark:bg-emerald-950/40 dark:text-emerald-200">
           {success}
         </p>
       ) : null}
@@ -234,7 +259,7 @@ export function EmailInboxPage() {
         </div>
       ) : rows.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border bg-card px-6 py-10 text-center">
-          <p className="font-medium text-[#1D376A]">
+          <p className="font-medium text-[#1D376A] dark:text-[#9db8e8]">
             {showAll ? t("inbox.emptyAfterConnect.title") : t("inbox.emptyFiltered.title")}
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -251,7 +276,7 @@ export function EmailInboxPage() {
                 href={`/app/inbox/${row.id}`}
                 className={cn(
                   "flex flex-col gap-2 px-4 py-4 transition-colors hover:bg-muted/40 sm:flex-row sm:items-center sm:justify-between",
-                  row.unread && "bg-orange-50/40"
+                  row.unread && "bg-orange-50/40 dark:bg-orange-500/10"
                 )}
               >
                 <div className="min-w-0 flex-1">
@@ -259,9 +284,9 @@ export function EmailInboxPage() {
                     {row.unread ? (
                       <span className="size-2 rounded-full bg-[#e06737]" aria-hidden />
                     ) : null}
-                    <p className="truncate font-semibold text-[#1D376A]">{row.subject}</p>
+                    <p className="truncate font-semibold text-[#1D376A] dark:text-[#9db8e8]">{row.subject}</p>
                     {row.ai?.intent === "new_project" && (row.ai.confidence ?? 0) >= 50 ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300">
                         <Sparkles className="size-3" />
                         {t("inbox.badge.newProject")}
                       </span>
@@ -271,7 +296,7 @@ export function EmailInboxPage() {
                     {row.fromName ? `${row.fromName} · ` : ""}
                     {row.fromEmail}
                   </p>
-                  <p className="mt-1 line-clamp-2 text-sm text-[#4a5568]">{row.snippet}</p>
+                  <p className="mt-1 line-clamp-2 text-sm text-[#4a5568] dark:text-foreground/70">{row.snippet}</p>
                 </div>
                 <div className="shrink-0 text-right text-xs text-muted-foreground">
                   <p>{intentLabel(row.ai?.intent, t)}</p>

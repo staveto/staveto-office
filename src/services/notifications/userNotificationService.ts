@@ -6,9 +6,15 @@ import {
   updateDoc,
   getDocs,
   onSnapshot,
+  query,
+  where,
+  orderBy,
+  limit,
   serverTimestamp,
   Timestamp,
 } from "@/lib/firebase";
+
+export const ROOT_NOTIFICATION_ID_PREFIX = "root:";
 
 export type UserNotificationType =
   | "PROJECT_ASSIGNED"
@@ -56,6 +62,40 @@ function toIso(value: unknown): string | undefined {
     }
   }
   return undefined;
+}
+
+function hasMeaningfulReadAt(raw: unknown): boolean {
+  if (raw == null) return false;
+  if (typeof raw === "string") return raw.trim().length > 0;
+  return toIso(raw) != null;
+}
+
+function fromRootNotification(id: string, data: Record<string, unknown>): UserNotification | null {
+  const type = data.type;
+  if (typeof type !== "string") return null;
+  const meta =
+    data.meta && typeof data.meta === "object" && !Array.isArray(data.meta)
+      ? (data.meta as Record<string, unknown>)
+      : undefined;
+
+  return {
+    id: `${ROOT_NOTIFICATION_ID_PREFIX}${id}`,
+    type: type as UserNotificationType,
+    projectId: typeof data.projectId === "string" ? data.projectId : undefined,
+    projectName: typeof data.projectName === "string" ? data.projectName : undefined,
+    problemId:
+      typeof data.problemId === "string"
+        ? data.problemId
+        : typeof meta?.problemId === "string"
+          ? meta.problemId
+          : undefined,
+    subject: typeof data.message === "string" ? data.message : undefined,
+    assignedBy: typeof data.fromUserId === "string" ? data.fromUserId : undefined,
+    assignedByName: typeof data.fromUserName === "string" ? data.fromUserName : undefined,
+    escalated: meta?.escalated === true || data.escalated === true,
+    createdAt: toIso(data.createdAt),
+    read: hasMeaningfulReadAt(data.readAt),
+  };
 }
 
 function toNotification(id: string, data: Record<string, unknown>): UserNotification | null {
@@ -106,7 +146,9 @@ function dedupeNotifications(rows: UserNotification[]): UserNotification[] {
     const key =
       row.type === "PROJECT_ASSIGNED" || row.type === "PROJECT_INVITED"
         ? `${row.type}:${row.projectId ?? row.id}`
-        : row.id;
+        : row.type === "PROBLEM_REPORTED" || row.type === "PROBLEM_ASSIGNED"
+          ? `${row.type}:${row.problemId ?? row.projectId ?? row.id}`
+          : row.id;
     const existing = byKey.get(key);
     if (!existing) {
       byKey.set(key, row);
@@ -179,19 +221,55 @@ export function subscribeUserNotifications(
     return () => undefined;
   }
 
-  const ref = collection(db, "users", userId, "notifications");
-  return onSnapshot(
-    ref,
+  let officeRows: UserNotification[] = [];
+  let rootRows: UserNotification[] = [];
+
+  const emit = () => {
+    const sorted = dedupeNotifications([...officeRows, ...rootRows]).slice(0, 50);
+    const unreadCount = sorted.filter((n) => !n.read).length;
+    onData(sorted, unreadCount);
+  };
+
+  const officeRef = collection(db, "users", userId, "notifications");
+  const rootRef = query(
+    collection(db, "notifications"),
+    where("userId", "==", userId),
+    orderBy("createdAt", "desc"),
+    limit(50)
+  );
+
+  const unsubOffice = onSnapshot(
+    officeRef,
     (snap) => {
-      const rows = snap.docs
+      officeRows = snap.docs
         .map((d) => toNotification(d.id, d.data() as Record<string, unknown>))
         .filter((n): n is UserNotification => n != null);
-      const sorted = dedupeNotifications(rows).slice(0, 50);
-      const unreadCount = sorted.filter((n) => !n.read).length;
-      onData(sorted, unreadCount);
+      emit();
     },
-    () => onData([], 0)
+    () => {
+      officeRows = [];
+      emit();
+    }
   );
+
+  const unsubRoot = onSnapshot(
+    rootRef,
+    (snap) => {
+      rootRows = snap.docs
+        .map((d) => fromRootNotification(d.id, d.data() as Record<string, unknown>))
+        .filter((n): n is UserNotification => n != null);
+      emit();
+    },
+    () => {
+      rootRows = [];
+      emit();
+    }
+  );
+
+  return () => {
+    unsubOffice();
+    unsubRoot();
+  };
 }
 
 export async function markNotificationRead(
@@ -200,6 +278,15 @@ export async function markNotificationRead(
 ): Promise<void> {
   const db = getFirestoreInstance();
   if (!db) throw new Error("Firestore not configured");
+
+  if (notificationId.startsWith(ROOT_NOTIFICATION_ID_PREFIX)) {
+    const rootId = notificationId.slice(ROOT_NOTIFICATION_ID_PREFIX.length);
+    await updateDoc(doc(db, "notifications", rootId), {
+      readAt: serverTimestamp(),
+    });
+    return;
+  }
+
   await updateDoc(doc(db, "users", userId, "notifications", notificationId), {
     read: true,
   });
@@ -209,14 +296,21 @@ export async function markAllNotificationsRead(userId: string): Promise<void> {
   const db = getFirestoreInstance();
   if (!db) throw new Error("Firestore not configured");
 
-  const allSnap = await getDocs(collection(db, "users", userId, "notifications"));
-  await Promise.all(
-    allSnap.docs
+  const [officeSnap, rootSnap] = await Promise.all([
+    getDocs(collection(db, "users", userId, "notifications")),
+    getDocs(
+      query(collection(db, "notifications"), where("userId", "==", userId), limit(50))
+    ),
+  ]);
+
+  await Promise.all([
+    ...officeSnap.docs
       .filter((d) => d.data().read !== true)
-      .map((d) =>
-        updateDoc(doc(db, "users", userId, "notifications", d.id), { read: true })
-      )
-  );
+      .map((d) => updateDoc(doc(db, "users", userId, "notifications", d.id), { read: true })),
+    ...rootSnap.docs
+      .filter((d) => !hasMeaningfulReadAt(d.data().readAt))
+      .map((d) => updateDoc(doc(db, "notifications", d.id), { readAt: serverTimestamp() })),
+  ]);
 }
 
 export function getNotificationProjectHref(notification: UserNotification): string | null {

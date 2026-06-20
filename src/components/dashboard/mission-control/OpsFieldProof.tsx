@@ -6,20 +6,23 @@ import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 import { opsCardClassName } from "./opsStyles";
 
-/**
- * Field proof (photos / documents / issues) is not yet aggregated into the
- * dashboard data layer. Counts are a safe 0 fallback with an honest empty state.
- */
-export function OpsFieldProof() {
+type OpsFieldProofProps = {
+  photos?: number;
+  docs?: number;
+  openProblems?: number;
+};
+
+export function OpsFieldProof({
+  photos = 0,
+  docs = 0,
+  openProblems = 0,
+}: OpsFieldProofProps) {
   const { t } = useI18n();
 
-  const photos = 0;
-  const docs = 0;
-  const issues = 0;
   const rows = [
     { id: "photos", labelKey: "dashboard.ops.fieldProof.photos", value: photos },
     { id: "docs", labelKey: "dashboard.ops.fieldProof.docs", value: docs },
-    { id: "issues", labelKey: "dashboard.ops.fieldProof.issues", value: issues },
+    { id: "issues", labelKey: "dashboard.ops.fieldProof.issues", value: openProblems },
   ];
 
   return (
@@ -28,14 +31,21 @@ export function OpsFieldProof() {
         {t("dashboard.ops.fieldProof.title")}
       </h2>
       <p className="mt-0.5 text-xs text-muted-foreground">
-        {t("dashboard.ops.fieldProof.summary", { photos, docs, issues })}
+        {t("dashboard.ops.fieldProof.summary", { photos, docs, issues: openProblems })}
       </p>
 
       <ul className="mt-3 flex-1 divide-y divide-border dark:divide-white/10" role="list">
         {rows.map((row) => (
           <li key={row.id} className="flex items-center justify-between gap-2 py-2 first:pt-0">
             <span className="text-sm text-foreground">{t(row.labelKey)}</span>
-            <span className="text-sm font-semibold tabular-nums text-muted-foreground">
+            <span
+              className={cn(
+                "text-sm font-semibold tabular-nums",
+                row.id === "issues" && row.value > 0
+                  ? "text-[#e06737]"
+                  : "text-muted-foreground"
+              )}
+            >
               {row.value}
             </span>
           </li>

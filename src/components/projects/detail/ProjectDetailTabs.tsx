@@ -34,7 +34,7 @@ export function ProjectDetailTabs({
 
   return (
     <div
-      className="flex gap-1 overflow-x-auto border-b border-border"
+      className="flex gap-0.5 overflow-x-auto border-b border-[var(--po-card-border)]"
       role="tablist"
       aria-label={t("projects.dashboard.tabs.label")}
     >
@@ -50,23 +50,23 @@ export function ProjectDetailTabs({
             aria-selected={isActive}
             onClick={() => onTabChange(tab)}
             className={cn(
-              "group relative inline-flex shrink-0 items-center gap-1.5 rounded-t-lg border-b-2 px-3.5 py-2.5 text-sm font-medium transition-colors",
+              "group relative inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-t-lg border-b-2 px-3.5 py-2.5 text-sm font-medium transition-colors sm:min-h-10",
               isActive
-                ? "border-[#1D376A] bg-[#1D376A]/5 text-[#1D376A]"
-                : "border-transparent text-muted-foreground hover:border-[#1D376A]/30 hover:bg-muted/40 hover:text-[#1D376A]"
+                ? "border-[var(--po-primary)] bg-[var(--po-card-muted)] text-[var(--po-text-primary)]"
+                : "border-transparent text-[var(--po-text-muted)] hover:border-[var(--po-card-border)] hover:bg-[var(--po-card-muted)]/60 hover:text-[var(--po-text-primary)]"
             )}
           >
             {t(`projects.dashboard.tab.${tab}`)}
             {badge?.warn ? (
-              <AlertTriangle className="size-3.5 text-amber-500" aria-hidden />
+              <AlertTriangle className="size-3.5 text-amber-500 dark:text-amber-400" aria-hidden />
             ) : null}
             {showCount ? (
               <span
                 className={cn(
                   "inline-flex min-w-[18px] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums",
                   isActive
-                    ? "bg-[#1D376A] text-white"
-                    : "bg-muted text-muted-foreground group-hover:bg-[#1D376A]/15 group-hover:text-[#1D376A]"
+                    ? "bg-[var(--po-primary)] text-white"
+                    : "bg-[var(--po-card-muted)] text-[var(--po-text-secondary)] group-hover:bg-[var(--po-primary)]/15"
                 )}
               >
                 {badge.count}

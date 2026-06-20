@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyApiAuth, assertOrgManager } from "@/lib/apiAuth";
+import { verifyApiAuth, guardOrgManager } from "@/lib/apiAuth";
 import { syncGmailInbox } from "@/lib/gmail/syncService";
 import { disconnectGmail } from "@/lib/gmail/tokenStore";
 
@@ -21,10 +21,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ errorCode: "ORG_REQUIRED" }, { status: 400 });
   }
 
-  const allowed = await assertOrgManager(orgId, auth.uid);
-  if (!allowed) {
-    return NextResponse.json({ errorCode: "FORBIDDEN" }, { status: 403 });
-  }
+  const denied = await guardOrgManager(orgId, auth.uid, auth.email);
+  if (denied) return denied;
 
   if (body.action === "disconnect") {
     await disconnectGmail(orgId, auth.uid);

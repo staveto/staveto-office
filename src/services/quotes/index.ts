@@ -8,6 +8,8 @@ export {
   listQuotesForWorkspace,
   listQuotesForWorkspaceEnsured,
   syncMissingQuotesFromProjects,
+  syncQuotesFromProjectLifecycle,
+  syncQuoteStatusesFromProjects,
   getQuote,
   hasQuoteAccess,
   toLegacyWorkspace,

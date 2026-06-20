@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { FieldValue } from "firebase-admin/firestore";
 import {
   verifyApiAuth,
-  assertOrgMemberActive,
+  guardOrgMember,
   requireAdminConfigured,
 } from "@/lib/apiAuth";
 import { getAdminDb } from "@/lib/firebaseAdmin";
@@ -38,10 +38,8 @@ export async function POST(
     return NextResponse.json({ errorCode: "BAD_REQUEST" }, { status: 400 });
   }
 
-  const allowed = await assertOrgMemberActive(orgId, auth.uid);
-  if (!allowed) {
-    return NextResponse.json({ errorCode: "FORBIDDEN" }, { status: 403 });
-  }
+  const denied = await guardOrgMember(orgId, auth.uid, auth.email);
+  if (denied) return denied;
 
   const inquiry = await getEmailInquiryForOrg(orgId, id);
   if (!inquiry) {

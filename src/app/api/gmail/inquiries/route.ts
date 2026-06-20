@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyApiAuth, assertOrgMemberActive, requireAdminConfigured } from "@/lib/apiAuth";
+import {
+  verifyApiAuth,
+  guardOrgMember,
+  requireAdminConfigured,
+} from "@/lib/apiAuth";
 import { listEmailInquiriesForOrg } from "@/lib/gmail/inquiryReadService";
 
 export async function GET(request: NextRequest) {
@@ -17,10 +21,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ errorCode: "ORG_REQUIRED" }, { status: 400 });
   }
 
-  const allowed = await assertOrgMemberActive(orgId, auth.uid);
-  if (!allowed) {
-    return NextResponse.json({ errorCode: "FORBIDDEN" }, { status: 403 });
-  }
+  const denied = await guardOrgMember(orgId, auth.uid, auth.email);
+  if (denied) return denied;
 
   const businessOnly = request.nextUrl.searchParams.get("all") !== "1";
 

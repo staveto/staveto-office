@@ -3,6 +3,7 @@
  */
 import {
   createQuote as createQuoteDoc,
+  dedupeQuotesByProject,
   getQuote,
   listQuotesForProject,
   listQuotesForWorkspace,
@@ -97,6 +98,85 @@ async function syncProjectFromQuote(
   if (status === "accepted") update.acceptedQuoteId = quoteId;
 
   await updateDoc(projectRef, update);
+}
+
+type ProjectQuoteSyncFields = Pick<
+  ProjectDoc,
+  "orgId" | "ownerId" | "phase" | "salesStatus" | "quoteStatus" | "lifecycleStatus"
+>;
+
+/** Map project lifecycle → top-level quote doc status (inverse of syncProjectFromQuote). */
+export function resolveQuoteStatusFromProject(
+  project: Pick<ProjectDoc, "phase" | "salesStatus" | "quoteStatus" | "lifecycleStatus">
+): QuoteStatus | null {
+  const lifecycle = project.lifecycleStatus;
+  const sales = project.salesStatus;
+  const quote = project.quoteStatus;
+
+  if (lifecycle === "rejected" || sales === "rejected") return "rejected";
+  if (sales === "accepted" || project.phase === "delivery") return "accepted";
+  if (quote === "accepted" || lifecycle === "accepted") return "accepted";
+  if (quote === "sent" || sales === "quote_sent" || lifecycle === "quote_sent") return "sent";
+  if (quote === "draft" || sales === "draft" || lifecycle === "quote_drafted") return "draft";
+  return null;
+}
+
+/** Push project lifecycle onto linked Firestore quote docs (no project write-back). */
+export async function syncQuotesFromProjectLifecycle(
+  projectId: string,
+  project: ProjectQuoteSyncFields
+): Promise<void> {
+  const targetStatus = resolveQuoteStatusFromProject(project);
+  if (!targetStatus) return;
+
+  const quotes = await listQuotesForProject(projectId, {
+    orgId: project.orgId,
+    ownerId: project.ownerId,
+  });
+
+  await Promise.all(
+    quotes
+      .filter((q) => q.status !== targetStatus)
+      .map((q) => updateQuoteStatus(q.id, targetStatus))
+  );
+}
+
+/** Retroactive fix — active delivery projects should not leave linked quotes in draft. */
+export async function syncQuoteStatusesFromProjects(
+  workspace: Workspace | ActiveWorkspace,
+  uid: string
+): Promise<void> {
+  const active = toActiveWorkspace(workspace, uid);
+  const projects = await listProjectsForWorkspace(active, uid);
+  const db = getFirestoreInstance();
+
+  await Promise.all(
+    projects.map(async (project) => {
+      const target = resolveQuoteStatusFromProject(project);
+      if (!target || target === "draft") return;
+      try {
+        if (
+          db &&
+          target === "accepted" &&
+          project.quoteStatus !== "accepted" &&
+          (project.phase === "delivery" || project.salesStatus === "accepted")
+        ) {
+          await updateDoc(doc(db, "projects", project.id), {
+            quoteStatus: "accepted" satisfies ProjectQuoteStatus,
+            updatedAt: serverTimestamp(),
+          });
+        }
+        await syncQuotesFromProjectLifecycle(project.id, {
+          ...project,
+          quoteStatus: target === "accepted" ? "accepted" : project.quoteStatus,
+        });
+      } catch (err) {
+        if (process.env.NODE_ENV === "development") {
+          console.warn("[quotes] lifecycle sync failed for project", project.id, err);
+        }
+      }
+    })
+  );
 }
 
 export async function createQuoteFromProject(
@@ -209,44 +289,6 @@ function sortQuotesByUpdatedAt(quotes: QuoteDoc[]): QuoteDoc[] {
   });
 }
 
-const QUOTE_STATUS_RANK: Record<QuoteStatus, number> = {
-  accepted: 3,
-  sent: 2,
-  draft: 1,
-  rejected: 0,
-};
-
-function preferQuote(a: QuoteDoc, b: QuoteDoc): QuoteDoc {
-  const ra = QUOTE_STATUS_RANK[a.status] ?? 0;
-  const rb = QUOTE_STATUS_RANK[b.status] ?? 0;
-  if (ra !== rb) return ra > rb ? a : b;
-  const ta = a.updatedAt ? Date.parse(a.updatedAt) : 0;
-  const tb = b.updatedAt ? Date.parse(b.updatedAt) : 0;
-  return tb > ta ? b : a;
-}
-
-/**
- * Collapse multiple quote docs that point at the same project into a single
- * entry. A project should surface one quote in the list — if duplicates exist
- * in Firestore we keep the most relevant one (accepted/sent over draft, then
- * most recently updated). Standalone quotes (no projectId) are always kept.
- */
-function dedupeQuotesByProject(quotes: QuoteDoc[]): QuoteDoc[] {
-  const byProject = new Map<string, QuoteDoc>();
-  const standalone: QuoteDoc[] = [];
-
-  for (const quote of quotes) {
-    if (!quote.projectId) {
-      standalone.push(quote);
-      continue;
-    }
-    const existing = byProject.get(quote.projectId);
-    byProject.set(quote.projectId, existing ? preferQuote(existing, quote) : quote);
-  }
-
-  return [...standalone, ...byProject.values()];
-}
-
 async function buildVirtualQuotesFromProjects(
   projects: ProjectDoc[],
   linkedProjectIds: Set<string>
@@ -319,6 +361,7 @@ export async function listQuotesForWorkspaceEnsured(
 
   try {
     await syncMissingQuotesFromProjects(active, uid);
+    await syncQuoteStatusesFromProjects(active, uid);
   } catch {
     // Continue with virtual project drafts if Firestore sync fails.
   }

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyApiAuth, assertOrgManager } from "@/lib/apiAuth";
+import { verifyApiAuth, guardOrgManager } from "@/lib/apiAuth";
 import { isGmailClientConfigured, isGmailOAuthFullyConfigured } from "@/lib/gmail/config";
 import { buildGoogleAuthUrl } from "@/lib/gmail/oauth";
 import { isAdminConfigured } from "@/lib/firebaseAdmin";
@@ -25,10 +25,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ errorCode: "ORG_REQUIRED" }, { status: 400 });
   }
 
-  const allowed = await assertOrgManager(orgId, auth.uid);
-  if (!allowed) {
-    return NextResponse.json({ errorCode: "FORBIDDEN" }, { status: 403 });
-  }
+  const denied = await guardOrgManager(orgId, auth.uid, auth.email);
+  if (denied) return denied;
 
   try {
     const returnUrl =

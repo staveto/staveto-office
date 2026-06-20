@@ -25,6 +25,7 @@ import type {
 } from "@/lib/projectLifecycle";
 import type { WorkType } from "@/lib/workTypes";
 import { isWorkType, mapArchetypeToFirestoreFields } from "@/lib/workTypes";
+import { syncQuotesFromProjectLifecycle } from "@/services/quotes/quoteService";
 
 export type CreateDraftJobInput = {
   workType: WorkType;
@@ -123,12 +124,15 @@ export async function convertDraftToActiveProject(
     phase: "delivery",
     lifecycleStatus: "planned",
     salesStatus: "accepted",
+    quoteStatus: "accepted",
     convertedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 
   const updated = await getDoc(ref);
-  return toProjectDoc(projectId, updated.data() as Record<string, unknown>);
+  const project = toProjectDoc(projectId, updated.data() as Record<string, unknown>);
+  await syncQuotesFromProjectLifecycle(projectId, project);
+  return project;
 }
 
 export async function updateDraftJobStatus(
@@ -150,7 +154,9 @@ export async function updateDraftJobStatus(
   await updateDoc(ref, update);
 
   const snap = await getDoc(ref);
-  return toProjectDoc(projectId, snap.data() as Record<string, unknown>);
+  const project = toProjectDoc(projectId, snap.data() as Record<string, unknown>);
+  await syncQuotesFromProjectLifecycle(projectId, project);
+  return project;
 }
 
 export async function updateDraftJobFields(

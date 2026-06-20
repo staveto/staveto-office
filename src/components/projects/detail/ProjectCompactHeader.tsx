@@ -70,19 +70,22 @@ function MetaStat({
   highlight?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-2 min-w-0">
+    <div className="flex min-w-0 items-center gap-2">
       <Icon
-        className={cn("size-4 shrink-0", highlight ? "text-[#e06737]" : "text-[#1D376A]/70")}
+        className={cn(
+          "size-4 shrink-0",
+          highlight ? "text-[var(--po-primary)]" : "text-[var(--po-text-muted)]"
+        )}
         aria-hidden
       />
       <div className="min-w-0">
-        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground leading-none">
+        <p className="text-[10px] font-medium uppercase leading-none tracking-wide text-[var(--po-text-muted)]">
           {label}
         </p>
         <p
           className={cn(
-            "text-sm font-semibold leading-tight mt-0.5 truncate",
-            highlight ? "text-[#e06737]" : "text-[#1D376A]"
+            "mt-0.5 truncate text-sm font-semibold leading-tight",
+            highlight ? "text-[var(--po-primary)]" : "text-[var(--po-text-primary)]"
           )}
         >
           {value}
@@ -121,23 +124,23 @@ export function ProjectCompactHeader({
       : t("projects.header.noPhase"));
 
   return (
-    <div className="rounded-2xl border border-border/70 bg-white shadow-sm">
-      <div className="px-4 pt-3 sm:px-5">
+    <header className="rounded-xl border border-[var(--po-card-border)] bg-[var(--po-card-bg)] shadow-sm">
+      <div className="px-4 pt-2.5 sm:px-5">
         <Link
           href="/app/projects"
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-[#1D376A]"
+          className="inline-flex items-center gap-1.5 text-xs text-[var(--po-text-muted)] transition-colors hover:text-[var(--po-text-primary)]"
         >
           <ArrowLeft className="size-3.5" />
           {t("projects.titleJobs")}
         </Link>
       </div>
 
-      <div className="flex flex-col gap-3 px-4 py-3 sm:px-5 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0 flex-1 space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-col gap-2 px-4 py-2 sm:px-5 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <Badge
               variant="outline"
-              className="border-[#1D376A]/30 bg-[#1D376A]/8 font-normal text-[#1D376A]"
+              className="border-emerald-500/35 bg-emerald-500/10 font-normal text-emerald-900 dark:text-emerald-100"
             >
               {t(`projects.workflow.status.${statusKey}`)}
             </Badge>
@@ -146,12 +149,14 @@ export function ProjectCompactHeader({
             <JobSourceBadge project={project} />
           </div>
 
-          <h1 className="truncate text-xl font-semibold leading-tight text-[#1D376A] sm:text-2xl">
+          <h1 className="truncate text-lg font-semibold leading-tight text-[var(--po-text-primary)] sm:text-xl">
             {project.name || t("projects.noName")}
           </h1>
 
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted-foreground">
-            {customer ? <span className="font-medium text-foreground">{customer}</span> : null}
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-[var(--po-text-secondary)]">
+            {customer ? (
+              <span className="font-medium text-[var(--po-text-primary)]">{customer}</span>
+            ) : null}
             {customer && location ? <span aria-hidden>·</span> : null}
             {location ? (
               <span className="inline-flex items-center gap-1">
@@ -174,13 +179,8 @@ export function ProjectCompactHeader({
         </div>
       </div>
 
-      {/* Compact horizontal summary bar */}
-      <div className="grid grid-cols-2 gap-3 border-t border-border/60 px-4 py-3 sm:grid-cols-3 sm:px-5 lg:grid-cols-5">
-        <MetaStat
-          icon={Layers}
-          label={t("projects.header.activePhase")}
-          value={activePhaseText}
-        />
+      <div className="grid grid-cols-2 gap-2 border-t border-[var(--po-card-border)] px-4 py-2.5 sm:grid-cols-3 sm:px-5 lg:grid-cols-5">
+        <MetaStat icon={Layers} label={t("projects.header.activePhase")} value={activePhaseText} />
         <MetaStat
           icon={TrendingUp}
           label={t("projects.header.progress")}
@@ -208,29 +208,24 @@ export function ProjectCompactHeader({
         />
       </div>
 
-      {/* Primary actions */}
-      <div className="flex flex-wrap gap-2 border-t border-border/60 px-4 py-3 sm:px-5">
-        <Button
-          size="sm"
-          className="bg-[#e06737] text-white hover:bg-[#c9582f]"
-          onClick={() => onNavigate("tasks")}
-        >
+      <div className="flex flex-wrap gap-2 border-t border-[var(--po-card-border)] px-4 py-2.5 sm:px-5">
+        <Button size="sm" className="min-h-11 bg-[var(--po-primary)] text-white hover:bg-[var(--po-primary-hover)] sm:min-h-9" onClick={() => onNavigate("tasks")}>
           <Plus className="mr-1 size-4" />
           {t("projects.addTask")}
         </Button>
-        <Button size="sm" variant="outline" onClick={() => onNavigate("workplan")}>
+        <Button size="sm" variant="outline" className="min-h-11 border-[var(--po-card-border)] sm:min-h-9" onClick={() => onNavigate("workplan")}>
           <UserPlus className="mr-1 size-4" />
           {t("projects.workPlan.assignWorker")}
         </Button>
-        <Button size="sm" variant="outline" onClick={() => onNavigate("workplan")}>
+        <Button size="sm" variant="outline" className="min-h-11 border-[var(--po-card-border)] sm:min-h-9" onClick={() => onNavigate("workplan")}>
           <ClipboardList className="mr-1 size-4" />
           {t("projects.header.openWorkPlan")}
         </Button>
-        <Button size="sm" variant="outline" onClick={() => onNavigate("documents")}>
+        <Button size="sm" variant="outline" className="min-h-11 border-[var(--po-card-border)] sm:min-h-9" onClick={() => onNavigate("documents")}>
           <FileText className="mr-1 size-4" />
           {t("projects.header.createReport")}
         </Button>
       </div>
-    </div>
+    </header>
   );
 }

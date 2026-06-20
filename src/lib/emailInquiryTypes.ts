@@ -11,6 +11,21 @@ export type EmailIntent =
   | "invoice"
   | "other";
 
+export type ExtractedJobData = {
+  customerName?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  requestType?: string;
+  systemType?: string;
+  systemYear?: string;
+  issue?: string;
+  desiredTimeframe?: string;
+  urgency?: string;
+  repairOrReplacement?: string;
+};
+
 export type EmailAiClassification = {
   intent: EmailIntent;
   confidence: number;
@@ -21,6 +36,7 @@ export type EmailAiClassification = {
   missingInfo?: string[];
   suggestedReply?: string;
   summary?: string;
+  extracted?: ExtractedJobData;
   classifiedAt?: string;
 };
 

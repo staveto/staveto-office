@@ -54,14 +54,23 @@ export async function syncGmailInbox(orgId: string, uid: string): Promise<{
       messages[0];
     const last = messages[messages.length - 1]!;
 
+    // Analyse the FULL inbound thread (latest message first → highest priority),
+    // so details provided in later customer replies are recognised, not re-asked.
+    const inboundThreadText = messages
+      .filter((m) => m.fromEmail.toLowerCase() !== token.email.toLowerCase())
+      .reverse()
+      .map((m) => m.bodyText || m.snippet)
+      .join("\n\n") || (firstInbound.bodyText || firstInbound.snippet);
+
     if (!existing.empty) {
       const inquiryRef = existing.docs[0]!.ref;
       const inquiryId = existing.docs[0]!.id;
       const prev = existing.docs[0]!.data();
       const ai = await classifyEmailWithAi(
         firstInbound.subject,
-        firstInbound.bodyText || firstInbound.snippet,
-        firstInbound.fromEmail
+        inboundThreadText,
+        firstInbound.fromEmail,
+        firstInbound.fromName
       );
       const business = isBusinessRelevantInquiry({
         ai,
@@ -99,8 +108,9 @@ export async function syncGmailInbox(orgId: string, uid: string): Promise<{
 
     const ai = await classifyEmailWithAi(
       firstInbound.subject,
-      firstInbound.bodyText || firstInbound.snippet,
-      firstInbound.fromEmail
+      inboundThreadText,
+      firstInbound.fromEmail,
+      firstInbound.fromName
     );
 
     const business = isBusinessRelevantInquiry({

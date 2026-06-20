@@ -3,9 +3,11 @@ import { notifyEmailInboxChanged } from "./emailInquiryService";
 import { dedupeInflight } from "@/lib/inflightCache";
 
 /** Minimum gap between automatic sync runs for the same org. */
-const MIN_GAP_MS = 5 * 60 * 1000;
+const MIN_GAP_MS = 45 * 1000;
 /** Background interval while the app is open. */
-export const GMAIL_AUTO_SYNC_INTERVAL_MS = 10 * 60 * 1000;
+export const GMAIL_AUTO_SYNC_INTERVAL_MS = 2 * 60 * 1000;
+/** Faster polling while the customer inbox page is visible. */
+export const GMAIL_INBOX_ACTIVE_SYNC_INTERVAL_MS = 45 * 1000;
 
 const lastSyncedAt = new Map<string, number>();
 

@@ -3,6 +3,8 @@ import { getAdminDb, getAdminStorage } from "@/lib/firebaseAdmin";
 import { mapArchetypeToFirestoreFields } from "@/lib/workTypes";
 import { getValidAccessToken } from "./tokenStore";
 import { downloadAttachment, getThreadMessages, sendGmailReply } from "./client";
+import { extractJobData, buildRequestSummary, detectLocale } from "./requestInsights";
+import type { ExtractedJobData } from "@/lib/emailInquiryTypes";
 
 export async function replyToInquiry(opts: {
   orgId: string;
@@ -98,6 +100,32 @@ export async function startProjectFromInquiry(opts: {
   const firstInbound = messagesSnap.docs.find((d) => d.data().direction === "inbound");
   const bodyText = firstInbound?.data().bodyText as string | undefined;
 
+  // Prefill from the WHOLE inbound thread (latest reply first) so address / phone /
+  // timeframe the customer provided later are carried into the project.
+  const inboundThreadText =
+    messagesSnap.docs
+      .filter((d) => d.data().direction === "inbound")
+      .reverse()
+      .map((d) => String(d.data().bodyText || d.data().snippet || ""))
+      .join("\n\n")
+      .trim() || (bodyText ?? (inquiry.snippet as string) ?? "");
+
+  const subject = (inquiry.subject as string) ?? "";
+  const locale = detectLocale(`${subject}\n${inboundThreadText}`);
+  const stored = (ai?.extracted as ExtractedJobData | undefined) ?? undefined;
+  const extracted: ExtractedJobData =
+    stored ??
+    extractJobData({
+      subject,
+      threadText: inboundThreadText,
+      customerName: (ai?.customerName as string) ?? (inquiry.fromName as string | undefined),
+      customerEmail: (ai?.customerEmail as string) ?? (inquiry.fromEmail as string),
+      locale,
+    });
+
+  const siteAddress = [extracted.address, extracted.city].filter(Boolean).join(", ") || null;
+  const brief = buildRequestSummary(extracted, locale, bodyText || (inquiry.snippet as string) || "");
+
   const workType = (opts.workType as import("@/lib/workTypes").WorkType) || "customer_job";
   const engine = mapArchetypeToFirestoreFields(workType);
 
@@ -117,8 +145,16 @@ export async function startProjectFromInquiry(opts: {
     ownerId: opts.uid,
     source: "email",
     customerRequest: bodyText || inquiry.snippet,
-    customerName: ai?.customerName ?? inquiry.fromName ?? null,
-    customerEmail: ai?.customerEmail ?? inquiry.fromEmail,
+    customerName: extracted.customerName ?? ai?.customerName ?? inquiry.fromName ?? null,
+    customerEmail: extracted.email ?? ai?.customerEmail ?? inquiry.fromEmail,
+    customerPhone: extracted.phone ?? null,
+    siteAddress,
+    locationCity: extracted.city ?? null,
+    requestType: extracted.requestType ?? null,
+    systemType: extracted.systemType ?? null,
+    systemYear: extracted.systemYear ?? null,
+    desiredTimeframe: extracted.desiredTimeframe ?? null,
+    brief,
     emailInquiryId: opts.inquiryId,
     gmailThreadId: inquiry.gmailThreadId,
     createdAt: FieldValue.serverTimestamp(),

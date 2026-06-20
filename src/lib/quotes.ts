@@ -28,6 +28,39 @@ import type { QuoteDraftItemCategory } from "./quoteDraftItems";
 
 export type QuoteStatus = "draft" | "sent" | "accepted" | "rejected";
 
+const QUOTE_STATUS_RANK: Record<QuoteStatus, number> = {
+  accepted: 3,
+  sent: 2,
+  draft: 1,
+  rejected: 0,
+};
+
+function preferQuote(a: QuoteDoc, b: QuoteDoc): QuoteDoc {
+  const ra = QUOTE_STATUS_RANK[a.status] ?? 0;
+  const rb = QUOTE_STATUS_RANK[b.status] ?? 0;
+  if (ra !== rb) return ra > rb ? a : b;
+  const ta = a.updatedAt ? Date.parse(a.updatedAt) : 0;
+  const tb = b.updatedAt ? Date.parse(b.updatedAt) : 0;
+  return tb > ta ? b : a;
+}
+
+/** One quote per linked project — keeps the most relevant doc when duplicates exist. */
+export function dedupeQuotesByProject(quotes: QuoteDoc[]): QuoteDoc[] {
+  const byProject = new Map<string, QuoteDoc>();
+  const standalone: QuoteDoc[] = [];
+
+  for (const quote of quotes) {
+    if (!quote.projectId) {
+      standalone.push(quote);
+      continue;
+    }
+    const existing = byProject.get(quote.projectId);
+    byProject.set(quote.projectId, existing ? preferQuote(existing, quote) : quote);
+  }
+
+  return [...standalone, ...byProject.values()];
+}
+
 export type QuoteItemLine = {
   id: string;
   category?: QuoteDraftItemCategory;
