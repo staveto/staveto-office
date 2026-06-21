@@ -101,9 +101,24 @@ export function getAdminApp(): App | null {
   return null;
 }
 
+let adminDbSettingsApplied = false;
+
 export function getAdminDb() {
   const app = getAdminApp();
-  return app ? getFirestore(app) : null;
+  if (!app) return null;
+  const db = getFirestore(app);
+  // Drop undefined values instead of throwing (AI classifier can emit sparse
+  // objects like `ai.extracted.systemYear`). Settings must be applied once,
+  // before the first read/write.
+  if (!adminDbSettingsApplied) {
+    try {
+      db.settings({ ignoreUndefinedProperties: true });
+    } catch {
+      /* settings already applied on this instance */
+    }
+    adminDbSettingsApplied = true;
+  }
+  return db;
 }
 
 export function getAdminAuth() {
