@@ -25,7 +25,8 @@ export type UserNotificationType =
   | "ABSENCE_APPROVED"
   | "INCOMING_EMAIL"
   | "PROBLEM_REPORTED"
-  | "PROBLEM_ASSIGNED";
+  | "PROBLEM_ASSIGNED"
+  | "FIELD_NOTE_SHARED";
 
 export type UserNotification = {
   id: string;

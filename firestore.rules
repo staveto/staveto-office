@@ -310,6 +310,24 @@ service cloud.firestore {
       }
     }
 
+    function fieldNoteCreateValid(orgId) {
+      return isSignedIn()
+        && request.resource.data.orgId == orgId
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.shareWithManager == true
+        && request.resource.data.status == 'open'
+        && (
+          isOrgMemberActive(orgId)
+          || (
+            request.resource.data.projectId is string
+            && request.resource.data.projectId != ''
+            && exists(/databases/$(database)/documents/projects/$(request.resource.data.projectId))
+            && projectData(request.resource.data.projectId).orgId == orgId
+            && canAccessProjectId(request.resource.data.projectId)
+          )
+        );
+    }
+
     match /organizations/{orgId} {
       allow read: if isOrgMember(orgId);
       allow create: if false;
@@ -326,6 +344,19 @@ service cloud.firestore {
         allow create, update, delete: if isSignedIn()
           && request.auth.uid == memberUid
           && isOrgMemberActive(orgId);
+      }
+
+      match /fieldNotes/{noteId} {
+        allow read: if isOrgMemberActive(orgId)
+          && (canManageOrganization(orgId) || resource.data.createdBy == request.auth.uid);
+        allow create: if fieldNoteCreateValid(orgId);
+        allow update: if isSignedIn() && isOrgMemberActive(orgId)
+          && resource.data.createdBy == request.auth.uid
+          && request.resource.data.orgId == resource.data.orgId
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.shareWithManager == true
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt', 'text']);
+        allow delete: if false;
       }
 
       match /members/{memberId} {
@@ -470,6 +501,14 @@ service cloud.firestore {
       match /phases/{phaseId} {
         allow read: if canAccessProjectId(projectId);
         allow write: if canManageProjectDoc();
+      }
+
+      // Site problems (mobile: projects/{projectId}/problems)
+      match /problems/{problemId} {
+        allow read: if canAccessProjectId(projectId);
+        allow create: if canAccessProjectId(projectId);
+        allow update: if canAccessProjectId(projectId) || canManageProjectDoc();
+        allow delete: if canManageProjectDoc();
       }
     }
 

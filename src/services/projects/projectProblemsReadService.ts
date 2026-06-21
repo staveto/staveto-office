@@ -37,8 +37,9 @@ export async function listProjectProblems(projectId: string): Promise<ProblemDoc
   const db = getFirestoreInstance();
   if (!db || !projectId) return [];
 
-  const snap = await getDocs(collection(db, "projects", projectId, "problems"));
-  return snap.docs.map((d) => {
+  try {
+    const snap = await getDocs(collection(db, "projects", projectId, "problems"));
+    return snap.docs.map((d) => {
     const data = d.data() as Record<string, unknown>;
     const photosRaw = Array.isArray(data.photos) ? data.photos : [];
     const photos: ProblemPhoto[] = photosRaw
@@ -61,6 +62,12 @@ export async function listProjectProblems(projectId: string): Promise<ProblemDoc
       photos,
     };
   });
+  } catch (e) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("[projectProblemsReadService] listProjectProblems failed:", projectId, e);
+    }
+    return [];
+  }
 }
 
 export async function listProblemsForProjects(projectIds: string[]): Promise<ProblemDoc[]> {

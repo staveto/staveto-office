@@ -1,13 +1,6 @@
 {
   "indexes": [
     {
-      "collectionGroup": "emailInquiries",
-      "queryScope": "COLLECTION_GROUP",
-      "fields": [
-        { "fieldPath": "lastMessageAt", "order": "DESCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "timeEntries",
       "queryScope": "COLLECTION",
       "fields": [
@@ -85,6 +78,15 @@
       "fields": [
         { "fieldPath": "orgId", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "fieldNotes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "shareWithManager", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     }
   ],

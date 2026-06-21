@@ -70,6 +70,12 @@ function notificationMessage(
         ? t("notifications.problemAssigned", { title })
         : t("notifications.problemAssignedGeneric");
     }
+    case "FIELD_NOTE_SHARED": {
+      const title = n.subject?.trim();
+      return title
+        ? t("notifications.fieldNoteShared", { title })
+        : t("notifications.fieldNoteSharedGeneric");
+    }
     case "INCOMING_EMAIL":
       return n.subject
         ? t("notifications.incomingEmail", { subject: n.subject })

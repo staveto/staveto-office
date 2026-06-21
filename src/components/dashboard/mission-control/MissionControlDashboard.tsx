@@ -182,6 +182,8 @@ export function MissionControlDashboard({
           photos={data.fieldProof.photos}
           docs={data.fieldProof.docs}
           openProblems={data.fieldProof.openProblems}
+          fieldNotes={data.fieldProof.fieldNotes}
+          latestFieldNotes={data.fieldProof.latestFieldNotes}
         />
       </div>
     </div>

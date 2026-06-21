@@ -28,6 +28,11 @@ import {
 import type { ProjectMemberRecord } from "@/services/projects/taskPlanningTypes";
 import { listProjectsForWorkspace } from "@/lib/projects";
 import { countOpenProblemsForProjects } from "@/services/projects/projectProblemsReadService";
+import {
+  canViewOrgSharedFieldNotes,
+  listOpenSharedFieldNotes,
+  type SharedFieldNotePreview,
+} from "@/services/operations/fieldNotesService";
 
 export type MissionControlAttentionItem = {
   id: string;
@@ -97,6 +102,8 @@ export type MissionControlFieldProof = {
   photos: number;
   docs: number;
   openProblems: number;
+  fieldNotes: number;
+  latestFieldNotes: SharedFieldNotePreview[];
 };
 
 export type MissionControlData = {
@@ -468,6 +475,20 @@ export async function fetchMissionControlData(
     () => 0
   );
 
+  const orgId = workspace.orgId ?? (workspace.type === "company" ? workspace.id : "");
+  const canViewFieldNotes = canViewOrgSharedFieldNotes(workspace.role);
+  let sharedFieldNotes: SharedFieldNotePreview[] = [];
+  if (orgId && canViewFieldNotes) {
+    try {
+      sharedFieldNotes = await listOpenSharedFieldNotes(orgId);
+    } catch (e) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[missionControlData] listOpenSharedFieldNotes failed:", orgId, e);
+      }
+      sharedFieldNotes = [];
+    }
+  }
+
   const attention = buildAttention(planning, stats, taskMetrics, openProblems);
   const daysWithEvents = [
     ...new Set([
@@ -482,7 +503,13 @@ export async function fetchMissionControlData(
     kpis: buildKpis(planning, stats, taskMetrics),
     attention,
     notifications: buildNotifications(attention),
-    fieldProof: { photos: 0, docs: 0, openProblems },
+    fieldProof: {
+      photos: 0,
+      docs: 0,
+      openProblems,
+      fieldNotes: sharedFieldNotes.length,
+      latestFieldNotes: sharedFieldNotes.slice(0, 2),
+    },
     todayRows: buildTodayRows(planning, taskDocs, todayIso),
     agendaGroups: buildAgendaGroups(planning, taskDocs, weekStart, todayIso),
     team: buildTeamRows(planning),
