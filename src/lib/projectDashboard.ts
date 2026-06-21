@@ -184,6 +184,110 @@ export function getNextStepKey(project: ProjectDoc): string {
   return "projects.dashboard.nextStep.reviewProject";
 }
 
+/**
+ * True when the job is still in the sales phase with an unsent quote draft.
+ * In this state the delivery phase map (Diagnose → …) must NOT look like the
+ * primary next action — the quote must be sent first.
+ */
+export function isBlockedByUnsentQuote(project: ProjectDoc): boolean {
+  const phase = normalizeProjectPhase(project);
+  const qs = project.quoteStatus ?? "none";
+  return phase !== "delivery" && (qs === "draft" || qs === "ready");
+}
+
+export type NextActionTone = "neutral" | "attention" | "positive";
+
+export type NextActionContent = {
+  /** Short status line (attention-colored), describes current state in words. */
+  statusKey: string;
+  /** Optional small status badge label; null when no badge. */
+  badgeKey: string | null;
+  badgeTone: NextActionTone;
+  /** Optional explicit block reason line. */
+  blockReasonKey: string | null;
+  /** Concrete operational description of what to do next. */
+  descriptionKey: string;
+};
+
+/**
+ * Resolves the human-readable status / block reason / description for the
+ * "Next step" card. Mirrors the same state machine as {@link getDashboardActions}
+ * so the copy always matches the offered actions (e.g. quote draft → quote actions).
+ */
+export function getNextActionContent(project: ProjectDoc): NextActionContent {
+  const phase = normalizeProjectPhase(project);
+  const qs = project.quoteStatus ?? "none";
+  const ss = project.salesStatus;
+  const ls = normalizeLifecycleStatus(project);
+
+  if (phase === "delivery") {
+    if (ls === "completed") {
+      return {
+        statusKey: "projects.dashboard.next.status.completed",
+        badgeKey: null,
+        badgeTone: "positive",
+        blockReasonKey: null,
+        descriptionKey: "projects.dashboard.next.desc.completed",
+      };
+    }
+    return {
+      statusKey: "projects.dashboard.next.status.delivery",
+      badgeKey: "projects.dashboard.next.badge.active",
+      badgeTone: "positive",
+      blockReasonKey: null,
+      descriptionKey: "projects.dashboard.next.desc.delivery",
+    };
+  }
+
+  if (ss === "accepted" || ls === "accepted") {
+    return {
+      statusKey: "projects.dashboard.next.status.accepted",
+      badgeKey: "projects.dashboard.next.badge.ready",
+      badgeTone: "positive",
+      blockReasonKey: null,
+      descriptionKey: "projects.dashboard.next.desc.accepted",
+    };
+  }
+
+  if (qs === "sent" || ss === "quote_sent") {
+    return {
+      statusKey: "projects.dashboard.next.status.quoteSent",
+      badgeKey: "projects.dashboard.next.badge.waiting",
+      badgeTone: "attention",
+      blockReasonKey: null,
+      descriptionKey: "projects.dashboard.next.desc.quoteSent",
+    };
+  }
+
+  if (qs === "draft" || qs === "ready") {
+    return {
+      statusKey: "projects.dashboard.next.status.quoteDraft",
+      badgeKey: "projects.dashboard.next.badge.blocked",
+      badgeTone: "attention",
+      blockReasonKey: "projects.dashboard.next.block.quoteNotSent",
+      descriptionKey: "projects.dashboard.next.desc.quoteDraft",
+    };
+  }
+
+  if (ls === "needs_customer_input" || ss === "waiting_for_customer") {
+    return {
+      statusKey: "projects.dashboard.next.status.waiting",
+      badgeKey: "projects.dashboard.next.badge.waiting",
+      badgeTone: "attention",
+      blockReasonKey: null,
+      descriptionKey: "projects.dashboard.next.desc.waiting",
+    };
+  }
+
+  return {
+    statusKey: "projects.dashboard.next.status.noQuote",
+    badgeKey: "projects.dashboard.next.badge.salesPhase",
+    badgeTone: "neutral",
+    blockReasonKey: null,
+    descriptionKey: "projects.dashboard.next.desc.noQuote",
+  };
+}
+
 export function getPrimaryActionSubtextKey(project: ProjectDoc): string | null {
   const phase = normalizeProjectPhase(project);
   const qs = project.quoteStatus ?? "none";

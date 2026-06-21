@@ -149,7 +149,7 @@ export function ProjectActionsMenu({
   };
 
   const menuItemClass =
-    "w-full text-left px-3 py-2 text-sm hover:bg-muted rounded-md disabled:opacity-50 disabled:pointer-events-none";
+    "w-full text-left px-3 py-2 text-sm rounded-md text-[#0F172A] hover:bg-[#F1F5F9] dark:text-[#F8FAFC] dark:hover:bg-[#243247] disabled:opacity-50 disabled:pointer-events-none";
 
   return (
     <div className="relative" ref={menuRef}>
@@ -169,7 +169,7 @@ export function ProjectActionsMenu({
 
       {menuOpen ? (
         <div
-          className="absolute right-0 z-50 mt-1 min-w-[12rem] rounded-lg border border-border bg-background p-1 shadow-md"
+          className="absolute right-0 z-50 mt-1 min-w-[12rem] rounded-lg border border-[#D8E1EA] bg-white p-1 shadow-lg dark:border-[#334155] dark:bg-[#1E293B]"
           role="menu"
         >
           <button type="button" className={menuItemClass} onClick={openEdit}>
@@ -267,7 +267,10 @@ export function ProjectActionsMenu({
           {canDelete ? (
             <button
               type="button"
-              className={cn(menuItemClass, "text-destructive hover:bg-destructive/10")}
+              className={cn(
+                menuItemClass,
+                "text-red-600 hover:bg-red-50 dark:text-[#F87171] dark:hover:bg-red-500/10"
+              )}
               disabled={busy}
               onClick={() => {
                 setMenuOpen(false);

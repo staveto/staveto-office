@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronRight } from "lucide-react";
+import { Check, ChevronRight, Clock } from "lucide-react";
 import type { PhaseMetric, ProjectPhaseMetrics } from "@/lib/projectPhaseMetrics";
 import type { ProjectOverviewPhaseStatus } from "@/lib/projectOverviewViewModel";
 import { useI18n } from "@/i18n/I18nContext";
@@ -10,6 +10,11 @@ type Props = {
   metrics: ProjectPhaseMetrics;
   compact?: boolean;
   phaseStatuses?: Array<{ id: string; status: ProjectOverviewPhaseStatus }>;
+  /**
+   * When true the job is blocked by an unsent quote: phases are shown as
+   * waiting/secondary (no "current" highlight) plus an explanatory note.
+   */
+  waitingForQuote?: boolean;
 };
 
 function phaseLabel(
@@ -36,21 +41,29 @@ function PhaseStep({
   status,
   t,
   isLast,
+  waiting,
 }: {
   phase: PhaseMetric;
   compact: boolean;
   status: ProjectOverviewPhaseStatus;
   t: (key: string, params?: Record<string, string | number>) => string;
   isLast: boolean;
+  waiting?: boolean;
 }) {
+  // While the job is blocked by an unsent quote, demote the "current" phase to
+  // a neutral "waiting" treatment so it never looks like the primary action.
+  const demoted = waiting && status === "current";
   return (
     <div className="flex min-w-0 flex-1 items-stretch gap-0">
       <div
         className={cn(
           "flex min-w-0 flex-1 flex-col gap-1.5 rounded-lg border px-3 py-2.5 transition-colors",
           compact ? "min-w-[130px]" : "min-w-[160px]",
-          status === "current" &&
+          !demoted &&
+            status === "current" &&
             "border-[var(--po-primary)]/60 bg-[var(--po-card-bg-elevated)] shadow-sm ring-1 ring-[var(--po-primary)]/25",
+          demoted &&
+            "border-[var(--po-card-border)] bg-[var(--po-card-muted)]",
           status === "done" &&
             "border-emerald-500/35 bg-emerald-500/10 dark:bg-emerald-500/15",
           status === "blocked" &&
@@ -70,6 +83,11 @@ function PhaseStep({
           </span>
           {status === "done" ? (
             <Check className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+          ) : demoted ? (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded bg-[var(--po-card-bg-elevated)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[var(--po-text-muted)]">
+              <Clock className="size-2.5" aria-hidden />
+              {t("projects.phaseWorkflow.waiting")}
+            </span>
           ) : status === "current" ? (
             <span className="shrink-0 rounded bg-[var(--po-primary)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
               {t("projects.phaseWorkflow.current")}
@@ -85,7 +103,8 @@ function PhaseStep({
           <div
             className={cn(
               "h-full rounded-full transition-all",
-              status === "current" && "bg-[var(--po-primary)]",
+              !demoted && status === "current" && "bg-[var(--po-primary)]",
+              demoted && "bg-[var(--po-text-muted)]/40",
               status === "done" && "bg-emerald-500",
               status === "blocked" && "bg-red-500",
               status === "not_started" && "bg-[var(--po-text-muted)]/40"
@@ -115,7 +134,12 @@ function PhaseStep({
   );
 }
 
-export function ProjectPhaseWorkflow({ metrics, compact = false, phaseStatuses }: Props) {
+export function ProjectPhaseWorkflow({
+  metrics,
+  compact = false,
+  phaseStatuses,
+  waitingForQuote = false,
+}: Props) {
   const { t } = useI18n();
 
   if (metrics.phases.length === 0) {
@@ -133,6 +157,12 @@ export function ProjectPhaseWorkflow({ metrics, compact = false, phaseStatuses }
         compact && "border-0 bg-transparent p-0 shadow-none"
       )}
     >
+      {waitingForQuote ? (
+        <p className="mb-2 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--po-text-muted)]">
+          <Clock className="size-3.5" aria-hidden />
+          {t("projects.phaseWorkflow.waitingForQuote")}
+        </p>
+      ) : null}
       <div className="flex items-stretch gap-1 overflow-x-auto pb-1">
         {metrics.phases.map((phase, index) => (
           <PhaseStep
@@ -142,6 +172,7 @@ export function ProjectPhaseWorkflow({ metrics, compact = false, phaseStatuses }
             status={resolveStatus(phase, phaseStatuses)}
             t={t}
             isLast={index === metrics.phases.length - 1}
+            waiting={waitingForQuote}
           />
         ))}
       </div>

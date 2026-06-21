@@ -10,7 +10,10 @@ import {
   listProjectTasks,
 } from "@/lib/projects";
 import type { QuoteDraftItemDoc } from "@/lib/quoteDraftItems";
-import type { ProjectDashboardTab } from "@/lib/projectDashboard";
+import {
+  isBlockedByUnsentQuote,
+  type ProjectDashboardTab,
+} from "@/lib/projectDashboard";
 import { listProjectDocuments, type ProjectDocumentRecord } from "@/services/projects/projectDocuments";
 import { importAiWizardAttachmentsToProjectDetailed } from "@/services/projects/projectAiAttachmentsService";
 import { useWorkspace } from "@/context/WorkspaceContext";
@@ -286,7 +289,11 @@ export function ProjectDashboard({
 
       {phaseMetrics.phases.length > 0 ? (
         <div className="order-3 lg:order-2">
-          <ProjectPhaseWorkflow metrics={phaseMetrics} phaseStatuses={overviewVm?.phases} />
+          <ProjectPhaseWorkflow
+            metrics={phaseMetrics}
+            phaseStatuses={overviewVm?.phases}
+            waitingForQuote={isBlockedByUnsentQuote(project)}
+          />
         </div>
       ) : null}
 
