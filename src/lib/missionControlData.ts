@@ -30,7 +30,8 @@ import { listProjectsForWorkspace } from "@/lib/projects";
 import { countOpenProblemsForProjects } from "@/services/projects/projectProblemsReadService";
 import {
   canViewOrgSharedFieldNotes,
-  listOpenSharedFieldNotes,
+  collectProjectOrgIds,
+  fetchSharedFieldNotesForDashboard,
   type SharedFieldNotePreview,
 } from "@/services/operations/fieldNotesService";
 
@@ -479,11 +480,12 @@ export async function fetchMissionControlData(
   const canViewFieldNotes = canViewOrgSharedFieldNotes(workspace.role);
   let sharedFieldNotes: SharedFieldNotePreview[] = [];
   if (orgId && canViewFieldNotes) {
+    const extraOrgIds = collectProjectOrgIds(workspaceProjects);
     try {
-      sharedFieldNotes = await listOpenSharedFieldNotes(orgId);
+      sharedFieldNotes = await fetchSharedFieldNotesForDashboard(orgId, extraOrgIds);
     } catch (e) {
       if (process.env.NODE_ENV === "development") {
-        console.warn("[missionControlData] listOpenSharedFieldNotes failed:", orgId, e);
+        console.warn("[missionControlData] fetchSharedFieldNotesForDashboard failed:", orgId, e);
       }
       sharedFieldNotes = [];
     }

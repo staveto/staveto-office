@@ -7,6 +7,7 @@ import {
   limit,
   getDocs,
 } from "@/lib/firebase";
+import { waitForAuthUser } from "@/lib/firebase";
 
 export type SharedFieldNotePreview = {
   id: string;
@@ -32,7 +33,7 @@ function toIso(raw: unknown): string {
 function mapDoc(id: string, data: Record<string, unknown>): SharedFieldNotePreview | null {
   const text = typeof data.text === "string" ? data.text.trim() : "";
   if (!text) return null;
-  const createdAt = toIso(data.createdAt);
+  const createdAt = toIso(data.createdAt) || toIso(data.updatedAt);
   if (!createdAt) return null;
   return {
     id,
@@ -42,6 +43,32 @@ function mapDoc(id: string, data: Record<string, unknown>): SharedFieldNotePrevi
     projectId: typeof data.projectId === "string" ? data.projectId : null,
     projectName: typeof data.projectName === "string" ? data.projectName : null,
   };
+}
+
+function dedupeNotes(rows: SharedFieldNotePreview[]): SharedFieldNotePreview[] {
+  const byId = new Map<string, SharedFieldNotePreview>();
+  for (const row of rows) {
+    byId.set(row.id, row);
+  }
+  return [...byId.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+async function fetchSharedFieldNotesViaApi(orgId: string): Promise<SharedFieldNotePreview[]> {
+  const user = await waitForAuthUser();
+  if (!user) return [];
+  const token = await user.getIdToken();
+  const res = await fetch(`/api/operations/field-notes?orgId=${encodeURIComponent(orgId.trim())}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    if (process.env.NODE_ENV === "development") {
+      const body = await res.json().catch(() => ({}));
+      console.warn("[fieldNotesService] API fetch failed:", orgId, res.status, body);
+    }
+    return [];
+  }
+  const data = (await res.json()) as { notes?: SharedFieldNotePreview[] };
+  return data.notes ?? [];
 }
 
 /** Open shared field notes for org managers (newest first). */
@@ -66,6 +93,16 @@ export async function listOpenSharedFieldNotes(
     items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     return items.slice(0, max);
   };
+
+  try {
+    const snap = await getDocs(ref);
+    const rows = mapSnap(snap.docs);
+    if (rows.length > 0) return rows;
+  } catch (e) {
+    if (process.env.NODE_ENV === "development") {
+      console.warn("[fieldNotesService] collection read failed:", e);
+    }
+  }
 
   const q = query(
     ref,
@@ -95,20 +132,55 @@ export async function listOpenSharedFieldNotes(
         return mapSnap(snap.docs);
       } catch (e3) {
         if (process.env.NODE_ENV === "development") {
-          console.warn("[fieldNotesService] listOpenSharedFieldNotes failed:", e3);
+          console.warn("[fieldNotesService] client read failed, trying API:", e3);
         }
-        return [];
+        return fetchSharedFieldNotesViaApi(orgId);
       }
     }
   }
 }
 
+/** Dashboard loader: client Firestore first, API/admin fallback, multiple org ids. */
+export async function fetchSharedFieldNotesForDashboard(
+  primaryOrgId: string,
+  extraOrgIds: string[] = []
+): Promise<SharedFieldNotePreview[]> {
+  const orgIds = [...new Set([primaryOrgId.trim(), ...extraOrgIds.map((id) => id.trim())].filter(Boolean))];
+  if (orgIds.length === 0) return [];
+
+  const merged: SharedFieldNotePreview[] = [];
+  for (const orgId of orgIds) {
+    let rows = await listOpenSharedFieldNotes(orgId).catch(() => [] as SharedFieldNotePreview[]);
+    if (rows.length === 0) {
+      rows = await fetchSharedFieldNotesViaApi(orgId).catch(() => []);
+    }
+    merged.push(...rows);
+  }
+  return dedupeNotes(merged);
+}
+
 export function canViewOrgSharedFieldNotes(role: string | undefined): boolean {
-  return role === "owner" || role === "admin" || role === "manager";
+  return (
+    role === "owner" ||
+    role === "admin" ||
+    role === "manager" ||
+    role === "accountant"
+  );
 }
 
 export function snippetFieldNoteText(text: string, maxLen = 120): string {
   const t = text.trim().replace(/\s+/g, " ");
   if (t.length <= maxLen) return t;
   return `${t.slice(0, maxLen - 1)}…`;
+}
+
+export function collectProjectOrgIds(
+  projects: Array<{ orgId?: string | null; workspaceId?: string | null }>
+): string[] {
+  const ids = new Set<string>();
+  for (const p of projects) {
+    const orgId = p.orgId?.trim() || p.workspaceId?.trim();
+    if (orgId) ids.add(orgId);
+  }
+  return [...ids];
 }

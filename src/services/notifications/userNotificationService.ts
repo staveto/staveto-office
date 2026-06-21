@@ -321,6 +321,11 @@ export function getNotificationProjectHref(notification: UserNotification): stri
   if (notification.type === "PROJECT_INVITED") {
     return "/app/settings#project-invites";
   }
+  if (notification.type === "FIELD_NOTE_SHARED") {
+    return notification.projectId
+      ? `/app/projects/${notification.projectId}`
+      : "/app";
+  }
   if (!notification.projectId) return null;
   return `/app/projects/${notification.projectId}`;
 }

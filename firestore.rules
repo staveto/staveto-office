@@ -242,6 +242,65 @@ service cloud.firestore {
       );
     }
 
+    function isAssignedOnProject(projectId) {
+      let p = projectData(projectId);
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/projects/$(projectId))
+        && (
+          (
+            'assignedMemberIds' in p
+            && p.assignedMemberIds is list
+            && p.assignedMemberIds.hasAny([request.auth.uid])
+          )
+          || (
+            exists(/databases/$(database)/documents/projects/$(projectId)/members/$(request.auth.uid))
+            && (
+              !('status' in get(/databases/$(database)/documents/projects/$(projectId)/members/$(request.auth.uid)).data)
+              || get(/databases/$(database)/documents/projects/$(projectId)/members/$(request.auth.uid)).data.status == 'active'
+            )
+          )
+        );
+    }
+
+    function canPublishFieldNote(projectId, orgId) {
+      return isOrgMember(orgId)
+        || (
+          projectId is string
+          && projectId != ''
+          && exists(/databases/$(database)/documents/projects/$(projectId))
+          && projectData(projectId).orgId == orgId
+          && isAssignedOnProject(projectId)
+        );
+    }
+
+    function memberFieldNoteNotificationCreateAllowed() {
+      let oid = request.resource.data.orgId;
+      let pid = request.resource.data.get('projectId', null);
+      return request.resource.data.fromUserId == request.auth.uid
+        && oid is string
+        && oid.size() > 0
+        && request.resource.data.type == 'FIELD_NOTE_SHARED'
+        && request.resource.data.userId != request.auth.uid
+        && (
+          isOrgMember(oid)
+          || (pid is string && pid != '' && canPublishFieldNote(pid, oid))
+        );
+    }
+
+    function memberFieldNoteOfficeNotificationCreateAllowed(targetUserId) {
+      let oid = request.resource.data.orgId;
+      let pid = request.resource.data.get('projectId', null);
+      return request.resource.data.assignedBy == request.auth.uid
+        && oid is string
+        && oid.size() > 0
+        && request.resource.data.type == 'FIELD_NOTE_SHARED'
+        && targetUserId != request.auth.uid
+        && (
+          isOrgMember(oid)
+          || (pid is string && pid != '' && canPublishFieldNote(pid, oid))
+        );
+    }
+
     function canAccessWorkspace(workspaceId) {
       return isSignedIn() && (
         workspaceId == request.auth.uid
@@ -266,6 +325,26 @@ service cloud.firestore {
     function inviteeEmailMatches() {
       return request.auth.token.email != null
         && resource.data.emailLower == request.auth.token.email.lower();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn() && (
+        !exists(/databases/$(database)/documents/notifications/$(notificationId))
+        || request.auth.uid == resource.data.userId
+      );
+      allow create: if isSignedIn() && (
+        request.auth.uid == request.resource.data.userId
+        || (
+          request.resource.data.fromUserId == request.auth.uid
+          && request.resource.data.orgId != null
+          && canManageOrganization(request.resource.data.orgId)
+        )
+        || memberFieldNoteNotificationCreateAllowed()
+      );
+      allow update: if isSignedIn()
+        && request.auth.uid == resource.data.userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt']);
+      allow delete: if false;
     }
 
     match /users/{userId} {
@@ -294,6 +373,7 @@ service cloud.firestore {
               && request.resource.data.orgId != null
               && canManageOrganization(request.resource.data.orgId)
             )
+            || memberFieldNoteOfficeNotificationCreateAllowed(userId)
           );
         allow update: if isSignedIn()
           && request.auth.uid == userId
@@ -311,21 +391,13 @@ service cloud.firestore {
     }
 
     function fieldNoteCreateValid(orgId) {
+      let pid = request.resource.data.get('projectId', null);
       return isSignedIn()
         && request.resource.data.orgId == orgId
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.shareWithManager == true
         && request.resource.data.status == 'open'
-        && (
-          isOrgMemberActive(orgId)
-          || (
-            request.resource.data.projectId is string
-            && request.resource.data.projectId != ''
-            && exists(/databases/$(database)/documents/projects/$(request.resource.data.projectId))
-            && projectData(request.resource.data.projectId).orgId == orgId
-            && canAccessProjectId(request.resource.data.projectId)
-          )
-        );
+        && canPublishFieldNote(pid, orgId);
     }
 
     match /organizations/{orgId} {
@@ -347,8 +419,8 @@ service cloud.firestore {
       }
 
       match /fieldNotes/{noteId} {
-        allow read: if isOrgMemberActive(orgId)
-          && (canManageOrganization(orgId) || resource.data.createdBy == request.auth.uid);
+        allow read: if isOrgMember(orgId)
+          && (canViewOrgOperations(orgId) || resource.data.createdBy == request.auth.uid);
         allow create: if fieldNoteCreateValid(orgId);
         allow update: if isSignedIn() && isOrgMemberActive(orgId)
           && resource.data.createdBy == request.auth.uid
