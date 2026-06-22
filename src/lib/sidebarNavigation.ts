@@ -7,6 +7,7 @@ import {
   Settings,
   CalendarDays,
   Wrench,
+  FileText,
 } from "lucide-react";
 import type { EnabledModulesMap, ModuleKey } from "@/lib/enabledModules";
 import { isModuleEnabled } from "@/lib/enabledModules";
@@ -109,15 +110,33 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
         managementOnly: true,
       },
       {
+        id: "planning-gantt",
+        labelKey: "sidebar.item.planning.gantt",
+        href: "/app/planning/gantt",
+        managementOnly: true,
+      },
+      {
+        id: "planning-team",
+        labelKey: "sidebar.item.planning.team",
+        comingSoon: true,
+        managementOnly: true,
+      },
+      {
+        id: "planning-unplanned",
+        labelKey: "sidebar.item.planning.unplanned",
+        comingSoon: true,
+        managementOnly: true,
+      },
+      {
         id: "planning-operations",
         labelKey: "sidebar.item.planning.operations",
         href: "/app/operations",
         managementOnly: true,
       },
       {
-        id: "planning-gantt",
-        labelKey: "sidebar.item.planning.gantt",
-        href: "/app/planning/gantt",
+        id: "planning-reports",
+        labelKey: "sidebar.item.planning.reports",
+        comingSoon: true,
         managementOnly: true,
       },
     ],
@@ -162,6 +181,30 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
         comingSoon: true,
         managementOnly: true,
         moduleKey: "reports",
+      },
+    ],
+  },
+  {
+    id: "documents",
+    labelKey: "sidebar.section.documents",
+    icon: FileText,
+    defaultHref: "/app/documents",
+    items: [
+      {
+        id: "documents-all",
+        labelKey: "sidebar.item.documents.all",
+        href: "/app/documents",
+      },
+      {
+        id: "documents-photos",
+        labelKey: "sidebar.item.documents.photos",
+        href: "/app/documents/photos",
+      },
+      {
+        id: "documents-contracts",
+        labelKey: "sidebar.item.documents.contracts",
+        comingSoon: true,
+        hideForFieldWorker: true,
       },
     ],
   },
@@ -259,12 +302,10 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
   },
 ];
 
-/** Quiet “Demnächst” items — documents & customers not yet in main modules. */
+/** Quiet “Demnächst” items — customers & contracts not yet in main modules. */
 export const SIDEBAR_LATER_ITEMS: NavItemConfig[] = [
   { id: "later-customers", labelKey: "sidebar.item.more.customers", comingSoon: true },
-  { id: "later-documents-all", labelKey: "sidebar.item.documents.all", comingSoon: true, moduleKey: "documents" },
-  { id: "later-documents-photos", labelKey: "sidebar.item.documents.photos", comingSoon: true, moduleKey: "documents" },
-  { id: "later-documents-contracts", labelKey: "sidebar.item.documents.contracts", comingSoon: true, moduleKey: "documents" },
+  { id: "later-documents-contracts", labelKey: "sidebar.item.documents.contracts", comingSoon: true },
 ];
 
 function parseHref(href: string): { path: string; query: URLSearchParams } {

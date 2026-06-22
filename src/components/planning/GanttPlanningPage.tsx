@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { ChevronDown, ChevronRight, Lightbulb, Loader2 } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronRight, Lightbulb, Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -71,6 +71,10 @@ function formatGanttRange(startYmd?: string, endYmd?: string): string | undefine
   return `${fmt(startYmd)} – ${fmt(endYmd)}`;
 }
 
+const GANTT_ZOOM_MIN = 0.5;
+const GANTT_ZOOM_MAX = 3;
+const GANTT_ZOOM_STEP = 0.25;
+
 type DragKind = "task" | "phase";
 
 type DragState = {
@@ -80,6 +84,12 @@ type DragState = {
   phaseId?: string;
   startX: number;
   offsetPx: number;
+  /** Base schedule of the dragged bar — used to preview the target date live. */
+  baseStartYmd?: string;
+  baseEndYmd?: string;
+  /** Latest pointer position (viewport coords) to anchor the date indicator. */
+  pointerX: number;
+  pointerY: number;
 };
 
 type ResizeState = {
@@ -90,6 +100,8 @@ type ResizeState = {
   offsetPx: number;
   startYmd: string;
   endYmd: string;
+  pointerX: number;
+  pointerY: number;
 };
 
 export function GanttPlanningPage() {
@@ -186,6 +198,22 @@ export function GanttPlanningPage() {
     setChartAreaWidth(el.getBoundingClientRect().width);
     return () => ro.disconnect();
   }, [loading, chartExpanded]);
+
+  // Ctrl/⌘ + wheel zooms the timeline (native listener so preventDefault works).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      setZoom((z) => {
+        const next = z + (e.deltaY < 0 ? GANTT_ZOOM_STEP : -GANTT_ZOOM_STEP);
+        return Math.min(GANTT_ZOOM_MAX, Math.max(GANTT_ZOOM_MIN, +next.toFixed(2)));
+      });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [loading]);
 
   const filteredProjects = useMemo(() => {
     if (!data) return [];
@@ -389,6 +417,28 @@ export function GanttPlanningPage() {
     }));
   }, [data, filters.projectId, t]);
 
+  /** Live target-date preview shown next to the cursor while dragging / resizing a bar. */
+  const dragIndicator = useMemo(() => {
+    const dayW = timeline.dayWidthPx;
+    if (resize) {
+      const delta = Math.round(resize.offsetPx / dayW);
+      const base = resize.edge === "start" ? resize.startYmd : resize.endYmd;
+      const moved = toIsoDateLocal(addDays(parseIsoDateLocal(base), delta));
+      const s = resize.edge === "start" ? moved : resize.startYmd;
+      const e = resize.edge === "start" ? resize.endYmd : moved;
+      return { label: formatGanttRange(s, e) ?? "", delta, x: resize.pointerX, y: resize.pointerY };
+    }
+    if (drag && drag.baseStartYmd) {
+      const delta = Math.round(drag.offsetPx / dayW);
+      const ns = toIsoDateLocal(addDays(parseIsoDateLocal(drag.baseStartYmd), delta));
+      const ne = drag.baseEndYmd
+        ? toIsoDateLocal(addDays(parseIsoDateLocal(drag.baseEndYmd), delta))
+        : ns;
+      return { label: formatGanttRange(ns, ne) ?? "", delta, x: drag.pointerX, y: drag.pointerY };
+    }
+    return null;
+  }, [drag, resize, timeline.dayWidthPx]);
+
   const dragSessionKey = drag
     ? `${drag.kind}:${drag.projectId}:${drag.taskId ?? ""}:${drag.phaseId ?? ""}`
     : null;
@@ -404,7 +454,15 @@ export function GanttPlanningPage() {
     const onMove = (e: MouseEvent) => {
       const current = scheduleDragRef.current;
       if (!current) return;
-      const next = { ...current, offsetPx: e.clientX - current.startX };
+      // Snap to whole-day steps so the bar moves predictably day-by-day.
+      const raw = e.clientX - current.startX;
+      const snapped = Math.round(raw / timeline.dayWidthPx) * timeline.dayWidthPx;
+      const next = {
+        ...current,
+        offsetPx: snapped,
+        pointerX: e.clientX,
+        pointerY: e.clientY,
+      };
       scheduleDragRef.current = next;
       setDrag(next);
     };
@@ -461,7 +519,14 @@ export function GanttPlanningPage() {
     const onMove = (e: MouseEvent) => {
       const current = scheduleResizeRef.current;
       if (!current) return;
-      const next = { ...current, offsetPx: e.clientX - current.startX };
+      const raw = e.clientX - current.startX;
+      const snapped = Math.round(raw / timeline.dayWidthPx) * timeline.dayWidthPx;
+      const next = {
+        ...current,
+        offsetPx: snapped,
+        pointerX: e.clientX,
+        pointerY: e.clientY,
+      };
       scheduleResizeRef.current = next;
       setResize(next);
     };
@@ -629,8 +694,10 @@ export function GanttPlanningPage() {
         selectedProjectId={filters.projectId}
         canEdit={data?.canEdit ?? false}
         onToday={scrollToToday}
-        onZoomIn={() => setZoom((z) => Math.min(2, z + 0.15))}
-        onZoomOut={() => setZoom((z) => Math.max(0.6, z - 0.15))}
+        zoom={zoom}
+        onZoomIn={() => setZoom((z) => Math.min(GANTT_ZOOM_MAX, +(z + GANTT_ZOOM_STEP).toFixed(2)))}
+        onZoomOut={() => setZoom((z) => Math.max(GANTT_ZOOM_MIN, +(z - GANTT_ZOOM_STEP).toFixed(2)))}
+        onZoomReset={() => setZoom(1)}
         onAutoSchedule={() => void handleAutoSchedule()}
         onPrev={() => setAnchor((d) => addDays(d, viewMode === "week" ? -7 : viewMode === "month" ? -30 : -90))}
         onNext={() => setAnchor((d) => addDays(d, viewMode === "week" ? 7 : viewMode === "month" ? 30 : 90))}
@@ -715,7 +782,7 @@ export function GanttPlanningPage() {
                     onToggleCollapse={toggleCollapse}
                     canEdit={data?.canEdit ?? false}
                     drag={drag}
-                    onTaskDragStart={(projectId, taskId, e) => {
+                    onTaskDragStart={(projectId, taskId, startYmd, endYmd, e) => {
                       if (!data?.canEdit) return;
                       e.preventDefault();
                       e.stopPropagation();
@@ -725,11 +792,15 @@ export function GanttPlanningPage() {
                         taskId,
                         startX: e.clientX,
                         offsetPx: 0,
+                        baseStartYmd: startYmd,
+                        baseEndYmd: endYmd,
+                        pointerX: e.clientX,
+                        pointerY: e.clientY,
                       };
                       scheduleDragRef.current = state;
                       setDrag(state);
                     }}
-                    onPhaseDragStart={(projectId, phaseId, e) => {
+                    onPhaseDragStart={(projectId, phaseId, startYmd, endYmd, e) => {
                       if (!data?.canEdit) return;
                       e.preventDefault();
                       e.stopPropagation();
@@ -739,6 +810,10 @@ export function GanttPlanningPage() {
                         phaseId,
                         startX: e.clientX,
                         offsetPx: 0,
+                        baseStartYmd: startYmd,
+                        baseEndYmd: endYmd,
+                        pointerX: e.clientX,
+                        pointerY: e.clientY,
                       };
                       scheduleDragRef.current = state;
                       setDrag(state);
@@ -766,6 +841,8 @@ export function GanttPlanningPage() {
                         offsetPx: 0,
                         startYmd,
                         endYmd,
+                        pointerX: e.clientX,
+                        pointerY: e.clientY,
                       };
                       scheduleResizeRef.current = state;
                       setResize(state);
@@ -840,6 +917,16 @@ export function GanttPlanningPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {dragIndicator ? (
+        <DragDateBadge
+          label={dragIndicator.label}
+          delta={dragIndicator.delta}
+          x={dragIndicator.x}
+          y={dragIndicator.y}
+          t={t}
+        />
+      ) : null}
     </div>
   );
 
@@ -848,6 +935,34 @@ export function GanttPlanningPage() {
   }
 
   return shell;
+}
+
+function DragDateBadge({
+  label,
+  delta,
+  x,
+  y,
+  t,
+}: {
+  label: string;
+  delta: number;
+  x: number;
+  y: number;
+  t: (key: string, params?: Record<string, string | number>) => string;
+}) {
+  if (typeof document === "undefined") return null;
+  const deltaLabel =
+    delta === 0
+      ? t("gantt.dragNoChange")
+      : `${delta > 0 ? "+" : "−"}${Math.abs(delta)} ${t("gantt.daysShort")}`;
+  return createPortal(
+    <div className={styles.dragDateBadge} style={{ left: x, top: y }} role="status" aria-live="polite">
+      <CalendarDays className="size-3.5 shrink-0" aria-hidden />
+      <span className={styles.dragDateBadgeMain}>{label}</span>
+      <span className={styles.dragDateBadgeDelta}>{deltaLabel}</span>
+    </div>,
+    document.body
+  );
 }
 
 function DroppableRow({
@@ -930,8 +1045,20 @@ function GanttProjectRows({
   onToggleCollapse: (key: string) => void;
   canEdit: boolean;
   drag: DragState | null;
-  onTaskDragStart: (projectId: string, taskId: string, e: React.MouseEvent) => void;
-  onPhaseDragStart: (projectId: string, phaseId: string, e: React.MouseEvent) => void;
+  onTaskDragStart: (
+    projectId: string,
+    taskId: string,
+    startYmd: string | undefined,
+    endYmd: string | undefined,
+    e: React.MouseEvent
+  ) => void;
+  onPhaseDragStart: (
+    projectId: string,
+    phaseId: string,
+    startYmd: string | undefined,
+    endYmd: string | undefined,
+    e: React.MouseEvent
+  ) => void;
   onScheduleTask: (projectId: string, taskId: string, startYmd: string) => void;
   onTaskResizeStart: (
     projectId: string,
@@ -1037,7 +1164,9 @@ function GanttProjectRows({
                       canEdit={canEdit}
                       dragOffsetPx={phaseDrag}
                       isDragging={phaseDrag !== 0}
-                      onDragStart={(e) => onPhaseDragStart(project.id, phase.id, e)}
+                      onDragStart={(e) =>
+                        onPhaseDragStart(project.id, phase.id, phase.startYmd, phase.endYmd, e)
+                      }
                       tooltipData={{
                         title: phaseName,
                         dateRange: formatGanttRange(phase.startYmd, phase.endYmd),
@@ -1105,7 +1234,9 @@ function GanttProjectRows({
                               resizeEdge={taskResize?.edge ?? null}
                               resizeOffsetPx={taskResize?.offsetPx ?? 0}
                               isResizing={!!taskResize}
-                              onDragStart={(e) => onTaskDragStart(project.id, task.id, e)}
+                              onDragStart={(e) =>
+                                onTaskDragStart(project.id, task.id, task.startYmd, task.endYmd, e)
+                              }
                               onResizeStart={(edge, e) => {
                                 if (!task.canResize || !task.startYmd || !task.endYmd) return;
                                 onTaskResizeStart(

@@ -44,8 +44,10 @@ type Props = {
   selectedProjectId: string;
   canEdit: boolean;
   onToday: () => void;
+  zoom?: number;
   onZoomIn: () => void;
   onZoomOut: () => void;
+  onZoomReset?: () => void;
   onAutoSchedule: () => void;
   onPrev: () => void;
   onNext: () => void;
@@ -67,8 +69,10 @@ export function GanttToolbar({
   selectedProjectId,
   canEdit,
   onToday,
+  zoom,
   onZoomIn,
   onZoomOut,
+  onZoomReset,
   onAutoSchedule,
   onPrev,
   onNext,
@@ -104,12 +108,39 @@ export function GanttToolbar({
             <Calendar className="mr-1 size-3.5" />
             {t("gantt.today")}
           </Button>
-          <Button type="button" size="sm" variant="outline" onClick={onZoomOut}>
-            <ZoomOut className="size-4" />
-          </Button>
-          <Button type="button" size="sm" variant="outline" onClick={onZoomIn}>
-            <ZoomIn className="size-4" />
-          </Button>
+          <div className={styles.zoomGroup}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onZoomOut}
+              title={t("gantt.zoomOut")}
+              aria-label={t("gantt.zoomOut")}
+            >
+              <ZoomOut className="size-4" />
+            </Button>
+            {typeof zoom === "number" ? (
+              <button
+                type="button"
+                className={styles.zoomLevel}
+                onClick={onZoomReset}
+                title={t("gantt.zoomReset")}
+                aria-label={t("gantt.zoomReset")}
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+            ) : null}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onZoomIn}
+              title={t("gantt.zoomIn")}
+              aria-label={t("gantt.zoomIn")}
+            >
+              <ZoomIn className="size-4" />
+            </Button>
+          </div>
           {onToggleResources ? (
             <Button
               type="button"

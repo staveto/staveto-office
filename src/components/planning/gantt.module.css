@@ -481,6 +481,60 @@
   cursor: ew-resize;
 }
 
+/* Floating target-date indicator shown next to the cursor while dragging a bar. */
+.dragDateBadge {
+  position: fixed;
+  z-index: 10001;
+  transform: translate(14px, -130%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  background: var(--gantt-navy, #1d376a);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 35%);
+  pointer-events: none;
+}
+
+.dragDateBadgeMain {
+  font-weight: 700;
+}
+
+.dragDateBadgeDelta {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 18%);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.zoomGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.zoomLevel {
+  min-width: 44px;
+  height: 32px;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border, rgb(226 232 240));
+  background: var(--background, #fff);
+  font-size: 11px;
+  font-weight: 600;
+  color: rgb(71 85 105);
+  cursor: pointer;
+}
+
+.zoomLevel:hover {
+  background: rgb(241 245 249);
+}
+
 .tooltipCard {
   position: fixed;
   z-index: 10000;

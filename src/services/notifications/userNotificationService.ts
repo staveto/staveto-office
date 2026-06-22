@@ -26,7 +26,8 @@ export type UserNotificationType =
   | "INCOMING_EMAIL"
   | "PROBLEM_REPORTED"
   | "PROBLEM_ASSIGNED"
-  | "FIELD_NOTE_SHARED";
+  | "FIELD_NOTE_SHARED"
+  | "ABSENCE_REQUESTED";
 
 export type UserNotification = {
   id: string;
@@ -38,6 +39,8 @@ export type UserNotification = {
   commentId?: string;
   reportId?: string;
   problemId?: string;
+  noteId?: string;
+  absenceId?: string;
   escalated?: boolean;
   assignedBy?: string;
   assignedByName?: string;
@@ -90,6 +93,18 @@ function fromRootNotification(id: string, data: Record<string, unknown>): UserNo
         : typeof meta?.problemId === "string"
           ? meta.problemId
           : undefined,
+    noteId:
+      typeof data.noteId === "string"
+        ? data.noteId
+        : typeof meta?.noteId === "string"
+          ? meta.noteId
+          : undefined,
+    absenceId:
+      typeof data.absenceId === "string"
+        ? data.absenceId
+        : typeof meta?.absenceId === "string"
+          ? meta.absenceId
+          : undefined,
     subject: typeof data.message === "string" ? data.message : undefined,
     assignedBy: typeof data.fromUserId === "string" ? data.fromUserId : undefined,
     assignedByName: typeof data.fromUserName === "string" ? data.fromUserName : undefined,
@@ -113,6 +128,8 @@ function toNotification(id: string, data: Record<string, unknown>): UserNotifica
     commentId: typeof data.commentId === "string" ? data.commentId : undefined,
     reportId: typeof data.reportId === "string" ? data.reportId : undefined,
     problemId: typeof data.problemId === "string" ? data.problemId : undefined,
+    noteId: typeof data.noteId === "string" ? data.noteId : undefined,
+    absenceId: typeof data.absenceId === "string" ? data.absenceId : undefined,
     escalated: data.escalated === true,
     assignedBy: typeof data.assignedBy === "string" ? data.assignedBy : undefined,
     assignedByName: typeof data.assignedByName === "string" ? data.assignedByName : undefined,
@@ -149,7 +166,11 @@ function dedupeNotifications(rows: UserNotification[]): UserNotification[] {
         ? `${row.type}:${row.projectId ?? row.id}`
         : row.type === "PROBLEM_REPORTED" || row.type === "PROBLEM_ASSIGNED"
           ? `${row.type}:${row.problemId ?? row.projectId ?? row.id}`
-          : row.id;
+          : row.type === "FIELD_NOTE_SHARED" && row.noteId
+            ? `FIELD_NOTE_SHARED:${row.noteId}`
+            : row.type === "ABSENCE_REQUESTED" && row.absenceId
+              ? `ABSENCE_REQUESTED:${row.absenceId}`
+              : row.id;
     const existing = byKey.get(key);
     if (!existing) {
       byKey.set(key, row);

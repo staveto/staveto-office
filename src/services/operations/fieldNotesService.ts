@@ -1,10 +1,6 @@
 import {
   getFirestoreInstance,
   collection,
-  query,
-  where,
-  orderBy,
-  limit,
   getDocs,
 } from "@/lib/firebase";
 import { waitForAuthUser } from "@/lib/firebase";
@@ -94,53 +90,16 @@ export async function listOpenSharedFieldNotes(
     return items.slice(0, max);
   };
 
-  try {
-    const snap = await getDocs(ref);
-    const rows = mapSnap(snap.docs);
-    if (rows.length > 0) return rows;
-  } catch (e) {
-    if (process.env.NODE_ENV === "development") {
-      console.warn("[fieldNotesService] collection read failed:", e);
-    }
-  }
-
-  const q = query(
-    ref,
-    where("shareWithManager", "==", true),
-    where("status", "==", "open"),
-    orderBy("createdAt", "desc"),
-    limit(max)
-  );
-
-  try {
-    const snap = await getDocs(q);
-    return mapSnap(snap.docs);
-  } catch (e) {
-    if (process.env.NODE_ENV === "development") {
-      console.warn("[fieldNotesService] indexed query failed, trying fallback:", e);
-    }
-    try {
-      const fallbackQ = query(ref, where("status", "==", "open"), orderBy("createdAt", "desc"), limit(max));
-      const snap = await getDocs(fallbackQ);
-      return mapSnap(snap.docs);
-    } catch (e2) {
-      if (process.env.NODE_ENV === "development") {
-        console.warn("[fieldNotesService] fallback query failed, loading all:", e2);
-      }
-      try {
-        const snap = await getDocs(ref);
-        return mapSnap(snap.docs);
-      } catch (e3) {
-        if (process.env.NODE_ENV === "development") {
-          console.warn("[fieldNotesService] client read failed, trying API:", e3);
-        }
-        return fetchSharedFieldNotesViaApi(orgId);
-      }
-    }
-  }
+  // Single subcollection read (filtered in memory). For managers this is
+  // allowed by the rules and the data set per org is small. A successful read
+  // — even with zero matching notes — is authoritative and must NOT trigger the
+  // slower admin API fallback (that path hangs for seconds when admin
+  // credentials are unavailable).
+  const snap = await getDocs(ref);
+  return mapSnap(snap.docs);
 }
 
-/** Dashboard loader: client Firestore first, API/admin fallback, multiple org ids. */
+/** Dashboard loader: client Firestore first, API/admin fallback only on read failure. */
 export async function fetchSharedFieldNotesForDashboard(
   primaryOrgId: string,
   extraOrgIds: string[] = []
@@ -150,8 +109,14 @@ export async function fetchSharedFieldNotesForDashboard(
 
   const merged: SharedFieldNotePreview[] = [];
   for (const orgId of orgIds) {
-    let rows = await listOpenSharedFieldNotes(orgId).catch(() => [] as SharedFieldNotePreview[]);
-    if (rows.length === 0) {
+    let rows: SharedFieldNotePreview[];
+    try {
+      // A successful client read is authoritative, even when empty.
+      rows = await listOpenSharedFieldNotes(orgId);
+    } catch (e) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[fieldNotesService] client read failed, trying API:", orgId, e);
+      }
       rows = await fetchSharedFieldNotesViaApi(orgId).catch(() => []);
     }
     merged.push(...rows);

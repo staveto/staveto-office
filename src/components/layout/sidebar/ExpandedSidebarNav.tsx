@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   SIDEBAR_NAV_SECTIONS,
   SIDEBAR_LATER_ITEMS,
@@ -27,6 +27,10 @@ type ExpandedSidebarNavProps = {
   onLogout?: () => void;
 };
 
+function activeSectionOnly(activeSectionId: string | null): Set<string> {
+  return activeSectionId ? new Set([activeSectionId]) : new Set();
+}
+
 export function ExpandedSidebarNav({
   pathname,
   search,
@@ -39,26 +43,34 @@ export function ExpandedSidebarNav({
   onNavigate,
   onLogout,
 }: ExpandedSidebarNavProps) {
-  const filterOpts = { isPersonalWorkspace, canManage, isFieldWorker, enabledModules };
-  const sections = filterNavSections(SIDEBAR_NAV_SECTIONS, filterOpts);
+  const filterOpts = useMemo(
+    () => ({ isPersonalWorkspace, canManage, isFieldWorker, enabledModules }),
+    [isPersonalWorkspace, canManage, isFieldWorker, enabledModules]
+  );
+  const sections = useMemo(
+    () => filterNavSections(SIDEBAR_NAV_SECTIONS, filterOpts),
+    [filterOpts]
+  );
   const activeSectionId = getActiveSectionId(pathname, SIDEBAR_NAV_SECTIONS, search);
+  const sectionIdsKey = useMemo(() => sections.map((s) => s.id).join(","), [sections]);
 
-  const defaultExpanded = useMemo(() => {
-    const ids = new Set<string>();
-    for (const section of sections) {
-      if (sectionShowsSubnav(section, filterOpts)) ids.add(section.id);
-    }
-    if (activeSectionId) ids.add(activeSectionId);
-    return ids;
-  }, [sections, activeSectionId, isPersonalWorkspace, canManage, enabledModules]);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
+  const initializedRef = useRef(false);
 
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(defaultExpanded);
-
+  /** After refresh: only the active section is open, rest stay collapsed. */
   useEffect(() => {
-    if (activeSectionId) {
-      setExpandedIds((prev) => new Set([...prev, activeSectionId]));
+    if (!sectionIdsKey) return;
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      setExpandedIds(activeSectionOnly(activeSectionId));
+      return;
     }
-  }, [activeSectionId]);
+    if (!activeSectionId) return;
+    setExpandedIds((prev) => {
+      if (prev.has(activeSectionId)) return prev;
+      return new Set([...prev, activeSectionId]);
+    });
+  }, [sectionIdsKey, activeSectionId]);
 
   const toggleSection = (sectionId: string) => {
     setExpandedIds((prev) => {

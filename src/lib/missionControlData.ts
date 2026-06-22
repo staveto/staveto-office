@@ -510,7 +510,7 @@ export async function fetchMissionControlData(
       docs: 0,
       openProblems,
       fieldNotes: sharedFieldNotes.length,
-      latestFieldNotes: sharedFieldNotes.slice(0, 2),
+      latestFieldNotes: sharedFieldNotes.slice(0, 50),
     },
     todayRows: buildTodayRows(planning, taskDocs, todayIso),
     agendaGroups: buildAgendaGroups(planning, taskDocs, weekStart, todayIso),

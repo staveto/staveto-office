@@ -18,7 +18,7 @@ type SidebarLayoutContextValue = {
 const SidebarLayoutContext = createContext<SidebarLayoutContextValue | null>(null);
 
 export function SidebarLayoutProvider({ children }: { children: React.ReactNode }) {
-  const [expanded, setExpandedState] = useState(false);
+  const [expanded, setExpandedState] = useState(true);
 
   useEffect(() => {
     setExpandedState(readSidebarExpanded());

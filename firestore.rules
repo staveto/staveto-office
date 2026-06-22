@@ -301,6 +301,53 @@ service cloud.firestore {
         );
     }
 
+    // Mobile compat: a project member may report/escalate a site problem and notify
+    // the project owner/manager (or assignee). Problem notifications carry no orgId,
+    // so access is gated by project assignment or org membership on the project.
+    function memberProblemNotificationCreateAllowed() {
+      let pid = request.resource.data.get('projectId', null);
+      return request.resource.data.fromUserId == request.auth.uid
+        && pid is string
+        && pid != ''
+        && exists(/databases/$(database)/documents/projects/$(pid))
+        && (isAssignedOnProject(pid) || canAccessProjectId(pid))
+        && request.resource.data.type in ['PROBLEM_ASSIGNED', 'PROBLEM_REPORTED']
+        && request.resource.data.userId != request.auth.uid;
+    }
+
+    function memberProblemOfficeNotificationCreateAllowed(targetUserId) {
+      let pid = request.resource.data.get('projectId', null);
+      return request.resource.data.fromUserId == request.auth.uid
+        && pid is string
+        && pid != ''
+        && exists(/databases/$(database)/documents/projects/$(pid))
+        && (isAssignedOnProject(pid) || canAccessProjectId(pid))
+        && request.resource.data.type in ['PROBLEM_ASSIGNED', 'PROBLEM_REPORTED']
+        && targetUserId != request.auth.uid;
+    }
+
+    // Mobile compat: a worker may request time off and notify org owner/managers.
+    // Absence notifications carry the business orgId; the requester must be a member.
+    function memberAbsenceNotificationCreateAllowed() {
+      let oid = request.resource.data.orgId;
+      return request.resource.data.fromUserId == request.auth.uid
+        && oid is string
+        && oid.size() > 0
+        && request.resource.data.type == 'ABSENCE_REQUESTED'
+        && request.resource.data.userId != request.auth.uid
+        && isOrgMember(oid);
+    }
+
+    function memberAbsenceOfficeNotificationCreateAllowed(targetUserId) {
+      let oid = request.resource.data.orgId;
+      return request.resource.data.assignedBy == request.auth.uid
+        && oid is string
+        && oid.size() > 0
+        && request.resource.data.type == 'ABSENCE_REQUESTED'
+        && targetUserId != request.auth.uid
+        && isOrgMember(oid);
+    }
+
     function canAccessWorkspace(workspaceId) {
       return isSignedIn() && (
         workspaceId == request.auth.uid
@@ -340,11 +387,27 @@ service cloud.firestore {
           && canManageOrganization(request.resource.data.orgId)
         )
         || memberFieldNoteNotificationCreateAllowed()
+        || memberProblemNotificationCreateAllowed()
+        || memberAbsenceNotificationCreateAllowed()
       );
       allow update: if isSignedIn()
         && request.auth.uid == resource.data.userId
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readAt']);
       allow delete: if false;
+    }
+
+    // Mobile compat: collectionGroup("members") self-membership discovery (org + project).
+    // Self-read (memberId == uid OR userId == uid) avoids get()-based parent lookups that
+    // make the mobile collectionGroup query fail server-side. Mirrors mobile/firestore.rules.
+    match /{path=**}/members/{memberId} {
+      allow read: if isSignedIn()
+        && (memberId == request.auth.uid || resource.data.userId == request.auth.uid);
+    }
+
+    // Mobile compat: shared config/limits (mobile appUpdateService + plan limits). CF writes only.
+    match /config/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
     }
 
     match /users/{userId} {
@@ -374,6 +437,8 @@ service cloud.firestore {
               && canManageOrganization(request.resource.data.orgId)
             )
             || memberFieldNoteOfficeNotificationCreateAllowed(userId)
+            || memberProblemOfficeNotificationCreateAllowed(userId)
+            || memberAbsenceOfficeNotificationCreateAllowed(userId)
           );
         allow update: if isSignedIn()
           && request.auth.uid == userId
@@ -387,6 +452,33 @@ service cloud.firestore {
 
       match /equipment/{equipmentId}/{rest=**} {
         allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
+
+      // Mobile compat: CF-written indexes/limits — client read-only.
+      match /projectRefs/{projectId} {
+        allow read: if isSignedIn() && request.auth.uid == userId;
+        allow write: if false;
+      }
+      match /limits/{docId} {
+        allow read: if isSignedIn() && request.auth.uid == userId;
+        allow write: if false;
+      }
+      match /usage/{docId} {
+        allow read: if isSignedIn() && request.auth.uid == userId;
+        allow write: if false;
+      }
+
+      // Mobile compat: all other self-owned user subcollections (push tokens, settings, etc.).
+      // Excludes CF-only and explicitly-handled subcollections above.
+      match /{subcol}/{docId} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId
+          && subcol != 'projectRefs' && subcol != 'limits' && subcol != 'usage'
+          && subcol != 'notifications' && subcol != 'projectInvites' && subcol != 'equipment';
+      }
+      match /{subcol}/{docId}/{rest=**} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId
+          && subcol != 'projectRefs' && subcol != 'limits' && subcol != 'usage'
+          && subcol != 'notifications' && subcol != 'projectInvites' && subcol != 'equipment';
       }
     }
 
@@ -416,6 +508,13 @@ service cloud.firestore {
         allow create, update, delete: if isSignedIn()
           && request.auth.uid == memberUid
           && isOrgMemberActive(orgId);
+      }
+
+      // Mobile compat: org CRM contacts — read for active members, write for managers.
+      match /contacts/{contactId} {
+        allow read: if isOrgMemberActive(orgId);
+        allow create, update: if canManageOrganization(orgId);
+        allow delete: if false;
       }
 
       match /fieldNotes/{noteId} {
@@ -582,6 +681,50 @@ service cloud.firestore {
         allow update: if canAccessProjectId(projectId) || canManageProjectDoc();
         allow delete: if canManageProjectDoc();
       }
+
+      // Mobile compat: construction diary, attachments, activity events.
+      match /constructionDiary/{entryId} {
+        allow read: if canAccessProjectId(projectId);
+        allow create: if canAccessProjectId(projectId);
+        allow update, delete: if canManageProjectDoc()
+          || (canAccessProjectId(projectId) && resource.data.get('createdBy', null) == request.auth.uid);
+      }
+
+      match /attachments/{attachmentId} {
+        allow read: if canAccessProjectId(projectId);
+        allow create: if canAccessProjectId(projectId);
+        allow update, delete: if canManageProjectDoc()
+          || (canAccessProjectId(projectId) && resource.data.get('createdBy', null) == request.auth.uid);
+      }
+
+      match /events/{eventId} {
+        allow read: if canAccessProjectId(projectId);
+        allow write: if canAccessProjectId(projectId);
+      }
+
+      // membersByUid: CF-written membership index; client self-read only.
+      match /membersByUid/{memberUid} {
+        allow read: if isSignedIn() && request.auth.uid == memberUid;
+        allow write: if false;
+      }
+
+      // Mobile compat: remaining project subcollections (stats, phaseStats, etc.).
+      // Excludes the explicitly-handled subcollections above so their stricter
+      // write rules (e.g. members/phases are manager-only) are not loosened.
+      match /{subcol}/{docId} {
+        allow read: if canAccessProjectId(projectId)
+          && subcol != 'members' && subcol != 'phases' && subcol != 'membersByUid';
+        allow write: if canAccessProjectId(projectId)
+          && subcol != 'members' && subcol != 'phases' && subcol != 'membersByUid'
+          && subcol != 'documents' && subcol != 'problems';
+      }
+      match /{subcol}/{docId}/{rest=**} {
+        allow read: if canAccessProjectId(projectId)
+          && subcol != 'members' && subcol != 'phases' && subcol != 'membersByUid';
+        allow write: if canAccessProjectId(projectId)
+          && subcol != 'members' && subcol != 'phases' && subcol != 'membersByUid'
+          && subcol != 'documents' && subcol != 'problems';
+      }
     }
 
     function canReadQuoteDoc() {
@@ -612,6 +755,38 @@ service cloud.firestore {
       allow update, delete: if canWriteQuoteDoc();
     }
 
+    // Mobile compat: estimates share the same ownership model as quotes.
+    match /estimates/{estimateId} {
+      allow read: if canReadQuoteDoc();
+      allow create: if canCreateQuoteDoc();
+      allow update, delete: if canWriteQuoteDoc();
+    }
+
+    // Mobile compat: B2B registration orders (CF-managed), read for billing owner / org owner.
+    match /businessOrders/{orderId} {
+      allow read: if isSignedIn() && (
+        resource.data.get('billingOwnerUid', null) == request.auth.uid
+        || (resource.data.get('orgId', null) != null && isOrgOwnerOrAdmin(resource.data.orgId))
+      );
+      allow create, update, delete: if false;
+    }
+
+    // Mobile compat: billing events (CF-written), read by their owner only.
+    match /billingEvents/{eventId} {
+      allow read: if isSignedIn() && resource.data.get('firebaseUID', null) == request.auth.uid;
+      allow write: if false;
+    }
+
+    // Mobile compat: catalog templates (read-only reference data).
+    match /catalogTemplates/{templateId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+      match /{doc=**} {
+        allow read: if isSignedIn();
+        allow write: if false;
+      }
+    }
+
     match /absences/{absenceId} {
       allow read: if isSignedIn() && (
         resource.data.userId == request.auth.uid
@@ -620,7 +795,12 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.orgId is string
-        && isOrgMemberActive(request.resource.data.orgId);
+        && (
+          // Solo / personal namespace: AuthContext.orgId === uid (no organization doc).
+          request.resource.data.orgId == request.auth.uid
+          // Real B2B org: must be an active member.
+          || isOrgMemberActive(request.resource.data.orgId)
+        );
       allow update, delete: if isSignedIn() && (
         resource.data.userId == request.auth.uid
         || (resource.data.orgId != null && canManageOrganization(resource.data.orgId))

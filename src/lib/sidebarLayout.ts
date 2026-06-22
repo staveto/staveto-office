@@ -4,11 +4,13 @@ export const SIDEBAR_WIDTH_EXPANDED_PX = 280;
 export const SIDEBAR_EXPANDED_STORAGE_KEY = "staveto.sidebar.expanded";
 
 export function readSidebarExpanded(): boolean {
-  if (typeof window === "undefined") return false;
+  if (typeof window === "undefined") return true;
   try {
-    return localStorage.getItem(SIDEBAR_EXPANDED_STORAGE_KEY) === "1";
+    const stored = localStorage.getItem(SIDEBAR_EXPANDED_STORAGE_KEY);
+    if (stored === null) return true;
+    return stored === "1";
   } catch {
-    return false;
+    return true;
   }
 }
 
