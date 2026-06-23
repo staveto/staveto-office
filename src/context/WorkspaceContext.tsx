@@ -121,7 +121,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         if (cancelled) return;
 
         setAvailableWorkspaces(refreshedList);
-        setRoleResolving(false);
 
         const companyWorkspace = refreshedList.find((w) => isCompanyWorkspaceType(w.type));
         if (companyWorkspace?.orgId && !profile?.activeBusinessOrgId?.trim()) {
@@ -173,7 +172,6 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
             });
             setActiveWorkspaceState(refreshedTenantWorkspace);
             persistActiveWorkspaceId(refreshedTenantWorkspace.id);
-            setRoleResolving(false);
             return;
           }
         }
@@ -213,6 +211,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
             ? { mode: "tenant", slug: hostTenant.slug, status: "not_found" }
             : { mode: "app", status: "app" }
         );
+      } finally {
+        if (!cancelled) {
+          setRoleResolving(false);
+        }
       }
     })();
 

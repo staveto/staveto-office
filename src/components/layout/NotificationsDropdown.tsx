@@ -76,6 +76,12 @@ function notificationMessage(
         ? t("notifications.fieldNoteShared", { title })
         : t("notifications.fieldNoteSharedGeneric");
     }
+    case "TIMER_STARTED":
+      return n.subject?.trim() || t("notifications.timerStartedGeneric");
+    case "TIMER_PAUSED":
+      return n.subject?.trim() || t("notifications.timerPausedGeneric");
+    case "TIMER_STOPPED":
+      return n.subject?.trim() || t("notifications.timerStoppedGeneric");
     case "INCOMING_EMAIL":
       return n.subject
         ? t("notifications.incomingEmail", { subject: n.subject })

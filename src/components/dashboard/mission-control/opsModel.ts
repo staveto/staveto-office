@@ -23,6 +23,19 @@ export type OpsResource = {
   statusKey: string;
   tone: OpsTone;
   href?: string;
+  liveStatus?: "working" | "paused";
+  timerSeconds?: number;
+  projectName?: string;
+  projectId?: string;
+};
+
+export type OpsLiveWorker = {
+  id: string;
+  name: string;
+  status: "working" | "paused";
+  timerSeconds?: number;
+  projectName?: string;
+  projectId?: string;
 };
 
 export type OpsFinanceRow = {
@@ -63,6 +76,7 @@ export type OpsView = {
     activeJobs: number;
     quotes: number;
     todayTitle: string | null;
+    liveWorkers: OpsLiveWorker[];
   };
   statusChips: OpsStatusChip[];
   statusTone: "calm" | "attention";
@@ -91,7 +105,17 @@ export function buildOpsView(
   const todayHasWork = data.todayRows.length > 0;
   const todayTitle = todayHasWork ? data.todayRows[0].title : null;
 
-  const workersAvailable = data.team.filter((m) => m.statusTone === "free").length;
+  const workersAvailable = data.team.filter((m) => m.statusTone === "free" && !m.liveStatus).length;
+  const liveWorkers: OpsLiveWorker[] = data.team
+    .filter((m) => m.liveStatus === "working" || m.liveStatus === "paused")
+    .map((m) => ({
+      id: m.uid,
+      name: m.name,
+      status: m.liveStatus ?? "working",
+      timerSeconds: m.timerSeconds,
+      projectName: m.projectName,
+      projectId: m.projectId,
+    }));
   const vehiclesAvailable = data.vehicles.filter((v) => v.statusKey === VEHICLE_FREE_KEY).length;
   const unassignedJobs = planning.activeProjects.filter(
     (p) => p.assignedMemberIds.length === 0
@@ -208,13 +232,22 @@ export function buildOpsView(
     name: m.name,
     statusKey: m.statusKey,
     tone:
-      m.statusTone === "on_site"
+      m.liveStatus === "working"
         ? "success"
-        : m.statusTone === "absent"
-          ? "danger"
-          : m.statusTone === "service"
-            ? "warning"
-            : "neutral",
+        : m.liveStatus === "paused"
+          ? "warning"
+          : m.statusTone === "on_site"
+            ? "success"
+            : m.statusTone === "absent"
+              ? "danger"
+              : m.statusTone === "service"
+                ? "warning"
+                : "neutral",
+    liveStatus: m.liveStatus,
+    timerSeconds: m.timerSeconds,
+    projectName: m.projectName,
+    projectId: m.projectId,
+    href: m.projectId ? `/app/projects/${m.projectId}` : "/app/operations",
   }));
 
   const vehicles: OpsResource[] = data.vehicles.map((v) => ({
@@ -251,6 +284,9 @@ export function buildOpsView(
 
   // ---- Status strip + header chips -----------------------------------------
   const statusChips: OpsStatusChip[] = [
+    ...(liveWorkers.length > 0
+      ? [{ id: "working", labelKey: "dashboard.ops.chip.working", params: { count: liveWorkers.length } }]
+      : []),
     { id: "quotes", labelKey: "dashboard.ops.chip.quotes", params: { count: quotes } },
     { id: "active", labelKey: "dashboard.ops.chip.active", params: { count: activeJobs } },
     { id: "workers", labelKey: "dashboard.ops.chip.workers", params: { count: workersAvailable } },
@@ -293,7 +329,8 @@ export function buildOpsView(
       absences,
       activeJobs,
       quotes,
-      todayTitle,
+      todayTitle: liveWorkers.length > 0 ? null : todayTitle,
+      liveWorkers,
     },
     statusChips,
     statusTone: needsAttention ? "attention" : "calm",

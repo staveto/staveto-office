@@ -40,6 +40,9 @@ export type Organization = {
   status?: string;
   businessEnabled?: boolean;
   planCode?: string;
+  billingPeriod?: string;
+  activeBusinessOrderId?: string;
+  seatsUsed?: number;
   companyType?: string;
   enabledModules?: Partial<import("./enabledModules").EnabledModulesMap>;
   /** Optional integration statuses (App Center v1). Merged on write — unknown keys preserved. */

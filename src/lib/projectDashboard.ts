@@ -21,7 +21,8 @@ export type ProjectDashboardTab =
   | "workplan"
   | "quote"
   | "documents"
-  | "activity";
+  | "activity"
+  | "problems";
 
 export type HumanWorkflowStatusKey =
   | "entwurf"

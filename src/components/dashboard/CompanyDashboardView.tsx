@@ -24,8 +24,14 @@ import { canManageCompanyOperations } from "@/lib/workspaceProduct";
 import { MissionControlDashboard } from "@/components/dashboard/mission-control/MissionControlDashboard";
 import {
   fetchMissionControlData,
+  recomputeTeamWithLiveTimers,
   type MissionControlData,
 } from "@/lib/missionControlData";
+import {
+  subscribeOrgLiveTimers,
+  type ActiveTimerState,
+} from "@/services/operations/teamLiveStatusService";
+import { isCompanyWorkspaceType } from "@/types/workspace";
 
 type CompanyDashboardViewProps = {
   activeWorkspace: ActiveWorkspace;
@@ -54,6 +60,7 @@ export function CompanyDashboardView({
   const [missionData, setMissionData] = useState<MissionControlData | null>(null);
   const [missionLoading, setMissionLoading] = useState(true);
   const [missionError, setMissionError] = useState<string | null>(null);
+  const [liveTimers, setLiveTimers] = useState<Map<string, ActiveTimerState>>(new Map());
 
   const { setupMode } = resolveSetupDashboardState(
     stats,
@@ -106,24 +113,32 @@ export function CompanyDashboardView({
     };
   }, [uid, activeWorkspace?.id, activeWorkspace?.orgId, activeWorkspace?.type]);
 
-  if (statsLoading) {
-    return (
-      <div className="space-y-5 animate-pulse max-w-6xl">
-        <div className="h-10 w-56 rounded-lg bg-muted" />
-        <div className="flex gap-2 overflow-hidden">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-14 min-w-[9.5rem] flex-1 rounded-lg bg-muted" />
-          ))}
-        </div>
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="h-32 rounded-xl bg-muted" />
-          <div className="h-48 rounded-xl bg-muted" />
-        </div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (!isCompanyWorkspaceType(activeWorkspace.type) || !orgId.trim()) return;
 
-  if (setupMode && !showOperationsHome) {
+    return subscribeOrgLiveTimers(orgId, (timers) => {
+      setLiveTimers(new Map(timers));
+    });
+  }, [activeWorkspace.type, orgId]);
+
+  useEffect(() => {
+    setMissionData((prev) =>
+      prev ? { ...prev, team: recomputeTeamWithLiveTimers(prev.planning, liveTimers) } : prev
+    );
+  }, [liveTimers]);
+
+  useEffect(() => {
+    const hasRunning = [...liveTimers.values()].some((t) => t.status === "running");
+    if (!hasRunning) return;
+    const id = window.setInterval(() => {
+      setMissionData((prev) =>
+        prev ? { ...prev, team: recomputeTeamWithLiveTimers(prev.planning, liveTimers) } : prev
+      );
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [liveTimers]);
+
+  if (setupMode && !showOperationsHome && !statsLoading) {
     return (
       <div className="mx-auto max-w-5xl space-y-8 pb-12">
         <header className="space-y-1">
@@ -144,7 +159,7 @@ export function CompanyDashboardView({
     );
   }
 
-  if (emptyCompany && !showOperationsHome) {
+  if (emptyCompany && !showOperationsHome && !statsLoading) {
     return (
       <div className="mx-auto max-w-5xl space-y-6 pb-12 text-center">
         <h1 className="text-2xl font-semibold">{t("dashboard.command.setup.title")}</h1>

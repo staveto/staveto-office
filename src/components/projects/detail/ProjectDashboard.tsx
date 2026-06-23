@@ -29,7 +29,7 @@ import {
 import type { ProjectMemberRecord } from "@/services/projects/taskPlanningTypes";
 import type { WorkspaceRole } from "@/types/workspace";
 import { isDraftJob } from "@/lib/projectLifecycle";
-import { buildPhaseLabelMap } from "@/lib/taskPlanningDisplay";
+import { buildPhaseLabelMap, taskMissingAssignee } from "@/lib/taskPlanningDisplay";
 import { buildProjectOverviewViewModel } from "@/lib/projectOverviewViewModel";
 import { ProjectCompactHeader } from "./ProjectCompactHeader";
 import { ProjectPhaseWorkflow } from "./ProjectPhaseWorkflow";
@@ -46,11 +46,15 @@ import type { ProjectPhaseRecord } from "@/services/projects/taskPlanningTypes";
 import { ProjectQuoteTab } from "./ProjectQuoteTab";
 import { ProjectDocumentsTab } from "./ProjectDocumentsTab";
 import { ProjectActivityTab } from "./ProjectActivityTab";
+import { ProjectProblemsTab } from "./ProjectProblemsTab";
 import { ProjectExpensesPanel } from "@/components/projects/ProjectExpensesPanel";
 import { computeProjectPhaseMetrics } from "@/lib/projectPhaseMetrics";
 import { computeProjectHealth } from "@/lib/projectHealth";
 import { buildProjectActivity } from "@/lib/projectActivity";
-import { taskMissingAssignee } from "@/lib/taskPlanningDisplay";
+import {
+  listProjectProblems,
+} from "@/services/projects/projectProblemsReadService";
+import { isOpenProblem } from "@/services/projects/projectProblemsService";
 import { cn } from "@/lib/utils";
 
 function parseTab(raw: string | null): ProjectDashboardTab {
@@ -59,7 +63,8 @@ function parseTab(raw: string | null): ProjectDashboardTab {
     raw === "workplan" ||
     raw === "quote" ||
     raw === "documents" ||
-    raw === "activity"
+    raw === "activity" ||
+    raw === "problems"
   ) {
     return raw;
   }
@@ -106,10 +111,15 @@ export function ProjectDashboard({
   const [members, setMembers] = useState<ProjectMemberRecord[]>([]);
   const [timeEntries, setTimeEntries] = useState<TimeEntryDoc[]>([]);
   const [activeTimers, setActiveTimers] = useState<Map<string, ActiveTimerState>>(new Map());
+  const [openProblemsCount, setOpenProblemsCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const selectedProblemId = searchParams.get("problemId");
 
   useEffect(() => {
     setActiveTab(parseTab(searchParams.get("tab")));
+    if (searchParams.get("problemId") && searchParams.get("tab") !== "problems") {
+      setActiveTab("problems");
+    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -121,7 +131,8 @@ export function ProjectDashboard({
       try {
         const freshProject = (await getProject(project.id)) ?? project;
 
-        const [tasksList, items, docs, phaseList, memberList, entries] = await Promise.all([
+        const [tasksList, items, docs, phaseList, memberList, entries, problemsList] =
+          await Promise.all([
           listProjectTasks(project.id).catch((e) => {
             if (e instanceof FirestoreIndexError) throw e;
             return [] as TaskDoc[];
@@ -133,6 +144,7 @@ export function ProjectDashboard({
           listTimeEntriesForProjects([project.id], "1970-01-01", todayYmd()).catch(
             () => [] as TimeEntryDoc[]
           ),
+          listProjectProblems(project.id).catch(() => []),
         ]);
 
         let resolvedDocs = docs;
@@ -159,6 +171,7 @@ export function ProjectDashboard({
         }
 
         if (cancelled) return;
+        setOpenProblemsCount(problemsList.filter((p) => isOpenProblem(p)).length);
         setTasks(tasksList);
         setQuoteItems(items);
         setDocuments(resolvedDocs);
@@ -236,16 +249,26 @@ export function ProjectDashboard({
     return {
       tasks: { count: active.length },
       workplan: { count: openUnassigned, warn: openUnassigned > 0 },
+      problems: { count: openProblemsCount, warn: openProblemsCount > 0 },
       documents: { count: documents.length },
       activity: { count: activityCount },
     };
-  }, [project, tasks, timeEntries, documents]);
+  }, [project, tasks, timeEntries, documents, openProblemsCount]);
 
   const handleTabChange = (tab: ProjectDashboardTab) => {
     setActiveTab(tab);
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", tab);
     params.delete("setup");
+    if (tab !== "problems") params.delete("problemId");
+    router.replace(`/app/projects/${project.id}?${params.toString()}`, { scroll: false });
+  };
+
+  const handleProblemIdChange = (problemId: string | null) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", "problems");
+    if (problemId) params.set("problemId", problemId);
+    else params.delete("problemId");
     router.replace(`/app/projects/${project.id}?${params.toString()}`, { scroll: false });
   };
 
@@ -314,7 +337,7 @@ export function ProjectDashboard({
       ) : null}
 
       <div className="order-6 lg:order-5">
-        {loading && activeTab !== "overview" ? (
+        {loading && activeTab !== "overview" && activeTab !== "problems" ? (
           <div className="py-12 text-center text-sm text-[var(--po-text-muted)]">…</div>
         ) : showExpenses ? (
           <ProjectExpensesPanel project={project} />
@@ -351,6 +374,12 @@ export function ProjectDashboard({
             userId={userId}
             role={role}
             onTasksChange={setTasks}
+          />
+        ) : activeTab === "problems" ? (
+          <ProjectProblemsTab
+            project={project}
+            initialProblemId={selectedProblemId}
+            onProblemIdChange={handleProblemIdChange}
           />
         ) : activeTab === "quote" ? (
           <ProjectQuoteTab project={project} quoteItems={quoteItems} tasks={tasks} />

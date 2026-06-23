@@ -11,7 +11,7 @@ export function StavetoWordmark({ className }: StavetoWordmarkProps) {
     <div className={cn("inline-flex select-none items-center", className)} aria-label="Staveto">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src="/logo.png"
+        src="/staveto-logo.png"
         alt="Staveto"
         className="h-auto w-[118px] object-contain dark:mix-blend-screen sm:w-[132px]"
       />

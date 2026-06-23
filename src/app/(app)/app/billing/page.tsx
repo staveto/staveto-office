@@ -12,8 +12,9 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { isCompanyWorkspaceType } from "@/types/workspace";
-import { getOrganization } from "@/lib/organizations";
-import { listOrgMembers } from "@/lib/organizations";
+import { getOrganization, listOrgMembers } from "@/lib/organizations";
+import { BillingPlanUpgradeDialog } from "@/components/billing/BillingPlanUpgradeDialog";
+import type { BillingPeriod, BusinessPlanCode } from "@/services/business/businessPaymentsService";
 import { CreditCard, Loader2, AlertTriangle, Mail } from "lucide-react";
 
 function toTimestampMs(raw: unknown): number | null {
@@ -32,58 +33,80 @@ export default function BillingPage() {
   const [org, setOrg] = useState<{
     name: string;
     plan: string;
+    planCode?: string;
     seatLimit: number;
     trialEndsAt?: number | null;
+    status?: string;
+    activeBusinessOrderId?: string;
+    billingPeriod?: string;
   } | null>(null);
   const [seatsUsed, setSeatsUsed] = useState(0);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   const isTeam = isCompanyWorkspaceType(activeWorkspace?.type);
   const orgId = isTeam ? (activeWorkspace?.orgId ?? activeWorkspace?.id ?? null) : null;
 
   const [nowMs] = useState(() => Date.now());
 
+  const reload = async () => {
+    if (!orgId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [orgSnap, members] = await Promise.all([
+        getOrganization(orgId),
+        listOrgMembers(orgId),
+      ]);
+      if (orgSnap) {
+        setOrg({
+          name: orgSnap.name,
+          plan: orgSnap.plan,
+          planCode: orgSnap.planCode,
+          seatLimit: orgSnap.seatLimit,
+          trialEndsAt: toTimestampMs(orgSnap.trialEndsAt),
+          status: orgSnap.status,
+          activeBusinessOrderId: orgSnap.activeBusinessOrderId,
+          billingPeriod: orgSnap.billingPeriod,
+        });
+      } else {
+        setOrg(null);
+      }
+      setSeatsUsed(members.filter((m) => m.status === "active").length);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load");
+      setOrg(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
-
     void (async () => {
       if (!orgId) {
         if (!cancelled) setLoading(false);
         return;
       }
-      setLoading(true);
-      setError(null);
-      try {
-        const [orgSnap, members] = await Promise.all([
-          getOrganization(orgId),
-          listOrgMembers(orgId),
-        ]);
-        if (cancelled) return;
-        if (orgSnap) {
-          setOrg({
-            name: orgSnap.name,
-            plan: orgSnap.plan,
-            seatLimit: orgSnap.seatLimit,
-            trialEndsAt: toTimestampMs(orgSnap.trialEndsAt),
-          });
-        } else {
-          setOrg(null);
-        }
-        setSeatsUsed(members.filter((m) => m.status === "active").length);
-      } catch (e) {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : "Failed to load");
-        setOrg(null);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      await reload();
+      if (cancelled) return;
     })();
-
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
+
+  const orgStatus = (org?.status ?? "").toLowerCase();
   const trialExpired = org?.trialEndsAt ? org.trialEndsAt < nowMs : false;
   const atSeatLimit = org ? seatsUsed >= org.seatLimit : false;
+
+  const statusLabel = (() => {
+    if (orgStatus === "active") return t("subscription.statusActive");
+    if (orgStatus === "trialing") return t("billing.statusTrialing");
+    if (orgStatus === "pending_payment") return t("billing.statusPaymentDue");
+    if (trialExpired) return t("subscription.statusExpired");
+    return t("subscription.statusActive");
+  })();
 
   if (!isTeam) {
     return (
@@ -130,7 +153,7 @@ export default function BillingPage() {
     <div className="space-y-6">
       <h2 className="text-xl font-semibold">{t("nav.billing")}</h2>
 
-      {(trialExpired || atSeatLimit) && (
+      {(trialExpired || atSeatLimit || orgStatus === "pending_payment") && (
         <Card className="border-[#e06737] bg-[#e06737]/10">
           <CardContent className="py-4 flex items-start gap-3">
             <AlertTriangle className="size-5 text-[#e06737] shrink-0 mt-0.5" />
@@ -138,7 +161,10 @@ export default function BillingPage() {
               {trialExpired && (
                 <p className="font-medium text-[#e06737]">{t("billing.trialExpired")}</p>
               )}
-              {atSeatLimit && !trialExpired && (
+              {orgStatus === "pending_payment" && !trialExpired && (
+                <p className="font-medium text-[#e06737]">{t("billing.statusPaymentDue")}</p>
+              )}
+              {atSeatLimit && !trialExpired && orgStatus !== "pending_payment" && (
                 <p className="font-medium text-[#e06737]">{t("billing.seatLimitReached")}</p>
               )}
               <p className="text-sm text-muted-foreground mt-1">
@@ -161,7 +187,7 @@ export default function BillingPage() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <p className="text-sm text-muted-foreground">{t("billing.plan")}</p>
-              <p className="font-medium">{org?.plan ?? "-"}</p>
+              <p className="font-medium">{org?.planCode ?? org?.plan ?? "-"}</p>
             </div>
             <div>
               <p className="text-sm text-muted-foreground">{t("billing.seatLimit")}</p>
@@ -173,14 +199,16 @@ export default function BillingPage() {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">{t("billing.status")}</p>
-              <p className="font-medium">
-                {trialExpired ? t("subscription.statusExpired") : t("subscription.statusActive")}
-              </p>
+              <p className="font-medium">{statusLabel}</p>
             </div>
           </div>
 
           <div className="flex flex-wrap gap-2 pt-4">
-            <Button variant="default" disabled title={t("billing.upgradeComingSoon")}>
+            <Button
+              variant="default"
+              className="bg-[#e06737] hover:bg-[#e06737]/90"
+              onClick={() => setUpgradeOpen(true)}
+            >
               {t("billing.upgradePlan")}
             </Button>
             <a
@@ -193,6 +221,18 @@ export default function BillingPage() {
           </div>
         </CardContent>
       </Card>
+
+      {orgId ? (
+        <BillingPlanUpgradeDialog
+          open={upgradeOpen}
+          onOpenChange={setUpgradeOpen}
+          orgId={orgId}
+          orderId={org?.activeBusinessOrderId ?? null}
+          currentPlanCode={(org?.planCode as BusinessPlanCode | undefined) ?? null}
+          currentBillingPeriod={(org?.billingPeriod as BillingPeriod | undefined) ?? null}
+          onUpdated={() => void reload()}
+        />
+      ) : null}
     </div>
   );
 }

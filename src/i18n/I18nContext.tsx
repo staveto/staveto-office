@@ -32,10 +32,6 @@ function resolveText(locale: Locale, key: string): string {
     const fallback = translations[FALLBACK_LOCALE]?.[key];
     if (fallback) return fallback;
   }
-  for (const loc of LOCALES) {
-    const value = translations[loc]?.[key];
-    if (value) return value;
-  }
   return key;
 }
 
@@ -52,18 +48,22 @@ function readStoredLocale(): Locale | null {
   return null;
 }
 
+function readInitialLocale(): Locale {
+  return readStoredLocale() ?? DEFAULT_LOCALE;
+}
+
 export function I18nProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(DEFAULT_LOCALE);
+  const [locale, setLocaleState] = useState<Locale>(readInitialLocale);
 
   useEffect(() => {
-    const stored = readStoredLocale();
-    if (stored) setLocaleState(stored);
-  }, []);
+    document.documentElement.lang = locale;
+  }, [locale]);
 
   const setLocale = useCallback((next: Locale) => {
     setLocaleState(next);
     try {
       localStorage.setItem(LOCALE_STORAGE_KEY, next);
+      document.documentElement.lang = next;
     } catch {
       /* ignore */
     }

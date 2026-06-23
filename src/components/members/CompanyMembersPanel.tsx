@@ -69,9 +69,10 @@ import {
 import { TeamOverviewHero } from "@/components/members/TeamOverviewHero";
 import { TeamFirstInviteCard } from "@/components/members/TeamFirstInviteCard";
 import { TeamRoleCards } from "@/components/members/TeamRoleCards";
+import { MemberRoleManageDialog } from "@/components/members/MemberRoleManageDialog";
 import { InviteMemberDialog } from "@/components/members/InviteMemberDialog";
 import { InviteCodeViewDialog } from "@/components/members/InviteCodeViewDialog";
-import { Users, Loader2, Plus, Trash2, UserMinus, Mail, Copy, Link2, QrCode } from "lucide-react";
+import { Users, Loader2, Plus, Trash2, UserMinus, Mail, Copy, Link2, QrCode, Settings2 } from "lucide-react";
 import { getFirestoreInstance } from "@/lib/firebase";
 import { useWorkspaceProduct } from "@/hooks/useWorkspaceProduct";
 import { useTeamLiveStatus } from "@/hooks/useTeamLiveStatus";
@@ -108,6 +109,7 @@ export function CompanyMembersPanel() {
   const [viewInviteId, setViewInviteId] = useState<string | null>(null);
   const [viewInviteCanRegenerate, setViewInviteCanRegenerate] = useState(false);
   const [viewInviteErrorKey, setViewInviteErrorKey] = useState<string | null>(null);
+  const [roleManageRow, setRoleManageRow] = useState<CompanyTeamMemberRow | null>(null);
 
   const load = useCallback(async (opts?: { background?: boolean }) => {
     if (!orgId) {
@@ -410,7 +412,7 @@ export function CompanyMembersPanel() {
                 <TableHead>{t("members.emailCol")}</TableHead>
                 <TableHead>{t("members.roleCol")}</TableHead>
                 <TableHead>{t("members.statusCol")}</TableHead>
-                {canManage ? <TableHead className="w-[100px]" /> : null}
+                {canManage ? <TableHead className="w-[120px]" /> : null}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -447,21 +449,33 @@ export function CompanyMembersPanel() {
                   </TableCell>
                   {canManage ? (
                     <TableCell>
-                      {row.effectiveRole !== "owner" && !row.synthetic ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRemoveMember(row)}
-                          disabled={actioning === row.uid}
-                          title={t("members.remove")}
-                        >
-                          {actioning === row.uid ? (
-                            <Loader2 className="size-4 animate-spin" />
-                          ) : (
-                            <UserMinus className="size-4 text-destructive" />
-                          )}
-                        </Button>
-                      ) : null}
+                      <div className="flex items-center gap-1">
+                        {!row.synthetic ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            title={t("members.roleManage.open")}
+                            onClick={() => setRoleManageRow(row)}
+                          >
+                            <Settings2 className="size-4" />
+                          </Button>
+                        ) : null}
+                        {row.effectiveRole !== "owner" && !row.synthetic ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveMember(row)}
+                            disabled={actioning === row.uid}
+                            title={t("members.remove")}
+                          >
+                            {actioning === row.uid ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              <UserMinus className="size-4 text-destructive" />
+                            )}
+                          </Button>
+                        ) : null}
+                      </div>
                     </TableCell>
                   ) : null}
                 </TableRow>
@@ -705,6 +719,17 @@ export function CompanyMembersPanel() {
             errorKey={viewInviteErrorKey}
             canRegenerate={viewInviteCanRegenerate && !viewInviteLoading}
             onRegenerate={handleRegenerateInviteCode}
+          />
+          <MemberRoleManageDialog
+            open={roleManageRow != null}
+            onOpenChange={(open) => {
+              if (!open) setRoleManageRow(null);
+            }}
+            orgId={orgId}
+            row={roleManageRow}
+            teamRows={teamRows}
+            actorRole={currentUserRole}
+            onSaved={() => void load()}
           />
         </>
       ) : null}

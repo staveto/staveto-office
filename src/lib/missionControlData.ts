@@ -27,13 +27,22 @@ import {
 } from "@/lib/taskPlanningMetrics";
 import type { ProjectMemberRecord } from "@/services/projects/taskPlanningTypes";
 import { listProjectsForWorkspace } from "@/lib/projects";
-import { countOpenProblemsForProjects } from "@/services/projects/projectProblemsReadService";
+import {
+  countOpenProblemsForProjects,
+  listOpenProblemsForDashboard,
+  type OpenProblemPreview,
+} from "@/services/projects/projectProblemsReadService";
 import {
   canViewOrgSharedFieldNotes,
   collectProjectOrgIds,
   fetchSharedFieldNotesForDashboard,
   type SharedFieldNotePreview,
 } from "@/services/operations/fieldNotesService";
+import {
+  loadOrgLiveTimers,
+  type ActiveTimerState,
+} from "@/services/operations/teamLiveStatusService";
+import { isCompanyWorkspaceType } from "@/types/workspace";
 
 export type MissionControlAttentionItem = {
   id: string;
@@ -89,6 +98,11 @@ export type TeamMemberRow = {
   name: string;
   statusKey: string;
   statusTone: "on_site" | "service" | "absent" | "free" | "unknown";
+  /** Live timer from organizations/{orgId}/liveTimers — overrides static status when set. */
+  liveStatus?: "working" | "paused";
+  timerSeconds?: number;
+  projectId?: string;
+  projectName?: string;
 };
 
 export type VehicleRow = {
@@ -103,6 +117,7 @@ export type MissionControlFieldProof = {
   photos: number;
   docs: number;
   openProblems: number;
+  openProblemItems: OpenProblemPreview[];
   fieldNotes: number;
   latestFieldNotes: SharedFieldNotePreview[];
 };
@@ -235,6 +250,56 @@ function buildAgendaGroups(
   }).filter((g) => g.items.length > 0 || g.dateIso === todayIso);
 }
 
+function activeTimerSeconds(timer: ActiveTimerState): number {
+  const now = Date.now();
+  const runningSince = timer.runningSince ?? timer.startedAt;
+  const runningSinceMs = runningSince ? new Date(runningSince).getTime() : now;
+  const base = timer.accumulatedMs ?? 0;
+  if (timer.status === "paused") return Math.max(0, Math.round(base / 1000));
+  return Math.max(0, Math.round((base + Math.max(0, now - runningSinceMs)) / 1000));
+}
+
+/** Merge org liveTimers into team rows — working employees surface first on the home card. */
+export function applyLiveTimersToTeam(
+  team: TeamMemberRow[],
+  liveTimers: Map<string, ActiveTimerState>
+): TeamMemberRow[] {
+  if (liveTimers.size === 0) return team;
+
+  const updated = team.map((member) => {
+    const timer = liveTimers.get(member.uid);
+    if (!timer) return member;
+
+    const liveStatus: TeamMemberRow["liveStatus"] =
+      timer.status === "paused" ? "paused" : "working";
+    return {
+      ...member,
+      liveStatus,
+      timerSeconds: activeTimerSeconds(timer),
+      projectId: timer.projectId,
+      projectName: timer.projectNameSnapshot,
+      statusKey:
+        liveStatus === "paused"
+          ? "dashboard.mission.team.status.paused"
+          : "dashboard.mission.team.status.working",
+      statusTone: "on_site" as const,
+    };
+  });
+
+  return updated.sort((a, b) => {
+    const order = (m: TeamMemberRow) =>
+      m.liveStatus === "working" ? 0 : m.liveStatus === "paused" ? 1 : m.statusTone === "on_site" ? 2 : 3;
+    return order(a) - order(b) || a.name.localeCompare(b.name);
+  });
+}
+
+export function recomputeTeamWithLiveTimers(
+  planning: PlanningDashboardData,
+  liveTimers: Map<string, ActiveTimerState>
+): TeamMemberRow[] {
+  return applyLiveTimersToTeam(buildTeamRows(planning), liveTimers);
+}
+
 function buildTeamRows(planning: PlanningDashboardData): TeamMemberRow[] {
   return planning.members
     .filter((m) => m.effectiveRole === "worker" || m.assignedProjectCount > 0)
@@ -296,7 +361,7 @@ function buildAttention(
       id: "open-problems",
       labelKey: "dashboard.attention.openProblems",
       count: openProblems,
-      href: "/app/projects",
+      href: "/app/operations",
       kind: "warning",
     });
   }
@@ -475,8 +540,15 @@ export async function fetchMissionControlData(
   const openProblems = await countOpenProblemsForProjects(workspaceProjects.map((p) => p.id)).catch(
     () => 0
   );
+  const openProblemItems = await listOpenProblemsForDashboard(
+    workspaceProjects.map((p) => ({ id: p.id, name: p.name }))
+  ).catch(() => []);
 
   const orgId = workspace.orgId ?? (workspace.type === "company" ? workspace.id : "");
+  const liveTimers =
+    isCompanyWorkspaceType(workspace.type) && orgId.trim()
+      ? await loadOrgLiveTimers(orgId).catch(() => new Map<string, ActiveTimerState>())
+      : new Map<string, ActiveTimerState>();
   const canViewFieldNotes = canViewOrgSharedFieldNotes(workspace.role);
   let sharedFieldNotes: SharedFieldNotePreview[] = [];
   if (orgId && canViewFieldNotes) {
@@ -509,12 +581,13 @@ export async function fetchMissionControlData(
       photos: 0,
       docs: 0,
       openProblems,
+      openProblemItems,
       fieldNotes: sharedFieldNotes.length,
       latestFieldNotes: sharedFieldNotes.slice(0, 50),
     },
     todayRows: buildTodayRows(planning, taskDocs, todayIso),
     agendaGroups: buildAgendaGroups(planning, taskDocs, weekStart, todayIso),
-    team: buildTeamRows(planning),
+    team: recomputeTeamWithLiveTimers(planning, liveTimers),
     workloads: workloads.filter((w) => w.taskCount > 0).slice(0, 8),
     vehicles: buildVehicles(equipment),
     taskMetrics,

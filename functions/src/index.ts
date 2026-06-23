@@ -7,6 +7,7 @@ import {
   handleUpdateProjectDraftWithAI,
 } from "./handlers";
 import { handleCreateBusinessOrg } from "./businessOrg";
+import { handleGlobalSearch } from "./search/globalSearch";
 import { gmailBuildAuthUrl, gmailOAuthCallback } from "./gmail";
 import { isGeminiOverloadedError, isGeminiQuotaError } from "./gemini";
 import { functionsPermissionError } from "./permissions";
@@ -107,6 +108,20 @@ export const createBusinessOrg = onCall(
       const actorEmail =
         typeof request.auth?.token?.email === "string" ? request.auth.token.email : null;
       return await handleCreateBusinessOrg(request.auth?.uid, actorEmail, request.data);
+    } catch (e) {
+      mapError(e);
+    }
+  }
+);
+
+export const globalSearch = onCall(
+  { ...callableOptions, timeoutSeconds: 60, memory: "512MiB" as const },
+  async (request) => {
+    try {
+      if (!request.auth?.uid) {
+        throw new HttpsError("unauthenticated", "Sign in required.");
+      }
+      return await handleGlobalSearch(request.auth.uid, request.data);
     } catch (e) {
       mapError(e);
     }

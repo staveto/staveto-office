@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
 import { useWorkspace } from "@/context/WorkspaceContext";
@@ -11,6 +12,12 @@ import { EmailInboxHeaderLink } from "./EmailInboxHeaderLink";
 import { NotificationsDropdown } from "./NotificationsDropdown";
 import { ThemeToggle } from "./ThemeToggle";
 import { UserProfileMenu } from "./UserProfileMenu";
+import {
+  GlobalSearchInput,
+  GlobalSearchTriggerMobile,
+  useSearchShortcut,
+} from "@/components/search/GlobalSearchInput";
+import { SearchCommandPalette } from "@/components/search/SearchCommandPalette";
 
 const PAGE_TITLES: Record<string, string> = {
   "/": "nav.overview",
@@ -57,6 +64,9 @@ export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
   const pathname = usePathname();
   const { activeWorkspace } = useWorkspace();
   const { t } = useI18n();
+  const [searchOpen, setSearchOpen] = useState(false);
+  const openSearch = useCallback(() => setSearchOpen(true), []);
+  useSearchShortcut(openSearch);
 
   let pageTitleKey = getPageTitle(pathname);
   if (activeWorkspace) {
@@ -79,8 +89,8 @@ export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
   }
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-background/95 px-4 backdrop-blur-sm md:px-6">
-      <div className="flex min-w-0 items-center gap-3">
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-4 backdrop-blur-sm md:gap-4 md:px-6">
+      <div className="flex min-w-0 items-center gap-3 md:max-w-[240px]">
         <button
           type="button"
           onClick={onMenuClick}
@@ -95,13 +105,20 @@ export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
         </h1>
       </div>
 
+      <div className="hidden min-w-0 flex-1 justify-center md:flex">
+        <GlobalSearchInput onOpen={openSearch} />
+      </div>
+
       <div className="flex min-w-0 shrink items-center gap-1.5 sm:gap-2">
+        <GlobalSearchTriggerMobile onOpen={openSearch} />
         <ThemeToggle />
         <EmailInboxHeaderLink />
         <NotificationsDropdown />
         <ActiveCompanyContextSelector />
         <UserProfileMenu />
       </div>
+
+      <SearchCommandPalette open={searchOpen} onOpenChange={setSearchOpen} />
     </header>
   );
 }

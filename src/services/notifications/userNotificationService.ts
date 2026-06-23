@@ -27,7 +27,10 @@ export type UserNotificationType =
   | "PROBLEM_REPORTED"
   | "PROBLEM_ASSIGNED"
   | "FIELD_NOTE_SHARED"
-  | "ABSENCE_REQUESTED";
+  | "ABSENCE_REQUESTED"
+  | "TIMER_STARTED"
+  | "TIMER_PAUSED"
+  | "TIMER_STOPPED";
 
 export type UserNotification = {
   id: string;
@@ -346,6 +349,24 @@ export function getNotificationProjectHref(notification: UserNotification): stri
     return notification.projectId
       ? `/app/projects/${notification.projectId}`
       : "/app";
+  }
+  if (
+    notification.type === "PROBLEM_REPORTED" ||
+    notification.type === "PROBLEM_ASSIGNED"
+  ) {
+    const base = notification.projectId
+      ? `/app/projects/${notification.projectId}?tab=problems`
+      : "/app/operations";
+    return notification.problemId ? `${base}&problemId=${notification.problemId}` : base;
+  }
+  if (
+    notification.type === "TIMER_STARTED" ||
+    notification.type === "TIMER_PAUSED" ||
+    notification.type === "TIMER_STOPPED"
+  ) {
+    return notification.projectId
+      ? `/app/projects/${notification.projectId}`
+      : "/app/operations";
   }
   if (!notification.projectId) return null;
   return `/app/projects/${notification.projectId}`;

@@ -317,13 +317,16 @@ service cloud.firestore {
 
     function memberProblemOfficeNotificationCreateAllowed(targetUserId) {
       let pid = request.resource.data.get('projectId', null);
-      return request.resource.data.fromUserId == request.auth.uid
+      return targetUserId != request.auth.uid
         && pid is string
         && pid != ''
         && exists(/databases/$(database)/documents/projects/$(pid))
+        && (
+          request.resource.data.fromUserId == request.auth.uid
+          || request.resource.data.assignedBy == request.auth.uid
+        )
         && (isAssignedOnProject(pid) || canAccessProjectId(pid))
-        && request.resource.data.type in ['PROBLEM_ASSIGNED', 'PROBLEM_REPORTED']
-        && targetUserId != request.auth.uid;
+        && request.resource.data.type in ['PROBLEM_ASSIGNED', 'PROBLEM_REPORTED'];
     }
 
     // Mobile compat: a worker may request time off and notify org owner/managers.

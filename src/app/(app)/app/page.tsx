@@ -1,17 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import {
   DashboardHeroSkeleton,
   CompanyDashboardView,
   PersonalDashboardView,
   WorkerDashboardView,
 } from "@/components/dashboard";
+import { StavetoFlyoverIntro } from "@/components/dashboard/flyover/StavetoFlyoverIntro";
 import { CompanyWorkspaceSwitchPrompt } from "@/components/dashboard/CompanyWorkspaceSwitchPrompt";
 import { CompanyProfileCompletionCard } from "@/components/settings/CompanyProfileCompletionCard";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/context/AuthContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
+import { useStavetoIntroPreference } from "@/hooks/useStavetoIntroPreference";
 import {
   isCompanyWorkspaceMode,
   shouldShowWorkerDashboard,
@@ -57,16 +59,32 @@ function DashboardSkeleton() {
   );
 }
 
-export default function OverviewPage() {
+function useForceIntroFromUrl(): boolean {
+  const [forceIntro, setForceIntro] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setForceIntro(params.get("intro") === "1");
+  }, []);
+
+  return forceIntro;
+}
+
+function OverviewPageContent() {
   const { t } = useI18n();
   const { user, profile } = useAuth();
-  const { activeWorkspace, availableWorkspaces, roleResolving } = useWorkspace();
+  const forceIntro = useForceIntroFromUrl();
+  const { activeWorkspace, availableWorkspaces } = useWorkspace();
+  const intro = useStavetoIntroPreference({ forceIntro });
   const [statsLoading, setStatsLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
 
   const isCompany = isCompanyWorkspaceMode(activeWorkspace);
   const isWorkerHome =
     isCompany && shouldShowWorkerDashboard(activeWorkspace?.role);
+  const workspaceKey = activeWorkspace
+    ? `${activeWorkspace.id}:${activeWorkspace.orgId ?? ""}`
+    : "";
 
   useEffect(() => {
     if (!user?.id || !activeWorkspace || isWorkerHome) {
@@ -79,9 +97,16 @@ export default function OverviewPage() {
     void (async () => {
       setStatsLoading(true);
       try {
-        const data = await fetchDashboardStats(activeWorkspace, user.id);
+        const data = await Promise.race([
+          fetchDashboardStats(activeWorkspace, user.id),
+          new Promise<DashboardStats>((resolve) =>
+            window.setTimeout(() => resolve(EMPTY_STATS), 12_000)
+          ),
+        ]);
         if (cancelled) return;
         setStats(data);
+      } catch {
+        if (!cancelled) setStats(EMPTY_STATS);
       } finally {
         if (!cancelled) setStatsLoading(false);
       }
@@ -90,7 +115,7 @@ export default function OverviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, activeWorkspace, isWorkerHome]);
+  }, [user?.id, workspaceKey, isWorkerHome]);
 
   const displayName =
     profile?.firstName?.trim() ||
@@ -102,8 +127,33 @@ export default function OverviewPage() {
     isCompanyWorkspaceType(w.type)
   );
 
-  if (!user || !activeWorkspace || (isCompany && roleResolving)) {
-    return <DashboardSkeleton />;
+  const showFlyover =
+    intro.ready &&
+    intro.visible &&
+    isCompany &&
+    !isWorkerHome &&
+    !!user?.id &&
+    !!activeWorkspace;
+
+  if (!user || !activeWorkspace) {
+    return (
+      <>
+        {showFlyover ? (
+          <StavetoFlyoverIntro
+            open
+            onDismiss={intro.dismiss}
+            onDisableAutoShow={intro.disableAutoShow}
+            workspace={activeWorkspace!}
+            uid={user?.id ?? ""}
+            displayName={displayName}
+            role={activeWorkspace?.role}
+            stats={stats}
+            statsLoading={statsLoading}
+          />
+        ) : null}
+        <DashboardSkeleton />
+      </>
+    );
   }
 
   if (isWorkerHome) {
@@ -118,16 +168,31 @@ export default function OverviewPage() {
 
   if (isCompany) {
     return (
-      <div className="space-y-4">
-        <CompanyProfileCompletionCard />
-        <CompanyDashboardView
-          activeWorkspace={activeWorkspace}
-          displayName={displayName}
-          stats={stats}
-          statsLoading={statsLoading}
-          uid={user.id}
-        />
-      </div>
+      <>
+        {showFlyover ? (
+          <StavetoFlyoverIntro
+            open
+            onDismiss={intro.dismiss}
+            onDisableAutoShow={intro.disableAutoShow}
+            workspace={activeWorkspace}
+            uid={user.id}
+            displayName={displayName}
+            role={activeWorkspace.role}
+            stats={stats}
+            statsLoading={statsLoading}
+          />
+        ) : null}
+        <div className="space-y-4">
+          <CompanyProfileCompletionCard />
+          <CompanyDashboardView
+            activeWorkspace={activeWorkspace}
+            displayName={displayName}
+            stats={stats}
+            statsLoading={statsLoading}
+            uid={user.id}
+          />
+        </div>
+      </>
     );
   }
 
@@ -142,5 +207,13 @@ export default function OverviewPage() {
         hasCompanyWorkspace ? <CompanyWorkspaceSwitchPrompt variant="banner" /> : null
       }
     />
+  );
+}
+
+export default function OverviewPage() {
+  return (
+    <Suspense fallback={<DashboardSkeleton />}>
+      <OverviewPageContent />
+    </Suspense>
   );
 }

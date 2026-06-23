@@ -12,7 +12,7 @@ import {
   isWaitingForCustomer,
   normalizeLifecycleStatus,
 } from "./projectLifecycle";
-import { listQuotesForWorkspaceEnsured } from "@/services/quotes";
+import { listQuotesForWorkspace } from "./quotes";
 import type { QuoteDoc, QuoteStatus } from "./quotes";
 import { listOrgMembers } from "./organizations";
 import { dedupeInflight } from "./inflightCache";
@@ -158,7 +158,9 @@ async function loadQuoteStats(
   uid: string
 ): Promise<QuoteStats> {
   try {
-    const quotes = await listQuotesForWorkspaceEnsured(workspace, uid);
+    const legacy =
+      "source" in workspace ? toLegacyWorkspace(workspace) : (workspace as Workspace);
+    const quotes = await listQuotesForWorkspace(legacy, uid);
     const sortedQuotes = [...quotes].sort(sortJobsByRecency);
     const awaiting = quotes.filter((q) => QUOTES_NEEDING_ACTION.has(q.status));
     return {

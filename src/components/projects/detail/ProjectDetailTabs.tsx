@@ -9,6 +9,7 @@ const TABS: ProjectDashboardTab[] = [
   "overview",
   "tasks",
   "workplan",
+  "problems",
   "quote",
   "documents",
   "activity",

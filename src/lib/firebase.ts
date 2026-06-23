@@ -39,6 +39,7 @@ import {
   ref,
   uploadBytes,
   getDownloadURL,
+  listAll,
   type FirebaseStorage,
 } from "firebase/storage";
 
@@ -117,7 +118,7 @@ export function getStorageInstance(): FirebaseStorage | null {
   return app ? getStorage(app) : null;
 }
 
-export { ref, uploadBytes, getDownloadURL };
+export { ref, uploadBytes, getDownloadURL, listAll };
 
 export const auth = { get: getAuthInstance };
 export const db = { get: getFirestoreInstance };
