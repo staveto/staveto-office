@@ -27,10 +27,10 @@ export function OnboardingOptionCard({
       className={cn(
         "w-full rounded-xl border-2 p-4 text-left transition-all duration-200",
         selected
-          ? "border-[#e06737] bg-[#e06737]/5 shadow-md ring-2 ring-[#e06737]/20"
+          ? "border-[#e06737] bg-[#fff7f4] shadow-md ring-2 ring-[#e06737]/20"
           : recommended
-            ? "border-[#1D376A]/20 bg-[#1D376A]/[0.04] hover:border-[#e06737]/50 hover:shadow-sm"
-            : "border-border bg-background hover:border-[#e06737]/40 hover:shadow-sm"
+            ? "border-[#1D376A]/25 bg-[#f8fafc] hover:border-[#e06737]/50 hover:shadow-sm"
+            : "border-[#cbd5e1] bg-white hover:border-[#e06737]/40 hover:shadow-sm"
       )}
     >
       <div className="flex items-start gap-3">
@@ -38,16 +38,16 @@ export function OnboardingOptionCard({
           <span
             className={cn(
               "flex size-10 shrink-0 items-center justify-center rounded-lg",
-              selected ? "bg-[#e06737] text-white" : "bg-muted text-muted-foreground"
+              selected ? "bg-[#e06737] text-white" : "bg-[#e06737]/12 text-[#e06737]"
             )}
           >
             <Icon className="size-5" />
           </span>
         ) : null}
         <div>
-          <p className="font-medium">{title}</p>
+          <p className={cn("font-semibold", selected ? "text-[#e06737]" : "text-[#111111]")}>{title}</p>
           {description ? (
-            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+            <p className="mt-1 text-sm text-[#555555]">{description}</p>
           ) : null}
         </div>
       </div>

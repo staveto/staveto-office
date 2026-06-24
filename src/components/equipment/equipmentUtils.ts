@@ -38,13 +38,13 @@ export function equipmentStatusLabelKey(status: UserEquipmentStatus): string {
 export function equipmentStatusBadgeClass(status: UserEquipmentStatus): string {
   switch (status) {
     case "available":
-      return "bg-emerald-100 text-emerald-800 border-emerald-200";
+      return "border-emerald-200 bg-emerald-100 text-emerald-800 dark:border-emerald-800/50 dark:bg-emerald-950/40 dark:text-emerald-200";
     case "assigned":
-      return "bg-sky-100 text-sky-800 border-sky-200";
+      return "border-sky-200 bg-sky-100 text-sky-800 dark:border-sky-800/50 dark:bg-sky-950/40 dark:text-sky-200";
     case "in_service":
-      return "bg-amber-100 text-amber-900 border-amber-200";
+      return "border-amber-200 bg-amber-100 text-amber-900 dark:border-amber-800/50 dark:bg-amber-950/40 dark:text-amber-200";
     case "inactive":
-      return "bg-slate-100 text-slate-700 border-slate-200";
+      return "border-slate-200 bg-slate-100 text-slate-700 dark:border-slate-600/50 dark:bg-slate-800/50 dark:text-slate-200";
     default:
       return "bg-muted text-muted-foreground";
   }

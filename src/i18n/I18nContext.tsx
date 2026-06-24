@@ -48,12 +48,16 @@ function readStoredLocale(): Locale | null {
   return null;
 }
 
-function readInitialLocale(): Locale {
-  return readStoredLocale() ?? DEFAULT_LOCALE;
-}
-
 export function I18nProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>(readInitialLocale);
+  // SSR and first client paint must match — read localStorage only after mount.
+  const [locale, setLocaleState] = useState<Locale>(DEFAULT_LOCALE);
+
+  useEffect(() => {
+    const stored = readStoredLocale();
+    const next = stored ?? DEFAULT_LOCALE;
+    setLocaleState(next);
+    document.documentElement.lang = next;
+  }, []);
 
   useEffect(() => {
     document.documentElement.lang = locale;

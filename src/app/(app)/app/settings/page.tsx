@@ -43,9 +43,7 @@ export default function SettingsPage() {
       <SettingsSectionCard>
         <CardHeader>
           <CardTitle>{t("settings.companyProfile.title")}</CardTitle>
-          <CardDescription className="text-[#4a5568]">
-            {t("settings.companyProfile.description")}
-          </CardDescription>
+          <CardDescription>{t("settings.companyProfile.description")}</CardDescription>
         </CardHeader>
         <CardContent>
           <Link
@@ -63,9 +61,7 @@ export default function SettingsPage() {
           <SettingsSectionCard>
             <CardHeader>
               <CardTitle>{t("settings.modules.linkTitle")}</CardTitle>
-              <CardDescription className="text-[#4a5568]">
-                {t("settings.modules.linkDescription")}
-              </CardDescription>
+              <CardDescription>{t("settings.modules.linkDescription")}</CardDescription>
             </CardHeader>
             <CardContent>
               <Link
@@ -79,9 +75,7 @@ export default function SettingsPage() {
           <SettingsSectionCard>
             <CardHeader>
               <CardTitle>{t("appCenter.title")}</CardTitle>
-              <CardDescription className="text-[#4a5568]">
-                {t("appCenter.subtitle")}
-              </CardDescription>
+              <CardDescription>{t("appCenter.subtitle")}</CardDescription>
             </CardHeader>
             <CardContent>
               <Link

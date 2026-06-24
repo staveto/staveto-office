@@ -9,6 +9,9 @@ export type NewJobStepId =
   | "contact"
   | "method"
   | "manual-details"
+  | "copy-source"
+  | "copy-options"
+  | "copy-details"
   | "ai-brief"
   | "ai-review"
   | "concept";

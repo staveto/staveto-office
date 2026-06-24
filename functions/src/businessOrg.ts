@@ -9,21 +9,48 @@ if (!admin.apps.length) {
 
 const db = admin.firestore();
 
-const createBusinessOrgSchema = z.object({
-  companyName: z.string().min(1).max(200),
-  country: z.string().min(2).max(10),
-  timezone: z.string().min(1).max(80).optional(),
-  companyType: z.string().min(1).max(40),
-  planCode: z.enum([
-    "business_starter",
-    "business_team",
-    "business_company",
-    "business_enterprise",
-  ]),
-  billingPeriod: z.enum(["monthly", "yearly"]),
-  teamSizeBand: z.string().optional(),
-  contactName: z.string().max(200).optional(),
-});
+const optionalNonEmptyString = (max: number) =>
+  z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z.string().min(1).max(max).optional()
+  );
+
+function normalizeCreateBusinessOrgPayload(data: unknown): unknown {
+  if (!data || typeof data !== "object") return data;
+  const raw = data as Record<string, unknown>;
+  const companyName =
+    (typeof raw.companyName === "string" ? raw.companyName.trim() : "") ||
+    (typeof raw.legalName === "string" ? raw.legalName.trim() : "");
+  const country =
+    (typeof raw.country === "string" ? raw.country.trim() : "") ||
+    (typeof raw.countryCode === "string" ? raw.countryCode.trim() : "");
+
+  return {
+    ...raw,
+    companyName,
+    country,
+  };
+}
+
+const createBusinessOrgSchema = z.preprocess(
+  normalizeCreateBusinessOrgPayload,
+  z.object({
+    companyName: z.string().min(1).max(200),
+    country: z.string().min(2).max(10),
+    timezone: optionalNonEmptyString(80),
+    companyType: z.string().min(1).max(40),
+    planCode: z.enum([
+      "business_starter",
+      "business_team",
+      "business_company",
+      "business_enterprise",
+    ]),
+    billingPeriod: z.enum(["monthly", "yearly"]),
+    teamSizeBand: optionalNonEmptyString(40),
+    contactName: optionalNonEmptyString(200),
+    source: z.enum(["web_onboarding"]).optional(),
+  })
+);
 
 const SEATS: Record<string, number> = {
   business_starter: 5,

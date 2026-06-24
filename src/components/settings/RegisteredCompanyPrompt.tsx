@@ -9,6 +9,7 @@ import { useI18n } from "@/i18n/I18nContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { useWorkspaceProduct } from "@/hooks/useWorkspaceProduct";
 import { isCompanyWorkspaceType } from "@/types/workspace";
+import { settingsAccentIconClassName, settingsHighlightCardClassName } from "./settingsStyles";
 
 export function RegisteredCompanyPrompt() {
   const { t } = useI18n();
@@ -23,10 +24,10 @@ export function RegisteredCompanyPrompt() {
   if (!companyWorkspace) return null;
 
   return (
-    <Card className="border-[#1D376A]/15 bg-[#1D376A]/[0.03]">
+    <Card className={settingsHighlightCardClassName}>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center gap-2 text-base">
-          <Building2 className="size-4 text-[#1D376A]" aria-hidden />
+          <Building2 className={cn("size-4", settingsAccentIconClassName)} aria-hidden />
           {t("settings.registeredCompany.title")}
         </CardTitle>
       </CardHeader>

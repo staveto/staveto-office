@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyApiAuth, guardOrgManager } from "@/lib/apiAuth";
 import { isGmailClientConfigured, isGmailOAuthFullyConfigured } from "@/lib/gmail/config";
 import { buildGoogleAuthUrl } from "@/lib/gmail/oauth";
-import { isAdminConfigured } from "@/lib/firebaseAdmin";
 
 export async function GET(request: NextRequest) {
   if (!isGmailClientConfigured()) {
@@ -10,9 +9,6 @@ export async function GET(request: NextRequest) {
   }
   if (!isGmailOAuthFullyConfigured()) {
     return NextResponse.json({ errorCode: "GMAIL_NOT_CONFIGURED" }, { status: 503 });
-  }
-  if (!isAdminConfigured()) {
-    return NextResponse.json({ errorCode: "GMAIL_ADMIN_NOT_CONFIGURED" }, { status: 503 });
   }
 
   const auth = await verifyApiAuth(request);
@@ -35,7 +31,13 @@ export async function GET(request: NextRequest) {
 
     const origin = request.nextUrl.origin;
     const url = buildGoogleAuthUrl(
-      { orgId, uid: auth.uid, returnUrl, ts: Date.now() },
+      {
+        orgId,
+        uid: auth.uid,
+        returnUrl,
+        appOrigin: origin,
+        ts: Date.now(),
+      },
       origin
     );
 

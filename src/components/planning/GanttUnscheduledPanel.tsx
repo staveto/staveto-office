@@ -23,7 +23,7 @@ export function GanttUnscheduledPanel({
 
   return (
     <section className={styles.unscheduledPanel}>
-      <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-[#1D376A]">
+      <h3 className="mb-2 flex items-center gap-2 text-sm font-bold text-foreground">
         <AlertCircle className="size-4 text-amber-600" />
         {t("gantt.unscheduled.title")} ({tasks.length})
       </h3>

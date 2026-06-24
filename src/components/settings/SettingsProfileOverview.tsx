@@ -13,6 +13,7 @@ import { useWorkspaceProduct } from "@/hooks/useWorkspaceProduct";
 import { getCompanyRoleLabelKey } from "@/lib/companyRoles";
 import { SettingsSectionCard } from "./SettingsSectionCard";
 import {
+  settingsAccentLinkClassName,
   settingsProfileLabelClassName,
   settingsProfileRowClassName,
   settingsProfileValueClassName,
@@ -43,9 +44,7 @@ export function SettingsProfileOverview() {
     <SettingsSectionCard>
       <CardHeader>
         <CardTitle>{t("settings.profileOverview.title")}</CardTitle>
-        <CardDescription className="text-[#4a5568]">
-          {t("settings.profileOverview.description")}
-        </CardDescription>
+        <CardDescription>{t("settings.profileOverview.description")}</CardDescription>
       </CardHeader>
       <CardContent>
         <dl className="grid gap-3 sm:grid-cols-2">
@@ -81,7 +80,7 @@ export function SettingsProfileOverview() {
           ) : null}
         </dl>
         <p className="mt-4 text-sm">
-          <Link href="/app/settings#project-invites" className="text-[#1D376A] hover:underline font-medium">
+          <Link href="/app/settings#project-invites" className={settingsAccentLinkClassName}>
             {t("profile.openInvites")} →
           </Link>
         </p>

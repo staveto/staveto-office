@@ -7,6 +7,8 @@ import type { DashboardStats } from "@/lib/dashboardStats";
 import { useWorkspaceProduct } from "@/hooks/useWorkspaceProduct";
 import { useAuth } from "@/context/AuthContext";
 import { useEnabledModules } from "@/context/EnabledModulesContext";
+import { useWorkspace } from "@/context/WorkspaceContext";
+import { useCompanyDashboardBootstrap } from "@/hooks/useCompanyDashboardBootstrap";
 import { shouldShowWelcomeGuide } from "@/services/onboarding/welcomeGuideService";
 import {
   getCompanySetupProgress,
@@ -22,6 +24,8 @@ import {
 } from "@/lib/dashboardCommandCenter";
 import { canManageCompanyOperations } from "@/lib/workspaceProduct";
 import { MissionControlDashboard } from "@/components/dashboard/mission-control/MissionControlDashboard";
+import { CompanyDashboardBootSkeleton } from "@/components/dashboard/CompanyDashboardBootSkeleton";
+import { CompanyProfileCompletionCard } from "@/components/settings/CompanyProfileCompletionCard";
 import {
   fetchMissionControlData,
   recomputeTeamWithLiveTimers,
@@ -38,6 +42,7 @@ type CompanyDashboardViewProps = {
   displayName: string;
   stats: DashboardStats;
   statsLoading: boolean;
+  statsLoaded: boolean;
   uid: string;
 };
 
@@ -46,21 +51,42 @@ export function CompanyDashboardView({
   displayName,
   stats,
   statsLoading,
+  statsLoaded,
   uid,
 }: CompanyDashboardViewProps) {
   const { t } = useI18n();
-  const { profile } = useAuth();
+  const { profile, loading: authLoading } = useAuth();
+  const { roleResolving } = useWorkspace();
   const { role } = useWorkspaceProduct();
-  const { modules } = useEnabledModules();
+  const { modules, loading: modulesLoading } = useEnabledModules();
   const orgId = activeWorkspace.orgId ?? activeWorkspace.id;
-  const { org, profile: orgProfile } = useCompanyOrgContext(orgId);
+  const { org, profile: orgProfile, loading: orgLoading } = useCompanyOrgContext(orgId);
   const setupProgress = getCompanySetupProgress(profile, orgId);
   const companyType = resolveCompanyType(org?.companyType);
 
   const [missionData, setMissionData] = useState<MissionControlData | null>(null);
   const [missionLoading, setMissionLoading] = useState(true);
+  const [missionLoaded, setMissionLoaded] = useState(false);
   const [missionError, setMissionError] = useState<string | null>(null);
   const [liveTimers, setLiveTimers] = useState<Map<string, ActiveTimerState>>(new Map());
+
+  const workspaceKey = `${activeWorkspace.id}:${activeWorkspace.orgId ?? ""}`;
+
+  const { isBootstrapping, isRefreshing } = useCompanyDashboardBootstrap({
+    activeWorkspace,
+    authLoading,
+    roleResolving,
+    statsLoading,
+    statsLoaded,
+    orgLoading,
+    modulesLoading,
+    missionLoading,
+    missionLoaded,
+  });
+
+  const dashboardReady = !isBootstrapping;
+  const profileLoaded = !authLoading;
+  const roleResolved = !roleResolving && !!role;
 
   const { setupMode } = resolveSetupDashboardState(
     stats,
@@ -72,11 +98,15 @@ export function CompanyDashboardView({
     setupProgress
   );
   const emptyCompany = isEmptyCompanyMode(stats);
-  const showOperationsHome = canManageCompanyOperations(role);
+  const showOperationsHome = roleResolved && canManageCompanyOperations(role);
   const setupChecklistDismissed = isSetupChecklistDismissed(setupProgress);
-  const showSetupChecklist = setupMode && !setupChecklistDismissed;
+  const showSetupChecklist =
+    dashboardReady && setupMode && !setupChecklistDismissed;
 
   const showWelcomeGuide =
+    dashboardReady &&
+    profileLoaded &&
+    statsLoaded &&
     !setupMode &&
     !emptyCompany &&
     shouldShowWelcomeGuide(profile, {
@@ -85,14 +115,22 @@ export function CompanyDashboardView({
     });
 
   useEffect(() => {
+    setMissionLoaded(false);
+    setMissionData(null);
+    setMissionLoading(true);
+    setMissionError(null);
+  }, [workspaceKey]);
+
+  useEffect(() => {
     if (!uid || !activeWorkspace) {
       setMissionLoading(false);
+      setMissionLoaded(true);
       return;
     }
 
     let cancelled = false;
-    setMissionLoading(true);
     setMissionError(null);
+    setMissionLoading(true);
 
     void fetchMissionControlData(activeWorkspace, uid)
       .then((data) => {
@@ -105,13 +143,16 @@ export function CompanyDashboardView({
         }
       })
       .finally(() => {
-        if (!cancelled) setMissionLoading(false);
+        if (!cancelled) {
+          setMissionLoading(false);
+          setMissionLoaded(true);
+        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [uid, activeWorkspace?.id, activeWorkspace?.orgId, activeWorkspace?.type]);
+  }, [uid, workspaceKey, activeWorkspace]);
 
   useEffect(() => {
     if (!isCompanyWorkspaceType(activeWorkspace.type) || !orgId.trim()) return;
@@ -128,7 +169,7 @@ export function CompanyDashboardView({
   }, [liveTimers]);
 
   useEffect(() => {
-    const hasRunning = [...liveTimers.values()].some((t) => t.status === "running");
+    const hasRunning = [...liveTimers.values()].some((timer) => timer.status === "running");
     if (!hasRunning) return;
     const id = window.setInterval(() => {
       setMissionData((prev) =>
@@ -138,7 +179,11 @@ export function CompanyDashboardView({
     return () => window.clearInterval(id);
   }, [liveTimers]);
 
-  if (setupMode && !showOperationsHome && !statsLoading) {
+  if (isBootstrapping) {
+    return <CompanyDashboardBootSkeleton />;
+  }
+
+  if (setupMode && !showOperationsHome) {
     return (
       <div className="mx-auto max-w-5xl space-y-8 pb-12">
         <header className="space-y-1">
@@ -159,7 +204,7 @@ export function CompanyDashboardView({
     );
   }
 
-  if (emptyCompany && !showOperationsHome && !statsLoading) {
+  if (emptyCompany && !showOperationsHome) {
     return (
       <div className="mx-auto max-w-5xl space-y-6 pb-12 text-center">
         <h1 className="text-2xl font-semibold">{t("dashboard.command.setup.title")}</h1>
@@ -169,31 +214,39 @@ export function CompanyDashboardView({
   }
 
   return (
-    <div className="space-y-6">
-      {showSetupChecklist ? (
-        <SetupDashboardChecklist
-          orgId={orgId}
-          stats={stats}
-          profile={orgProfile}
-          modules={modules}
-          companyType={companyType}
-          org={org ?? undefined}
+    <div className="space-y-4">
+      <CompanyProfileCompletionCard />
+      {isRefreshing ? (
+        <p className="text-xs text-muted-foreground" aria-live="polite">
+          {t("dashboard.boot.message")}
+        </p>
+      ) : null}
+      <div className="space-y-6">
+        {showSetupChecklist ? (
+          <SetupDashboardChecklist
+            orgId={orgId}
+            stats={stats}
+            profile={orgProfile}
+            modules={modules}
+            companyType={companyType}
+            org={org ?? undefined}
+          />
+        ) : null}
+        {showWelcomeGuide && orgId ? <BusinessWelcomeGuide orgId={orgId} /> : null}
+        {missionError ? (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+            {missionError}
+          </div>
+        ) : null}
+        <MissionControlDashboard
+          data={missionData}
+          loading={missionLoading && !missionData}
+          displayName={displayName}
+          orgName={activeWorkspace.name}
+          workspace={activeWorkspace}
+          uid={uid}
         />
-      ) : null}
-      {showWelcomeGuide && orgId ? <BusinessWelcomeGuide orgId={orgId} /> : null}
-      {missionError ? (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-          {missionError}
-        </div>
-      ) : null}
-      <MissionControlDashboard
-        data={missionData}
-        loading={missionLoading}
-        displayName={displayName}
-        orgName={activeWorkspace.name}
-        workspace={activeWorkspace}
-        uid={uid}
-      />
+      </div>
     </div>
   );
 }

@@ -1,7 +1,17 @@
 import { getAuthInstance, getCallable } from "@/lib/firebase";
+import { saveIntegrationEntry } from "@/services/organizations/appCenterSettings";
 
 export const GMAIL_OAUTH_MESSAGE_CONNECTED = "staveto:gmail-connected";
 export const GMAIL_OAUTH_MESSAGE_FAILED = "staveto:gmail-failed";
+
+const OAUTH_NO_CLOUD_FALLBACK = new Set(["FORBIDDEN", "NOT_SIGNED_IN", "ORG_REQUIRED"]);
+
+type GmailServerProbe = {
+  adminHealthy?: boolean;
+  preferCloudGmail?: boolean;
+};
+
+let gmailServerProbeCache: GmailServerProbe | null = null;
 
 async function authHeaders(): Promise<HeadersInit> {
   const auth = getAuthInstance();
@@ -14,28 +24,68 @@ async function authHeaders(): Promise<HeadersInit> {
   };
 }
 
+async function getGmailServerProbe(force = false): Promise<GmailServerProbe> {
+  if (!force && gmailServerProbeCache) return gmailServerProbeCache;
+  try {
+    const res = await fetch("/api/gmail", { cache: "no-store" });
+    gmailServerProbeCache = res.ok
+      ? ((await res.json()) as GmailServerProbe)
+      : { adminHealthy: false, preferCloudGmail: true };
+  } catch {
+    gmailServerProbeCache = { adminHealthy: false, preferCloudGmail: true };
+  }
+  return gmailServerProbeCache;
+}
+
+function shouldPreferCloudGmail(probe: GmailServerProbe): boolean {
+  return probe.preferCloudGmail === true || probe.adminHealthy === false;
+}
+
 function appendQuery(url: string, key: string, value: string): string {
   const sep = url.includes("?") ? "&" : "?";
   return `${url}${sep}${key}=${value}`;
+}
+
+function oauthPopupReturnUrl(returnUrl: string): string {
+  const relative = returnUrl.startsWith("/") ? returnUrl : `/${returnUrl}`;
+  const absolute =
+    typeof window !== "undefined" && !returnUrl.startsWith("http")
+      ? `${window.location.origin}${relative}`
+      : returnUrl;
+  return appendQuery(absolute, "oauth_popup", "1");
+}
+
+function oauthAppOrigin(returnUrl: string): string {
+  if (typeof window === "undefined") return "";
+  if (returnUrl.startsWith("http")) return new URL(returnUrl).origin;
+  return window.location.origin;
 }
 
 async function fetchGmailOAuthUrlFromCloudFunction(
   orgId: string,
   returnUrl: string
 ): Promise<string> {
-  const popupReturn = appendQuery(returnUrl, "oauth_popup", "1");
-  const callable = getCallable<{ orgId: string; returnUrl?: string }, { url: string }>(
-    "gmailBuildAuthUrl"
-  );
-  const res = await callable({ orgId, returnUrl: popupReturn });
+  const popupReturn = oauthPopupReturnUrl(returnUrl);
+  const callable = getCallable<
+    { orgId: string; returnUrl?: string; appOrigin?: string },
+    { url: string }
+  >("gmailBuildAuthUrl");
+  const res = await callable({
+    orgId,
+    returnUrl: popupReturn,
+    appOrigin: oauthAppOrigin(returnUrl),
+  });
   const url = res.data?.url;
   if (!url) throw new Error("OAUTH_START_FAILED");
   return url;
 }
 
-async function fetchGmailOAuthUrl(orgId: string, returnUrl: string): Promise<string> {
+async function fetchGmailOAuthUrlFromLocalApi(
+  orgId: string,
+  returnUrl: string
+): Promise<string> {
   const headers = await authHeaders();
-  const popupReturn = appendQuery(returnUrl, "oauth_popup", "1");
+  const popupReturn = oauthPopupReturnUrl(returnUrl);
   const params = new URLSearchParams({ orgId, returnUrl: popupReturn });
   const res = await fetch(`/api/gmail/oauth/start?${params.toString()}`, { headers });
   if (!res.ok) {
@@ -44,16 +94,34 @@ async function fetchGmailOAuthUrl(orgId: string, returnUrl: string): Promise<str
       const data = (await res.json()) as { errorCode?: string };
       errorCode = data.errorCode || errorCode;
     } catch {
-      if (res.status === 503) errorCode = "GMAIL_ADMIN_NOT_CONFIGURED";
-    }
-    if (errorCode === "GMAIL_ADMIN_NOT_CONFIGURED") {
-      return fetchGmailOAuthUrlFromCloudFunction(orgId, returnUrl);
+      if (res.status === 503) errorCode = "GMAIL_NOT_CONFIGURED";
     }
     throw new Error(errorCode);
   }
   const data = (await res.json()) as { url: string };
   if (!data.url) throw new Error("OAUTH_START_FAILED");
   return data.url;
+}
+
+async function fetchGmailOAuthUrl(orgId: string, returnUrl: string): Promise<string> {
+  const probe = await getGmailServerProbe();
+  const preferCloud = shouldPreferCloudGmail(probe);
+
+  const attempts = preferCloud
+    ? [fetchGmailOAuthUrlFromCloudFunction, fetchGmailOAuthUrlFromLocalApi]
+    : [fetchGmailOAuthUrlFromLocalApi, fetchGmailOAuthUrlFromCloudFunction];
+
+  let lastError: Error | null = null;
+  for (const attempt of attempts) {
+    try {
+      return await attempt(orgId, returnUrl);
+    } catch (e) {
+      const code = e instanceof Error ? e.message : "OAUTH_START_FAILED";
+      if (OAUTH_NO_CLOUD_FALLBACK.has(code)) throw e;
+      lastError = e instanceof Error ? e : new Error("OAUTH_START_FAILED");
+    }
+  }
+  throw lastError ?? new Error("OAUTH_START_FAILED");
 }
 
 function openGoogleOAuthPopup(url: string): Window | null {
@@ -90,6 +158,7 @@ export async function startGmailOAuth(orgId: string, returnUrl?: string): Promis
       if (event.origin !== window.location.origin) return;
       if (event.data?.type === GMAIL_OAUTH_MESSAGE_CONNECTED) {
         cleanup();
+        gmailServerProbeCache = null;
         resolve();
       }
       if (event.data?.type === GMAIL_OAUTH_MESSAGE_FAILED) {
@@ -139,13 +208,25 @@ export async function fetchGmailProbe(): Promise<{
   configured: boolean;
   oauthReady?: boolean;
   adminConfigured: boolean;
+  adminHealthy?: boolean;
+  preferCloudGmail?: boolean;
 }> {
-  const res = await fetch("/api/gmail");
-  if (!res.ok) return { configured: true, oauthReady: true, adminConfigured: false };
+  const res = await fetch("/api/gmail", { cache: "no-store" });
+  if (!res.ok) {
+    return {
+      configured: true,
+      oauthReady: true,
+      adminConfigured: false,
+      adminHealthy: false,
+      preferCloudGmail: true,
+    };
+  }
   return res.json() as Promise<{
     configured: boolean;
     oauthReady?: boolean;
     adminConfigured: boolean;
+    adminHealthy?: boolean;
+    preferCloudGmail?: boolean;
   }>;
 }
 
@@ -175,14 +256,66 @@ export async function syncGmailInbox(orgId: string): Promise<{
   }>;
 }
 
-export async function disconnectGmail(orgId: string): Promise<void> {
+async function disconnectGmailViaCloudFunction(orgId: string): Promise<void> {
+  const callable = getCallable<{ orgId: string }, { ok: boolean }>("gmailDisconnect");
+  const res = await callable({ orgId });
+  if (!res.data?.ok) throw new Error("DISCONNECT_FAILED");
+}
+
+async function disconnectGmailViaLocalApi(orgId: string): Promise<void> {
   const headers = await authHeaders();
   const res = await fetch("/api/gmail/sync", {
     method: "POST",
     headers,
     body: JSON.stringify({ orgId, action: "disconnect" }),
   });
-  if (!res.ok) throw new Error("DISCONNECT_FAILED");
+  if (res.ok) return;
+
+  let errorCode = "DISCONNECT_FAILED";
+  try {
+    const data = (await res.json()) as { errorCode?: string };
+    errorCode = data.errorCode || errorCode;
+  } catch {
+    /* keep default */
+  }
+  throw new Error(errorCode);
+}
+
+async function disconnectGmailViaClient(orgId: string): Promise<void> {
+  await saveIntegrationEntry(orgId, "gmail", {
+    status: "not_connected",
+    mode: "oauth",
+  });
+}
+
+export async function disconnectGmail(orgId: string): Promise<void> {
+  const probe = await getGmailServerProbe();
+  const preferCloud = shouldPreferCloudGmail(probe);
+
+  const attempts = preferCloud
+    ? [
+        () => disconnectGmailViaCloudFunction(orgId),
+        () => disconnectGmailViaClient(orgId),
+        () => disconnectGmailViaLocalApi(orgId),
+      ]
+    : [
+        () => disconnectGmailViaLocalApi(orgId),
+        () => disconnectGmailViaCloudFunction(orgId),
+        () => disconnectGmailViaClient(orgId),
+      ];
+
+  let lastError: Error | null = null;
+  for (const attempt of attempts) {
+    try {
+      await attempt();
+      gmailServerProbeCache = null;
+      return;
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error("DISCONNECT_FAILED");
+    }
+  }
+
+  throw lastError ?? new Error("DISCONNECT_FAILED");
 }
 
 export async function replyToEmailInquiry(

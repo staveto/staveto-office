@@ -48,6 +48,15 @@ import { hasValidLegalConsent } from "@/lib/consent";
 import { resolveBusinessOrgErrorMessage } from "@/lib/businessOrgErrors";
 import { createDraftJob } from "@/services/projects";
 import { fromLegacyWorkspace } from "@/lib/workspace-types";
+import {
+  ONBOARDING_BODY,
+  ONBOARDING_HINT,
+  ONBOARDING_INPUT,
+  ONBOARDING_INPUT_READONLY,
+  ONBOARDING_LABEL,
+  ONBOARDING_MUTED_BOX,
+  ONBOARDING_SELECT,
+} from "@/components/onboarding/onboardingFormStyles";
 
 type StepId =
   | "terms"
@@ -130,16 +139,18 @@ function BusinessPlanCard({
         "w-full rounded-xl border-2 p-4 text-left transition-colors",
         disabled && "cursor-not-allowed opacity-60",
         selected
-          ? "border-[#e06737] bg-[#e06737]/5 ring-1 ring-[#e06737]/20"
+          ? "border-[#e06737] bg-[#fff7f4] ring-1 ring-[#e06737]/20"
           : recommended
-            ? "border-[#1D376A]/25 bg-[#1D376A]/[0.03] hover:border-[#e06737]/50"
-            : "border-border bg-background hover:border-[#e06737]/40"
+            ? "border-[#1D376A]/25 bg-[#f8fafc] hover:border-[#e06737]/50"
+            : "border-[#cbd5e1] bg-white hover:border-[#e06737]/40"
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="font-medium">{t(`onboarding.web.plan.${planCode}.name`)}</p>
-          <p className="mt-0.5 text-sm text-muted-foreground">
+          <p className={cn("font-semibold", selected ? "text-[#e06737]" : "text-[#111111]")}>
+            {t(`onboarding.web.plan.${planCode}.name`)}
+          </p>
+          <p className="mt-0.5 text-sm text-[#555555]">
             {t(`onboarding.web.plan.${planCode}.seats`)}
           </p>
         </div>
@@ -318,6 +329,11 @@ export function WebOnboardingWizard() {
       if (businessPlanSubmittingRef.current) return;
       if (!SELF_SERVICE_PLANS.includes(businessPlan)) {
         setError(t("onboarding.web.error.enterpriseContact"));
+        return;
+      }
+      if (!companyName.trim() || !companyCountry || !companyType) {
+        setError(t("onboarding.error.required"));
+        setStepId("company_basics");
         return;
       }
       businessPlanSubmittingRef.current = true;
@@ -589,16 +605,19 @@ export function WebOnboardingWizard() {
         return (
           <div className="space-y-3">
             <div className="space-y-2">
-              <Label htmlFor="inviteToken">{t("onboarding.join.codeLabel")}</Label>
+              <Label htmlFor="inviteToken" className={ONBOARDING_LABEL}>
+                {t("onboarding.join.codeLabel")}
+              </Label>
               <Input
                 id="inviteToken"
                 value={inviteToken}
                 onChange={(e) => setInviteToken(e.target.value)}
                 placeholder={t("onboarding.join.codePlaceholder")}
+                className={ONBOARDING_INPUT}
                 autoFocus
               />
             </div>
-            <p className="text-xs text-muted-foreground">{t("onboarding.join.codeHint")}</p>
+            <p className={ONBOARDING_HINT}>{t("onboarding.join.codeHint")}</p>
           </div>
         );
 
@@ -606,22 +625,27 @@ export function WebOnboardingWizard() {
         return (
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="companyName">{t("onboarding.companyName")}</Label>
+              <Label htmlFor="companyName" className={ONBOARDING_LABEL}>
+                {t("onboarding.companyName")}
+              </Label>
               <Input
                 id="companyName"
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
                 placeholder={t("onboarding.companyName.placeholder")}
+                className={ONBOARDING_INPUT}
                 autoFocus
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="companyCountry">{t("onboarding.web.companyCountry")}</Label>
+              <Label htmlFor="companyCountry" className={ONBOARDING_LABEL}>
+                {t("onboarding.web.companyCountry")}
+              </Label>
               <select
                 id="companyCountry"
                 value={companyCountry}
                 onChange={(e) => setCompanyCountry(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className={ONBOARDING_SELECT}
               >
                 {ONBOARDING_COUNTRIES.map((c) => (
                   <option key={c.code} value={c.code}>
@@ -631,16 +655,25 @@ export function WebOnboardingWizard() {
               </select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="timezone">{t("onboarding.web.timezone")}</Label>
-              <Input id="timezone" value={companyTimezone} readOnly className="bg-muted/50" />
+              <Label htmlFor="timezone" className={ONBOARDING_LABEL}>
+                {t("onboarding.web.timezone")}
+              </Label>
+              <Input
+                id="timezone"
+                value={companyTimezone}
+                readOnly
+                className={ONBOARDING_INPUT_READONLY}
+              />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="companyType">{t("onboarding.web.companyType")}</Label>
+              <Label htmlFor="companyType" className={ONBOARDING_LABEL}>
+                {t("onboarding.web.companyType")}
+              </Label>
               <select
                 id="companyType"
                 value={companyType}
                 onChange={(e) => setCompanyType(e.target.value as CompanyType)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                className={ONBOARDING_SELECT}
               >
                 {COMPANY_TYPES.map((type) => (
                   <option key={type} value={type}>
@@ -672,14 +705,14 @@ export function WebOnboardingWizard() {
       case "business_plan":
         return (
           <div className="space-y-4">
-            <div className="flex rounded-lg border border-border p-1">
+            <div className="flex rounded-lg border border-[#cbd5e1] bg-[#f8fafc] p-1">
               <button
                 type="button"
                 className={cn(
                   "flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   billingPeriod === "monthly"
                     ? "bg-[#1D376A] text-white"
-                    : "text-muted-foreground hover:text-foreground"
+                    : "text-[#555555] hover:text-[#111111]"
                 )}
                 onClick={() => setBillingPeriod("monthly")}
               >
@@ -691,7 +724,7 @@ export function WebOnboardingWizard() {
                   "flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors",
                   billingPeriod === "yearly"
                     ? "bg-[#1D376A] text-white"
-                    : "text-muted-foreground hover:text-foreground"
+                    : "text-[#555555] hover:text-[#111111]"
                 )}
                 onClick={() => setBillingPeriod("yearly")}
               >
@@ -722,9 +755,7 @@ export function WebOnboardingWizard() {
             </div>
 
             {teamSizeBand === "31+" ? (
-              <p className="text-xs text-muted-foreground">
-                {t("onboarding.web.enterpriseNote")}
-              </p>
+              <p className={ONBOARDING_HINT}>{t("onboarding.web.enterpriseNote")}</p>
             ) : null}
 
             <div className="rounded-lg border border-[#1D376A]/20 bg-[#1D376A]/5 px-3 py-3 text-sm text-[#1D376A]">
@@ -756,12 +787,14 @@ export function WebOnboardingWizard() {
       case "country":
         return (
           <div className="space-y-2">
-            <Label htmlFor="country">{t("onboarding.mobile.country.label")}</Label>
+            <Label htmlFor="country" className={ONBOARDING_LABEL}>
+              {t("onboarding.mobile.country.label")}
+            </Label>
             <select
               id="country"
               value={primaryCountry}
               onChange={(e) => setPrimaryCountry(e.target.value)}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              className={ONBOARDING_SELECT}
             >
               {ONBOARDING_COUNTRIES.map((c) => (
                 <option key={c.code} value={c.code}>
@@ -776,21 +809,27 @@ export function WebOnboardingWizard() {
         return (
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="firstName">{t("onboarding.firstName")}</Label>
+              <Label htmlFor="firstName" className={ONBOARDING_LABEL}>
+                {t("onboarding.firstName")}
+              </Label>
               <Input
                 id="firstName"
                 value={firstName}
                 onChange={(e) => setFirstName(e.target.value)}
                 autoComplete="given-name"
+                className={ONBOARDING_INPUT}
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="lastName">{t("onboarding.lastName")}</Label>
+              <Label htmlFor="lastName" className={ONBOARDING_LABEL}>
+                {t("onboarding.lastName")}
+              </Label>
               <Input
                 id="lastName"
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 autoComplete="family-name"
+                className={ONBOARDING_INPUT}
               />
             </div>
           </div>
@@ -799,7 +838,9 @@ export function WebOnboardingWizard() {
       case "phone":
         return (
           <div className="space-y-2">
-            <Label htmlFor="phone">{t("onboarding.mobile.phone.label")}</Label>
+            <Label htmlFor="phone" className={ONBOARDING_LABEL}>
+              {t("onboarding.mobile.phone.label")}
+            </Label>
             <Input
               id="phone"
               type="tel"
@@ -807,10 +848,9 @@ export function WebOnboardingWizard() {
               onChange={(e) => setPhoneE164(e.target.value)}
               placeholder={t("onboarding.mobile.phone.placeholder")}
               autoComplete="tel"
+              className={ONBOARDING_INPUT}
             />
-            <p className="text-xs text-muted-foreground">
-              {t("onboarding.mobile.phone.hint")}
-            </p>
+            <p className={ONBOARDING_HINT}>{t("onboarding.mobile.phone.hint")}</p>
           </div>
         );
 
@@ -831,9 +871,7 @@ export function WebOnboardingWizard() {
               onClick={() => setPersonalPlan("personal_pro")}
               icon={Hammer}
             />
-            <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-              {t("onboarding.web.personal.proWebHint")}
-            </p>
+            <p className={ONBOARDING_MUTED_BOX}>{t("onboarding.web.personal.proWebHint")}</p>
           </div>
         );
 
@@ -847,20 +885,29 @@ export function WebOnboardingWizard() {
                 checked={createProject}
                 onChange={(e) => setCreateProject(e.target.checked)}
               />
-              <span className="text-sm">{t("onboarding.mobile.project.createToggle")}</span>
+              <span className="text-sm text-[#111111]">{t("onboarding.mobile.project.createToggle")}</span>
             </label>
             {createProject ? (
               <div className="space-y-2">
-                <Label htmlFor="projectName">{t("onboarding.mobile.project.nameLabel")}</Label>
+                <Label htmlFor="projectName" className={ONBOARDING_LABEL}>
+                  {t("onboarding.mobile.project.nameLabel")}
+                </Label>
                 <Input
                   id="projectName"
                   value={projectName}
                   onChange={(e) => setProjectName(e.target.value)}
                   placeholder={t("onboarding.mobile.project.namePlaceholder")}
+                  className={ONBOARDING_INPUT}
                 />
               </div>
             ) : null}
-            <Button type="button" variant="ghost" size="sm" onClick={() => skipProject()}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-[#1D376A] hover:text-[#e06737]"
+              onClick={() => skipProject()}
+            >
               {t("onboarding.mobile.skip")}
             </Button>
           </div>
@@ -869,14 +916,18 @@ export function WebOnboardingWizard() {
       case "equipment":
         return (
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              {t("onboarding.mobile.equipment.description")}
-            </p>
-            <div className="flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
+            <p className={ONBOARDING_BODY}>{t("onboarding.mobile.equipment.description")}</p>
+            <div className={cn("flex items-center gap-2 py-4", ONBOARDING_MUTED_BOX)}>
               <Hammer className="size-4 shrink-0" aria-hidden />
               {t("onboarding.mobile.equipment.comingSoon")}
             </div>
-            <Button type="button" variant="ghost" size="sm" onClick={() => void goNext()}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-[#1D376A] hover:text-[#e06737]"
+              onClick={() => void goNext()}
+            >
               {t("onboarding.mobile.skip")}
             </Button>
           </div>
@@ -901,7 +952,7 @@ export function WebOnboardingWizard() {
       saving={saving}
       showBack={stepIndex > 0}
     >
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {error ? <p className="text-sm text-[#c2410c]">{error}</p> : null}
       {renderStep()}
     </OnboardingStepShell>
   );

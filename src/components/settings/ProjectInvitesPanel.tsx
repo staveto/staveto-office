@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Loader2, Mail, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import {
   CardContent,
   CardDescription,
@@ -12,6 +13,7 @@ import {
 } from "@/components/ui/card";
 import { useI18n } from "@/i18n/I18nContext";
 import { SettingsSectionCard } from "./SettingsSectionCard";
+import { settingsAccentIconClassName } from "./settingsStyles";
 import {
   acceptProjectInvite,
   declineProjectInvite,
@@ -97,7 +99,7 @@ export function ProjectInvitesPanel() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <CardTitle className="flex items-center gap-2">
-              <Mail className="size-4 text-[#1D376A]" />
+              <Mail className={cn("size-4", settingsAccentIconClassName)} />
               {t("profile.projectInvites")}
               {invites.length > 0 ? (
                 <span className="rounded-full bg-[#e06737] px-2 py-0.5 text-xs font-semibold text-white">
@@ -105,9 +107,7 @@ export function ProjectInvitesPanel() {
                 </span>
               ) : null}
             </CardTitle>
-            <CardDescription className="text-[#4a5568]">
-              {t("projectInvites.profileHint")}
-            </CardDescription>
+            <CardDescription>{t("projectInvites.profileHint")}</CardDescription>
           </div>
           <Button variant="ghost" size="sm" onClick={() => void load()} disabled={loading}>
             {t("common.refresh")}
@@ -131,7 +131,7 @@ export function ProjectInvitesPanel() {
                   key={`${invite.projectId}-${invite.memberId}`}
                   className="rounded-lg border border-border bg-background p-4"
                 >
-                  <p className="font-medium text-[#1D376A]">{invite.projectName}</p>
+                  <p className={cn("font-medium", settingsAccentIconClassName)}>{invite.projectName}</p>
                   {summary ? (
                     <p className="mt-1 text-xs text-muted-foreground">{summary}</p>
                   ) : null}

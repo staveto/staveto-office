@@ -36,7 +36,7 @@ export function OnboardingStepShell({
   showBack = true,
 }: OnboardingStepShellProps) {
   return (
-    <Card className="w-full overflow-hidden rounded-2xl border-0 bg-white shadow-[0_24px_64px_rgba(0,0,0,0.28)] ring-1 ring-white/10">
+    <Card className="w-full overflow-hidden rounded-2xl border-0 bg-white text-[#111111] shadow-[0_24px_64px_rgba(0,0,0,0.28)] ring-1 ring-white/10">
       <div className="h-1 bg-gradient-to-r from-[#1D376A] via-[#e06737] to-[#e06737]/70" aria-hidden />
       <CardHeader className="space-y-4 pb-2 pt-6">
         <OnboardingProgress current={step} total={totalSteps} />
@@ -46,12 +46,12 @@ export function OnboardingStepShell({
           </p>
           <CardTitle className="mt-1 font-serif text-2xl font-bold text-[#1D376A]">{title}</CardTitle>
           {subtitle ? (
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{subtitle}</p>
+            <p className="mt-2 text-sm leading-relaxed text-[#555555]">{subtitle}</p>
           ) : null}
         </div>
       </CardHeader>
       <CardContent className="space-y-4 px-6 pb-2">{children}</CardContent>
-      <CardFooter className="flex justify-between gap-3 border-t border-border/60 bg-muted/20 px-6 py-4">
+      <CardFooter className="flex justify-between gap-3 border-t border-[#e5e7eb] bg-[#f8fafc] px-6 py-4">
         {showBack && onBack ? (
           <Button type="button" variant="ghost" onClick={onBack} disabled={saving} className="text-[#1D376A]">
             <ChevronLeft className="size-4 mr-1" />
@@ -65,7 +65,7 @@ export function OnboardingStepShell({
           onClick={onNext}
           disabled={!canProceed || saving}
           className={cn(
-            "min-w-[130px] rounded-xl font-semibold shadow-md transition-all",
+            "min-w-[130px] rounded-xl font-semibold text-white shadow-md transition-all",
             canProceed && !saving
               ? "bg-[#e06737] hover:bg-[#c8562d] hover:shadow-lg"
               : "bg-[#e06737]/40"

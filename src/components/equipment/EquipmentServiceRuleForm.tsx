@@ -144,7 +144,7 @@ export function EquipmentServiceRuleForm({ equipmentId, ruleId }: EquipmentServi
         </h1>
       </div>
 
-      <Card className="border-[#E2E8F0] shadow-sm">
+      <Card className="border-border bg-card shadow-sm">
         <CardContent className="p-5 sm:p-6 space-y-5">
           {error && <div className={eq.errorBanner}>{error}</div>}
 

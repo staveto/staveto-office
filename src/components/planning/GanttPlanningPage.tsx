@@ -666,7 +666,7 @@ export function GanttPlanningPage() {
       )}
     >
       <header className={cn(chartExpanded && "shrink-0", !chartExpanded && "space-y-1")}>
-        <h1 className={cn("font-bold text-[#1D376A]", chartExpanded ? "text-lg" : "text-2xl")}>
+        <h1 className={cn("font-bold text-foreground", chartExpanded ? "text-lg" : "text-2xl")}>
           {t("gantt.title")}
         </h1>
         {!chartExpanded ? (
@@ -726,7 +726,7 @@ export function GanttPlanningPage() {
 
       {loading ? (
         <div className="flex justify-center py-20">
-          <Loader2 className="size-8 animate-spin text-[#1D376A]" />
+          <Loader2 className="size-8 animate-spin text-primary" />
         </div>
       ) : (
         <div className={cn(styles.ganttBody, chartExpanded && styles.ganttBodyExpanded)}>
@@ -766,7 +766,7 @@ export function GanttPlanningPage() {
               </div>
 
               {filteredProjects.length === 0 ? (
-                <p className="p-8 text-center text-sm text-muted-foreground">
+                <p className="p-8 text-center text-sm text-foreground/75">
                   {(data?.projects.length ?? 0) === 0
                     ? t("gantt.emptyNoProjects")
                     : t("gantt.empty")}

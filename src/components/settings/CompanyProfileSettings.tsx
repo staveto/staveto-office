@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Building2, ImagePlus, Loader2, Save, Trash2 } from "lucide-react";
 import {
-  Card,
   CardContent,
   CardDescription,
   CardHeader,
@@ -24,6 +23,9 @@ import {
   type OrganizationProfile,
 } from "@/services/organization";
 import { mapCompanyLogoError } from "@/lib/companyProfileErrors";
+import { SettingsSectionCard } from "./SettingsSectionCard";
+import { settingsAccentIconClassName } from "./settingsStyles";
+import { cn } from "@/lib/utils";
 
 const emptyProfile = (): OrganizationProfile => ({});
 
@@ -128,25 +130,25 @@ export function CompanyProfileSettings() {
 
   if (!orgId) {
     return (
-      <Card>
+      <SettingsSectionCard>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Building2 className="size-4 text-[#1D376A]" aria-hidden />
+            <Building2 className={cn("size-4", settingsAccentIconClassName)} aria-hidden />
             {t("settings.companyProfile.title")}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">{t("settings.companyProfile.teamOnly")}</p>
         </CardContent>
-      </Card>
+      </SettingsSectionCard>
     );
   }
 
   return (
-    <Card id="company-profile">
+    <SettingsSectionCard id="company-profile">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Building2 className="size-4 text-[#1D376A]" aria-hidden />
+          <Building2 className={cn("size-4", settingsAccentIconClassName)} aria-hidden />
           {t("settings.companyProfile.title")}
         </CardTitle>
         <CardDescription>{t("settings.companyProfile.description")}</CardDescription>
@@ -166,7 +168,7 @@ export function CompanyProfileSettings() {
         ) : (
           <>
             {!canEdit ? (
-              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800/50 dark:bg-amber-950/35 dark:text-amber-100">
                 {t("settings.companyProfile.adminOnly")}
               </p>
             ) : null}
@@ -367,11 +369,13 @@ export function CompanyProfileSettings() {
               </div>
             ) : null}
 
-            {success ? <p className="text-sm text-emerald-700">{success}</p> : null}
+            {success ? (
+              <p className="text-sm text-emerald-700 dark:text-emerald-400">{success}</p>
+            ) : null}
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
           </>
         )}
       </CardContent>
-    </Card>
+    </SettingsSectionCard>
   );
 }

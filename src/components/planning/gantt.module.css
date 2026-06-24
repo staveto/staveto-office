@@ -3,12 +3,35 @@
   --gantt-orange: #e06737;
   --gantt-label-width: 280px;
   --gantt-row-h: 36px;
+  --gantt-surface: #ffffff;
+  --gantt-surface-alt: #f8fafc;
+  --gantt-surface-muted: #f1f5f9;
+  --gantt-border: rgb(226 232 240);
+  --gantt-border-subtle: rgb(241 245 249);
+  --gantt-border-strong: rgb(203 213 225);
+  --gantt-text-primary: #0f2a4d;
+  --gantt-text-secondary: rgb(51 65 85);
+  --gantt-text-body: rgb(71 85 105);
+  --gantt-text-muted: rgb(100 116 139);
+  --gantt-text-subtle: rgb(148 163 184);
+  --gantt-row-hover: rgb(239 244 251 / 80%);
+  --gantt-row-hover-label: rgb(239 244 251 / 98%);
+  --gantt-weekend: rgb(248 250 252 / 70%);
+  --gantt-weekend-hit: rgb(248 250 252 / 40%);
+  --gantt-weekend-bg-strong: rgb(241 245 249 / 90%);
+  --gantt-today-col: rgb(255 247 237 / 65%);
+  --gantt-today-hit: rgb(255 247 237 / 50%);
+  --gantt-panel-shadow: rgb(15 23 42 / 12%);
+  --gantt-chip-bg: #ffffff;
+  --gantt-input-bg: #f8fafc;
+  --gantt-drop-highlight: rgb(224 103 55 / 12%);
+  --gantt-drop-label: rgb(255 240 232 / 98%);
 }
 
 .headerRow {
   display: flex;
-  border-bottom: 1px solid rgb(226 232 240);
-  background: #fff;
+  border-bottom: 1px solid var(--gantt-border);
+  background: var(--gantt-surface);
   position: sticky;
   top: 0;
   z-index: 20;
@@ -19,8 +42,8 @@
   width: var(--gantt-label-width);
   min-width: var(--gantt-label-width);
   flex-shrink: 0;
-  border-right: 1px solid rgb(226 232 240);
-  background: #f8fafc;
+  border-right: 1px solid var(--gantt-border);
+  background: var(--gantt-surface-alt);
   position: sticky;
   left: 0;
   z-index: 25;
@@ -40,25 +63,25 @@
 .gridRow {
   display: flex;
   min-height: var(--gantt-row-h);
-  border-bottom: 1px solid rgb(241 245 249);
+  border-bottom: 1px solid var(--gantt-border-subtle);
   min-width: max-content;
   transition: background-color 0.12s ease;
 }
 
 .gridRow:hover {
-  background: rgb(239 244 251 / 80%);
+  background: var(--gantt-row-hover);
 }
 
 .gridRow:hover .rowLabel {
-  background: rgb(239 244 251 / 98%);
+  background: var(--gantt-row-hover-label);
 }
 
 .rowLabel {
   width: var(--gantt-label-width);
   min-width: var(--gantt-label-width);
   flex-shrink: 0;
-  border-right: 1px solid rgb(226 232 240);
-  background: #fff;
+  border-right: 1px solid var(--gantt-border);
+  background: var(--gantt-surface);
   position: sticky;
   left: 0;
   z-index: 10;
@@ -70,18 +93,18 @@
 
 .rowLabelProject {
   font-weight: 700;
-  color: var(--gantt-navy);
+  color: var(--gantt-text-primary);
 }
 
 .rowLabelPhase {
   padding-left: 1.25rem;
   font-weight: 600;
-  color: rgb(51 65 85);
+  color: var(--gantt-text-secondary);
 }
 
 .rowLabelTask {
   padding-left: 2rem;
-  color: rgb(71 85 105);
+  color: var(--gantt-text-body);
 }
 
 .rowTimeline {
@@ -115,8 +138,8 @@
   margin: -0.15rem 0 -0.15rem -0.15rem;
   border: none;
   border-radius: 8px 0 0 8px;
-  background: rgb(241 245 249);
-  color: rgb(100 116 139);
+  background: var(--gantt-surface-muted);
+  color: var(--gantt-text-muted);
   cursor: grab;
   transition: background 0.12s ease, color 0.12s ease;
 }
@@ -142,7 +165,7 @@
 }
 
 .dayHitWeekend {
-  background: rgb(248 250 252 / 40%);
+  background: var(--gantt-weekend-hit);
 }
 
 .dayHitActive {
@@ -155,7 +178,7 @@
 }
 
 .dayHitToday:not(.dayHitActive) {
-  background: rgb(255 247 237 / 50%);
+  background: var(--gantt-today-hit);
 }
 
 .headerStack {
@@ -166,8 +189,8 @@
 .monthBand {
   display: flex;
   height: 24px;
-  border-bottom: 1px solid rgb(226 232 240);
-  background: linear-gradient(180deg, #f1f5f9, #f8fafc);
+  border-bottom: 1px solid var(--gantt-border);
+  background: linear-gradient(180deg, var(--gantt-surface-muted), var(--gantt-surface-alt));
 }
 
 .monthSeg {
@@ -175,7 +198,7 @@
   display: flex;
   align-items: center;
   padding: 0 10px;
-  border-right: 1px solid rgb(226 232 240);
+  border-right: 1px solid var(--gantt-border);
   overflow: hidden;
 }
 
@@ -185,7 +208,7 @@
   font-size: 11px;
   font-weight: 700;
   text-transform: capitalize;
-  color: var(--gantt-navy);
+  color: var(--gantt-text-primary);
   white-space: nowrap;
 }
 
@@ -196,14 +219,14 @@
 
 .dayCell {
   flex-shrink: 0;
-  border-right: 1px solid rgb(241 245 249);
+  border-right: 1px solid var(--gantt-border-subtle);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 1px;
   line-height: 1;
-  color: rgb(100 116 139);
+  color: var(--gantt-text-muted);
 }
 
 .dayWeekday {
@@ -224,8 +247,8 @@
 }
 
 .dayCellWeekend {
-  background: rgb(241 245 249 / 70%);
-  color: rgb(148 163 184);
+  background: var(--gantt-weekend-bg-strong);
+  color: var(--gantt-text-subtle);
 }
 
 .dayCellToday {
@@ -271,19 +294,19 @@
 
 .gridBgCell {
   flex-shrink: 0;
-  border-right: 1px solid rgb(241 245 249 / 80%);
+  border-right: 1px solid color-mix(in srgb, var(--gantt-border-subtle) 80%, transparent);
 }
 
 .gridBgCellWeekend {
-  background: rgb(248 250 252 / 70%);
+  background: var(--gantt-weekend);
 }
 
 .gridBgCellMonthStart {
-  border-left: 1px solid rgb(203 213 225);
+  border-left: 1px solid var(--gantt-border-strong);
 }
 
 .gridBgCellToday {
-  background: rgb(255 247 237 / 65%);
+  background: var(--gantt-today-col);
 }
 
 .bar {
@@ -459,11 +482,11 @@
   align-items: flex-start;
   gap: 0.5rem;
   border-radius: 10px;
-  border: 1px solid rgb(226 232 240);
-  background: linear-gradient(180deg, rgb(248 250 252), #fff);
+  border: 1px solid var(--gantt-border);
+  background: linear-gradient(180deg, var(--gantt-surface-alt), var(--gantt-surface));
   padding: 0.65rem 0.85rem;
   font-size: 12px;
-  color: rgb(71 85 105);
+  color: var(--gantt-text-body);
   line-height: 1.45;
 }
 
@@ -523,16 +546,16 @@
   height: 32px;
   padding: 0 6px;
   border-radius: 6px;
-  border: 1px solid var(--border, rgb(226 232 240));
-  background: var(--background, #fff);
+  border: 1px solid var(--gantt-border);
+  background: var(--gantt-surface);
   font-size: 11px;
   font-weight: 600;
-  color: rgb(71 85 105);
+  color: var(--gantt-text-body);
   cursor: pointer;
 }
 
 .zoomLevel:hover {
-  background: rgb(241 245 249);
+  background: var(--gantt-surface-muted);
 }
 
 .tooltipCard {
@@ -627,8 +650,8 @@
 
 .unscheduledPanel {
   border-radius: 12px;
-  border: 1px dashed rgb(203 213 225);
-  background: rgb(248 250 252);
+  border: 1px dashed var(--gantt-border-strong);
+  background: var(--gantt-surface-alt);
   padding: 1rem;
 }
 
@@ -637,8 +660,8 @@
   align-items: center;
   gap: 0.35rem;
   border-radius: 8px;
-  border: 1px solid rgb(226 232 240);
-  background: #fff;
+  border: 1px solid var(--gantt-border);
+  background: var(--gantt-chip-bg);
   padding: 0.35rem 0.6rem;
   font-size: 12px;
   cursor: grab;
@@ -649,7 +672,7 @@
   flex-wrap: wrap;
   gap: 0.75rem;
   font-size: 11px;
-  color: rgb(100 116 139);
+  color: var(--gantt-text-muted);
 }
 
 .legendDot {
@@ -673,7 +696,7 @@
 
 .rowLabelUnscheduled {
   font-style: italic;
-  color: rgb(100 116 139);
+  color: var(--gantt-text-muted);
 }
 
 .toolbar {
@@ -702,7 +725,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  color: rgb(100 116 139);
+  color: var(--gantt-text-muted);
   padding-left: 2px;
 }
 
@@ -726,13 +749,13 @@
 }
 
 .rowDropActive {
-  background: rgb(224 103 55 / 12%) !important;
+  background: var(--gantt-drop-highlight) !important;
   box-shadow: inset 0 0 0 2px rgb(224 103 55 / 55%);
   border-radius: 6px;
 }
 
 .rowDropActive .rowLabel {
-  background: rgb(255 240 232 / 98%) !important;
+  background: var(--gantt-drop-label) !important;
 }
 
 /* Resource panel */
@@ -740,11 +763,11 @@
   flex: 0 0 300px;
   display: flex;
   flex-direction: column;
-  border: 1px solid rgb(29 55 106 / 22%);
+  border: 1px solid color-mix(in srgb, var(--gantt-navy) 22%, transparent);
   border-top: 3px solid #e06737;
   border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 6px 22px rgb(15 23 42 / 12%);
+  background: var(--gantt-surface);
+  box-shadow: 0 6px 22px var(--gantt-panel-shadow);
   overflow: hidden;
   max-height: 78vh;
 }
@@ -803,7 +826,7 @@
   padding: 0.6rem 0.85rem 0;
   font-size: 11.5px;
   line-height: 1.45;
-  color: rgb(71 85 105);
+  color: var(--gantt-text-body);
 }
 
 .resourceSearch {
@@ -812,9 +835,9 @@
   gap: 0.4rem;
   margin: 0.6rem 0.75rem;
   padding: 0.35rem 0.55rem;
-  border: 1px solid rgb(226 232 240);
+  border: 1px solid var(--gantt-border);
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--gantt-input-bg);
 }
 
 .resourceSearchInput {
@@ -824,7 +847,7 @@
   background: transparent;
   outline: none;
   font-size: 12px;
-  color: rgb(51 65 85);
+  color: var(--gantt-text-secondary);
 }
 
 .resourceScroll {
@@ -844,7 +867,7 @@
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  color: rgb(51 65 85);
+  color: var(--gantt-text-secondary);
 }
 
 .resourceSectionHead:hover {
@@ -891,9 +914,9 @@
   align-items: center;
   gap: 0.6rem;
   padding: 0.5rem 0.55rem;
-  border: 1px solid rgb(226 232 240);
+  border: 1px solid var(--gantt-border);
   border-radius: 11px;
-  background: #fff;
+  background: var(--gantt-chip-bg);
   transition: box-shadow 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
 }
 
@@ -919,8 +942,8 @@
   height: 28px;
   flex-shrink: 0;
   border-radius: 8px;
-  border: 1.5px solid rgb(29 55 106 / 25%);
-  background: #fff;
+  border: 1.5px solid color-mix(in srgb, var(--gantt-navy) 25%, transparent);
+  background: var(--gantt-chip-bg);
   color: var(--gantt-navy);
   transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
@@ -939,8 +962,8 @@
 
 .resourceBasket {
   flex-shrink: 0;
-  border-top: 1px solid rgb(226 232 240);
-  background: linear-gradient(180deg, rgb(248 250 252 / 90%), #fff);
+  border-top: 1px solid var(--gantt-border);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--gantt-surface-alt) 90%, transparent), var(--gantt-surface));
   padding: 0.55rem 0.65rem 0.7rem;
 }
 
@@ -981,23 +1004,23 @@
 .resourceBasketHint {
   font-size: 10.5px;
   line-height: 1.35;
-  color: rgb(100 116 139);
+  color: var(--gantt-text-muted);
   margin: 0 0 0.45rem;
 }
 
 .resourceBasketDrop {
   min-height: 52px;
-  border: 1.5px dashed rgb(203 213 225);
+  border: 1.5px dashed var(--gantt-border-strong);
   border-radius: 10px;
   padding: 0.45rem;
-  background: rgb(255 255 255 / 70%);
+  background: color-mix(in srgb, var(--gantt-surface) 70%, transparent);
   transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
 
 .resourceBasketDropFilled {
   border-style: solid;
-  border-color: rgb(29 55 106 / 22%);
-  background: #fff;
+  border-color: color-mix(in srgb, var(--gantt-navy) 22%, transparent);
+  background: var(--gantt-chip-bg);
   cursor: grab;
 }
 
@@ -1016,7 +1039,7 @@
   justify-content: center;
   min-height: 40px;
   font-size: 11px;
-  color: rgb(148 163 184);
+  color: var(--gantt-text-subtle);
   text-align: center;
   padding: 0 0.5rem;
 }
@@ -1032,9 +1055,9 @@
   align-items: center;
   gap: 0.3rem;
   padding: 0.2rem 0.25rem 0.2rem 0.3rem;
-  border: 1px solid rgb(226 232 240);
+  border: 1px solid var(--gantt-border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--gantt-chip-bg);
   max-width: 100%;
 }
 
@@ -1067,7 +1090,7 @@
 .basketChipName {
   font-size: 10.5px;
   font-weight: 600;
-  color: rgb(51 65 85);
+  color: var(--gantt-text-secondary);
   max-width: 7.5rem;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1083,18 +1106,18 @@
   border-radius: 4px;
   font-size: 13px;
   line-height: 1;
-  color: rgb(148 163 184);
+  color: var(--gantt-text-subtle);
 }
 
 .basketChipRemove:hover {
-  background: rgb(241 245 249);
+  background: var(--gantt-surface-muted);
   color: #dc2626;
 }
 
 .resourceBasketBulk {
   margin: 0.35rem 0 0;
   font-size: 10px;
-  color: rgb(100 116 139);
+  color: var(--gantt-text-muted);
 }
 
 .resourceAvatar {
@@ -1149,7 +1172,7 @@
 .resourceChipName {
   font-size: 13px;
   font-weight: 700;
-  color: rgb(15 42 77);
+  color: var(--gantt-text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1158,7 +1181,7 @@
 .resourceChipMeta {
   font-size: 11px;
   font-weight: 500;
-  color: rgb(100 116 139);
+  color: var(--gantt-text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1175,7 +1198,7 @@
 .resourceEmpty {
   padding: 0.5rem 0.35rem;
   font-size: 11px;
-  color: rgb(148 163 184);
+  color: var(--gantt-text-subtle);
 }
 
 .ganttExpanded {
@@ -1254,4 +1277,72 @@
   flex-shrink: 0;
   max-height: 28vh;
   overflow-y: auto;
+}
+
+/* Dark mode — token overrides for the whole Gantt shell */
+:global(.dark) .ganttShell {
+  --gantt-surface: #1e293b;
+  --gantt-surface-alt: #243247;
+  --gantt-surface-muted: #2c3d55;
+  --gantt-border: #334155;
+  --gantt-border-subtle: #3d5068;
+  --gantt-border-strong: #475569;
+  --gantt-text-primary: #f8fafc;
+  --gantt-text-secondary: #e2e8f0;
+  --gantt-text-body: #cbd5e1;
+  --gantt-text-muted: #94a3b8;
+  --gantt-text-subtle: #64748b;
+  --gantt-row-hover: rgb(44 61 85 / 80%);
+  --gantt-row-hover-label: rgb(44 61 85 / 98%);
+  --gantt-weekend: rgb(15 23 42 / 55%);
+  --gantt-weekend-hit: rgb(15 23 42 / 40%);
+  --gantt-weekend-bg-strong: rgb(15 23 42 / 72%);
+  --gantt-today-col: rgb(224 103 55 / 14%);
+  --gantt-today-hit: rgb(224 103 55 / 10%);
+  --gantt-panel-shadow: rgb(0 0 0 / 35%);
+  --gantt-chip-bg: #243247;
+  --gantt-input-bg: #1e293b;
+  --gantt-drop-highlight: rgb(224 103 55 / 16%);
+  --gantt-drop-label: rgb(224 103 55 / 18%);
+}
+
+:global(.dark) .ganttShell .resourceAddBtn:hover {
+  background: rgb(224 103 55 / 12%);
+}
+
+:global(.dark) .ganttShell .resourceAddBtnActive {
+  background: rgb(224 103 55 / 18%);
+}
+
+:global(.dark) .ganttShell .basketChipRemove:hover {
+  background: rgb(51 65 85 / 80%);
+}
+
+:global(.dark) .ganttShell .resourceAvatarDot {
+  box-shadow: 0 0 0 2.5px var(--gantt-surface);
+}
+
+:global(.dark) .ganttShell .resourceStatusDot {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--gantt-surface) 90%, transparent);
+}
+
+:global(.dark) .ganttShell .resourceDragHandle:hover {
+  background: rgb(224 103 55 / 16%);
+  color: #f1843f;
+}
+
+:global(.dark) .ganttShell .resourceSectionHead:hover {
+  color: #f1843f;
+}
+
+:global(.dark) .ganttShell .resourceChipDraggable:hover {
+  box-shadow: 0 4px 12px rgb(0 0 0 / 28%);
+}
+
+:global(.dark) .ganttShell .legend {
+  color: var(--gantt-text-body);
+}
+
+:global(.dark) .ganttShell .ganttExpanded {
+  background: var(--background, #0f1419);
 }

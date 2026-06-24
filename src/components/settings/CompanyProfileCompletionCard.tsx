@@ -3,11 +3,18 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useI18n } from "@/i18n/I18nContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { isCompanyWorkspaceType } from "@/types/workspace";
 import { getCompanyProfileFieldLabelKey } from "@/lib/companyProfileCompletion";
+import {
+  settingsCompletionBodyClassName,
+  settingsCompletionCardClassName,
+  settingsCompletionDescriptionClassName,
+  settingsCompletionTitleClassName,
+} from "./settingsStyles";
 import {
   backfillOwnedBusinessOrgs,
   loadCompanyProfileCompletion,
@@ -61,13 +68,15 @@ export function CompanyProfileCompletionCard() {
   );
 
   return (
-    <Card className="border-amber-200 bg-amber-50/80">
+    <Card className={settingsCompletionCardClassName}>
       <CardHeader className="pb-2">
-        <CardTitle className="flex items-center gap-2 text-base text-amber-950">
-          <AlertCircle className="size-4" aria-hidden />
-          {t("settings.companyProfile.completionTitle")}
+        <CardTitle className={settingsCompletionTitleClassName}>
+          <span className="flex items-center gap-2">
+            <AlertCircle className="size-4" aria-hidden />
+            {t("settings.companyProfile.completionTitle")}
+          </span>
         </CardTitle>
-        <CardDescription className="text-amber-900/80">
+        <CardDescription className={settingsCompletionDescriptionClassName}>
           {t("settings.companyProfile.completionDescription", {
             percent: completion.completionPercent,
           })}
@@ -76,10 +85,10 @@ export function CompanyProfileCompletionCard() {
       <CardContent className="space-y-3">
         {missingLabels.length > 0 ? (
           <div>
-            <p className="text-xs font-medium text-amber-950 mb-1">
+            <p className="mb-1 text-xs font-medium text-amber-950 dark:text-amber-100">
               {t("settings.companyProfile.completionMissing")}
             </p>
-            <ul className="text-sm text-amber-900/90 list-disc pl-5 space-y-0.5">
+            <ul className={cn("list-disc space-y-0.5 pl-5 text-sm", settingsCompletionBodyClassName)}>
               {missingLabels.map((label) => (
                 <li key={label}>{label}</li>
               ))}

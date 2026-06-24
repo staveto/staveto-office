@@ -3,6 +3,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
 import { defineSecret } from "firebase-functions/params";
 import { createHmac, timingSafeEqual } from "crypto";
+import { assertWorkspaceAccess } from "./permissions";
 
 const gmailClientSecret = defineSecret("GMAIL_CLIENT_SECRET");
 
@@ -18,7 +19,13 @@ const GMAIL_SCOPES = [
   "profile",
 ].join(" ");
 
-type OAuthState = { orgId: string; uid: string; returnUrl: string; ts: number };
+type OAuthState = {
+  orgId: string;
+  uid: string;
+  returnUrl: string;
+  ts: number;
+  appOrigin?: string;
+};
 
 function getClientId(): string {
   return process.env.GMAIL_CLIENT_ID?.trim() || STAVETO_WEB_CLIENT_ID;
@@ -62,6 +69,55 @@ function callbackUrl(): string {
   const region = process.env.FUNCTION_REGION || "europe-west1";
   const projectId = process.env.GCLOUD_PROJECT || "staveto-mvp-5f251";
   return `https://${region}-${projectId}.cloudfunctions.net/gmailOAuthCallback`;
+}
+
+function resolveAppOrigin(state: OAuthState): string {
+  const fromState = state.appOrigin?.trim();
+  if (fromState?.startsWith("http")) return fromState.replace(/\/$/, "");
+  const returnUrl = state.returnUrl.trim();
+  if (returnUrl.startsWith("http")) return new URL(returnUrl).origin;
+  return (process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "http://localhost:3000").replace(
+    /\/$/,
+    ""
+  );
+}
+
+function resolveReturnPath(returnUrl: string): string {
+  const trimmed = returnUrl.trim();
+  if (trimmed.startsWith("http")) {
+    const url = new URL(trimmed);
+    return `${url.pathname}${url.search}`;
+  }
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+}
+
+function stripOAuthPopupParam(pathOrUrl: string): string {
+  const trimmed = pathOrUrl.trim();
+  const url = trimmed.startsWith("http")
+    ? new URL(trimmed)
+    : new URL(trimmed.startsWith("/") ? trimmed : `/${trimmed}`, "http://local");
+  url.searchParams.delete("oauth_popup");
+  const qs = url.searchParams.toString();
+  if (trimmed.startsWith("http")) {
+    return `${url.origin}${url.pathname}${qs ? `?${qs}` : ""}`;
+  }
+  return `${url.pathname}${qs ? `?${qs}` : ""}`;
+}
+
+function absoluteAppUrl(state: OAuthState, pathQuery: string, extraQuery?: string): string {
+  const origin = resolveAppOrigin(state);
+  const path = pathQuery.startsWith("/") ? pathQuery : `/${pathQuery}`;
+  if (!extraQuery) return `${origin}${path}`;
+  const sep = path.includes("?") ? "&" : "?";
+  return `${origin}${path}${sep}${extraQuery}`;
+}
+
+async function assertOrgManager(orgId: string, uid: string): Promise<void> {
+  const db = admin.firestore();
+  const access = await assertWorkspaceAccess(db, uid, orgId, orgId);
+  if (!["owner", "admin", "manager"].includes(access.role)) {
+    throw new HttpsError("permission-denied", "FORBIDDEN");
+  }
 }
 
 async function exchangeCode(code: string): Promise<{
@@ -142,6 +198,39 @@ async function saveConnection(
   );
 }
 
+async function resolveGmailActorUid(orgId: string, actingUid: string): Promise<string> {
+  const db = admin.firestore();
+  const direct = await db.doc(`organizations/${orgId}/gmailConnections/${actingUid}`).get();
+  if (direct.exists) return actingUid;
+
+  const orgSnap = await db.doc(`organizations/${orgId}`).get();
+  const connectedByUid = orgSnap.data()?.integrations?.gmail?.connectedByUid;
+  if (typeof connectedByUid === "string" && connectedByUid) {
+    const orgConn = await db.doc(`organizations/${orgId}/gmailConnections/${connectedByUid}`).get();
+    if (orgConn.exists) return connectedByUid;
+  }
+
+  const connections = await db.collection(`organizations/${orgId}/gmailConnections`).limit(1).get();
+  if (!connections.empty) return connections.docs[0]!.id;
+
+  return actingUid;
+}
+
+async function disconnectConnection(orgId: string, uid: string): Promise<void> {
+  const db = admin.firestore();
+  const actorUid = await resolveGmailActorUid(orgId, uid);
+  await db.doc(`organizations/${orgId}/gmailConnections/${actorUid}`).delete();
+  await db.doc(`organizations/${orgId}`).set(
+    {
+      integrations: {
+        gmail: { status: "not_connected", mode: "oauth" },
+      },
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
+
 export const gmailOAuthCallback = onRequest(
   {
     region: "europe-west1",
@@ -153,27 +242,29 @@ export const gmailOAuthCallback = onRequest(
     const code = typeof req.query.code === "string" ? req.query.code : null;
     const stateRaw = typeof req.query.state === "string" ? req.query.state : null;
     const error = typeof req.query.error === "string" ? req.query.error : null;
-    const fallback = "/app/inbox";
+    const fallbackPath = "/app/settings/app-center?category=communication";
 
     if (error) {
-      res.redirect(302, `${fallback}?gmail=error`);
+      res.redirect(302, absoluteAppUrl({ orgId: "", uid: "", returnUrl: fallbackPath, ts: 0 }, fallbackPath, "gmail=error"));
       return;
     }
     if (!code || !stateRaw) {
-      res.redirect(302, `${fallback}?gmail=missing`);
+      res.redirect(302, absoluteAppUrl({ orgId: "", uid: "", returnUrl: fallbackPath, ts: 0 }, fallbackPath, "gmail=missing"));
       return;
     }
 
     const state = decodeOAuthState(stateRaw);
     if (!state) {
-      res.redirect(302, `${fallback}?gmail=state`);
+      res.redirect(302, absoluteAppUrl({ orgId: "", uid: "", returnUrl: fallbackPath, ts: 0 }, fallbackPath, "gmail=state"));
       return;
     }
+
+    const returnPath = resolveReturnPath(state.returnUrl);
 
     try {
       const tokens = await exchangeCode(code);
       if (!tokens.refreshToken) {
-        res.redirect(302, `${state.returnUrl}?gmail=no_refresh`);
+        res.redirect(302, absoluteAppUrl(state, returnPath, "gmail=no_refresh"));
         return;
       }
       await saveConnection(state.orgId, state.uid, {
@@ -182,13 +273,20 @@ export const gmailOAuthCallback = onRequest(
         accessToken: tokens.accessToken,
         expiresIn: tokens.expiresIn,
       });
-      const dest = state.returnUrl.includes("?")
-        ? `${state.returnUrl}&gmail=connected`
-        : `${state.returnUrl}?gmail=connected`;
-      res.redirect(302, dest);
+
+      if (state.returnUrl.includes("oauth_popup=1")) {
+        const success = new URL("/app/oauth/gmail/success", resolveAppOrigin(state));
+        success.searchParams.set("oauth_popup", "1");
+        if (tokens.email) success.searchParams.set("email", tokens.email);
+        success.searchParams.set("return", stripOAuthPopupParam(returnPath));
+        res.redirect(302, success.toString());
+        return;
+      }
+
+      res.redirect(302, absoluteAppUrl(state, returnPath, "gmail=connected"));
     } catch (e) {
       console.error("[gmailOAuthCallback]", e);
-      res.redirect(302, `${fallback}?gmail=failed`);
+      res.redirect(302, absoluteAppUrl(state, returnPath, "gmail=failed"));
     }
   }
 );
@@ -204,12 +302,21 @@ export const gmailBuildAuthUrl = onCall(
       typeof request.data?.returnUrl === "string"
         ? request.data.returnUrl.trim()
         : "/app/inbox";
+    const appOrigin =
+      typeof request.data?.appOrigin === "string" && request.data.appOrigin.trim().startsWith("http")
+        ? request.data.appOrigin.trim()
+        : returnUrl.startsWith("http")
+          ? new URL(returnUrl).origin
+          : undefined;
     if (!orgId) throw new HttpsError("invalid-argument", "orgId required");
+
+    await assertOrgManager(orgId, request.auth.uid);
 
     const state: OAuthState = {
       orgId,
       uid: request.auth.uid,
       returnUrl,
+      appOrigin,
       ts: Date.now(),
     };
     const params = new URLSearchParams({
@@ -222,5 +329,20 @@ export const gmailBuildAuthUrl = onCall(
       state: encodeOAuthState(state),
     });
     return { url: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}` };
+  }
+);
+
+export const gmailDisconnect = onCall(
+  { region: "europe-west1", invoker: "public" },
+  async (request) => {
+    if (!request.auth?.uid) {
+      throw new HttpsError("unauthenticated", "Sign in required.");
+    }
+    const orgId = typeof request.data?.orgId === "string" ? request.data.orgId.trim() : "";
+    if (!orgId) throw new HttpsError("invalid-argument", "orgId required");
+
+    await assertOrgManager(orgId, request.auth.uid);
+    await disconnectConnection(orgId, request.auth.uid);
+    return { ok: true };
   }
 );

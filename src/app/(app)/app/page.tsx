@@ -1,15 +1,15 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import {
   DashboardHeroSkeleton,
   CompanyDashboardView,
   PersonalDashboardView,
   WorkerDashboardView,
 } from "@/components/dashboard";
+import { CompanyDashboardBootSkeleton } from "@/components/dashboard/CompanyDashboardBootSkeleton";
 import { StavetoFlyoverIntro } from "@/components/dashboard/flyover/StavetoFlyoverIntro";
 import { CompanyWorkspaceSwitchPrompt } from "@/components/dashboard/CompanyWorkspaceSwitchPrompt";
-import { CompanyProfileCompletionCard } from "@/components/settings/CompanyProfileCompletionCard";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/context/AuthContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
@@ -72,12 +72,14 @@ function useForceIntroFromUrl(): boolean {
 
 function OverviewPageContent() {
   const { t } = useI18n();
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const forceIntro = useForceIntroFromUrl();
-  const { activeWorkspace, availableWorkspaces } = useWorkspace();
+  const { activeWorkspace, availableWorkspaces, roleResolving } = useWorkspace();
   const intro = useStavetoIntroPreference({ forceIntro });
   const [statsLoading, setStatsLoading] = useState(true);
+  const [statsLoaded, setStatsLoaded] = useState(false);
   const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
+  const statsWorkspaceKeyRef = useRef<string | null>(null);
 
   const isCompany = isCompanyWorkspaceMode(activeWorkspace);
   const isWorkerHome =
@@ -89,13 +91,21 @@ function OverviewPageContent() {
   useEffect(() => {
     if (!user?.id || !activeWorkspace || isWorkerHome) {
       setStatsLoading(false);
+      setStatsLoaded(true);
       return;
     }
 
     let cancelled = false;
+    const workspaceChanged = statsWorkspaceKeyRef.current !== workspaceKey;
+    if (workspaceChanged) {
+      statsWorkspaceKeyRef.current = workspaceKey;
+      setStatsLoaded(false);
+      setStats(EMPTY_STATS);
+    }
+
+    setStatsLoading(true);
 
     void (async () => {
-      setStatsLoading(true);
       try {
         const data = await Promise.race([
           fetchDashboardStats(activeWorkspace, user.id),
@@ -108,14 +118,17 @@ function OverviewPageContent() {
       } catch {
         if (!cancelled) setStats(EMPTY_STATS);
       } finally {
-        if (!cancelled) setStatsLoading(false);
+        if (!cancelled) {
+          setStatsLoading(false);
+          setStatsLoaded(true);
+        }
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [user?.id, workspaceKey, isWorkerHome]);
+  }, [user?.id, workspaceKey, isWorkerHome, activeWorkspace]);
 
   const displayName =
     profile?.firstName?.trim() ||
@@ -127,32 +140,27 @@ function OverviewPageContent() {
     isCompanyWorkspaceType(w.type)
   );
 
+  const shellBootstrapping =
+    authLoading || roleResolving || !user || !activeWorkspace;
+
+  const companyStatsBootstrapping =
+    isCompany && !isWorkerHome && (!statsLoaded || statsLoading);
+
   const showFlyover =
     intro.ready &&
     intro.visible &&
     isCompany &&
     !isWorkerHome &&
     !!user?.id &&
-    !!activeWorkspace;
+    !!activeWorkspace &&
+    !shellBootstrapping &&
+    !companyStatsBootstrapping;
 
-  if (!user || !activeWorkspace) {
-    return (
-      <>
-        {showFlyover ? (
-          <StavetoFlyoverIntro
-            open
-            onDismiss={intro.dismiss}
-            onDisableAutoShow={intro.disableAutoShow}
-            workspace={activeWorkspace!}
-            uid={user?.id ?? ""}
-            displayName={displayName}
-            role={activeWorkspace?.role}
-            stats={stats}
-            statsLoading={statsLoading}
-          />
-        ) : null}
-        <DashboardSkeleton />
-      </>
+  if (shellBootstrapping) {
+    return isCompany && !isWorkerHome ? (
+      <CompanyDashboardBootSkeleton />
+    ) : (
+      <DashboardSkeleton />
     );
   }
 
@@ -167,6 +175,10 @@ function OverviewPageContent() {
   }
 
   if (isCompany) {
+    if (companyStatsBootstrapping) {
+      return <CompanyDashboardBootSkeleton />;
+    }
+
     return (
       <>
         {showFlyover ? (
@@ -182,16 +194,14 @@ function OverviewPageContent() {
             statsLoading={statsLoading}
           />
         ) : null}
-        <div className="space-y-4">
-          <CompanyProfileCompletionCard />
-          <CompanyDashboardView
-            activeWorkspace={activeWorkspace}
-            displayName={displayName}
-            stats={stats}
-            statsLoading={statsLoading}
-            uid={user.id}
-          />
-        </div>
+        <CompanyDashboardView
+          activeWorkspace={activeWorkspace}
+          displayName={displayName}
+          stats={stats}
+          statsLoading={statsLoading}
+          statsLoaded={statsLoaded}
+          uid={user.id}
+        />
       </>
     );
   }

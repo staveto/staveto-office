@@ -26,8 +26,8 @@ function ConsentCheckbox({
       className={cn(
         "flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors",
         checked
-          ? "border-[#e06737]/40 bg-[#e06737]/5"
-          : "border-border/80 bg-muted/30 hover:border-[#e06737]/30 hover:bg-[#e06737]/5"
+          ? "border-[#e06737] bg-[#fff7f4]"
+          : "border-[#cbd5e1] bg-white hover:border-[#e06737]/50 hover:bg-[#fffaf8]"
       )}
     >
       <input
@@ -36,13 +36,13 @@ function ConsentCheckbox({
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
       />
-      <span className="text-sm leading-relaxed text-foreground/90">
+      <span className="text-sm leading-relaxed text-[#111111]">
         {t(beforeKey)}{" "}
         <a
           href={href}
           target="_blank"
           rel="noopener noreferrer"
-          className="font-medium text-[#1D376A] underline underline-offset-2 hover:text-[#e06737]"
+          className="font-semibold text-[#1D376A] underline underline-offset-2 hover:text-[#e06737]"
           onClick={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
         >

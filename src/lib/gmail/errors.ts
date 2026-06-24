@@ -27,6 +27,11 @@ export function gmailErrorMessageKey(code: string): string {
       return "inbox.error.notConnected";
     case "TOKEN_REFRESH_FAILED":
       return "gmail.error.tokenRefresh";
+    case "DISCONNECT_FAILED":
+      return "gmail.error.disconnect";
+    case "OAUTH_START_FAILED":
+    case "OAUTH_FAILED":
+      return "gmail.error.connect";
     default:
       return "gmail.error.connect";
   }

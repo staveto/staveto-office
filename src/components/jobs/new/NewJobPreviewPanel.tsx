@@ -30,6 +30,9 @@ function nextStepHighlightIndex(activeStep: NewJobStepId): number {
       return 1;
     case "method":
     case "manual-details":
+    case "copy-source":
+    case "copy-options":
+    case "copy-details":
     case "ai-brief":
       return 2;
     case "ai-review":

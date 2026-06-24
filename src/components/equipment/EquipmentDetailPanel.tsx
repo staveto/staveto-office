@@ -51,9 +51,9 @@ function DetailRow({
   multiline?: boolean;
 }) {
   return (
-    <div className="grid gap-1 sm:grid-cols-[140px_1fr] sm:gap-4 py-2 border-b border-[#E2E8F0]/80 last:border-0">
+    <div className={eq.detailRow}>
       <dt className="text-sm font-medium text-muted-foreground">{label}</dt>
-      <dd className={cn("text-sm text-[#0F2A4D]", multiline && "whitespace-pre-wrap")}>{value}</dd>
+      <dd className={cn(eq.detailValue, multiline && "whitespace-pre-wrap")}>{value}</dd>
     </div>
   );
 }
@@ -70,7 +70,7 @@ function Section({
   return (
     <section className={eq.section}>
       <div className="flex items-center justify-between gap-2 mb-3">
-        <h2 className="text-base font-semibold text-[#0F2A4D]">{title}</h2>
+        <h2 className={eq.detailSectionTitle}>{title}</h2>
         {action}
       </div>
       {children}
@@ -173,7 +173,7 @@ export function EquipmentDetailPanel({ equipmentId }: EquipmentDetailPanelProps)
 
   if (!row) {
     return (
-      <Card>
+      <Card className="border-border bg-card">
         <CardContent className="py-12 text-center text-muted-foreground">
           {error ?? t("equipmentTab.notFound")}
         </CardContent>
@@ -287,7 +287,7 @@ export function EquipmentDetailPanel({ equipmentId }: EquipmentDetailPanelProps)
 
           <Link
             href={`/app/equipment/${equipmentId}/service-rules/new`}
-            className="flex items-center gap-2 rounded-xl border-2 border-dashed border-[#E06737] bg-[#FFF3EC]/50 p-4 text-[#E06737] font-semibold hover:bg-[#FFF3EC] transition-colors"
+            className={eq.servicePlanCta}
           >
             <Plus className="size-5" />
             {t("equipment.addServicePlanCta")}
@@ -302,10 +302,10 @@ export function EquipmentDetailPanel({ equipmentId }: EquipmentDetailPanelProps)
                   <li key={r.id}>
                     <Link
                       href={`/app/equipment/${equipmentId}/service-rules/${r.id}/edit`}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] p-3 hover:border-[#E06737]/40 transition-colors"
+                      className={eq.serviceRuleLink}
                     >
                       <div className="min-w-0">
-                        <p className="font-medium text-[#0F2A4D]">{r.title}</p>
+                        <p className={eq.serviceRuleTitle}>{r.title}</p>
                         <p className="text-xs text-muted-foreground mt-1">
                           {r.intervalUnit === "weeks"
                             ? t("equipment.everyWeeks", { count: String(r.intervalValue) })
@@ -333,10 +333,14 @@ export function EquipmentDetailPanel({ equipmentId }: EquipmentDetailPanelProps)
                 {openTasks.map((task) => (
                   <li
                     key={task.id}
-                    className="flex flex-wrap items-center justify-between gap-3 py-2 border-b border-[#E2E8F0]/80 last:border-0"
+                    className={cn(
+                      "flex flex-wrap items-center justify-between gap-3 py-2",
+                      eq.listDivider,
+                      "last:border-0"
+                    )}
                   >
                     <div>
-                      <p className="font-medium text-sm">{task.title}</p>
+                      <p className="text-sm font-medium text-foreground">{task.title}</p>
                       {task.dueDate && (
                         <p className="text-xs text-muted-foreground mt-0.5">{task.dueDate}</p>
                       )}

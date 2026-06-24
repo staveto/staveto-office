@@ -14,5 +14,6 @@ export {
 export { DashboardQuotesList } from "./DashboardQuotesList";
 export { TeamSnapshotCard } from "./TeamSnapshotCard";
 export { CompanyDashboardView } from "./CompanyDashboardView";
+export { CompanyDashboardBootSkeleton } from "./CompanyDashboardBootSkeleton";
 export { PersonalDashboardView } from "./PersonalDashboardView";
 export { WorkerDashboardView } from "./WorkerDashboardView";

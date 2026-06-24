@@ -131,7 +131,7 @@ export function OrganizationSubdomainSettings() {
         <CardContent>
           <p className={settingsFieldHintClassName}>{t("settings.subdomain.adminOnly")}</p>
           {slug ? (
-            <p className={cn("mt-2 text-sm font-medium text-[#152238]")}>
+            <p className="mt-2 text-sm font-medium text-foreground">
               {t("settings.subdomain.current")}:{" "}
               <a href={buildSubdomainPreviewUrl(slug)} className="text-primary underline">
                 {buildSubdomainPreviewUrl(slug)}
@@ -147,9 +147,7 @@ export function OrganizationSubdomainSettings() {
     <SettingsSectionCard>
       <CardHeader>
         <CardTitle>{t("settings.subdomain.title")}</CardTitle>
-        <CardDescription className="text-[#4a5568]">
-          {t("settings.subdomain.description")}
-        </CardDescription>
+        <CardDescription>{t("settings.subdomain.description")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {loading ? (
@@ -182,13 +180,15 @@ export function OrganizationSubdomainSettings() {
                 </p>
               ) : null}
             </div>
-            <div className="rounded-lg border border-[#b8c5d4] bg-[#f8fafc] px-4 py-3 text-sm">
+            <div className={cn(settingsFieldGroupClassName, "text-sm")}>
               <span className={settingsFieldHintClassName}>{t("settings.subdomain.preview")}: </span>
-              <span className="font-medium text-[#152238]">{previewUrl}</span>
+              <span className="font-medium text-foreground">{previewUrl}</span>
             </div>
-            <p className="text-xs text-[#5a6577]">{t("settings.subdomain.dnsNote")}</p>
+            <p className="text-xs text-muted-foreground">{t("settings.subdomain.dnsNote")}</p>
             {error ? <p className="text-sm text-destructive">{error}</p> : null}
-            {success ? <p className="text-sm text-green-700">{success}</p> : null}
+            {success ? (
+              <p className="text-sm text-green-700 dark:text-green-400">{success}</p>
+            ) : null}
             <Button
               type="button"
               onClick={handleSave}

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Inbox, Loader2, Mail, RefreshCw, Unplug } from "lucide-react";
+import { Inbox, Loader2, Mail, RefreshCw, RotateCcw, Unplug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,6 +15,7 @@ import { useI18n } from "@/i18n/I18nContext";
 import { resolveGmailError } from "@/lib/gmail/errors";
 import {
   disconnectGmail,
+  startGmailOAuth,
   syncGmailInbox,
 } from "@/services/email/gmailIntegrationService";
 
@@ -36,6 +37,7 @@ export function GmailManageDialog({
   const { t } = useI18n();
   const router = useRouter();
   const [syncing, setSyncing] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -59,6 +61,21 @@ export function GmailManageDialog({
       setError(resolveGmailError(e, t));
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleReconnect = async () => {
+    setReconnecting(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await startGmailOAuth(orgId, "/app/settings/app-center?category=communication");
+      setMessage(t("gmail.manage.reconnectSuccess"));
+      await onUpdated?.();
+    } catch (e) {
+      setError(resolveGmailError(e, t));
+    } finally {
+      setReconnecting(false);
     }
   };
 
@@ -133,6 +150,21 @@ export function GmailManageDialog({
               <RefreshCw className="mr-2 size-4" />
             )}
             {t("gmail.manage.sync")}
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="justify-start"
+            disabled={reconnecting}
+            onClick={() => void handleReconnect()}
+          >
+            {reconnecting ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <RotateCcw className="mr-2 size-4" />
+            )}
+            {t("gmail.manage.reconnect")}
           </Button>
 
           {!confirmDisconnect ? (

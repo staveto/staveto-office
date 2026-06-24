@@ -11,7 +11,39 @@ export type OAuthState = {
   uid: string;
   returnUrl: string;
   ts: number;
+  /** App origin for absolute redirects after cloud OAuth callback. */
+  appOrigin?: string;
 };
+
+export function resolveOAuthAppOrigin(state: OAuthState, fallbackOrigin: string): string {
+  const fromState = state.appOrigin?.trim();
+  if (fromState?.startsWith("http")) return fromState.replace(/\/$/, "");
+  const returnUrl = state.returnUrl.trim();
+  if (returnUrl.startsWith("http")) return new URL(returnUrl).origin;
+  return fallbackOrigin.replace(/\/$/, "");
+}
+
+export function resolveOAuthReturnPath(returnUrl: string, fallbackPath = "/app/settings/app-center"): string {
+  const trimmed = returnUrl.trim();
+  if (trimmed.startsWith("http")) {
+    const url = new URL(trimmed);
+    return `${url.pathname}${url.search}`;
+  }
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}` || fallbackPath;
+}
+
+export function stripOAuthPopupParam(pathOrUrl: string): string {
+  const trimmed = pathOrUrl.trim();
+  const url = trimmed.startsWith("http")
+    ? new URL(trimmed)
+    : new URL(trimmed.startsWith("/") ? trimmed : `/${trimmed}`, "http://local");
+  url.searchParams.delete("oauth_popup");
+  const qs = url.searchParams.toString();
+  if (trimmed.startsWith("http")) {
+    return `${url.origin}${url.pathname}${qs ? `?${qs}` : ""}`;
+  }
+  return `${url.pathname}${qs ? `?${qs}` : ""}`;
+}
 
 function stateSecret(): string {
   return getGmailClientSecret() || "staveto-gmail-dev";

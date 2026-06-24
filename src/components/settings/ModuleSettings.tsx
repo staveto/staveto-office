@@ -20,8 +20,8 @@ import {
   MessageSquareWarning,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { SettingsSectionCard } from "./SettingsSectionCard";
 import {
-  Card,
   CardContent,
   CardDescription,
   CardHeader,
@@ -267,7 +267,7 @@ export function ModuleSettings({ className }: Props) {
   }
 
   return (
-    <Card className={className} id="modules">
+    <SettingsSectionCard className={className} id="modules">
       <CardHeader>
         <CardTitle>{t("settings.modules.title")}</CardTitle>
         <CardDescription>{t("settings.modules.description")}</CardDescription>
@@ -281,19 +281,19 @@ export function ModuleSettings({ className }: Props) {
               </p>
               <p className="mt-1 text-2xl font-semibold tabular-nums">{requiredKeys.length}</p>
             </div>
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50/80 px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-emerald-800">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50/80 px-4 py-3 dark:border-emerald-800/50 dark:bg-emerald-950/30">
+              <p className="text-xs font-medium uppercase tracking-wide text-emerald-800 dark:text-emerald-300">
                 {t("settings.modules.summaryVisible")}
               </p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums text-emerald-900">
+              <p className="mt-1 text-2xl font-semibold tabular-nums text-emerald-900 dark:text-emerald-100">
                 {visibleKeys.length}
               </p>
             </div>
-            <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-amber-800">
+            <div className="rounded-lg border border-amber-200 bg-amber-50/80 px-4 py-3 dark:border-amber-800/50 dark:bg-amber-950/30">
+              <p className="text-xs font-medium uppercase tracking-wide text-amber-800 dark:text-amber-300">
                 {t("settings.modules.summaryHidden")}
               </p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums text-amber-900">
+              <p className="mt-1 text-2xl font-semibold tabular-nums text-amber-900 dark:text-amber-100">
                 {hiddenKeys.length}
               </p>
             </div>
@@ -337,7 +337,7 @@ export function ModuleSettings({ className }: Props) {
             </section>
 
             <section>
-              <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-800">
+              <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-emerald-800 dark:text-emerald-300">
                 <Eye className="size-4" aria-hidden />
                 {t("settings.modules.sectionVisible")}
                 <Badge className="bg-emerald-600 hover:bg-emerald-600">{visibleKeys.length}</Badge>
@@ -347,7 +347,7 @@ export function ModuleSettings({ className }: Props) {
                   {t("settings.modules.sectionVisibleEmpty")}
                 </p>
               ) : (
-                <ul className="divide-y divide-border overflow-hidden rounded-xl border border-emerald-200">
+                <ul className="divide-y divide-border overflow-hidden rounded-xl border border-emerald-200 dark:border-emerald-800/50">
                   {visibleKeys.map((key) => (
                     <ModuleRow
                       key={key}
@@ -364,7 +364,7 @@ export function ModuleSettings({ className }: Props) {
             </section>
 
             <section>
-              <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-800">
+              <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
                 <EyeOff className="size-4" aria-hidden />
                 {t("settings.modules.sectionHidden")}
                 <Badge variant="outline" className="border-amber-300 bg-amber-100 text-amber-900">
@@ -372,11 +372,11 @@ export function ModuleSettings({ className }: Props) {
                 </Badge>
               </h3>
               {hiddenKeys.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50/40 px-4 py-6 text-center text-sm text-emerald-800">
+                <p className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50/40 px-4 py-6 text-center text-sm text-emerald-800 dark:border-emerald-800/50 dark:bg-emerald-950/20 dark:text-emerald-200">
                   {t("settings.modules.sectionHiddenEmpty")}
                 </p>
               ) : (
-                <ul className="divide-y divide-border overflow-hidden rounded-xl border border-amber-200">
+                <ul className="divide-y divide-border overflow-hidden rounded-xl border border-amber-200 dark:border-amber-800/50">
                   {hiddenKeys.map((key) => (
                     <ModuleRow
                       key={key}
@@ -396,7 +396,7 @@ export function ModuleSettings({ className }: Props) {
 
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         {success ? (
-          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800 dark:border-emerald-800/50 dark:bg-emerald-950/30 dark:text-emerald-200">
             {success}
           </p>
         ) : null}
@@ -425,6 +425,6 @@ export function ModuleSettings({ className }: Props) {
           </Button>
         </div>
       </CardContent>
-    </Card>
+    </SettingsSectionCard>
   );
 }

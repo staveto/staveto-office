@@ -193,6 +193,17 @@ service cloud.firestore {
       ]);
     }
 
+    function onlyGmailDisconnectIntegration() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['integrations', 'updatedAt'])
+        && resource.data.get('integrations', {}).get('gmail', {}).get('status', '') == 'connected'
+        && request.resource.data.get('integrations', {}).get('gmail', {}).get('status', '') == 'not_connected'
+        && request.resource.data.get('integrations', {}).get('gmail', {}).get('mode', '') == 'oauth'
+        && request.resource.data.get('integrations', {}).get('googleMaps', null)
+            == resource.data.get('integrations', {}).get('googleMaps', null)
+        && request.resource.data.get('integrations', {}).get('aiInvoiceOcr', null)
+            == resource.data.get('integrations', {}).get('aiInvoiceOcr', null);
+    }
+
     function orgSensitiveFieldsUnchanged() {
       return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
         'ownerUid',
@@ -503,6 +514,9 @@ service cloud.firestore {
         && orgProfileEditableKeysOnly();
       allow update: if canManageOrganization(orgId)
         && onlyEnabledModulesChanged()
+        && orgServerFieldsUnchanged();
+      allow update: if canManageOrganization(orgId)
+        && onlyGmailDisconnectIntegration()
         && orgServerFieldsUnchanged();
       allow delete: if isOrgOwnerOrAdmin(orgId);
 

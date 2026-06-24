@@ -1,9 +1,10 @@
 import { getCallable } from "@/lib/firebase";
-import type {
-  BillingPeriod,
-  BusinessPlanCode,
-  CompanyType,
-  TeamSizeBand,
+import {
+  resolveTimezoneForCountry,
+  type BillingPeriod,
+  type BusinessPlanCode,
+  type CompanyType,
+  type TeamSizeBand,
 } from "@/lib/onboardingTypes";
 
 export type CreateBusinessOrgInput = {
@@ -24,22 +25,36 @@ export type CreateBusinessOrgResponse = {
   trialEndsAt?: string;
 };
 
+function trimOrUndefined(value?: string): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed || undefined;
+}
+
 /** Calls Cloud Function `createBusinessOrg` — org/member docs are server-only. */
 export async function createBusinessOrg(
   _ownerUid: string,
   input: CreateBusinessOrgInput
 ): Promise<CreateBusinessOrgResponse> {
-  const payload = {
-    companyName: input.companyName.trim(),
-    country: input.country,
-    timezone: input.timezone?.trim(),
+  const companyName = input.companyName.trim();
+  if (!companyName) {
+    throw new Error("companyName is required.");
+  }
+
+  const payload: Record<string, string> = {
+    companyName,
+    country: input.country.trim(),
+    timezone: trimOrUndefined(input.timezone) ?? resolveTimezoneForCountry(input.country),
     companyType: input.companyType,
     planCode: input.planCode,
     billingPeriod: input.billingPeriod,
-    teamSizeBand: input.teamSizeBand,
-    contactName: input.contactName?.trim(),
-    source: "web_onboarding" as const,
+    source: "web_onboarding",
   };
+
+  const teamSizeBand = trimOrUndefined(input.teamSizeBand);
+  if (teamSizeBand) payload.teamSizeBand = teamSizeBand;
+
+  const contactName = trimOrUndefined(input.contactName);
+  if (contactName) payload.contactName = contactName;
 
   const callable = getCallable<typeof payload, CreateBusinessOrgResponse>(
     "createBusinessOrg"

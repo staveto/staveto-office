@@ -25,8 +25,17 @@ export async function POST(request: NextRequest) {
   if (denied) return denied;
 
   if (body.action === "disconnect") {
-    await disconnectGmail(orgId, auth.uid);
-    return NextResponse.json({ ok: true, disconnected: true });
+    try {
+      await disconnectGmail(orgId, auth.uid);
+      return NextResponse.json({ ok: true, disconnected: true });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "DISCONNECT_FAILED";
+      if (msg === "ADMIN_NOT_CONFIGURED") {
+        return NextResponse.json({ errorCode: "GMAIL_ADMIN_NOT_CONFIGURED" }, { status: 503 });
+      }
+      console.error("[gmail/sync disconnect]", e);
+      return NextResponse.json({ errorCode: "DISCONNECT_FAILED" }, { status: 502 });
+    }
   }
 
   try {

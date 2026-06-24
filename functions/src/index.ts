@@ -8,7 +8,7 @@ import {
 } from "./handlers";
 import { handleCreateBusinessOrg } from "./businessOrg";
 import { handleGlobalSearch } from "./search/globalSearch";
-import { gmailBuildAuthUrl, gmailOAuthCallback } from "./gmail";
+import { gmailBuildAuthUrl, gmailDisconnect, gmailOAuthCallback } from "./gmail";
 import { isGeminiOverloadedError, isGeminiQuotaError } from "./gemini";
 import { functionsPermissionError } from "./permissions";
 
@@ -33,6 +33,9 @@ const aiDraftCallableOptions = {
 
 function mapError(err: unknown): never {
   console.error("[staveto-ai]", err);
+  if (err instanceof HttpsError) {
+    throw err;
+  }
   if (err instanceof functionsPermissionError) {
     throw new HttpsError("permission-denied", err.message);
   }
@@ -128,4 +131,4 @@ export const globalSearch = onCall(
   }
 );
 
-export { gmailOAuthCallback, gmailBuildAuthUrl };
+export { gmailOAuthCallback, gmailBuildAuthUrl, gmailDisconnect };

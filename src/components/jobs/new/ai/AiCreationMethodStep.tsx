@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, PenLine, Sparkles } from "lucide-react";
+import { Check, Copy, PenLine, Sparkles } from "lucide-react";
 import { useI18n } from "@/i18n/I18nContext";
 import { cn } from "@/lib/utils";
 import { njLargeChoice } from "../newJobFormStyles";
@@ -9,10 +9,11 @@ import type { CreationMethod } from "../newJobWizardTypes";
 type Props = {
   value: CreationMethod | null;
   onChange: (method: CreationMethod) => void;
+  copyAvailable: boolean;
   error?: string;
 };
 
-export function AiCreationMethodStep({ value, onChange, error }: Props) {
+export function AiCreationMethodStep({ value, onChange, copyAvailable, error }: Props) {
   const { t } = useI18n();
 
   const options = [
@@ -21,12 +22,21 @@ export function AiCreationMethodStep({ value, onChange, error }: Props) {
       icon: Sparkles,
       title: t("projects.new.method.aiPrimary"),
       desc: t("projects.new.method.aiPrimaryDesc"),
+      disabled: false,
     },
     {
       id: "manual" as const,
       icon: PenLine,
       title: t("projects.new.method.manualPrimary"),
       desc: t("projects.new.method.manualPrimaryDesc"),
+      disabled: false,
+    },
+    {
+      id: "copy" as const,
+      icon: Copy,
+      title: t("projects.new.method.copy"),
+      desc: t("projects.new.method.copyDesc"),
+      disabled: !copyAvailable,
     },
   ];
 
@@ -36,7 +46,7 @@ export function AiCreationMethodStep({ value, onChange, error }: Props) {
         {t("projects.new.method.lead")}
       </p>
       <div className="space-y-3" role="radiogroup" aria-label={t("projects.new.step3Title")}>
-        {options.map(({ id, icon: Icon, title, desc }) => {
+        {options.map(({ id, icon: Icon, title, desc, disabled }) => {
           const selected = value === id;
           return (
             <button
@@ -44,8 +54,16 @@ export function AiCreationMethodStep({ value, onChange, error }: Props) {
               type="button"
               role="radio"
               aria-checked={selected}
-              onClick={() => onChange(id)}
-              className={njLargeChoice(selected)}
+              disabled={disabled}
+              title={disabled ? t("projects.new.copy.empty") : undefined}
+              onClick={() => {
+                if (disabled) return;
+                onChange(id);
+              }}
+              className={cn(
+                njLargeChoice(selected),
+                disabled && "opacity-55 cursor-not-allowed hover:border-[#CBD5E1]"
+              )}
             >
               <div
                 className={cn(

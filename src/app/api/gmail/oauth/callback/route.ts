@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isGmailClientConfigured } from "@/lib/gmail/config";
-import { decodeOAuthState, exchangeCodeForTokens } from "@/lib/gmail/oauth";
+import {
+  decodeOAuthState,
+  exchangeCodeForTokens,
+  resolveOAuthAppOrigin,
+  resolveOAuthReturnPath,
+  stripOAuthPopupParam,
+} from "@/lib/gmail/oauth";
 import { saveGmailConnection } from "@/lib/gmail/tokenStore";
 import { syncGmailInbox } from "@/lib/gmail/syncService";
 
@@ -45,20 +51,21 @@ export async function GET(request: NextRequest) {
       /* sync optional on connect */
     }
 
+    const appOrigin = resolveOAuthAppOrigin(state, request.nextUrl.origin);
+    const returnPath = resolveOAuthReturnPath(state.returnUrl);
     const isPopup = state.returnUrl.includes("oauth_popup=1");
     if (isPopup) {
-      const success = new URL("/app/oauth/gmail/success", request.nextUrl.origin);
+      const success = new URL("/app/oauth/gmail/success", appOrigin);
       success.searchParams.set("oauth_popup", "1");
       if (tokens.email) success.searchParams.set("email", tokens.email);
-      const returnBase = state.returnUrl.split("?")[0] || "/app/settings/app-center";
-      success.searchParams.set("return", returnBase);
+      success.searchParams.set("return", stripOAuthPopupParam(returnPath));
       return NextResponse.redirect(success);
     }
 
-    const dest = state.returnUrl.includes("?")
-      ? `${state.returnUrl}&gmail=connected`
-      : `${state.returnUrl}?gmail=connected`;
-    return NextResponse.redirect(new URL(dest, request.nextUrl.origin));
+    const dest = returnPath.includes("?")
+      ? `${returnPath}&gmail=connected`
+      : `${returnPath}?gmail=connected`;
+    return NextResponse.redirect(new URL(dest, appOrigin));
   } catch (err) {
     console.error("[gmail/oauth/callback]", err);
     const reason =

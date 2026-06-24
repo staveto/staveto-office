@@ -22,7 +22,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/context/AuthContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
-import { createDraftJob } from "@/services/projects";
+import { createDraftJob, copyProjectConcept } from "@/services/projects";
+import { listProjectsForWorkspace, type ProjectDoc } from "@/lib/projects";
+import { filterCopySourceProjects } from "@/lib/copyProjectSources";
 import { createCustomer, listCustomersForWorkspace } from "@/lib/customers";
 import type { CustomerDoc, CustomerType } from "@/lib/customers";
 import {
@@ -84,6 +86,8 @@ import { NewJobStepper, type NewJobStepId } from "./NewJobStepper";
 import { NewJobPreviewPanel } from "./NewJobPreviewPanel";
 import { ProjectCreateOwnershipBanner } from "@/components/projects/ProjectCreateOwnershipBanner";
 import { AiCreationMethodStep } from "./ai/AiCreationMethodStep";
+import { CopySourceStep } from "./copy/CopySourceStep";
+import { CopyOptionsStep, type CopyOptionsState } from "./copy/CopyOptionsStep";
 import { AiDraftBriefStep } from "./ai/AiDraftBriefStep";
 import { AiDraftReviewPanel, type AiDraftReviewMode } from "./ai/AiDraftReviewPanel";
 import type { AiRefineNodeTarget } from "./ai/aiDraftReviewTypes";
@@ -132,6 +136,15 @@ export function NewJobForm() {
   const [extendedContactOpen, setExtendedContactOpen] = useState(false);
 
   const [creationMethod, setCreationMethod] = useState<CreationMethod | null>(null);
+  const [existingProjects, setExistingProjects] = useState<ProjectDoc[]>([]);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+  const [copySourceProjectId, setCopySourceProjectId] = useState<string | null>(null);
+  const [copyOptions, setCopyOptions] = useState<CopyOptionsState>({
+    copyTasks: true,
+    copyQuoteItems: true,
+    copyNotes: false,
+    copyDocuments: false,
+  });
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
   const [shortDescription, setShortDescription] = useState("");
@@ -181,6 +194,35 @@ export function NewJobForm() {
     };
   }, [user?.id, activeWorkspace, t]);
 
+  useEffect(() => {
+    if (!user?.id || !activeWorkspace) return;
+    let cancelled = false;
+    setProjectsLoading(true);
+    void listProjectsForWorkspace(activeWorkspace, user.id)
+      .then((list) => {
+        if (!cancelled) setExistingProjects(list);
+      })
+      .catch(() => {
+        if (!cancelled) setExistingProjects([]);
+      })
+      .finally(() => {
+        if (!cancelled) setProjectsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, activeWorkspace]);
+
+  const copySourceProjects = useMemo(
+    () => filterCopySourceProjects(existingProjects),
+    [existingProjects]
+  );
+  const copyAvailable = copySourceProjects.length > 0;
+  const copySourceProject = useMemo(
+    () => copySourceProjects.find((p) => p.id === copySourceProjectId) ?? null,
+    [copySourceProjects, copySourceProjectId]
+  );
+
   const filteredContacts = useMemo(() => {
     const q = contactSearch.trim().toLowerCase();
     if (!q) return customers.slice(0, 12);
@@ -210,7 +252,8 @@ export function NewJobForm() {
       !!newContactName.trim() &&
       !!newContactPersonName.trim());
 
-  const stepDoneMethod = creationMethod === "manual" || creationMethod === "ai";
+  const stepDoneMethod =
+    creationMethod === "manual" || creationMethod === "ai" || creationMethod === "copy";
 
   const showContactWarning =
     !!workType &&
@@ -248,6 +291,7 @@ export function NewJobForm() {
   const previewMethodLabel = useMemo(() => {
     if (!creationMethod) return "—";
     if (creationMethod === "manual") return t("projects.new.preview.methodManual");
+    if (creationMethod === "copy") return t("projects.new.preview.methodCopy");
     return t("projects.new.preview.methodAi");
   }, [creationMethod, t]);
 
@@ -264,14 +308,18 @@ export function NewJobForm() {
             ? stepDoneMethod
             : id === "type"
               ? !!workType
-              : true;
+              : id === "copy-source"
+                ? !!copySourceProjectId
+                : id === "copy-details" || id === "manual-details"
+                  ? !!name.trim()
+                  : true;
       return {
         id: id as NewJobStepId,
         label: t(`projects.new.stepper.${id}`),
         done: stepDone && idx > path.indexOf(id),
       };
     });
-  }, [t, creationMethod, step, stepDoneContact, stepDoneMethod, workType]);
+  }, [t, creationMethod, step, stepDoneContact, stepDoneMethod, workType, copySourceProjectId, name]);
 
   const clearFieldError = (key: string) => {
     if (fieldErrors[key]) {
@@ -335,6 +383,12 @@ export function NewJobForm() {
       err.method = t("projects.new.validation.method");
     }
     if (s === "manual-details" && !name.trim()) {
+      err.name = t("projects.new.validation.name");
+    }
+    if (s === "copy-source" && !copySourceProjectId) {
+      err.copyProject = t("projects.new.validation.copyProject");
+    }
+    if (s === "copy-details" && !name.trim()) {
       err.name = t("projects.new.validation.name");
     }
     if (s === "ai-brief") {
@@ -673,17 +727,85 @@ export function NewJobForm() {
     }
   };
 
+  const handleCopyCreate = async () => {
+    if (creationMethod !== "copy") return;
+    if (!user?.id || !activeWorkspace || !workType || !copySourceProjectId) return;
+    if (!validateStep("copy-details")) {
+      setStep("copy-details");
+      return;
+    }
+    if (!validateStep("copy-source")) {
+      setStep("copy-source");
+      return;
+    }
+    if (!validateStep("contact")) {
+      setStep("contact");
+      return;
+    }
+
+    setSubmitError(null);
+    setLoading(true);
+    try {
+      const customer = await resolveCustomerFields();
+      const jobName = name.trim();
+      if (!jobName) {
+        setFieldErrors({ name: t("projects.new.validation.name") });
+        setStep("copy-details");
+        return;
+      }
+
+      const projectId = await copyProjectConcept(
+        activeWorkspace,
+        user.id,
+        {
+          workType,
+          name: jobName,
+          customerId: customer.customerId,
+          customerRequest: shortDescription.trim() || undefined,
+          customerName: customer.customerName,
+          customerCompanyName: customer.customerCompanyName,
+          customerContactPersonName: customer.customerContactPersonName,
+          customerEmail: customer.customerEmail,
+          customerPhone: customer.customerPhone,
+          addressText: location.trim() || undefined,
+          source: "web",
+        },
+        {
+          sourceProjectId: copySourceProjectId,
+          ...copyOptions,
+        }
+      );
+
+      router.push(`/app/projects/${projectId}`);
+    } catch (err) {
+      setSubmitError(
+        err instanceof Error ? err.message : t("projects.new.submitError")
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const onSelectCreationMethod = (method: CreationMethod) => {
     setCreationMethod(method);
     clearFieldError("method");
+    if (method === "copy") {
+      setCopySourceProjectId(null);
+    }
     if (method === "ai" && !aiProjectName.trim() && name.trim()) {
       setAiProjectName(name.trim());
     }
   };
 
+  const handleWizardSubmit = () => {
+    if (creationMethod === "copy") void handleCopyCreate();
+    else void handleCreate();
+  };
+
   const showFooterContinue =
     step !== "ai-review" && step !== "concept" && !(step === "method" && !creationMethod);
-  const showFooterSubmit = step === "concept" && creationMethod === "manual";
+  const showFooterSubmit =
+    step === "concept" && (creationMethod === "manual" || creationMethod === "copy");
 
   const onSelectWorkType = (type: WorkType) => {
     setWorkType(type);
@@ -1211,8 +1333,101 @@ export function NewJobForm() {
                 <AiCreationMethodStep
                   value={creationMethod}
                   onChange={onSelectCreationMethod}
+                  copyAvailable={copyAvailable}
                   error={fieldErrors.method}
                 />
+              </section>
+            ) : null}
+
+            {step === "copy-source" ? (
+              <section className={cn(nj.sectionGap, "flex-1")}>
+                <h2 className={nj.sectionHeading}>{t("projects.new.step.copySourceTitle")}</h2>
+                <CopySourceStep
+                  projects={copySourceProjects}
+                  loading={projectsLoading}
+                  value={copySourceProjectId}
+                  onChange={(id) => {
+                    setCopySourceProjectId(id);
+                    clearFieldError("copyProject");
+                    const source = copySourceProjects.find((p) => p.id === id);
+                    if (source && !name.trim()) {
+                      setName(`${source.name} (${t("projects.new.copy.nameSuffix")})`);
+                    }
+                  }}
+                  error={fieldErrors.copyProject}
+                />
+              </section>
+            ) : null}
+
+            {step === "copy-options" ? (
+              <section className={cn(nj.sectionGap, "flex-1")}>
+                <h2 className={nj.sectionHeading}>{t("projects.new.step.copyOptionsTitle")}</h2>
+                <CopyOptionsStep
+                  value={copyOptions}
+                  onChange={(patch) => setCopyOptions((prev) => ({ ...prev, ...patch }))}
+                  sourceProjectName={copySourceProject?.name}
+                />
+              </section>
+            ) : null}
+
+            {step === "copy-details" ? (
+              <section className={cn(nj.sectionGap, "flex-1")}>
+                <h2 className={nj.sectionHeading}>{t("projects.new.step.copyDetailsTitle")}</h2>
+                <p className={nj.sectionLead}>{t("projects.new.step.copyDetailsLead")}</p>
+                <div className={cn(nj.formGroup, nj.fieldStack, "max-w-2xl")}>
+                  <div>
+                    <Label htmlFor="copy-name" className={nj.label}>
+                      {t("projects.new.jobName")}
+                      <RequiredMark />
+                    </Label>
+                    <Input
+                      id="copy-name"
+                      value={name}
+                      onChange={(e) => {
+                        setName(e.target.value);
+                        clearFieldError("name");
+                      }}
+                      className={nj.input}
+                      aria-invalid={!!fieldErrors.name}
+                    />
+                    {fieldErrors.name ? (
+                      <p className={nj.error} role="alert">
+                        {fieldErrors.name}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div>
+                    <Label htmlFor="copy-location" className={nj.label}>
+                      {t("projects.new.location")}
+                    </Label>
+                    <div className="relative">
+                      <MapPin
+                        className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-[#64748B]"
+                        aria-hidden
+                      />
+                      <Input
+                        id="copy-location"
+                        value={location}
+                        onChange={(e) => setLocation(e.target.value)}
+                        placeholder={t("projects.new.locationPlaceholder")}
+                        className={nj.inputWithIcon}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label htmlFor="copy-shortDesc" className={nj.label}>
+                      {t("projects.new.shortDescription")}
+                    </Label>
+                    <Textarea
+                      id="copy-shortDesc"
+                      value={shortDescription}
+                      onChange={(e) => setShortDescription(e.target.value)}
+                      placeholder={t("projects.new.shortDescriptionPlaceholder")}
+                      rows={3}
+                      className={nj.textarea}
+                    />
+                  </div>
+                </div>
               </section>
             ) : null}
 
@@ -1389,6 +1604,14 @@ export function NewJobForm() {
                     <dt className="text-[#64748B]">{t("projects.new.preview.method")}</dt>
                     <dd className="font-semibold text-[#0F2A4D]">{previewMethodLabel}</dd>
                   </div>
+                  {creationMethod === "copy" && copySourceProject ? (
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-[#64748B]">{t("projects.new.preview.copySource")}</dt>
+                      <dd className="font-semibold text-[#0F2A4D] text-right min-w-0 max-w-[55%] truncate">
+                        {copySourceProject.name}
+                      </dd>
+                    </div>
+                  ) : null}
                 </dl>
               </section>
             ) : null}
@@ -1418,7 +1641,7 @@ export function NewJobForm() {
                   type="button"
                   className={njNavPrimary()}
                   disabled={loading}
-                  onClick={() => void handleCreate()}
+                  onClick={() => void handleWizardSubmit()}
                 >
                   {loading ? t("common.loading") : submitLabel}
                 </Button>
@@ -1437,7 +1660,7 @@ export function NewJobForm() {
               submitLabel={submitLabel}
               loading={loading}
               submitError={submitError}
-              onSubmit={() => void handleCreate()}
+              onSubmit={() => void handleWizardSubmit()}
               showSubmit={showFooterSubmit}
             />
           </aside>

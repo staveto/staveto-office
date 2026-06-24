@@ -35,7 +35,7 @@ try {
   }
 
   npm run build --prefix functions
-  & firebase deploy --only "functions:gmailOAuthCallback,functions:gmailBuildAuthUrl" --force
+  & firebase deploy --only "functions:gmailOAuthCallback,functions:gmailBuildAuthUrl,functions:gmailDisconnect" --force
   if ($LASTEXITCODE -eq 0) {
     Write-Host "Setting public invoker via gcloud..." -ForegroundColor Yellow
     & "$PSScriptRoot\grant-gmail-invoker.ps1"

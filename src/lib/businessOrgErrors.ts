@@ -36,9 +36,33 @@ export function resolveBusinessOrgErrorKey(err: unknown): string {
   return "onboarding.error.save";
 }
 
+function extractCallableMessage(err: unknown): string | null {
+  const e = err as { message?: string };
+  const message = e?.message?.trim();
+  if (!message) return null;
+  // Firebase client wraps server text after the code prefix.
+  const withoutCode = message.replace(/^FirebaseError:\s*/i, "").trim();
+  const detail = withoutCode.replace(/^functions\/[\w-]+:\s*/i, "").trim();
+  return detail && detail !== withoutCode ? detail : withoutCode || null;
+}
+
 export function resolveBusinessOrgErrorMessage(
   err: unknown,
   t: (key: string) => string
 ): string {
-  return t(resolveBusinessOrgErrorKey(err));
+  const key = resolveBusinessOrgErrorKey(err);
+  const base = t(key);
+  const detail = extractCallableMessage(err);
+
+  if (key === "onboarding.error.businessOrgInvalid" && detail) {
+    const lower = detail.toLowerCase();
+    if (lower.includes("legalname is required") || lower.includes("countrycode is required")) {
+      return t("onboarding.error.businessOrgNotDeployed");
+    }
+    if (process.env.NODE_ENV === "development") {
+      return `${base} (${detail})`;
+    }
+  }
+
+  return base;
 }

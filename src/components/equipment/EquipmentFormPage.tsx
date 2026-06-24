@@ -187,7 +187,7 @@ export function EquipmentFormPage({ mode, equipmentId }: EquipmentFormPageProps)
         <p className={eq.pageLead}>{t("equipment.formPageLead")}</p>
       </div>
 
-      <Card className="border-[#E2E8F0] shadow-sm">
+      <Card className="border-border bg-card shadow-sm">
         <CardContent className="p-5 sm:p-6 lg:p-8">
           <UserEquipmentForm
             mode={mode}

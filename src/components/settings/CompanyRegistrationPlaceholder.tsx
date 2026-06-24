@@ -9,6 +9,7 @@ import { useI18n } from "@/i18n/I18nContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { isCompanyWorkspaceType } from "@/types/workspace";
 import { BUSINESS_CREATE_ROUTE } from "@/services/onboarding";
+import { settingsAccentIconClassName, settingsHighlightCardClassName } from "./settingsStyles";
 
 export function CompanyRegistrationPlaceholder() {
   const { t } = useI18n();
@@ -21,10 +22,10 @@ export function CompanyRegistrationPlaceholder() {
   if (hasCompanyWorkspace) return null;
 
   return (
-    <Card className="border-[#1D376A]/15 bg-[#1D376A]/[0.03]">
+    <Card className={settingsHighlightCardClassName}>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Building2 className="size-4 text-[#1D376A]" aria-hidden />
+          <Building2 className={cn("size-4", settingsAccentIconClassName)} aria-hidden />
           {t("business.create.title")}
         </CardTitle>
         <CardDescription>{t("business.create.subtitle")}</CardDescription>

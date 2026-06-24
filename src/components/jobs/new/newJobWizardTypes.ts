@@ -1,13 +1,16 @@
 export type ContactMode = "existing" | "new" | "none";
 
 /** Primary creation paths in the new-job wizard (mobile-aligned). */
-export type CreationMethod = "manual" | "ai";
+export type CreationMethod = "manual" | "ai" | "copy";
 
 export type WizardStep =
   | "type"
   | "contact"
   | "method"
   | "manual-details"
+  | "copy-source"
+  | "copy-options"
+  | "copy-details"
   | "ai-brief"
   | "ai-review"
   | "concept";
@@ -16,6 +19,7 @@ export function buildWizardPath(method: CreationMethod | null): WizardStep[] {
   const base: WizardStep[] = ["type", "contact", "method"];
   if (method === "ai") return [...base, "ai-brief", "ai-review"];
   if (method === "manual") return [...base, "manual-details", "concept"];
+  if (method === "copy") return [...base, "copy-source", "copy-options", "copy-details", "concept"];
   return base;
 }
 
