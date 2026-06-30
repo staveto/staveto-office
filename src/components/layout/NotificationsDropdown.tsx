@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { Bell, CheckCheck, Loader2, Mail } from "lucide-react";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/context/AuthContext";
+import { useAnchoredOverlayPanel } from "@/hooks/useAnchoredOverlayPanel";
 import {
   subscribeUserNotifications,
   markNotificationRead,
@@ -100,7 +102,9 @@ export function NotificationsDropdown() {
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [pendingInviteCount, setPendingInviteCount] = useState(0);
-  const panelRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelStyle = useAnchoredOverlayPanel(open, triggerRef);
 
   const refreshPendingInvites = useCallback(async () => {
     try {
@@ -140,9 +144,9 @@ export function NotificationsDropdown() {
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      if (rootRef.current?.contains(target)) return;
+      setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
@@ -169,9 +173,141 @@ export function NotificationsDropdown() {
     }
   };
 
+  const panel =
+    open && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            style={panelStyle}
+            className={cn(
+              "flex flex-col overflow-hidden rounded-xl border border-border/60",
+              "bg-popover shadow-lg backdrop-blur-sm"
+            )}
+            role="menu"
+          >
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border/50 px-4 py-3">
+              <p className="text-sm font-semibold">{t("notifications.centerTitle")}</p>
+              {unreadCount > 0 ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs"
+                  disabled={markingAll}
+                  onClick={() => void handleMarkAllRead()}
+                >
+                  {markingAll ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <CheckCheck className="size-3" />
+                  )}
+                  {t("notifications.markAllRead")}
+                </Button>
+              ) : null}
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              {pendingInviteCount > 0 ? (
+                <Link
+                  href="/app/settings#project-invites"
+                  role="menuitem"
+                  onClick={() => setOpen(false)}
+                  className="mb-2 flex items-center gap-2 rounded-lg border border-[#e06737]/30 bg-[#e06737]/5 px-3 py-2.5 text-sm transition-colors hover:bg-[#e06737]/10"
+                >
+                  <Mail className="size-4 shrink-0 text-[#e06737]" aria-hidden />
+                  <span className="font-medium text-[#1D376A] dark:text-foreground">
+                    {t("profile.projectInvites")} ({pendingInviteCount})
+                  </span>
+                </Link>
+              ) : null}
+              {loading ? (
+                <div className="flex justify-center py-6">
+                  <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : notifications.length === 0 ? (
+                <p className="px-2 py-4 text-center text-sm text-muted-foreground">
+                  {t("notifications.empty")}
+                </p>
+              ) : (
+                <ul role="none" className="divide-y divide-border/50">
+                  {notifications.map((n) => {
+                    const projectHref = getNotificationProjectHref(n);
+                    const isUnread = !n.read;
+                    return (
+                      <li key={n.id} className="py-2 first:pt-0 last:pb-0">
+                        <div
+                          className={cn(
+                            "rounded-lg px-3 py-3 text-sm transition-colors",
+                            isUnread ? "bg-primary/5" : "hover:bg-muted/60"
+                          )}
+                        >
+                          <p className={cn("text-sm leading-snug", isUnread && "font-medium")}>
+                            {notificationMessage(n, t)}
+                          </p>
+                          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+                            {projectHref && n.type === "INCOMING_EMAIL" ? (
+                              <Link
+                                href={projectHref}
+                                role="menuitem"
+                                onClick={() => {
+                                  void handleMarkRead(n);
+                                  setOpen(false);
+                                }}
+                                className="inline-flex h-7 items-center rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                              >
+                                {t("notifications.openInbox")}
+                              </Link>
+                            ) : projectHref &&
+                              (n.type === "PROJECT_ASSIGNED" || n.type === "PROJECT_INVITED") ? (
+                              <Link
+                                href={projectHref}
+                                role="menuitem"
+                                onClick={() => {
+                                  void handleMarkRead(n);
+                                  setOpen(false);
+                                }}
+                                className="inline-flex h-7 items-center rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+                              >
+                                {t("notifications.openProject")}
+                              </Link>
+                            ) : projectHref ? (
+                              <Link
+                                href={projectHref}
+                                role="menuitem"
+                                onClick={() => {
+                                  void handleMarkRead(n);
+                                  setOpen(false);
+                                }}
+                                className="text-xs font-medium text-primary hover:underline"
+                              >
+                                {t("notifications.openProject")}
+                              </Link>
+                            ) : null}
+                            {isUnread ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleMarkRead(n)}
+                                className="text-xs text-muted-foreground hover:text-foreground"
+                              >
+                                {t("notifications.markRead")}
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
+
   return (
-    <div className="relative" ref={panelRef}>
+    <div className="relative" ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
@@ -191,130 +327,7 @@ export function NotificationsDropdown() {
         ) : null}
       </button>
 
-      {open ? (
-        <div
-          className={cn(
-            "absolute right-0 top-full z-50 mt-2 w-96 overflow-hidden rounded-xl border border-border/60",
-            "bg-popover shadow-lg backdrop-blur-sm"
-          )}
-          role="menu"
-        >
-          <div className="flex items-center justify-between gap-2 border-b border-border/50 px-4 py-3">
-            <p className="text-sm font-semibold">{t("notifications.centerTitle")}</p>
-            {unreadCount > 0 ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1 px-2 text-xs"
-                disabled={markingAll}
-                onClick={() => void handleMarkAllRead()}
-              >
-                {markingAll ? (
-                  <Loader2 className="size-3 animate-spin" />
-                ) : (
-                  <CheckCheck className="size-3" />
-                )}
-                {t("notifications.markAllRead")}
-              </Button>
-            ) : null}
-          </div>
-
-          <div className="max-h-96 overflow-y-auto p-2">
-            {pendingInviteCount > 0 ? (
-              <Link
-                href="/app/settings#project-invites"
-                role="menuitem"
-                onClick={() => setOpen(false)}
-                className="mb-2 flex items-center gap-2 rounded-lg border border-[#e06737]/30 bg-[#e06737]/5 px-3 py-2.5 text-sm transition-colors hover:bg-[#e06737]/10"
-              >
-                <Mail className="size-4 shrink-0 text-[#e06737]" aria-hidden />
-                <span className="font-medium text-[#1D376A]">
-                  {t("profile.projectInvites")} ({pendingInviteCount})
-                </span>
-              </Link>
-            ) : null}
-            {loading ? (
-              <div className="flex justify-center py-6">
-                <Loader2 className="size-5 animate-spin text-muted-foreground" />
-              </div>
-            ) : notifications.length === 0 ? (
-              <p className="px-2 py-4 text-center text-sm text-muted-foreground">
-                {t("notifications.empty")}
-              </p>
-            ) : (
-              <ul role="none" className="divide-y divide-border/50">
-                {notifications.map((n) => {
-                  const projectHref = getNotificationProjectHref(n);
-                  const isUnread = !n.read;
-                  return (
-                    <li key={n.id} className="py-2 first:pt-0 last:pb-0">
-                      <div
-                        className={cn(
-                          "rounded-lg px-3 py-3 text-sm transition-colors",
-                          isUnread ? "bg-primary/5" : "hover:bg-muted/60"
-                        )}
-                      >
-                        <p className={cn("text-sm leading-snug", isUnread && "font-medium")}>
-                          {notificationMessage(n, t)}
-                        </p>
-                        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-                          {projectHref && n.type === "INCOMING_EMAIL" ? (
-                            <Link
-                              href={projectHref}
-                              role="menuitem"
-                              onClick={() => {
-                                void handleMarkRead(n);
-                                setOpen(false);
-                              }}
-                              className="inline-flex h-7 items-center rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-                            >
-                              {t("notifications.openInbox")}
-                            </Link>
-                          ) : projectHref && (n.type === "PROJECT_ASSIGNED" || n.type === "PROJECT_INVITED") ? (
-                            <Link
-                              href={projectHref}
-                              role="menuitem"
-                              onClick={() => {
-                                void handleMarkRead(n);
-                                setOpen(false);
-                              }}
-                              className="inline-flex h-7 items-center rounded-md bg-primary px-2.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-                            >
-                              {t("notifications.openProject")}
-                            </Link>
-                          ) : projectHref ? (
-                            <Link
-                              href={projectHref}
-                              role="menuitem"
-                              onClick={() => {
-                                void handleMarkRead(n);
-                                setOpen(false);
-                              }}
-                              className="text-xs font-medium text-primary hover:underline"
-                            >
-                              {t("notifications.openProject")}
-                            </Link>
-                          ) : null}
-                          {isUnread ? (
-                            <button
-                              type="button"
-                              onClick={() => void handleMarkRead(n)}
-                              className="text-xs text-muted-foreground hover:text-foreground"
-                            >
-                              {t("notifications.markRead")}
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        </div>
-      ) : null}
+      {panel}
     </div>
   );
 }

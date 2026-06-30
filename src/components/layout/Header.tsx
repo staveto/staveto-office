@@ -89,7 +89,7 @@ export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
   }
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-4 backdrop-blur-sm md:gap-4 md:px-6">
+    <header className="relative z-30 flex h-14 shrink-0 items-center gap-3 overflow-visible border-b border-border bg-background/95 px-4 backdrop-blur-sm md:gap-4 md:px-6">
       <div className="flex min-w-0 items-center gap-3 md:max-w-[240px]">
         <button
           type="button"
@@ -109,7 +109,7 @@ export function Header({ onMenuClick, sidebarOpen = false }: HeaderProps) {
         <GlobalSearchInput onOpen={openSearch} />
       </div>
 
-      <div className="flex min-w-0 shrink items-center gap-1.5 sm:gap-2">
+      <div className="relative z-30 flex min-w-0 shrink items-center gap-1.5 overflow-visible sm:gap-2">
         <GlobalSearchTriggerMobile onOpen={openSearch} />
         <ThemeToggle />
         <EmailInboxHeaderLink />

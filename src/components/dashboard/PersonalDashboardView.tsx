@@ -57,6 +57,8 @@ export function PersonalDashboardView({
 
   return (
     <div className="mx-auto max-w-6xl space-y-5 pb-8">
+      {companySwitchPrompt}
+
       <DashboardWorkspaceHero
         activeWorkspace={activeWorkspace}
         firstName={displayName}
@@ -64,8 +66,6 @@ export function PersonalDashboardView({
         estimatesCount={stats.quotesCount ?? stats.estimatesCount}
         statsLoading={statsLoading}
       />
-
-      {companySwitchPrompt}
 
       <div
         className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1 scrollbar-thin"

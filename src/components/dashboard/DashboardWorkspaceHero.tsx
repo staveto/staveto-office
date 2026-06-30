@@ -372,10 +372,10 @@ function PersonalHeroCard({
       )}
     >
       <div className="relative px-4 py-5 sm:px-6 sm:py-6">
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0 flex-1 space-y-3">
+        <div className="space-y-4">
+          <div className="min-w-0 space-y-3">
             <div className="space-y-1">
-              <h1 className="text-xl font-semibold tracking-tight text-[#1D376A] sm:text-2xl">
+              <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
                 {t(`dashboard.hero.greeting.${greetingKey}`, { name: firstName })}
               </h1>
               <p className="text-sm text-muted-foreground leading-relaxed">
@@ -397,7 +397,12 @@ function PersonalHeroCard({
               </ul>
             ) : null}
           </div>
-          <div className="flex shrink-0 flex-col gap-2 sm:min-w-[11rem]">
+
+          <div
+            className="flex flex-wrap gap-2 border-t border-border/60 pt-4"
+            role="group"
+            aria-label={t("dashboard.quickActions")}
+          >
             <Link
               href="/app/projects/new"
               className={cn(
@@ -412,7 +417,7 @@ function PersonalHeroCard({
               href="/app/quotes/new"
               className={cn(
                 buttonVariants({ variant: "outline", size: "default" }),
-                "border-[#1D376A]/25 justify-center"
+                "border-border justify-center"
               )}
             >
               {t("dashboard.secondaryNewQuote")}

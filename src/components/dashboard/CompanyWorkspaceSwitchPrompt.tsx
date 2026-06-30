@@ -32,14 +32,14 @@ export function CompanyWorkspaceSwitchPrompt({
       <div
         className={cn(
           "flex flex-col gap-3 rounded-xl border border-[#1D376A]/15 bg-[#1D376A]/[0.04]",
-          "px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+          "px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
         )}
         role="status"
       >
-        <div className="flex min-w-0 items-start gap-2.5">
-          <Building2 className="mt-0.5 size-4 shrink-0 text-[#1D376A]" aria-hidden />
+        <div className="flex min-w-0 flex-1 items-start gap-2.5">
+          <Building2 className="mt-0.5 size-4 shrink-0 text-[#1D376A] dark:text-primary" aria-hidden />
           <div className="min-w-0 space-y-0.5">
-            <p className="text-sm font-medium text-[#1D376A]">
+            <p className="text-sm font-medium text-foreground">
               {t("settings.registeredCompany.title")}
             </p>
             <p className="text-sm text-muted-foreground leading-relaxed">
@@ -47,7 +47,7 @@ export function CompanyWorkspaceSwitchPrompt({
             </p>
           </div>
         </div>
-        <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+        <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:justify-end">
           <Button
             type="button"
             size="sm"
