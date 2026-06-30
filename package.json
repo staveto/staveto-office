@@ -10,6 +10,8 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:install": "playwright install chromium",
+    "diagnostics:workspace": "node scripts/run-workspace-diagnostics.mjs",
+    "test:workspace": "vitest run",
     "firebase": "firebase",
     "firebase:login": "firebase login --reauth",
     "firebase:login:no-localhost": "firebase login --reauth --no-localhost",
@@ -58,6 +60,7 @@
     "eslint-config-next": "16.1.6",
     "firebase-tools": "^15.18.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.4"
   }
 }

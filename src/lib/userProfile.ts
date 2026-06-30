@@ -12,8 +12,19 @@ export type UserProfile = {
   primaryUsageMode?: PrimaryUsageMode;
   primaryCountry?: string;
   timezone?: string;
+  /** UI language — independent from workspace country. */
+  preferredLanguage?: string;
+  /** Solo workspace market — country of operation (Phase 1.5A). */
+  soloCountryCode?: string;
+  soloCurrency?: string;
+  soloTimezone?: string;
+  soloLocale?: string;
+  soloDefaultLanguage?: string;
+  soloMarketConfigVersion?: number;
   createdAt?: unknown;
   updatedAt?: unknown;
+  /** Last active workspace id: `personal` (solo) or organization id. Phase 1 bridge field. */
+  lastActiveWorkspaceId?: string;
   /** Mobile BusinessContext hint (optional on users/{uid}). */
   activeBusinessOrgId?: string;
   /** Mobile-aligned completion marker — primary gate for web auth. */
@@ -98,6 +109,10 @@ export async function upsertUserProfile(
   if (data.primaryUsageMode !== undefined) update.primaryUsageMode = data.primaryUsageMode;
   if (data.primaryCountry !== undefined) update.primaryCountry = data.primaryCountry;
   if (data.timezone !== undefined) update.timezone = data.timezone;
+  if (data.preferredLanguage !== undefined) update.preferredLanguage = data.preferredLanguage;
+  if (data.lastActiveWorkspaceId !== undefined) {
+    update.lastActiveWorkspaceId = data.lastActiveWorkspaceId;
+  }
   if (data.activeBusinessOrgId !== undefined) {
     update.activeBusinessOrgId = data.activeBusinessOrgId;
   }
