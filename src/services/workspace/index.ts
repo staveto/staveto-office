@@ -8,5 +8,7 @@ export {
   getProjectWorkspaceWriteFields,
   persistActiveWorkspaceId,
   readPersistedWorkspaceId,
+  persistLastActiveWorkspaceId,
+  persistLastActiveWorkspaceIdOnly,
   WORKSPACE_STORAGE_KEY,
 } from "./workspaceService";

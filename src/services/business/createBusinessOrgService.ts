@@ -6,6 +6,11 @@ import {
   type CompanyType,
   type TeamSizeBand,
 } from "@/lib/onboardingTypes";
+import {
+  guardCompanyCreation,
+  type CompanyCreationGuardResult,
+  CompanyCreationBlockedError,
+} from "@/lib/workspace/companyIdentityGuard";
 
 export type CreateBusinessOrgInput = {
   companyName: string;
@@ -23,7 +28,13 @@ export type CreateBusinessOrgResponse = {
   planCode: string;
   status: string;
   trialEndsAt?: string;
+  /** Set when duplicate guard redirected to an existing org instead of creating. */
+  reusedExistingOrg?: boolean;
+  guardReason?: string;
 };
+
+export type { CompanyCreationGuardResult, CompanyCreationBlockedError };
+export { guardCompanyCreation };
 
 function trimOrUndefined(value?: string): string | undefined {
   const trimmed = value?.trim();
@@ -32,12 +43,29 @@ function trimOrUndefined(value?: string): string | undefined {
 
 /** Calls Cloud Function `createBusinessOrg` — org/member docs are server-only. */
 export async function createBusinessOrg(
-  _ownerUid: string,
+  ownerUid: string,
   input: CreateBusinessOrgInput
 ): Promise<CreateBusinessOrgResponse> {
   const companyName = input.companyName.trim();
   if (!companyName) {
     throw new Error("companyName is required.");
+  }
+
+  const guard = await guardCompanyCreation(ownerUid, {
+    companyName,
+    legalName: companyName,
+  });
+  if (guard.action === "manual_review_required") {
+    throw new CompanyCreationBlockedError(guard);
+  }
+  if (guard.action === "use_existing") {
+    return {
+      orgId: guard.orgId,
+      planCode: input.planCode,
+      status: "existing",
+      reusedExistingOrg: true,
+      guardReason: guard.reason,
+    };
   }
 
   const payload: Record<string, string> = {

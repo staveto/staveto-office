@@ -16,6 +16,10 @@ import {
 } from "./firebase";
 import { listOrgMemberProfilesViaCallable } from "@/services/organizations/orgMemberProfilesService";
 import { dedupeInflight } from "@/lib/inflightCache";
+import {
+  evaluateCompanyCreationGuard,
+  loadCompanyIdentityCandidates,
+} from "@/lib/workspace/companyIdentityGuard";
 
 export type OrgPlan = "TEAM_5" | "TEAM_15" | "TEAM_30";
 
@@ -103,10 +107,24 @@ export async function createOrganization(
   name: string,
   plan: OrgPlan = "TEAM_5"
 ): Promise<string> {
+  const trimmedName = name.trim();
+  if (!trimmedName) throw new Error("Organization name is required.");
+
+  const guard = evaluateCompanyCreationGuard(
+    trimmedName,
+    await loadCompanyIdentityCandidates(ownerUid)
+  );
+  if (guard.action === "use_existing") {
+    return guard.orgId;
+  }
+  if (guard.action === "manual_review_required") {
+    throw new Error(guard.reason);
+  }
+
   const db = getFirestoreInstance();
   if (!db) throw new Error("Firestore not configured");
   const orgRef = await addDoc(collection(db, "organizations"), {
-    name,
+    name: trimmedName,
     ownerUid,
     seatLimit: plan === "TEAM_5" ? 5 : plan === "TEAM_15" ? 15 : 30,
     plan,

@@ -14,23 +14,27 @@ import {
   mapLegacyOrgRoleToWorkspaceRole,
   personalWorkspaceRole,
 } from "@/permissions/roles";
+import {
+  getSoloWorkspaceDisplayName,
+  SOLO_WORKSPACE_ID,
+  ACTIVE_WORKSPACE_PROFILE_FIELD,
+  COMPANY_WORKSPACE_SOURCE,
+  workspaceIdForPersistence,
+} from "@/lib/workspace/workspaceContract";
+import { upsertUserProfile } from "@/lib/userProfile";
 
-const PERSONAL_WORKSPACE_ID = "personal";
-const DEFAULT_PERSONAL_NAME = "Personal";
+const PERSONAL_WORKSPACE_ID = SOLO_WORKSPACE_ID;
 
 /** Default company workspace: mobile owner / admin / manager only. */
 const DEFAULT_COMPANY_ROLE_PRIORITY: WorkspaceRole[] = ["owner", "admin", "manager"];
 
 export function getPersonalWorkspace(user: WorkspaceUser): ActiveWorkspace {
-  const displayName =
-    user.name?.trim() ||
-    (user.email ? user.email.split("@")[0] : null) ||
-    DEFAULT_PERSONAL_NAME;
+  const displayName = getSoloWorkspaceDisplayName(user.firstName ?? user.name?.split(" ")[0]);
 
   return {
     id: PERSONAL_WORKSPACE_ID,
     type: "personal",
-    name: displayName === DEFAULT_PERSONAL_NAME ? DEFAULT_PERSONAL_NAME : displayName,
+    name: displayName,
     role: personalWorkspaceRole(),
     source: "personal",
     ownerId: user.id,
@@ -55,7 +59,7 @@ export function normalizeOrganizationToWorkspace(
     type: "company",
     name: orgName,
     role: mapLegacyOrgRoleToWorkspaceRole(memberRole, { isOrgOwner }),
-    source: "organization",
+    source: COMPANY_WORKSPACE_SOURCE,
     orgId,
     ownerId: options?.ownerUid,
     legacyId: orgId,
@@ -143,6 +147,8 @@ export type ResolveWorkspaceOptions = {
   profileWorkspaceId?: string | null;
   /** Mobile-style hint on users/{uid} if present */
   profileBusinessOrgId?: string | null;
+  /** Cross-device last active workspace (`personal` or org id). */
+  profileLastActiveWorkspaceId?: string | null;
 };
 
 export type WorkspaceResolveReason =
@@ -152,6 +158,8 @@ export type WorkspaceResolveReason =
   | "explicit-personal"
   | "profile-org"
   | "profile-business-org"
+  | "profile-last-active"
+  | "profile-last-active-solo"
   | "fallback-personal";
 
 export type ResolvedWorkspace = {
@@ -217,6 +225,7 @@ export function resolveActiveWorkspaceWithReason(
   const defaultCompany = pickDefaultCompanyWorkspace(available);
   const persisted = findWorkspaceById(available, options?.persistedId);
   const explicitPersonal = hasExplicitPersonalWorkspace();
+  const lastActive = findWorkspaceById(available, options?.profileLastActiveWorkspaceId);
 
   if (persisted) {
     if (persisted.type === "personal") {
@@ -229,6 +238,17 @@ export function resolveActiveWorkspaceWithReason(
       return { workspace: persisted, reason: "persisted-valid" };
     }
     return { workspace: persisted, reason: "persisted-valid" };
+  }
+
+  if (lastActive) {
+    if (lastActive.type === "company") {
+      return { workspace: lastActive, reason: "profile-last-active" };
+    }
+    // Profile "personal" must not win on login when a company workspace exists (Phase 1.1).
+    if (defaultCompany) {
+      return { workspace: defaultCompany, reason: "preferred-business" };
+    }
+    return { workspace: lastActive, reason: "profile-last-active-solo" };
   }
 
   const profileOrg = findWorkspaceById(available, options?.profileWorkspaceId);
@@ -252,11 +272,37 @@ export function resolveActiveWorkspaceWithReason(
   return { workspace: personal, reason: "fallback-personal" };
 }
 
-export function getWorkspaceDisplayName(workspace: ActiveWorkspace): string {
+export function getWorkspaceDisplayName(
+  workspace: ActiveWorkspace,
+  options?: { firstName?: string | null; legalName?: string | null }
+): string {
   if (workspace.type === "personal") {
-    return workspace.name || DEFAULT_PERSONAL_NAME;
+    return getSoloWorkspaceDisplayName(options?.firstName ?? workspace.name);
   }
-  return workspace.name || "Team";
+  return options?.legalName?.trim() || workspace.name?.trim() || "Firma";
+}
+
+/** Persist cross-device last active workspace on users/{uid}. Non-destructive merge write. */
+export async function persistLastActiveWorkspaceId(
+  userId: string,
+  workspace: ActiveWorkspace
+): Promise<void> {
+  if (!userId.trim()) return;
+  const workspaceId = workspaceIdForPersistence(workspace);
+  await upsertUserProfile(userId, { [ACTIVE_WORKSPACE_PROFILE_FIELD]: workspaceId });
+  if (workspace.type === "company" && workspace.orgId) {
+    await upsertUserProfile(userId, { activeBusinessOrgId: workspace.orgId });
+  }
+}
+
+/** Phase 1.3 — only lastActiveWorkspaceId (no activeBusinessOrgId). */
+export async function persistLastActiveWorkspaceIdOnly(
+  userId: string,
+  workspaceId: string
+): Promise<void> {
+  if (!userId.trim()) return;
+  const id = workspaceId.trim() || SOLO_WORKSPACE_ID;
+  await upsertUserProfile(userId, { [ACTIVE_WORKSPACE_PROFILE_FIELD]: id });
 }
 
 /**

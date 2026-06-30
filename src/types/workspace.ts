@@ -45,6 +45,7 @@ export type WorkspaceUser = {
   id: string;
   email?: string;
   name?: string;
+  firstName?: string;
   /** Org ids from profile (e.g. activeBusinessOrgId) when collection listing is denied. */
   orgIdHints?: string[];
 };

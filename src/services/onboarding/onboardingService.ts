@@ -28,6 +28,7 @@ import {
   type CreateBusinessOrgInput,
 } from "@/services/business/createBusinessOrgService";
 import { getUserOrgMemberships } from "@/lib/organizations";
+import { guardCompanyCreation } from "@/lib/workspace/companyIdentityGuard";
 import { serverTimestamp } from "@/lib/firebase";
 import {
   CONSENT_PRIVACY_VERSION,
@@ -221,6 +222,20 @@ export async function completeCompanyOwnerOnboarding(
   }
 
   let createdOrgId: string;
+  const identityGuard = await guardCompanyCreation(uid, {
+    companyName: input.companyName,
+    legalName: input.companyName,
+    profileHints: {
+      lastActiveWorkspaceId: existing?.lastActiveWorkspaceId,
+      activeBusinessOrgId: existing?.activeBusinessOrgId,
+    },
+  });
+  if (identityGuard.action === "manual_review_required") {
+    throw new Error(identityGuard.reason);
+  }
+  if (identityGuard.action === "use_existing") {
+    createdOrgId = identityGuard.orgId;
+  } else {
   try {
     const contactName =
       buildOptionalDisplayName({
@@ -236,6 +251,7 @@ export async function completeCompanyOwnerOnboarding(
     const recoveredOrgId = await resolveOwnedBusinessOrgId(uid, orgIdHints);
     if (!recoveredOrgId) throw err;
     createdOrgId = recoveredOrgId;
+  }
   }
 
   await writeOnboardingCompletion(
