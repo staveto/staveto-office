@@ -96,12 +96,13 @@ describe("loadQuoteTemplateForOrg", () => {
 });
 
 describe("loadQuoteTemplateForSettings", () => {
-  it("returns default template when org id missing without throwing", async () => {
+  it("returns default template with missing state when org id missing", async () => {
     const { loadQuoteTemplateForSettings } = await import(
       "@/services/documents/quoteTemplateService"
     );
     const result = await loadQuoteTemplateForSettings("");
     expect(result.template.type).toBe("quote");
+    expect(result.loadState).toBe("missing");
     expect(result.persisted).toBe(false);
   });
 });

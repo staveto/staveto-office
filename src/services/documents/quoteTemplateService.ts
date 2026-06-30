@@ -66,10 +66,14 @@ export async function ensureDefaultQuoteTemplate(orgId: string): Promise<QuoteDo
   }
 }
 
+export type QuoteTemplateLoadState = "missing" | "loaded" | "permission" | "network";
+
 export type LoadQuoteTemplateResult = {
   template: QuoteDocumentTemplate;
+  loadState: QuoteTemplateLoadState;
+  errorCode?: string;
+  /** True when a document exists at organizations/{orgId}/documentTemplates/default-quote */
   persisted: boolean;
-  loadWarning?: "network" | "permission";
 };
 
 /** Settings UI — never block on missing template document. */
@@ -77,15 +81,23 @@ export async function loadQuoteTemplateForSettings(
   orgId: string
 ): Promise<LoadQuoteTemplateResult> {
   if (!orgId?.trim()) {
-    return { template: { ...DEFAULT_QUOTE_TEMPLATE }, persisted: false };
+    return {
+      template: { ...DEFAULT_QUOTE_TEMPLATE },
+      loadState: "missing",
+      persisted: false,
+    };
   }
 
   try {
     const existing = await getDefaultQuoteTemplate(orgId);
     if (existing) {
-      return { template: existing, persisted: true };
+      return { template: existing, loadState: "loaded", persisted: true };
     }
-    return { template: { ...DEFAULT_QUOTE_TEMPLATE }, persisted: false };
+    return {
+      template: { ...DEFAULT_QUOTE_TEMPLATE },
+      loadState: "missing",
+      persisted: false,
+    };
   } catch (err) {
     const code = (err as { code?: string })?.code ?? "";
     const message = String((err as { message?: string })?.message ?? "").toLowerCase();
@@ -96,8 +108,9 @@ export async function loadQuoteTemplateForSettings(
 
     return {
       template: { ...DEFAULT_QUOTE_TEMPLATE },
+      loadState: permission ? "permission" : "network",
+      errorCode: code || undefined,
       persisted: false,
-      loadWarning: permission ? "permission" : "network",
     };
   }
 }

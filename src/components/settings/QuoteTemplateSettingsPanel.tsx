@@ -80,6 +80,20 @@ import {
 
 import {
 
+  resolveQuoteTemplateMessageKey,
+
+  resolveQuoteTemplateMessageKind,
+
+  resolveQuoteTemplateStatusBadge,
+
+  resolveQuoteTemplateStatusBadgeKey,
+
+  type QuoteTemplateLoadState,
+
+} from "@/lib/documents/quoteTemplateLoadState";
+
+import {
+
   clampEditorPanelWidth,
 
   DEFAULT_EDITOR_PANEL_WIDTH,
@@ -103,6 +117,8 @@ import {
   resetDefaultQuoteTemplate,
 
   saveDefaultQuoteTemplate,
+
+  quoteTemplateDocPath,
 
 } from "@/services/documents/quoteTemplateService";
 
@@ -804,7 +820,9 @@ export function QuoteTemplateSettingsPanel() {
 
   const [orgContext, setOrgContext] = useState<OrganizationQuoteDocumentContext | null>(null);
 
-  const [templateWarning, setTemplateWarning] = useState<string | null>(null);
+  const [templateLoadState, setTemplateLoadState] = useState<QuoteTemplateLoadState>("loading");
+
+  const [loadErrorCode, setLoadErrorCode] = useState<string | null>(null);
 
 
 
@@ -852,7 +870,9 @@ export function QuoteTemplateSettingsPanel() {
 
     setError(null);
 
-    setTemplateWarning(null);
+    setLoadErrorCode(null);
+
+    setTemplateLoadState("loading");
 
 
 
@@ -874,19 +894,9 @@ export function QuoteTemplateSettingsPanel() {
 
         setOrgContext(orgDoc);
 
-        if (templateResult.loadWarning === "permission") {
+        setTemplateLoadState(templateResult.loadState);
 
-          setTemplateWarning(t("settings.quoteTemplate.loadWarningPermission"));
-
-        } else if (templateResult.loadWarning === "network") {
-
-          setTemplateWarning(t("settings.quoteTemplate.loadWarningNetwork"));
-
-        } else if (!templateResult.persisted) {
-
-          setTemplateWarning(t("settings.quoteTemplate.loadHintUnsaved"));
-
-        }
+        setLoadErrorCode(templateResult.errorCode ?? null);
 
       })
 
@@ -903,6 +913,40 @@ export function QuoteTemplateSettingsPanel() {
     () => !quoteTemplatesEqual(previewTemplate, savedTemplate),
 
     [previewTemplate, savedTemplate]
+
+  );
+
+  const statusBadge = useMemo(
+
+    () =>
+
+      resolveQuoteTemplateStatusBadge({
+
+        loading,
+
+        loadState: templateLoadState,
+
+        isDirty,
+
+      }),
+
+    [loading, templateLoadState, isDirty]
+
+  );
+
+  const templateMessageKey = useMemo(
+
+    () => resolveQuoteTemplateMessageKey(templateLoadState),
+
+    [templateLoadState]
+
+  );
+
+  const templateMessageKind = useMemo(
+
+    () => resolveQuoteTemplateMessageKind(templateLoadState),
+
+    [templateLoadState]
 
   );
 
@@ -1000,11 +1044,15 @@ export function QuoteTemplateSettingsPanel() {
 
       setSavedTemplate(saved);
 
+      setTemplateLoadState("loaded");
+
+      setLoadErrorCode(null);
+
       setSuccess(t("settings.quoteTemplate.saved"));
 
     } catch (e) {
 
-      setError(e instanceof Error ? e.message : t("settings.quoteTemplate.saveError"));
+      setError(e instanceof Error ? e.message : t("settings.quoteTemplate.saveFailed"));
 
     } finally {
 
@@ -1034,11 +1082,15 @@ export function QuoteTemplateSettingsPanel() {
 
       setSavedTemplate(reset);
 
+      setTemplateLoadState("loaded");
+
+      setLoadErrorCode(null);
+
       setSuccess(t("settings.quoteTemplate.resetDone"));
 
     } catch (e) {
 
-      setError(e instanceof Error ? e.message : t("settings.quoteTemplate.saveError"));
+      setError(e instanceof Error ? e.message : t("settings.quoteTemplate.saveFailed"));
 
     } finally {
 
@@ -1138,9 +1190,11 @@ export function QuoteTemplateSettingsPanel() {
 
     return (
 
-      <div className="flex justify-center py-16">
+      <div className="flex flex-col items-center justify-center gap-3 py-16">
 
         <Loader2 className="size-8 animate-spin text-muted-foreground" />
+
+        <p className="text-sm text-muted-foreground">{t("settings.quoteTemplate.statusLoading")}</p>
 
       </div>
 
@@ -1180,17 +1234,29 @@ export function QuoteTemplateSettingsPanel() {
 
               "rounded-full px-2.5 py-1 text-xs font-medium",
 
-              isDirty
+              statusBadge === "saved"
 
-                ? "bg-amber-50 text-amber-800 border border-amber-200"
+                ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
 
-                : "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                : statusBadge === "unsaved_changes"
+
+                  ? "bg-amber-50 text-amber-800 border border-amber-200"
+
+                  : statusBadge === "loading"
+
+                    ? "bg-muted text-muted-foreground border border-border"
+
+                    : statusBadge === "default_template"
+
+                      ? "bg-slate-50 text-slate-700 border border-slate-200"
+
+                      : "bg-amber-50 text-amber-900 border border-amber-200"
 
             )}
 
           >
 
-            {isDirty ? t("settings.quoteTemplate.statusUnsaved") : t("settings.quoteTemplate.statusSaved")}
+            {t(resolveQuoteTemplateStatusBadgeKey(statusBadge))}
 
           </span>
 
@@ -1310,11 +1376,33 @@ export function QuoteTemplateSettingsPanel() {
 
         </p>
 
-        {templateWarning ? (
+        {templateMessageKey && templateMessageKind === "info" ? (
+
+          <p className="text-sm text-[#1D376A] bg-[#1D376A]/5 border border-[#1D376A]/15 rounded-lg px-4 py-3">
+
+            {t(templateMessageKey)}
+
+          </p>
+
+        ) : null}
+
+        {templateMessageKey && templateMessageKind === "warning" ? (
 
           <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
 
-            {templateWarning}
+            {t(templateMessageKey)}
+
+          </p>
+
+        ) : null}
+
+        {process.env.NODE_ENV === "development" && orgId ? (
+
+          <p className="text-xs text-muted-foreground font-mono px-1">
+
+            orgId={orgId} path={quoteTemplateDocPath(orgId)} loadState={templateLoadState}
+
+            {loadErrorCode ? ` error=${loadErrorCode}` : ""}
 
           </p>
 
