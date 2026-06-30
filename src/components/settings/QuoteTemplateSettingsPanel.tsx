@@ -33,6 +33,8 @@ import {
   resetDefaultQuoteTemplate,
   saveDefaultQuoteTemplate,
 } from "@/services/documents/quoteTemplateService";
+import { loadOrganizationQuoteDocumentContext } from "@/lib/documents/quoteDocumentContext";
+import type { OrganizationQuoteDocumentContext } from "@/lib/documents/quoteDocumentContext";
 import { QuoteTemplatePreview } from "@/components/documents/QuoteTemplatePreview";
 import { SettingsSectionCard } from "@/components/settings/SettingsSectionCard";
 import { settingsAccentIconClassName } from "@/components/settings/settingsStyles";
@@ -378,6 +380,7 @@ export function QuoteTemplateSettingsPanel() {
   const [success, setSuccess] = useState<string | null>(null);
   const [template, setTemplate] = useState<QuoteDocumentTemplate>(DEFAULT_QUOTE_TEMPLATE);
   const [savedTemplate, setSavedTemplate] = useState<QuoteDocumentTemplate>(DEFAULT_QUOTE_TEMPLATE);
+  const [orgContext, setOrgContext] = useState<OrganizationQuoteDocumentContext | null>(null);
   const [templateWarning, setTemplateWarning] = useState<string | null>(null);
 
   useEffect(() => {
@@ -389,11 +392,15 @@ export function QuoteTemplateSettingsPanel() {
     setError(null);
     setTemplateWarning(null);
 
-    loadQuoteTemplateForSettings(orgId)
-      .then((templateResult) => {
+    Promise.all([
+      loadQuoteTemplateForSettings(orgId),
+      loadOrganizationQuoteDocumentContext(orgId),
+    ])
+      .then(([templateResult, orgDoc]) => {
         const loaded = templateResult.template;
         setTemplate(loaded);
         setSavedTemplate(loaded);
+        setOrgContext(orgDoc);
         if (templateResult.loadWarning === "permission") {
           setTemplateWarning(t("settings.quoteTemplate.loadWarningPermission"));
         } else if (templateResult.loadWarning === "network") {
@@ -509,6 +516,9 @@ export function QuoteTemplateSettingsPanel() {
             {t("settings.quoteTemplate.readOnly")}
           </p>
         ) : null}
+        <p className="text-sm text-[#1D376A] bg-[#1D376A]/5 border border-[#1D376A]/15 rounded-lg px-4 py-3">
+          {t("settings.quoteTemplate.companyProfileInfo")}
+        </p>
         {templateWarning ? (
           <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
             {templateWarning}
@@ -576,7 +586,7 @@ export function QuoteTemplateSettingsPanel() {
             </h2>
             <p className="text-xs text-muted-foreground mt-1">{t("settings.quoteTemplate.previewHint")}</p>
           </div>
-          <QuoteTemplatePreview template={previewTemplate} />
+          <QuoteTemplatePreview template={previewTemplate} organizationContext={orgContext} />
         </div>
       </div>
     </div>

@@ -3,40 +3,62 @@
 import { useMemo } from "react";
 import { QuotePrintDocument } from "@/components/quotes/QuotePrintDocument";
 import type { QuoteDocumentTemplate } from "@/lib/documents/quoteTemplateContract";
+import type { OrganizationQuoteDocumentContext } from "@/lib/documents/quoteDocumentContext";
 import {
-  SAMPLE_ORGANIZATION,
   SAMPLE_PRINT_CONTEXT,
   SAMPLE_QUOTE,
 } from "@/lib/documents/quoteTemplateSampleData";
 import { applyTemplateToPrintContext } from "@/lib/documents/quoteTemplateApply";
-import { useI18n } from "@/i18n/I18nContext";
 import styles from "@/components/quotes/quote-print.module.css";
 
 type QuoteTemplatePreviewProps = {
   template: QuoteDocumentTemplate;
+  organizationContext: OrganizationQuoteDocumentContext | null;
 };
 
-/** Live preview with sample quote/customer data only. */
-export function QuoteTemplatePreview({ template }: QuoteTemplatePreviewProps) {
-  const { t, locale } = useI18n();
-  const localeTag = locale === "de" ? "de-DE" : locale === "en" ? "en-GB" : "sk-SK";
+/**
+ * Live preview document — real company supplier data, sample customer/quote content only.
+ * Wrap with QuoteTemplatePreviewFrame for zoom and scroll chrome.
+ */
+export function QuoteTemplatePreview({
+  template,
+  organizationContext,
+}: QuoteTemplatePreviewProps) {
+  const documentT = organizationContext?.translateDocument ?? ((key: string) => key);
+  const localeTag = organizationContext?.documentLocaleTag ?? "en-GB";
 
-  const printContext = useMemo(
-    () => applyTemplateToPrintContext(SAMPLE_PRINT_CONTEXT, template),
-    [template]
+  const sampleQuote = useMemo(
+    () => ({
+      ...SAMPLE_QUOTE,
+      currency: organizationContext?.currency ?? SAMPLE_QUOTE.currency,
+      orgId: organizationContext?.organization.orgId ?? SAMPLE_QUOTE.orgId,
+    }),
+    [organizationContext]
   );
+
+  const printContext = useMemo(() => {
+    const ctx = {
+      ...SAMPLE_PRINT_CONTEXT,
+      currency: organizationContext?.currency ?? SAMPLE_PRINT_CONTEXT.currency,
+    };
+    return applyTemplateToPrintContext(ctx, template);
+  }, [template, organizationContext?.currency]);
+
+  const organization = organizationContext?.organization ?? null;
 
   return (
     <div
       className={`${styles.page} bg-muted/30 rounded-xl border border-border p-4 overflow-auto max-h-[80vh]`}
     >
       <QuotePrintDocument
-        quote={SAMPLE_QUOTE}
-        organization={SAMPLE_ORGANIZATION}
+        quote={sampleQuote}
+        organization={organization}
         project={null}
         printContext={printContext}
         template={template}
-        t={t}
+        legalLabels={organizationContext?.legalLabels ?? null}
+        useCompanySupplier
+        t={documentT}
         locale={localeTag}
       />
     </div>

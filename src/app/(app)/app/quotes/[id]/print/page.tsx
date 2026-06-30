@@ -7,11 +7,10 @@ import { ArrowLeft, Loader2, Printer } from "lucide-react";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/context/AuthContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
+import { isCompanyWorkspaceType } from "@/types/workspace";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { hasQuoteAccess } from "@/services/quotes";
 import { hasProjectAccess, listProjectQuoteDraftItems, listProjectTasks } from "@/lib/projects";
-import { getOrganizationForQuotePrint } from "@/lib/organizationProfile";
-import type { OrganizationPrintInfo } from "@/lib/organizationProfile";
 import type { QuoteDoc } from "@/lib/quotes";
 import type { ProjectDoc } from "@/lib/projects";
 import type { QuoteDraftItemDoc } from "@/lib/quoteDraftItems";
@@ -26,10 +25,17 @@ import { buildQuoteDocFromProjectDraft } from "@/lib/projectQuotePrint";
 import { listMaterialSuggestions } from "@/services/materials/projectMaterialsService";
 import type { MaterialSuggestionDoc } from "@/services/materials/types";
 import styles from "@/components/quotes/quote-print.module.css";
+import { applyTemplateToPrintContext } from "@/lib/documents/quoteTemplateApply";
+import { loadQuoteTemplateForOrg } from "@/services/documents/quoteTemplateService";
+import type { QuoteDocumentTemplate } from "@/lib/documents/quoteTemplateContract";
+import {
+  loadOrganizationQuoteDocumentContext,
+  type OrganizationQuoteDocumentContext,
+} from "@/lib/documents/quoteDocumentContext";
 
 export default function QuotePrintPage() {
   const params = useParams();
-  const { t, locale } = useI18n();
+  const { t: uiT, locale: uiLocale } = useI18n();
   const { user, profile } = useAuth();
   const { activeWorkspace } = useWorkspace();
   const id = params.id as string;
@@ -37,11 +43,12 @@ export default function QuotePrintPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [quote, setQuote] = useState<QuoteDoc | null>(null);
-  const [organization, setOrganization] = useState<OrganizationPrintInfo | null>(null);
+  const [orgContext, setOrgContext] = useState<OrganizationQuoteDocumentContext | null>(null);
   const [project, setProject] = useState<ProjectDoc | null>(null);
   const [quoteItems, setQuoteItems] = useState<QuoteDraftItemDoc[]>([]);
   const [tasks, setTasks] = useState<TaskDoc[]>([]);
   const [suggestions, setSuggestions] = useState<MaterialSuggestionDoc[]>([]);
+  const [template, setTemplate] = useState<QuoteDocumentTemplate | null>(null);
 
   useEffect(() => {
     if (!user?.id || !activeWorkspace) return;
@@ -89,8 +96,16 @@ export default function QuotePrintPage() {
         setProject(loadedProject);
 
         if (loadedQuote.orgId) {
-          const org = await getOrganizationForQuotePrint(loadedQuote.orgId);
-          setOrganization(org);
+          const activeOrgId = isCompanyWorkspaceType(activeWorkspace.type)
+            ? (activeWorkspace.orgId ?? activeWorkspace.id)
+            : null;
+
+          const [orgDoc, loadedTemplate] = await Promise.all([
+            loadOrganizationQuoteDocumentContext(loadedQuote.orgId),
+            loadQuoteTemplateForOrg(loadedQuote.orgId, activeOrgId),
+          ]);
+          setOrgContext(orgDoc);
+          setTemplate(loadedTemplate);
         }
       } catch {
         setNotFound(true);
@@ -100,14 +115,18 @@ export default function QuotePrintPage() {
     })();
   }, [id, user?.id, activeWorkspace?.id]);
 
-  const localeTag =
-    locale === "de" ? "de-DE" : locale === "en" ? "en-GB" : "sk-SK";
+  const documentT = orgContext?.translateDocument ?? uiT;
+  const documentLocaleTag =
+    orgContext?.documentLocaleTag ??
+    (uiLocale === "de" ? "de-DE" : uiLocale === "en" ? "en-GB" : "sk-SK");
 
   const printContext = useMemo(() => {
     if (!quote) return null;
     const userInfo = { name: user?.name, email: user?.email, phone: profile?.phoneE164 };
+    const organization = orgContext?.organization ?? null;
+    let ctx;
     if (project && quoteItems.length >= 0) {
-      return buildQuotePrintContext({
+      ctx = buildQuotePrintContext({
         project,
         quote,
         quoteItems,
@@ -115,17 +134,30 @@ export default function QuotePrintPage() {
         suggestions,
         organization,
         user: userInfo,
-        t,
+        t: documentT,
+      });
+    } else {
+      ctx = buildQuotePrintContextFromQuote({
+        quote,
+        project,
+        organization,
+        user: userInfo,
+        t: documentT,
       });
     }
-    return buildQuotePrintContextFromQuote({
-      quote,
-      project,
-      organization,
-      user: userInfo,
-      t,
-    });
-  }, [quote, project, quoteItems, tasks, suggestions, organization, user, profile, t]);
+    return applyTemplateToPrintContext(ctx, template);
+  }, [
+    quote,
+    project,
+    quoteItems,
+    tasks,
+    suggestions,
+    orgContext,
+    user,
+    profile,
+    documentT,
+    template,
+  ]);
 
   if (loading) {
     return (
@@ -141,9 +173,9 @@ export default function QuotePrintPage() {
     return (
       <div className={styles.page}>
         <div className="max-w-lg mx-auto text-center space-y-4 py-24">
-          <p className="text-destructive font-medium">{t("quotes.notFound")}</p>
+          <p className="text-destructive font-medium">{uiT("quotes.notFound")}</p>
           <Link href={`/app/quotes/${id}`} className={buttonVariants()}>
-            {t("quotes.print.backToQuote")}
+            {uiT("quotes.print.backToQuote")}
           </Link>
         </div>
       </div>
@@ -158,7 +190,7 @@ export default function QuotePrintPage() {
           className={buttonVariants({ variant: "ghost", size: "sm" })}
         >
           <ArrowLeft className="size-4 mr-1" />
-          {t("quotes.print.backToQuote")}
+          {uiT("quotes.print.backToQuote")}
         </Link>
         <div className={styles.toolbarActions}>
           <Button
@@ -168,18 +200,21 @@ export default function QuotePrintPage() {
             onClick={() => window.print()}
           >
             <Printer className="size-4 mr-1" />
-            {t("quotes.print.printAction")}
+            {documentT("quotes.print.printAction")}
           </Button>
         </div>
       </div>
 
       <QuotePrintDocument
         quote={quote}
-        organization={organization}
+        organization={orgContext?.organization ?? null}
         project={project}
         printContext={printContext}
-        t={t}
-        locale={localeTag}
+        template={template}
+        legalLabels={orgContext?.legalLabels ?? null}
+        useCompanySupplier={Boolean(quote.orgId)}
+        t={documentT}
+        locale={documentLocaleTag}
       />
     </div>
   );
