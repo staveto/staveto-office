@@ -46,6 +46,7 @@ import {
   getProjectListRowClass,
 } from "@/lib/projectDashboard";
 import { JobSourceBadge } from "@/components/jobs/JobSourceBadge";
+import { ProjectCoverThumbnail } from "@/components/projects/ProjectCoverThumbnail";
 import { ProjectActionsMenu } from "@/components/projects/ProjectActionsMenu";
 import { Badge } from "@/components/ui/badge";
 import { useWorkspaceProduct } from "@/hooks/useWorkspaceProduct";
@@ -489,7 +490,13 @@ export default function ProjectsPage() {
                     className={cn(getProjectListRowClass(p))}
                   >
                     <TableCell>
-                      <div className="space-y-1.5">
+                      <div className="flex items-start gap-2.5">
+                        <ProjectCoverThumbnail
+                          url={p.coverImageUrl}
+                          alt={t("projects.coverPhotoAlt", { name: p.name || t("projects.noName") })}
+                          size="sm"
+                        />
+                        <div className="min-w-0 space-y-1.5">
                         <Link
                           href={`/app/projects/${p.id}`}
                           className="font-medium text-[#1D376A] hover:text-[#e06737] hover:underline"
@@ -501,6 +508,7 @@ export default function ProjectsPage() {
                             {t("projects.archivedBadge")}
                           </Badge>
                         ) : null}
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-muted-foreground text-sm">

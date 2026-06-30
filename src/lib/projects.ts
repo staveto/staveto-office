@@ -27,6 +27,7 @@ import { legacyPhaseIdFromName } from "@/services/projects/projectPhasesService"
 import type { Workspace } from "./workspace-types";
 import type { ActiveWorkspace } from "@/types/workspace";
 import { getProjectWorkspaceWriteFields } from "@/services/workspace/workspaceService";
+import { getProjectOwnershipScope } from "@/lib/projectOwnership";
 import { ensureOrgMemberForOwner } from "@/lib/organizations";
 import { isProjectAssignedToUser } from "@/lib/projectOwnership";
 import { listTeamProjectsViaCallable } from "@/services/projects/teamProjectsListService";
@@ -125,6 +126,10 @@ export type ProjectDoc = {
   aiDraftId?: string;
   /** Mobile: crew assigned to job (read-only on web). */
   assignedMemberIds?: string[];
+  /** Mobile project cover — Storage URL (projects/{id}/cover/…). */
+  coverImageUrl?: string;
+  coverImagePath?: string;
+  coverImageUpdatedAt?: number;
 };
 
 export type TaskAssignedTool = {
@@ -236,6 +241,10 @@ export function toProjectDoc(id: string, data: Record<string, unknown>): Project
         ? (data.assignedUserIds as string[]).filter((id) => typeof id === "string" && id.length > 0)
         : []),
     ].filter((id, index, arr) => arr.indexOf(id) === index),
+    coverImageUrl: (data.coverImageUrl as string) || undefined,
+    coverImagePath: (data.coverImagePath as string) || undefined,
+    coverImageUpdatedAt:
+      typeof data.coverImageUpdatedAt === "number" ? data.coverImageUpdatedAt : undefined,
   };
 }
 
@@ -373,15 +382,14 @@ function sortProjectsByUpdatedAt(projects: ProjectDoc[]): ProjectDoc[] {
   });
 }
 
-function projectMatchesTeamOrg(
-  project: ProjectDoc,
-  orgId: string,
-  uid?: string
-): boolean {
-  if (uid && project.ownerId === uid) return true;
+function projectMatchesTeamOrg(project: ProjectDoc, orgId: string): boolean {
   const linkedOrgId = project.orgId?.trim() || project.workspaceId?.trim() || "";
-  if (!linkedOrgId) return true;
-  return linkedOrgId === orgId;
+  if (!linkedOrgId || linkedOrgId !== orgId) return false;
+  return getProjectOwnershipScope(project) === "company";
+}
+
+function projectMatchesPersonalScope(project: ProjectDoc, uid: string): boolean {
+  return getProjectOwnershipScope(project) === "personal" && project.ownerId === uid;
 }
 
 async function getQuerySnapshotSmart(q: ReturnType<typeof query>) {
@@ -627,7 +635,7 @@ async function listTeamProjectsWithFallback(
 
   const mergeRows = (rows: ProjectDoc[]) => {
     for (const project of rows) {
-      if (!projectMatchesTeamOrg(project, orgId, uid)) continue;
+      if (!projectMatchesTeamOrg(project, orgId)) continue;
       merged.set(project.id, project);
     }
   };
@@ -653,7 +661,6 @@ async function listTeamProjectsWithFallback(
   };
 
   const teamScope = { mode: "team" as const, orgId };
-  const personalScope = { mode: "personal" as const, uid };
 
   let callableError: string | undefined;
 
@@ -665,7 +672,6 @@ async function listTeamProjectsWithFallback(
       }
       if (callableResult.projects?.length) mergeRows(callableResult.projects);
     })(),
-    collectOptional(() => runProjectsQuery(projectsRef, personalScope, { withOrderBy: false })),
     collectOptional(() => listProjectsViaProjectRefs(uid)),
     collectOptional(async () => {
       const ids = await listProjectIdsViaMembersCollectionGroup(uid);
@@ -677,7 +683,6 @@ async function listTeamProjectsWithFallback(
   await collectCore(() => runProjectsQuery(projectsRef, teamScope, { withOrderBy: true }));
   await collectCore(() => runProjectsQuery(projectsRef, teamScope, { withOrderBy: false }));
   await collectOptional(() => runWorkspaceIdProjectsQuery(projectsRef, orgId, { withOrderBy: false }));
-  await collectCore(() => runProjectsQuery(projectsRef, personalScope, { withOrderBy: true }));
 
   const result = sortProjectsByUpdatedAt([...merged.values()]).slice(0, 50);
   scheduleOwnedProjectOrgLinks(result, orgId, uid);
@@ -733,11 +738,21 @@ async function listProjectsForWorkspaceUncached(
   }
 
   try {
-    return await runProjectsQuery(projectsRef, { mode: "personal", uid }, { withOrderBy: true });
+    const rows = await runProjectsQuery(
+      projectsRef,
+      { mode: "personal", uid },
+      { withOrderBy: true }
+    );
+    return rows.filter((project) => projectMatchesPersonalScope(project, uid));
   } catch (e) {
     if (isFirebasePermissionDenied(e)) {
       try {
-        return await runProjectsQuery(projectsRef, { mode: "personal", uid }, { withOrderBy: false });
+        const fallbackRows = await runProjectsQuery(
+          projectsRef,
+          { mode: "personal", uid },
+          { withOrderBy: false }
+        );
+        return fallbackRows.filter((project) => projectMatchesPersonalScope(project, uid));
       } catch (fallbackErr) {
         if (isFirebasePermissionDenied(fallbackErr)) {
           throw new Error(

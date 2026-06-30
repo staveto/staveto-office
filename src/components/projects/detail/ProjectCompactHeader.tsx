@@ -27,6 +27,7 @@ import { ProjectHealthBadge } from "./ProjectHealthBadge";
 import { JobSourceBadge } from "@/components/jobs/JobSourceBadge";
 import { WorkTypeBadge } from "@/components/jobs/WorkTypeBadge";
 import { ProjectActionsMenu } from "@/components/projects/ProjectActionsMenu";
+import { ProjectCoverThumbnail } from "@/components/projects/ProjectCoverThumbnail";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nContext";
@@ -136,7 +137,20 @@ export function ProjectCompactHeader({
       </div>
 
       <div className="flex flex-col gap-2 px-4 py-2 sm:px-5 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0 flex-1 space-y-1.5">
+        <div className="flex min-w-0 flex-1 gap-3">
+          <ProjectCoverThumbnail
+            url={project.coverImageUrl}
+            alt={t("projects.coverPhotoAlt", { name: project.name || t("projects.noName") })}
+            size="lg"
+            className="hidden sm:block"
+          />
+          <ProjectCoverThumbnail
+            url={project.coverImageUrl}
+            alt={t("projects.coverPhotoAlt", { name: project.name || t("projects.noName") })}
+            size="md"
+            className="sm:hidden"
+          />
+          <div className="min-w-0 flex-1 space-y-1.5">
           <div className="flex flex-wrap items-center gap-1.5">
             <Badge
               variant="outline"
@@ -165,6 +179,7 @@ export function ProjectCompactHeader({
               </span>
             ) : null}
           </p>
+          </div>
         </div>
 
         <div className="flex shrink-0 items-start">
