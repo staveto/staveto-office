@@ -9,7 +9,6 @@ import {
   SAMPLE_QUOTE,
 } from "@/lib/documents/quoteTemplateSampleData";
 import { applyTemplateToPrintContext } from "@/lib/documents/quoteTemplateApply";
-import styles from "@/components/quotes/quote-print.module.css";
 
 type QuoteTemplatePreviewProps = {
   template: QuoteDocumentTemplate;
@@ -47,20 +46,16 @@ export function QuoteTemplatePreview({
   const organization = organizationContext?.organization ?? null;
 
   return (
-    <div
-      className={`${styles.page} bg-muted/30 rounded-xl border border-border p-4 overflow-auto max-h-[80vh]`}
-    >
-      <QuotePrintDocument
-        quote={sampleQuote}
-        organization={organization}
-        project={null}
-        printContext={printContext}
-        template={template}
-        legalLabels={organizationContext?.legalLabels ?? null}
-        useCompanySupplier
-        t={documentT}
-        locale={localeTag}
-      />
-    </div>
+    <QuotePrintDocument
+      quote={sampleQuote}
+      organization={organization}
+      project={null}
+      printContext={printContext}
+      template={template}
+      legalLabels={organizationContext?.legalLabels ?? null}
+      useCompanySupplier
+      t={documentT}
+      locale={localeTag}
+    />
   );
 }

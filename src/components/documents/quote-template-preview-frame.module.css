@@ -1,0 +1,29 @@
+.viewport {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: #e8edf3;
+}
+
+.center {
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem 1rem 2rem;
+  min-height: 100%;
+}
+
+.scaledSlot {
+  position: relative;
+}
+
+.scaledInner {
+  transform-origin: top left;
+}
+
+.pageShell {
+  background: #ffffff;
+  box-shadow: 0 4px 24px rgba(15, 42, 77, 0.12);
+  border: 1px solid #d8e1ea;
+  border-radius: 2px;
+  overflow: hidden;
+}
