@@ -17,11 +17,17 @@ import {
   serverTimestamp,
 } from "./firebase";
 import type { Workspace } from "./workspace-types";
+import { fromLegacyWorkspace } from "./workspace-types";
+import { isNormalizedActiveWorkspace } from "./projects";
 import type { ActiveWorkspace } from "@/types/workspace";
 import {
-  getProjectWorkspaceWriteFields,
-  getQuoteWorkspaceWriteFieldsFromProject,
-} from "@/services/workspace/workspaceService";
+  buildQuoteWorkspaceFieldsForNewQuote,
+  countHiddenUnscopedQuotes,
+  filterQuotesForActiveWorkspace,
+  getActiveQuoteScope,
+  quoteBelongsToActiveWorkspace,
+  type ActiveQuoteScope,
+} from "@/lib/quotes/quoteWorkspaceScope";
 import type { ProjectDoc } from "./projects";
 import { computeItemTotal, computeEstimateTotals } from "./estimateUtils";
 import type { QuoteDraftItemCategory } from "./quoteDraftItems";
@@ -90,6 +96,7 @@ export type QuoteDoc = {
   orgId?: string;
   workspaceType?: "personal" | "team";
   workspaceId?: string;
+  createdBy?: string;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -181,6 +188,7 @@ export function toQuoteDoc(id: string, data: Record<string, unknown>): QuoteDoc 
     orgId: (data.orgId as string) || undefined,
     workspaceType: data.workspaceType as "personal" | "team" | undefined,
     workspaceId: (data.workspaceId as string) || undefined,
+    createdBy: (data.createdBy as string) || undefined,
     createdAt: toStr(data.createdAt),
     updatedAt: toStr(data.updatedAt),
   };
@@ -219,70 +227,121 @@ function sortQuotesByUpdatedAt(quotes: QuoteDoc[]): QuoteDoc[] {
   });
 }
 
-async function runQuotesQuery(
+async function runScopedQuotesQuery(
   quotesRef: ReturnType<typeof collection>,
-  workspace: Workspace,
-  uid: string,
-  options?: { withOrderBy?: boolean }
+  field: "orgId" | "ownerId" | "workspaceId",
+  value: string,
+  options?: { withOrderBy?: boolean; workspaceType?: string }
 ): Promise<QuoteDoc[]> {
   const withOrderBy = options?.withOrderBy !== false;
   let q;
-  if (workspace.type === "personal") {
-    q = withOrderBy
-      ? query(
-          quotesRef,
-          where("ownerId", "==", uid),
-          orderBy("updatedAt", "desc"),
-          limit(50)
-        )
-      : query(quotesRef, where("ownerId", "==", uid), limit(50));
+  if (options?.workspaceType) {
+    q = query(
+      quotesRef,
+      where("workspaceId", "==", value),
+      where("workspaceType", "==", options.workspaceType),
+      limit(50)
+    );
+  } else if (withOrderBy) {
+    q = query(quotesRef, where(field, "==", value), orderBy("updatedAt", "desc"), limit(50));
   } else {
-    q = withOrderBy
-      ? query(
-          quotesRef,
-          where("orgId", "==", workspace.id),
-          orderBy("updatedAt", "desc"),
-          limit(50)
-        )
-      : query(quotesRef, where("orgId", "==", workspace.id), limit(50));
+    q = query(quotesRef, where(field, "==", value), limit(50));
   }
   const snap = await getDocs(q);
   return snap.docs.map((d) => toQuoteDoc(d.id, d.data() as Record<string, unknown>));
 }
 
-export async function listQuotesForWorkspace(
-  workspace: Workspace,
+function toActiveWorkspaceForQuotes(
+  workspace: Workspace | ActiveWorkspace,
   uid: string
-): Promise<QuoteDoc[]> {
+): ActiveWorkspace | null {
+  if (isNormalizedActiveWorkspace(workspace)) return workspace;
+  return fromLegacyWorkspace(workspace, uid);
+}
+
+async function queryQuotesForScope(scope: ActiveQuoteScope): Promise<QuoteDoc[]> {
   const db = getFirestoreInstance();
   if (!db) return [];
 
   const quotesRef = collection(db, "quotes");
+  const found = new Map<string, QuoteDoc>();
 
-  try {
-    return await runQuotesQuery(quotesRef, workspace, uid, { withOrderBy: true });
-  } catch (e) {
-    if (!isQuotesIndexError(e)) throw e;
-    const quotes = await runQuotesQuery(quotesRef, workspace, uid, { withOrderBy: false });
-    return sortQuotesByUpdatedAt(quotes).slice(0, 50);
+  const merge = (rows: QuoteDoc[]) => {
+    for (const row of rows) found.set(row.id, row);
+  };
+
+  if (scope.activeWorkspaceType === "company") {
+    try {
+      merge(await runScopedQuotesQuery(quotesRef, "orgId", scope.activeWorkspaceId));
+    } catch (e) {
+      if (!isQuotesIndexError(e) && !isFirestorePermissionError(e)) throw e;
+      merge(
+        await runScopedQuotesQuery(quotesRef, "orgId", scope.activeWorkspaceId, {
+          withOrderBy: false,
+        })
+      );
+    }
+    try {
+      merge(
+        await runScopedQuotesQuery(quotesRef, "workspaceId", scope.activeWorkspaceId, {
+          withOrderBy: false,
+          workspaceType: "team",
+        })
+      );
+    } catch (e) {
+      if (!isQuotesIndexError(e) && !isFirestorePermissionError(e)) throw e;
+    }
+  } else {
+    try {
+      merge(await runScopedQuotesQuery(quotesRef, "ownerId", scope.userId));
+    } catch (e) {
+      if (!isQuotesIndexError(e) && !isFirestorePermissionError(e)) throw e;
+      merge(
+        await runScopedQuotesQuery(quotesRef, "ownerId", scope.userId, { withOrderBy: false })
+      );
+    }
   }
+
+  return [...found.values()];
+}
+
+export async function listQuotesForWorkspace(
+  workspace: Workspace | ActiveWorkspace,
+  uid: string
+): Promise<QuoteDoc[]> {
+  const active = toActiveWorkspaceForQuotes(workspace, uid);
+  const scope = getActiveQuoteScope({ workspace: active, userId: uid });
+  if (!scope) return [];
+
+  let raw: QuoteDoc[] = [];
+  try {
+    raw = await queryQuotesForScope(scope);
+  } catch {
+    return [];
+  }
+
+  const hiddenUnscoped = countHiddenUnscopedQuotes(raw);
+  if (process.env.NODE_ENV === "development" && hiddenUnscoped > 0) {
+    console.warn(`[quotes] hidden unscoped quote count: ${hiddenUnscoped}`);
+  }
+
+  const visible = filterQuotesForActiveWorkspace(raw, scope);
+  return sortQuotesByUpdatedAt(visible).slice(0, 50);
 }
 
 export async function listQuotesForProject(
   projectId: string,
-  scope?: { orgId?: string | null; ownerId?: string | null }
+  workspace: Workspace | ActiveWorkspace,
+  uid: string
 ): Promise<QuoteDoc[]> {
+  const active = toActiveWorkspaceForQuotes(workspace, uid);
+  const scope = getActiveQuoteScope({ workspace: active, userId: uid });
+  if (!scope) return [];
+
   const db = getFirestoreInstance();
   if (!db) return [];
 
   const quotesRef = collection(db, "quotes");
-  const orgId = scope?.orgId?.trim();
-  const ownerId = scope?.ownerId?.trim();
-
-  // Check both org- and owner-scoped quotes so that legacy quotes (created
-  // before the project moved into a company org, i.e. stored with ownerId and
-  // no orgId) are still matched. Missing this caused upsert to create a second
-  // duplicate quote doc for the same project.
   const found = new Map<string, QuoteDoc>();
 
   const runScoped = async (field: "orgId" | "ownerId", value: string) => {
@@ -301,10 +360,13 @@ export async function listQuotesForProject(
     }
   };
 
-  if (orgId) await runScoped("orgId", orgId);
-  if (ownerId) await runScoped("ownerId", ownerId);
+  if (scope.activeWorkspaceType === "company") {
+    await runScoped("orgId", scope.activeWorkspaceId);
+  } else {
+    await runScoped("ownerId", scope.userId);
+  }
 
-  return [...found.values()];
+  return filterQuotesForActiveWorkspace([...found.values()], scope);
 }
 
 function isFirestorePermissionError(err: unknown): boolean {
@@ -328,25 +390,17 @@ export async function getQuote(quoteId: string): Promise<QuoteDoc | null> {
 
 export async function hasQuoteAccess(
   quoteId: string,
-  uid: string
+  uid: string,
+  workspace: Workspace | ActiveWorkspace | null | undefined
 ): Promise<{ allowed: boolean; quote?: QuoteDoc }> {
+  const active = workspace ? toActiveWorkspaceForQuotes(workspace, uid) : null;
+  const scope = getActiveQuoteScope({ workspace: active, userId: uid });
+  if (!scope) return { allowed: false };
+
   const quote = await getQuote(quoteId);
   if (!quote) return { allowed: false };
-
-  if (quote.ownerId === uid) return { allowed: true, quote };
-
-  if (quote.orgId) {
-    const db = getFirestoreInstance();
-    if (!db) return { allowed: false, quote };
-    const memberRef = doc(db, "organizations", quote.orgId, "members", uid);
-    const memberSnap = await getDoc(memberRef);
-    if (memberSnap.exists()) {
-      const member = memberSnap.data() as { status?: string };
-      if (member.status === "active") return { allowed: true, quote };
-    }
-  }
-
-  return { allowed: false, quote };
+  if (!quoteBelongsToActiveWorkspace(quote, scope)) return { allowed: false, quote };
+  return { allowed: true, quote };
 }
 
 export async function createQuote(
@@ -370,9 +424,23 @@ export async function createQuote(
   const vatPercent = input.vatPercent ?? 20;
   const totals = computeQuoteTotals(items, vatPercent);
 
-  const workspaceFields = scopeProject
-    ? getQuoteWorkspaceWriteFieldsFromProject(scopeProject, workspace, uid)
-    : getProjectWorkspaceWriteFields(workspace, uid);
+  const scope = getActiveQuoteScope({ workspace, userId: uid });
+  if (!scope) throw new Error("QUOTE_SCOPE_MISSING");
+
+  if (scopeProject) {
+    const projectScoped = quoteBelongsToActiveWorkspace(
+      {
+        orgId: scopeProject.orgId,
+        ownerId: scopeProject.ownerId,
+        workspaceId: scopeProject.workspaceId,
+        workspaceType: scopeProject.workspaceType,
+      },
+      scope
+    );
+    if (!projectScoped) throw new Error("QUOTE_PROJECT_OUT_OF_SCOPE");
+  }
+
+  const workspaceFields = buildQuoteWorkspaceFieldsForNewQuote(scope);
 
   const payload: Record<string, unknown> = {
     title,
@@ -393,19 +461,8 @@ export async function createQuote(
     ...workspaceFields,
   };
 
-  try {
-    const ref = await addDoc(collection(db, "quotes"), payload);
-    return ref.id;
-  } catch (err) {
-    if (!isFirestorePermissionError(err) || workspaceFields.orgId == null) throw err;
-    const legacyPayload = { ...payload };
-    delete legacyPayload.orgId;
-    legacyPayload.ownerId = uid;
-    legacyPayload.workspaceType = workspaceFields.workspaceType ?? "personal";
-    legacyPayload.workspaceId = workspaceFields.workspaceId ?? uid;
-    const ref = await addDoc(collection(db, "quotes"), legacyPayload);
-    return ref.id;
-  }
+  const ref = await addDoc(collection(db, "quotes"), payload);
+  return ref.id;
 }
 
 export async function updateQuote(

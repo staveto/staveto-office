@@ -17,7 +17,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatMoney } from "@/lib/format";
-import { isProjectDraftQuoteId } from "@/lib/projectQuotePrint";
 import { listQuotesForWorkspaceEnsured } from "@/services/quotes";
 import { QuoteStatusBadge } from "@/components/quotes/QuoteStatusBadge";
 import { useSetupChecklistVisit } from "@/hooks/useSetupChecklistVisit";
@@ -31,8 +30,14 @@ export default function QuotesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const workspaceReady = Boolean(user?.id && activeWorkspace);
+
   const load = async () => {
-    if (!user?.id || !activeWorkspace) return;
+    if (!user?.id || !activeWorkspace) {
+      setQuotes([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -57,7 +62,13 @@ export default function QuotesPage() {
           <p className="text-muted-foreground mt-1">{t("quotes.subtitle")}</p>
         </div>
         <div className="flex gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => void load()}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void load()}
+            disabled={!workspaceReady}
+          >
             <RefreshCw className="size-4 mr-1" />
             {t("common.refresh")}
           </Button>
@@ -68,7 +79,7 @@ export default function QuotesPage() {
         </div>
       </div>
 
-      {loading && (
+      {(loading || !workspaceReady) && (
         <div className="flex items-center justify-center py-12">
           <Loader2 className="size-8 animate-spin text-muted-foreground" />
         </div>
@@ -80,7 +91,7 @@ export default function QuotesPage() {
         </div>
       )}
 
-      {!loading && !error && quotes.length === 0 && (
+      {workspaceReady && !loading && !error && quotes.length === 0 && (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-16 px-4">
           <FileText className="size-12 text-muted-foreground mb-4" />
           <h3 className="text-lg font-medium">{t("quotes.empty")}</h3>
@@ -93,7 +104,7 @@ export default function QuotesPage() {
         </div>
       )}
 
-      {!loading && !error && quotes.length > 0 && (
+      {workspaceReady && !loading && !error && quotes.length > 0 && (
         <div className="rounded-xl border border-border overflow-hidden">
           <Table>
             <TableHeader>
@@ -107,60 +118,55 @@ export default function QuotesPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {quotes.map((q) => {
-                const isProjectDraft = isProjectDraftQuoteId(q.id);
-                const quoteHref = isProjectDraft && q.projectId
-                  ? `/app/projects/${q.projectId}?tab=quote`
-                  : `/app/quotes/${q.id}`;
-
-                return (
-                  <TableRow key={q.id}>
-                    <TableCell className="font-medium">
-                      <Link href={quoteHref} className="hover:underline text-[#1D376A]">
-                        {q.title}
-                      </Link>
-                    </TableCell>
-                    <TableCell>{q.clientName}</TableCell>
-                    <TableCell className="text-muted-foreground text-sm">
-                      {q.projectName && q.projectId ? (
-                        <Link
-                          href={`/app/projects/${q.projectId}?tab=quote`}
-                          className="hover:underline"
-                        >
-                          {q.projectName}
-                        </Link>
-                      ) : (
-                        "—"
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <QuoteStatusBadge status={q.status} />
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {formatMoney(q.grandTotal, q.currency || "CHF")}
-                    </TableCell>
-                    <TableCell>
+              {quotes.map((q) => (
+                <TableRow key={q.id}>
+                  <TableCell className="font-medium">
+                    <Link href={`/app/quotes/${q.id}`} className="hover:underline text-[#1D376A]">
+                      {q.title}
+                    </Link>
+                  </TableCell>
+                  <TableCell>{q.clientName}</TableCell>
+                  <TableCell className="text-muted-foreground text-sm">
+                    {q.projectName && q.projectId ? (
                       <Link
-                        href={quoteHref}
-                        className={buttonVariants({ variant: "ghost", size: "sm" })}
+                        href={`/app/projects/${q.projectId}?tab=quote`}
+                        className="hover:underline"
                       >
-                        {t("quotes.view")}
+                        {q.projectName}
                       </Link>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <QuoteStatusBadge status={q.status} />
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {formatMoney(q.grandTotal, q.currency || "CHF")}
+                  </TableCell>
+                  <TableCell>
+                    <Link
+                      href={`/app/quotes/${q.id}`}
+                      className={buttonVariants({ variant: "ghost", size: "sm" })}
+                    >
+                      {t("quotes.view")}
+                    </Link>
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </div>
       )}
 
-      <p className="text-xs text-muted-foreground">
-        {t("quotes.legacyNote")}{" "}
-        <Link href="/estimates" className="text-[#1D376A] hover:underline">
-          {t("quotes.legacyLink")}
-        </Link>
-      </p>
+      {process.env.NODE_ENV === "development" && (
+        <p className="text-xs text-muted-foreground">
+          {t("quotes.legacyNote")}{" "}
+          <Link href="/estimates" className="text-[#1D376A] hover:underline">
+            {t("quotes.legacyLink")}
+          </Link>
+        </p>
+      )}
     </div>
   );
 }

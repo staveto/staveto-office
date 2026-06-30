@@ -158,9 +158,7 @@ async function loadQuoteStats(
   uid: string
 ): Promise<QuoteStats> {
   try {
-    const legacy =
-      "source" in workspace ? toLegacyWorkspace(workspace) : (workspace as Workspace);
-    const quotes = await listQuotesForWorkspace(legacy, uid);
+    const quotes = await listQuotesForWorkspace(workspace, uid);
     const sortedQuotes = [...quotes].sort(sortJobsByRecency);
     const awaiting = quotes.filter((q) => QUOTES_NEEDING_ACTION.has(q.status));
     return {
@@ -180,6 +178,9 @@ async function loadQuoteStats(
 }
 
 async function loadEstimatesCount(): Promise<number | null> {
+  if (process.env.NODE_ENV !== "development") {
+    return 0;
+  }
   try {
     const res = await fetch("/api/estimates");
     if (!res.ok) return null;

@@ -20,6 +20,11 @@ const createEstimateSchema = z.object({
 });
 
 export async function GET() {
+  // Legacy in-memory store has no workspace scope — fail closed outside dev.
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json([]);
+  }
+
   try {
     const estimates = getAllEstimates();
     return NextResponse.json(estimates);
@@ -33,6 +38,10 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not available" }, { status: 403 });
+  }
+
   try {
     const body = await request.json();
     const parsed = createEstimateSchema.safeParse(body);

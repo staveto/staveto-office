@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, Loader2, Printer } from "lucide-react";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/context/AuthContext";
+import { useWorkspace } from "@/context/WorkspaceContext";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { hasQuoteAccess } from "@/services/quotes";
 import { hasProjectAccess, listProjectQuoteDraftItems, listProjectTasks } from "@/lib/projects";
@@ -30,6 +31,7 @@ export default function QuotePrintPage() {
   const params = useParams();
   const { t, locale } = useI18n();
   const { user, profile } = useAuth();
+  const { activeWorkspace } = useWorkspace();
   const id = params.id as string;
 
   const [loading, setLoading] = useState(true);
@@ -42,11 +44,11 @@ export default function QuotePrintPage() {
   const [suggestions, setSuggestions] = useState<MaterialSuggestionDoc[]>([]);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || !activeWorkspace) return;
 
     (async () => {
       try {
-        const access = await hasQuoteAccess(id, user.id);
+        const access = await hasQuoteAccess(id, user.id, activeWorkspace);
         if (!access.allowed || !access.quote) {
           setNotFound(true);
           return;
@@ -96,7 +98,7 @@ export default function QuotePrintPage() {
         setLoading(false);
       }
     })();
-  }, [id, user?.id]);
+  }, [id, user?.id, activeWorkspace?.id]);
 
   const localeTag =
     locale === "de" ? "de-DE" : locale === "en" ? "en-GB" : "sk-SK";

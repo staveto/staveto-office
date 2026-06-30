@@ -744,25 +744,73 @@ service cloud.firestore {
       }
     }
 
-    function canReadQuoteDoc() {
+    function isSoloQuoteWorkspaceType() {
+      let wt = resource.data.get('workspaceType', null);
+      return wt == null || wt == 'personal' || wt == 'solo';
+    }
+
+    function isSoloQuoteRequestWorkspaceType() {
+      let wt = request.resource.data.get('workspaceType', null);
+      return wt == null || wt == 'personal' || wt == 'solo';
+    }
+
+    function isCompanyQuoteWorkspaceType() {
+      let wt = resource.data.get('workspaceType', null);
+      return wt == 'team' || wt == 'company';
+    }
+
+    function canReadSoloQuoteDoc() {
+      return isSignedIn()
+        && resource.data.get('orgId', null) == null
+        && isSoloQuoteWorkspaceType()
+        && resource.data.get('ownerId', null) == request.auth.uid;
+    }
+
+    function canReadCompanyQuoteDoc() {
       return isSignedIn() && (
-        resource.data.get('ownerId', null) == request.auth.uid
-        || (resource.data.orgId != null && isOrgMember(resource.data.orgId))
+        (resource.data.orgId != null && isOrgMember(resource.data.orgId))
+        || (
+          resource.data.get('workspaceId', null) != null
+          && isCompanyQuoteWorkspaceType()
+          && isOrgMember(resource.data.workspaceId)
+        )
       );
+    }
+
+    function canReadQuoteDoc() {
+      return canReadCompanyQuoteDoc() || canReadSoloQuoteDoc();
     }
 
     function canWriteQuoteDoc() {
       return isSignedIn() && (
-        resource.data.get('ownerId', null) == request.auth.uid
-        || (resource.data.orgId != null && canManageOrganization(resource.data.orgId))
+        (resource.data.orgId != null && canManageOrganization(resource.data.orgId))
+        || (
+          resource.data.get('orgId', null) == null
+          && isSoloQuoteWorkspaceType()
+          && resource.data.get('ownerId', null) == request.auth.uid
+        )
+        || (
+          resource.data.get('workspaceId', null) != null
+          && isCompanyQuoteWorkspaceType()
+          && canManageOrganization(resource.data.workspaceId)
+        )
       );
     }
 
     function canCreateQuoteDoc() {
       return isSignedIn() && (
-        request.resource.data.get('ownerId', null) == request.auth.uid
-        || (request.resource.data.orgId != null && canManageOrganization(request.resource.data.orgId))
-        || (request.resource.data.orgId != null && isOrgMemberActive(request.resource.data.orgId))
+        (
+          request.resource.data.orgId != null
+          && (
+            canManageOrganization(request.resource.data.orgId)
+            || isOrgMemberActive(request.resource.data.orgId)
+          )
+        )
+        || (
+          request.resource.data.get('orgId', null) == null
+          && isSoloQuoteRequestWorkspaceType()
+          && request.resource.data.get('ownerId', null) == request.auth.uid
+        )
       );
     }
 

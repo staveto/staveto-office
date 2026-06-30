@@ -10,7 +10,7 @@ import {
   updateQuote,
   updateQuoteStatus,
   deleteQuote,
-  hasQuoteAccess,
+  hasQuoteAccess as hasQuoteAccessScoped,
   type CreateQuoteInput,
   type UpdateQuoteInput,
   type QuoteDoc,
@@ -18,23 +18,15 @@ import {
 } from "@/lib/quotes";
 import {
   hasProjectAccess,
-  listProjectQuoteDraftItems,
-  listProjectTasks,
   listProjectsForWorkspace,
   type ProjectDoc,
 } from "@/lib/projects";
-import {
-  buildProjectQuoteDisplayLines,
-  projectHasQuoteDraft,
-  resolveProjectQuoteLineItems,
-} from "@/lib/projectQuoteDraft";
-import { buildQuoteDocFromProjectDraft } from "@/lib/projectQuotePrint";
-import { listMaterialSuggestions } from "@/services/materials/projectMaterialsService";
+import { resolveProjectQuoteLineItems, projectHasQuoteDraft } from "@/lib/projectQuoteDraft";
 import { parseAiSetupMeta } from "@/components/projects/setup/aiSetupHelpers";
 import { getFirestoreInstance, doc, updateDoc, serverTimestamp } from "@/lib/firebase";
 import type { ActiveWorkspace } from "@/types/workspace";
 import type { Workspace } from "@/lib/workspace-types";
-import { toLegacyWorkspace, fromLegacyWorkspace } from "@/lib/workspace-types";
+import { fromLegacyWorkspace } from "@/lib/workspace-types";
 import { isNormalizedActiveWorkspace } from "@/lib/projects";
 import type {
   ProjectLifecycleStatus,
@@ -55,6 +47,31 @@ function plainNotesFromProjectDraft(notes?: string | null): string {
 function toActiveWorkspace(workspace: Workspace | ActiveWorkspace, uid: string): ActiveWorkspace {
   if (isNormalizedActiveWorkspace(workspace)) return workspace;
   return fromLegacyWorkspace(workspace, uid);
+}
+
+/** Derive quote scope from project fields when syncing linked quotes. */
+function activeWorkspaceFromProject(
+  project: Pick<ProjectDoc, "orgId" | "ownerId">,
+  uid: string
+): ActiveWorkspace {
+  if (project.orgId) {
+    return {
+      id: project.orgId,
+      type: "company",
+      name: "Company",
+      role: "owner",
+      source: "organization",
+      orgId: project.orgId,
+    };
+  }
+  return {
+    id: "personal",
+    type: "personal",
+    name: "Personal",
+    role: "owner",
+    source: "personal",
+    ownerId: project.ownerId ?? uid,
+  };
 }
 
 async function syncProjectFromQuote(
@@ -129,10 +146,11 @@ export async function syncQuotesFromProjectLifecycle(
   const targetStatus = resolveQuoteStatusFromProject(project);
   if (!targetStatus) return;
 
-  const quotes = await listQuotesForProject(projectId, {
-    orgId: project.orgId,
-    ownerId: project.ownerId,
-  });
+  const uid = project.ownerId?.trim();
+  if (!uid) return;
+
+  const active = activeWorkspaceFromProject(project, uid);
+  const quotes = await listQuotesForProject(projectId, active, uid);
 
   await Promise.all(
     quotes
@@ -246,12 +264,7 @@ export async function upsertQuoteFromProject(
     throw new Error("Add at least one material or work line on the draft job first");
   }
 
-  const quoteScope = {
-    orgId: project.orgId ?? active.orgId ?? (active.type === "company" ? active.id : null),
-    ownerId: project.ownerId ?? uid,
-  };
-
-  const projectQuotes = await listQuotesForProject(projectId, quoteScope);
+  const projectQuotes = await listQuotesForProject(projectId, active, uid);
   const existing =
     projectQuotes.find((q) => q.status === "draft") ?? projectQuotes[0];
 
@@ -289,47 +302,14 @@ function sortQuotesByUpdatedAt(quotes: QuoteDoc[]): QuoteDoc[] {
   });
 }
 
-async function buildVirtualQuotesFromProjects(
-  projects: ProjectDoc[],
-  linkedProjectIds: Set<string>
-): Promise<QuoteDoc[]> {
-  const virtual: QuoteDoc[] = [];
-
-  await Promise.all(
-    projects.map(async (project) => {
-      if (linkedProjectIds.has(project.id)) return;
-      if (!projectHasQuoteDraft(project)) return;
-
-      try {
-        const [quoteItems, tasks, suggestions] = await Promise.all([
-          listProjectQuoteDraftItems(project.id),
-          listProjectTasks(project.id).catch(() => []),
-          listMaterialSuggestions(project.id).catch(() => []),
-        ]);
-        const lines = buildProjectQuoteDisplayLines(project, quoteItems, tasks, suggestions);
-        if (lines.length === 0 && (project.quoteStatus ?? "none") === "none") return;
-
-        virtual.push(
-          buildQuoteDocFromProjectDraft(project, quoteItems, tasks, "CHF", suggestions)
-        );
-      } catch {
-        // Skip unreadable project drafts.
-      }
-    })
-  );
-
-  return virtual;
-}
-
 /** Create missing top-level quote docs for projects that already have draft quote items. */
 export async function syncMissingQuotesFromProjects(
   workspace: Workspace | ActiveWorkspace,
   uid: string
 ): Promise<void> {
   const active = toActiveWorkspace(workspace, uid);
-  const legacy = toLegacyWorkspace(active);
   const [quotes, projects] = await Promise.all([
-    listQuotesForWorkspace(legacy, uid),
+    listQuotesForWorkspace(active, uid),
     listProjectsForWorkspace(active, uid),
   ]);
 
@@ -352,41 +332,41 @@ export async function syncMissingQuotesFromProjects(
   }
 }
 
+/** Scoped quote list — Firestore quote documents only (never projects). */
 export async function listQuotesForWorkspaceEnsured(
   workspace: Workspace | ActiveWorkspace,
   uid: string
 ): Promise<QuoteDoc[]> {
   const active = toActiveWorkspace(workspace, uid);
-  const legacy = toLegacyWorkspace(active);
 
   try {
     await syncMissingQuotesFromProjects(active, uid);
     await syncQuoteStatusesFromProjects(active, uid);
   } catch {
-    // Continue with virtual project drafts if Firestore sync fails.
+    // Continue with scoped Firestore reads if sync fails.
   }
 
-  const [firestoreQuotesRaw, projects] = await Promise.all([
-    listQuotesForWorkspace(legacy, uid),
-    listProjectsForWorkspace(active, uid),
-  ]);
-
+  const firestoreQuotesRaw = await listQuotesForWorkspace(active, uid);
   const firestoreQuotes = dedupeQuotesByProject(firestoreQuotesRaw);
 
-  const linkedProjectIds = new Set(
-    firestoreQuotesRaw.map((q) => q.projectId).filter((id): id is string => !!id)
-  );
-  const virtualQuotes = await buildVirtualQuotesFromProjects(projects, linkedProjectIds);
+  return sortQuotesByUpdatedAt(firestoreQuotes).slice(0, 50);
+}
 
-  return sortQuotesByUpdatedAt([...firestoreQuotes, ...virtualQuotes]).slice(0, 50);
+export async function hasQuoteAccess(
+  quoteId: string,
+  uid: string,
+  workspace: Workspace | ActiveWorkspace | null | undefined
+) {
+  return hasQuoteAccessScoped(quoteId, uid, workspace);
 }
 
 export async function saveQuote(
   quoteId: string,
   uid: string,
-  input: UpdateQuoteInput
+  input: UpdateQuoteInput,
+  workspace: Workspace | ActiveWorkspace
 ): Promise<QuoteDoc> {
-  const access = await hasQuoteAccess(quoteId, uid);
+  const access = await hasQuoteAccess(quoteId, uid, workspace);
   if (!access.allowed) throw new Error("Access denied");
 
   const updated = await updateQuote(quoteId, input);
@@ -399,9 +379,10 @@ export async function saveQuote(
 export async function setQuoteStatus(
   quoteId: string,
   uid: string,
-  status: QuoteStatus
+  status: QuoteStatus,
+  workspace: Workspace | ActiveWorkspace
 ): Promise<QuoteDoc> {
-  const access = await hasQuoteAccess(quoteId, uid);
+  const access = await hasQuoteAccess(quoteId, uid, workspace);
   if (!access.allowed) throw new Error("Access denied");
 
   const updated = await updateQuoteStatus(quoteId, status);
@@ -420,8 +401,12 @@ export async function createStandaloneQuote(
   return createQuoteDoc(active, uid, input);
 }
 
-export async function removeQuote(quoteId: string, uid: string): Promise<void> {
-  const access = await hasQuoteAccess(quoteId, uid);
+export async function removeQuote(
+  quoteId: string,
+  uid: string,
+  workspace: Workspace | ActiveWorkspace
+): Promise<void> {
+  const access = await hasQuoteAccess(quoteId, uid, workspace);
   if (!access.allowed) throw new Error("Access denied");
   await deleteQuote(quoteId);
 }
@@ -429,8 +414,6 @@ export async function removeQuote(quoteId: string, uid: string): Promise<void> {
 export {
   listQuotesForWorkspace,
   getQuote,
-  hasQuoteAccess,
-  toLegacyWorkspace,
   type QuoteDoc,
   type QuoteStatus,
   type CreateQuoteInput,

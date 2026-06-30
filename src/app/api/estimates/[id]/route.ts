@@ -29,6 +29,10 @@ export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json({ error: "Not available" }, { status: 403 });
+  }
+
   const { id } = await params;
   const estimate = getEstimateById(id);
 

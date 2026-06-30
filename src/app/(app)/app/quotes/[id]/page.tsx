@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, Plus, Trash2, Loader2, Save } from "lucide-react";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/context/AuthContext";
+import { useWorkspace } from "@/context/WorkspaceContext";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,7 +35,7 @@ import {
 } from "@/components/ui/card";
 import { formatMoney } from "@/lib/format";
 import { computeItemTotal, computeEstimateTotals } from "@/lib/estimateUtils";
-import { getQuote, saveQuote, setQuoteStatus, removeQuote } from "@/services/quotes";
+import { hasQuoteAccess, saveQuote, setQuoteStatus, removeQuote } from "@/services/quotes";
 import type { QuoteStatus } from "@/lib/quotes";
 import { QuoteStatusBadge } from "@/components/quotes/QuoteStatusBadge";
 import { QUOTE_DRAFT_UNITS } from "@/lib/quoteDraftItems";
@@ -55,6 +56,7 @@ export default function QuoteDetailPage() {
   const router = useRouter();
   const { t } = useI18n();
   const { user } = useAuth();
+  const { activeWorkspace } = useWorkspace();
   const id = params.id as string;
 
   const [loading, setLoading] = useState(true);
@@ -81,14 +83,15 @@ export default function QuoteDetailPage() {
   );
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!user?.id || !activeWorkspace) return;
     (async () => {
       try {
-        const q = await getQuote(id);
-        if (!q) {
+        const access = await hasQuoteAccess(id, user.id, activeWorkspace);
+        if (!access.allowed || !access.quote) {
           setNotFound(true);
           return;
         }
+        const q = access.quote;
         setProjectId(q.projectId);
         setTitle(q.title);
         setClientName(q.clientName);
@@ -111,7 +114,7 @@ export default function QuoteDetailPage() {
         setLoading(false);
       }
     })();
-  }, [id, user?.id]);
+  }, [id, user?.id, activeWorkspace?.id]);
 
   function addItem() {
     setItems([...items, { name: "", qty: 1, unit: DEFAULT_UNIT, unitPrice: 0 }]);
@@ -130,7 +133,7 @@ export default function QuoteDetailPage() {
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!user?.id) return;
+    if (!user?.id || !activeWorkspace) return;
 
     const err: Record<string, string> = {};
     if (!title.trim()) err.title = t("quotes.validation.title");
@@ -157,7 +160,7 @@ export default function QuoteDetailPage() {
           unit,
           unitPrice,
         })),
-      });
+      }, activeWorkspace);
       setErrors({});
     } catch (error) {
       setErrors({
@@ -169,10 +172,10 @@ export default function QuoteDetailPage() {
   }
 
   async function handleQuickStatus(next: QuoteStatus) {
-    if (!user?.id) return;
+    if (!user?.id || !activeWorkspace) return;
     setStatusBusy(true);
     try {
-      const updated = await setQuoteStatus(id, user.id, next);
+      const updated = await setQuoteStatus(id, user.id, next, activeWorkspace);
       setStatus(updated.status);
     } catch (error) {
       setErrors({
@@ -184,10 +187,10 @@ export default function QuoteDetailPage() {
   }
 
   async function handleDelete() {
-    if (!user?.id) return;
+    if (!user?.id || !activeWorkspace) return;
     setSaving(true);
     try {
-      await removeQuote(id, user.id);
+      await removeQuote(id, user.id, activeWorkspace);
       router.push("/app/quotes");
     } catch {
       setErrors({ delete: t("quotes.deleteError") });

@@ -12,7 +12,6 @@ export {
   syncQuoteStatusesFromProjects,
   getQuote,
   hasQuoteAccess,
-  toLegacyWorkspace,
   type QuoteDoc,
   type QuoteStatus,
   type CreateQuoteInput,
