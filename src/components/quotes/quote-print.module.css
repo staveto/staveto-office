@@ -25,12 +25,13 @@
   min-height: 297mm;
   margin: 0 auto;
   background: #ffffff;
-  color: #0f172a;
+  color: var(--qt-text, #0f172a);
   box-shadow: 0 4px 24px rgba(15, 42, 77, 0.12);
-  padding: 18mm 16mm 16mm;
+  padding: var(--qt-sheet-padding, 18mm 16mm 16mm);
   position: relative;
-  font-size: 11pt;
+  font-size: var(--qt-font-size, 11pt);
   line-height: 1.45;
+  font-family: var(--qt-font, system-ui, sans-serif);
 }
 
 .draftWatermark {
@@ -67,7 +68,7 @@
   align-items: flex-start;
   gap: 1.5rem;
   padding-bottom: 1rem;
-  border-bottom: 3px solid #1d376a;
+  border-bottom: 3px solid var(--qt-primary, #1d376a);
   margin-bottom: 1rem;
 }
 
@@ -77,23 +78,21 @@
 }
 
 .companyLogo {
-  max-height: 56px;
+  max-height: var(--qt-logo-height, 56px);
   max-width: 180px;
   width: auto;
-  height: auto;
   object-fit: contain;
-  display: block;
 }
 
 .brand {
   font-size: 1.5rem;
   font-weight: 700;
-  color: #1d376a;
+  color: var(--qt-primary, #1d376a);
   letter-spacing: -0.02em;
 }
 
 .brandAccent {
-  color: #e06737;
+  color: var(--qt-accent, #e06737);
 }
 
 .supplierBlock {
@@ -547,4 +546,77 @@
 @page {
   size: A4;
   margin: 14mm 12mm;
+}
+
+.quote-header-company-left-logo-right {
+  flex-direction: row-reverse;
+}
+
+.quote-header-centered {
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.quote-header-centered .logoArea,
+.quote-header-centered .supplierBlock {
+  width: 100%;
+  text-align: center;
+}
+
+.quote-parties-stacked {
+  grid-template-columns: 1fr !important;
+}
+
+.quote-totals-full-width .totals {
+  max-width: none;
+}
+
+.quote-table-compact .table th,
+.quote-table-compact .table td {
+  padding: 0.25rem 0.35rem;
+  font-size: 0.92em;
+}
+
+.quote-signature-modern .signatureGrid {
+  grid-template-columns: 1fr 1fr;
+}
+
+.titleAccent {
+  background: var(--qt-accent, #e06737);
+}
+
+.sectionTitle {
+  color: var(--qt-primary, #1d376a);
+}
+
+.docTitle {
+  color: var(--qt-primary, #1d376a);
+}
+
+.templateFooterNote {
+  margin-top: 0.75rem;
+  font-size: 0.9em;
+  color: var(--qt-muted, #64748b);
+  white-space: pre-wrap;
+}
+
+.logoPlaceholder {
+  min-height: var(--qt-logo-height, 56px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  border: 1px dashed var(--qt-border, #d8e1ea);
+  border-radius: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--qt-muted, #64748b);
+  text-align: center;
+  max-width: 180px;
+}
+
+.fieldMissing {
+  font-size: 0.75rem;
+  color: var(--qt-muted, #64748b);
+  font-style: italic;
 }

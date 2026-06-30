@@ -8,6 +8,7 @@ export default defineConfig({
       "src/lib/workspace/**/*.test.ts",
       "src/lib/market/**/*.test.ts",
       "src/lib/quotes/**/*.test.ts",
+      "src/lib/documents/**/*.test.ts",
     ],
   },
   resolve: {

@@ -21,6 +21,17 @@ import {
   type QuotePrintItemCategory,
 } from "@/lib/quotePrint";
 import type { QuotePrintContext } from "@/lib/quoteDocumentMeta";
+import {
+  DEFAULT_QUOTE_TEMPLATE,
+  type QuoteDocumentTemplate,
+} from "@/lib/documents/quoteTemplateContract";
+import {
+  resolveQuoteDocumentTitle,
+  resolveTemplateFooterText,
+  resolveTemplateValidityDays,
+} from "@/lib/documents/quoteTemplateApply";
+import { buildQuoteTemplateStyleProps } from "@/lib/documents/quoteTemplateStyles";
+import type { QuoteLegalLabels } from "@/lib/documents/quoteLegalLabels";
 import styles from "./quote-print.module.css";
 
 export type QuotePrintDocumentProps = {
@@ -28,6 +39,10 @@ export type QuotePrintDocumentProps = {
   organization: OrganizationPrintInfo | null;
   project: ProjectDoc | null;
   printContext: QuotePrintContext;
+  template?: QuoteDocumentTemplate | null;
+  legalLabels?: QuoteLegalLabels | null;
+  /** When true, missing logo shows placeholder instead of Staveto brand. */
+  useCompanySupplier?: boolean;
   t: (key: string, params?: Record<string, string | number>) => string;
   locale?: string;
 };
@@ -39,12 +54,28 @@ function isQuoteDraftForPrint(quote: QuoteDoc, project: ProjectDoc | null): bool
   return quote.status === "draft" || !qs || qs === "draft" || qs === "ready";
 }
 
-function CompanyLogo({ organization }: { organization: OrganizationPrintInfo | null }) {
+function CompanyLogo({
+  organization,
+  useCompanySupplier,
+  t,
+}: {
+  organization: OrganizationPrintInfo | null;
+  useCompanySupplier?: boolean;
+  t: QuotePrintDocumentProps["t"];
+}) {
   const logoUrl = organization?.profile?.logoUrl;
   if (logoUrl) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img src={logoUrl} alt="" className={styles.companyLogo} />
+    );
+  }
+
+  if (useCompanySupplier) {
+    return (
+      <div className={styles.logoPlaceholder} aria-hidden>
+        {t("quotes.print.logoMissing")}
+      </div>
     );
   }
 
@@ -55,42 +86,72 @@ function CompanyLogo({ organization }: { organization: OrganizationPrintInfo | n
   );
 }
 
+function FieldMissing({ label, t }: { label: string; t: QuotePrintDocumentProps["t"] }) {
+  return (
+    <p className={styles.fieldMissing}>
+      {label}: {t("quotes.print.profileFieldMissing")}
+    </p>
+  );
+}
+
 function SupplierBlock({
   organization,
   contactPerson,
+  visibility,
+  legalLabels,
   t,
 }: {
   organization: OrganizationPrintInfo | null;
   contactPerson: QuotePrintContext["contactPerson"];
+  visibility: QuoteDocumentTemplate["visibility"];
+  legalLabels: QuoteLegalLabels | null | undefined;
   t: QuotePrintDocumentProps["t"];
 }) {
   if (!organization) return null;
 
   const profile = organization.profile;
+  const labels = legalLabels ?? {
+    registrationNumberLabel: t("quotes.print.registrationNumber"),
+    taxIdLabel: t("quotes.print.taxId"),
+    vatIdLabel: t("quotes.print.vatId"),
+    vatLabel: t("quotes.print.summaryVat"),
+    complianceStatus: "needs_legal_review" as const,
+  };
   const displayName = getOrganizationDisplayName(organization);
-  const address = formatOrganizationAddress(profile);
-  const contactName = contactPerson.name?.trim();
-  const contactLabel = contactName
-    ? `${t("quotes.print.contactPerson")}: ${contactName}`
-    : null;
+  const address = visibility.showCompanyAddress ? formatOrganizationAddress(profile) : undefined;
+  const contactName = contactPerson.name?.trim() || profile?.contactName?.trim();
+  const contactLabel =
+    visibility.showContactPerson && contactName
+      ? `${t("quotes.print.contactPerson")}: ${contactName}`
+      : null;
 
   return (
     <div className={styles.supplierBlock}>
       <p className={styles.supplierName}>{displayName}</p>
-      {address ? <p>{address}</p> : null}
-      {profile?.registrationNumber ? (
-        <p>
-          {t("quotes.print.registrationNumber")}: {profile.registrationNumber}
-        </p>
+      {visibility.showCompanyAddress ? (
+        address ? (
+          <p>{address}</p>
+        ) : (
+          <FieldMissing label={t("quotes.print.companyAddress")} t={t} />
+        )
+      ) : null}
+      {visibility.showRegistrationNumber ? (
+        profile?.registrationNumber ? (
+          <p>
+            {labels.registrationNumberLabel}: {profile.registrationNumber}
+          </p>
+        ) : (
+          <FieldMissing label={labels.registrationNumberLabel} t={t} />
+        )
       ) : null}
       {profile?.taxId ? (
         <p>
-          {t("quotes.print.taxId")}: {profile.taxId}
+          {labels.taxIdLabel}: {profile.taxId}
         </p>
       ) : null}
       {profile?.vatId ? (
         <p>
-          {t("quotes.print.vatId")}: {profile.vatId}
+          {labels.vatIdLabel}: {profile.vatId}
         </p>
       ) : null}
       <div className={styles.contactLines}>
@@ -153,12 +214,15 @@ function categoryLabelKey(category: QuotePrintItemCategory): string {
 
 function SummaryCard({
   printContext,
+  legalLabels,
   t,
 }: {
   printContext: QuotePrintContext;
+  legalLabels: QuoteLegalLabels | null | undefined;
   t: QuotePrintDocumentProps["t"];
 }) {
   const { priceSummary, currency } = printContext;
+  const vatLabel = legalLabels?.vatLabel ?? t("quotes.print.summaryVat");
 
   if (!priceSummary.isComplete) {
     return (
@@ -188,7 +252,7 @@ function SummaryCard({
           </div>
         ) : null}
         <div className={styles.summaryRow}>
-          <span>{t("quotes.print.summaryVat")}</span>
+          <span>{vatLabel}</span>
           <span>{formatMoney(priceSummary.vatAmount, currency)}</span>
         </div>
         <div className={styles.summaryRowGrand}>
@@ -205,28 +269,41 @@ export function QuotePrintDocument({
   organization,
   project,
   printContext,
+  template,
+  legalLabels,
+  useCompanySupplier = false,
   t,
   locale = "sk-SK",
 }: QuotePrintDocumentProps) {
+  const tpl = template ?? DEFAULT_QUOTE_TEMPLATE;
+  const { visibility, layout } = tpl;
+  const styleProps = buildQuoteTemplateStyleProps(tpl);
+
   const issueDate = getQuoteIssueDate(quote);
-  const validUntil = getQuoteValidUntilDate(quote);
+  const validUntil = getQuoteValidUntilDate(quote, resolveTemplateValidityDays(tpl));
   const quoteNumber = formatQuoteNumber(quote);
   const isDraft = isQuoteDraftForPrint(quote, project);
+  const docTitle = resolveQuoteDocumentTitle(tpl, t("quotes.print.title"));
+  const footerNote = resolveTemplateFooterText(tpl);
 
   const grouped = groupQuoteItemsByCategory(quote.items);
-  const categories = getQuotePrintCategories(quote.items);
+  let categories = getQuotePrintCategories(quote.items);
+  if (!visibility.showMaterialSection) {
+    categories = categories.filter((c) => c !== "material");
+  }
+  if (!visibility.showWorkSection) {
+    categories = categories.filter((c) => c !== "work");
+  }
 
   const categoryOffsets = useMemo(() => {
-    const g = groupQuoteItemsByCategory(quote.items);
-    const cats = getQuotePrintCategories(quote.items);
     const offsets = new Map<QuotePrintItemCategory, number>();
     let running = 0;
-    for (const category of cats) {
+    for (const category of categories) {
       offsets.set(category, running);
-      running += g[category].length;
+      running += grouped[category].length;
     }
     return offsets;
-  }, [quote.items]);
+  }, [quote.items, categories, grouped]);
 
   const clientAddress = project
     ? [project.addressText, project.city].filter(Boolean).join(", ")
@@ -238,7 +315,11 @@ export function QuotePrintDocument({
   const { priceSummary, contactPerson } = printContext;
 
   return (
-    <article className={styles.sheet} aria-label={t("quotes.print.documentTitle")}>
+    <article
+      className={`${styles.sheet} ${styleProps.className}`}
+      style={styleProps.style}
+      aria-label={t("quotes.print.documentTitle")}
+    >
       {isDraft ? (
         <div className={styles.draftWatermark} aria-hidden>
           {t("quotes.print.draftWatermark")}
@@ -246,15 +327,27 @@ export function QuotePrintDocument({
       ) : null}
 
       <header className={styles.header}>
-        <div className={styles.logoArea}>
-          <CompanyLogo organization={organization} />
-        </div>
-        <SupplierBlock organization={organization} contactPerson={contactPerson} t={t} />
+        {visibility.showLogo ? (
+          <div className={styles.logoArea}>
+            <CompanyLogo
+              organization={organization}
+              useCompanySupplier={useCompanySupplier}
+              t={t}
+            />
+          </div>
+        ) : null}
+        <SupplierBlock
+          organization={organization}
+          contactPerson={contactPerson}
+          visibility={visibility}
+          legalLabels={legalLabels}
+          t={t}
+        />
       </header>
 
       <div className={styles.titleRow}>
         <h1 className={styles.docTitle}>
-          {t("quotes.print.title")}
+          {docTitle}
           {isDraft ? (
             <span className={styles.draftBadge}>{t("quotes.print.draftBadge")}</span>
           ) : null}
@@ -276,22 +369,24 @@ export function QuotePrintDocument({
           <span className={styles.metaValue}>{formatQuotePrintDate(validUntil, locale)}</span>
           <span className={styles.metaHint}>{t("quotes.print.validUntilDefaultHint")}</span>
         </div>
-        {printContext.customerNumber ? (
+        {visibility.showCustomerNumber && printContext.customerNumber ? (
           <div className={styles.metaBlock}>
             <span className={styles.metaLabel}>{t("quotes.print.customerNumber")}</span>
             <span className={styles.metaValue}>{printContext.customerNumber}</span>
           </div>
         ) : null}
-        {printContext.projectNumber ? (
+        {visibility.showProjectNumber && printContext.projectNumber ? (
           <div className={styles.metaBlock}>
             <span className={styles.metaLabel}>{t("quotes.print.projectNumber")}</span>
             <span className={styles.metaValue}>{printContext.projectNumber}</span>
           </div>
         ) : null}
-        <div className={styles.metaBlock}>
-          <span className={styles.metaLabel}>{t("quotes.print.currency")}</span>
-          <span className={styles.metaValue}>{printContext.currency}</span>
-        </div>
+        {visibility.showCurrency ? (
+          <div className={styles.metaBlock}>
+            <span className={styles.metaLabel}>{t("quotes.print.currency")}</span>
+            <span className={styles.metaValue}>{printContext.currency}</span>
+          </div>
+        ) : null}
       </div>
 
       <section className={styles.subjectBlock}>
@@ -304,9 +399,11 @@ export function QuotePrintDocument({
         ) : null}
       </section>
 
-      <SummaryCard printContext={printContext} t={t} />
+      {visibility.showSummary ? (
+        <SummaryCard printContext={printContext} legalLabels={legalLabels} t={t} />
+      ) : null}
 
-      {printContext.scopeOfWork.trim() ? (
+      {visibility.showScopeOfWork && printContext.scopeOfWork.trim() ? (
         <section className={styles.scopeBlock}>
           <p className={styles.sectionTitle}>{t("quotes.print.scopeOfWork")}</p>
           <div className={styles.scopeBody}>{printContext.scopeOfWork}</div>
@@ -382,7 +479,7 @@ export function QuotePrintDocument({
               </div>
               <div className={styles.totalsRow}>
                 <span>
-                  {t("projects.draft.quoteItem.vatLine", { percent: priceSummary.vatPercent })}
+                  {(legalLabels?.vatLabel ?? t("quotes.print.summaryVat"))} ({priceSummary.vatPercent}%)
                 </span>
                 <span>{formatMoney(priceSummary.vatAmount, printContext.currency)}</span>
               </div>
@@ -398,34 +495,39 @@ export function QuotePrintDocument({
       </section>
 
       <section className={styles.notes}>
-        <p className={styles.notesTitle}>{t("quotes.print.conditions")}</p>
-        <p className={styles.notesBody}>{printContext.conditions}</p>
-        {printContext.paymentTerms ? (
-          <p className={styles.notesBody}>
-            <span className={styles.inlineLabel}>{t("quotes.print.paymentTerms")}: </span>
-            {printContext.paymentTerms}
-          </p>
-        ) : null}
-        {printContext.executionPeriod ? (
-          <p className={styles.notesBody}>
-            <span className={styles.inlineLabel}>{t("quotes.print.executionPeriod")}: </span>
-            {printContext.executionPeriod}
-          </p>
-        ) : null}
-        {printContext.warranty ? (
-          <p className={styles.notesBody}>
-            <span className={styles.inlineLabel}>{t("quotes.print.warranty")}: </span>
-            {printContext.warranty}
-          </p>
-        ) : null}
-        {printContext.exclusions ? (
-          <p className={styles.notesBody}>
-            <span className={styles.inlineLabel}>{t("quotes.print.exclusions")}: </span>
-            {printContext.exclusions}
-          </p>
+        {visibility.showTerms ? (
+          <>
+            <p className={styles.notesTitle}>{t("quotes.print.conditions")}</p>
+            <p className={styles.notesBody}>{printContext.conditions}</p>
+            {printContext.paymentTerms ? (
+              <p className={styles.notesBody}>
+                <span className={styles.inlineLabel}>{t("quotes.print.paymentTerms")}: </span>
+                {printContext.paymentTerms}
+              </p>
+            ) : null}
+            {printContext.executionPeriod ? (
+              <p className={styles.notesBody}>
+                <span className={styles.inlineLabel}>{t("quotes.print.executionPeriod")}: </span>
+                {printContext.executionPeriod}
+              </p>
+            ) : null}
+            {printContext.warranty ? (
+              <p className={styles.notesBody}>
+                <span className={styles.inlineLabel}>{t("quotes.print.warranty")}: </span>
+                {printContext.warranty}
+              </p>
+            ) : null}
+            {printContext.exclusions ? (
+              <p className={styles.notesBody}>
+                <span className={styles.inlineLabel}>{t("quotes.print.exclusions")}: </span>
+                {printContext.exclusions}
+              </p>
+            ) : null}
+          </>
         ) : null}
       </section>
 
+      {visibility.showContactBlock ? (
       <section className={styles.contactSection}>
         <p className={styles.sectionTitle}>{t("quotes.print.yourContact")}</p>
         {contactPerson.name ? (
@@ -441,7 +543,9 @@ export function QuotePrintDocument({
           <p className={styles.detailLine}>{contactPerson.email}</p>
         ) : null}
       </section>
+      ) : null}
 
+      {visibility.showSignatureBlock ? (
       <section className={styles.signatureSection}>
         <p className={styles.sectionTitle}>{t("quotes.print.acceptance")}</p>
         <div className={styles.signatureGrid}>
@@ -459,6 +563,7 @@ export function QuotePrintDocument({
           </div>
         </div>
       </section>
+      ) : null}
 
       <footer className={styles.footer}>
         <div className={styles.footerRow}>
@@ -469,13 +574,16 @@ export function QuotePrintDocument({
                 {bankAccount}
               </p>
             ) : null}
+            {footerNote ? <p className={styles.templateFooterNote}>{footerNote}</p> : null}
           </div>
           <span className={styles.footerDate}>{formatQuotePrintDate(new Date(), locale)}</span>
         </div>
+        {visibility.showStavetoBranding ? (
         <div className={styles.stavetoBranding}>
           <p>{t("quotes.print.stavetoBrandingNote")}</p>
           <p>{t("quotes.print.stavetoWebsite")}</p>
         </div>
+        ) : null}
       </footer>
     </article>
   );

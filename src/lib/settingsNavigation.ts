@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   Building2,
   CreditCard,
+  FileText,
   Grid3X3,
   Plug,
   ScrollText,
@@ -33,6 +34,13 @@ export const SETTINGS_NAV_ITEMS: SettingsNavItem[] = [
     href: "/app/settings/company",
     icon: Building2,
     managementOnly: true,
+  },
+  {
+    id: "quote-settings",
+    labelKey: "settings.nav.quoteSettings",
+    href: "/app/settings/quotes",
+    icon: FileText,
+    adminOnly: true,
   },
   {
     id: "team",
@@ -116,6 +124,7 @@ export function filterSettingsNavItems(
     if (item.adminOnly && !opts.isAdmin) return false;
     if (item.managementOnly && !opts.canManage && !opts.isAdmin) return false;
     if (item.id === "company" && !opts.isCompany) return false;
+    if (item.id === "quote-settings" && !opts.isCompany) return false;
     if (item.id === "team" && !opts.isCompany) return false;
     if (item.id === "billing" && !opts.isCompany) return false;
     if (item.id === "app-center" && !opts.isCompany) return false;

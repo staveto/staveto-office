@@ -534,6 +534,14 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      match /documentTemplates/{templateId} {
+        allow read: if isOrgMemberActive(orgId);
+        allow create, update: if isOrgOwnerOrAdmin(orgId)
+          && templateId == 'default-quote'
+          && request.resource.data.type == 'quote';
+        allow delete: if isOrgOwnerOrAdmin(orgId) && templateId == 'default-quote';
+      }
+
       match /fieldNotes/{noteId} {
         allow read: if isOrgMember(orgId)
           && (canViewOrgOperations(orgId) || resource.data.createdBy == request.auth.uid);
