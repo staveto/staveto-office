@@ -17,6 +17,7 @@ import { shouldShowWorkerDashboard } from "@/lib/workspaceProduct";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { settingsFieldHintClassName } from "@/components/settings/settingsStyles";
+import { WorkspaceDiagnosticsPanel } from "@/components/settings/WorkspaceDiagnosticsPanel";
 
 export default function SettingsPage() {
   const { t } = useI18n();
@@ -97,6 +98,7 @@ export default function SettingsPage() {
         </CardContent>
       </SettingsSectionCard>
       <OrganizationSubdomainSettings />
+      <WorkspaceDiagnosticsPanel />
     </div>
   );
 }
