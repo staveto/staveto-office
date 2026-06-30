@@ -8,6 +8,7 @@ import { useWorkspace } from "@/context/WorkspaceContext";
 import { useI18n } from "@/i18n/I18nContext";
 import { useCompanyBranding } from "@/hooks/useCompanyBranding";
 import { useWorkspaceProduct } from "@/hooks/useWorkspaceProduct";
+import { useActiveWorkspaceContext } from "@/hooks/useActiveWorkspaceContext";
 import { CompanyLogo } from "@/components/branding/CompanyLogo";
 import { getCompanyInitials } from "@/lib/userDisplay";
 import type { ActiveWorkspace } from "@/types/workspace";
@@ -25,6 +26,7 @@ export function ActiveCompanyContextSelector({
   const { t } = useI18n();
   const { logoUrl, displayName } = useCompanyBranding();
   const { canManage } = useWorkspaceProduct();
+  const { soloDisplayName, activeWorkspaceName } = useActiveWorkspaceContext();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -40,7 +42,7 @@ export function ActiveCompanyContextSelector({
   const showDropdown = hasCompanies;
 
   const companyDisplayName =
-    displayName?.trim() || activeWorkspace?.name?.trim() || "";
+    displayName?.trim() || activeWorkspaceName?.trim() || activeWorkspace?.name?.trim() || "";
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -74,11 +76,7 @@ export function ActiveCompanyContextSelector({
       )}
       aria-haspopup={showDropdown ? "listbox" : undefined}
       aria-expanded={open}
-      aria-label={
-        isPersonalActive
-          ? t("header.context.activePersonalAria")
-          : t("header.context.activeCompanyAria")
-      }
+      aria-label={t("header.context.switcherAria")}
     >
       {isPersonalActive ? (
         <>
@@ -93,20 +91,20 @@ export function ActiveCompanyContextSelector({
           <div className="min-w-0 flex-1">
             <div
               className={cn(
+                "truncate text-[10px] font-semibold uppercase tracking-wider",
+                isDrawer ? "text-white/55" : "text-muted-foreground",
+                !isDrawer && "hidden sm:block"
+              )}
+            >
+              {t("header.context.switcherLabel")}
+            </div>
+            <div
+              className={cn(
                 "truncate text-sm font-medium",
                 isDrawer ? "text-white" : "text-foreground"
               )}
             >
-              {t("header.context.personalLabel")}
-            </div>
-            <div
-              className={cn(
-                "truncate text-[11px]",
-                isDrawer ? "text-white/55" : "text-muted-foreground",
-                !isDrawer && "hidden md:block"
-              )}
-            >
-              {t("header.context.personalHelper")}
+              {soloDisplayName}
             </div>
           </div>
         </>
@@ -120,17 +118,21 @@ export function ActiveCompanyContextSelector({
           <div className="min-w-0 flex-1">
             <div
               className={cn(
+                "truncate text-[10px] font-semibold uppercase tracking-wider",
+                isDrawer ? "text-white/55" : "text-muted-foreground",
+                !isDrawer && "hidden sm:block"
+              )}
+            >
+              {t("header.context.switcherLabel")}
+            </div>
+            <div
+              className={cn(
                 "truncate text-sm font-medium",
                 isDrawer ? "text-white" : "text-[#1D376A]"
               )}
             >
               {companyDisplayName}
             </div>
-            {isDrawer ? (
-              <div className="text-[11px] text-white/55">
-                {t("header.context.companyLabel")}
-              </div>
-            ) : null}
           </div>
         </>
       )}
@@ -241,7 +243,7 @@ export function ActiveCompanyContextSelector({
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                   <User className="size-4" aria-hidden />
                 </span>
-                <span className="flex-1">{t("header.context.personalLabel")}</span>
+                <span className="flex-1">{soloDisplayName}</span>
                 {isPersonalActive ? (
                   <Check className="size-4 shrink-0" aria-hidden />
                 ) : (

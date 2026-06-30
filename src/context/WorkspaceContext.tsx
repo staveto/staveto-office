@@ -22,11 +22,20 @@ import {
   logWorkspaceResolveDebug,
   refreshCompanyWorkspaceRole,
   refreshCompanyWorkspaceRoles,
+  persistLastActiveWorkspaceId,
+  persistLastActiveWorkspaceIdOnly,
 } from "@/services/workspace/workspaceService";
 import { upsertUserProfile } from "@/lib/userProfile";
 import { isCompanyWorkspaceType } from "@/types/workspace";
 import { toLegacyMemberRole } from "@/permissions/roles";
 import type { WorkspaceRole } from "@/types/workspace";
+import { getSoloWorkspaceDisplayName } from "@/lib/workspace/workspaceContract";
+import { fetchOrgReviewSnapshots } from "@/lib/workspace/orgReviewSnapshots";
+import {
+  applyDuplicateSuppression,
+  logDuplicateSuppressionDev,
+} from "@/lib/workspace/workspaceDuplicateSuppression";
+import { logWorkspaceSwitcherCompaniesDev } from "@/lib/workspace/workspaceDuplicateReview";
 import {
   getTenantFromWindow,
   resolveTenantWorkspace,
@@ -104,6 +113,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           id: user.id,
           email: user.email,
           name: user.name,
+          firstName: profile?.firstName,
           orgIdHints: [profileOrgHint, onboardingOrgHint, persistedOrgHint].filter(
             (id): id is string => !!id
           ),
@@ -120,9 +130,98 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
         if (cancelled) return;
 
-        setAvailableWorkspaces(refreshedList);
+        const companyOrgIds = refreshedList
+          .filter((w) => w.type === "company")
+          .map((w) => w.orgId ?? w.id);
+        const orgReviewHints = {
+          lastActiveWorkspaceId: profile?.lastActiveWorkspaceId,
+          activeBusinessOrgId: profile?.activeBusinessOrgId,
+        };
+        const snapshots = await fetchOrgReviewSnapshots(
+          user.id,
+          companyOrgIds,
+          orgReviewHints
+        );
+        if (cancelled) return;
 
-        const companyWorkspace = refreshedList.find((w) => isCompanyWorkspaceType(w.type));
+        const suppression = applyDuplicateSuppression(
+          refreshedList,
+          snapshots,
+          user.id
+        );
+        const switcherList = suppression.switcherWorkspaces;
+        setAvailableWorkspaces(switcherList);
+
+        const remapOrgId = suppression.remapOrgId;
+        const persistedIdRaw = readPersistedWorkspaceId();
+        const persistedId =
+          remapOrgId(persistedIdRaw ?? undefined) ?? persistedIdRaw;
+        if (
+          persistedIdRaw &&
+          persistedId &&
+          persistedId !== persistedIdRaw
+        ) {
+          persistActiveWorkspaceId(persistedId);
+        }
+
+        const profileLastActiveRemapped =
+          remapOrgId(profile?.lastActiveWorkspaceId) ??
+          profile?.lastActiveWorkspaceId;
+        const profileBusinessOrgRemapped =
+          remapOrgId(profile?.activeBusinessOrgId) ?? profile?.activeBusinessOrgId;
+        const profileOnboardingRemapped =
+          remapOrgId(profile?.onboarding?.activeWorkspaceId) ??
+          profile?.onboarding?.activeWorkspaceId;
+        const hiddenDuplicateWasReferenced = [
+          profile?.lastActiveWorkspaceId,
+          persistedIdRaw,
+          profile?.activeBusinessOrgId,
+          profile?.onboarding?.activeWorkspaceId,
+        ].some(
+          (id) =>
+            !!id?.trim() &&
+            id.trim() !== "personal" &&
+            suppression.hiddenOrgIdToCanonical.has(id.trim())
+        );
+
+        if (process.env.NODE_ENV === "development") {
+          logWorkspaceSwitcherCompaniesDev({
+            userId: user.id,
+            activeWorkspaceId:
+              profileBusinessOrgRemapped?.trim() ||
+              persistedId ||
+              (profileLastActiveRemapped?.trim() &&
+              profileLastActiveRemapped !== "personal"
+                ? profileLastActiveRemapped.trim()
+                : null),
+            companies: snapshots.map((s) => ({
+              orgId: s.orgId,
+              name: s.name,
+              legalName: s.legalName,
+              ownerUid: s.ownerUid,
+              createdAt: s.createdAt,
+              membersCount: s.membersCount,
+              projectsCount: s.projectsCount,
+              source: s.source,
+            })),
+            visibleOrgIds: switcherList
+              .filter((w) => w.type === "company")
+              .map((w) => w.orgId ?? w.id),
+            hiddenOrgIds: [...suppression.hiddenOrgIdToCanonical.keys()],
+          });
+          logDuplicateSuppressionDev(
+            user.id,
+            suppression,
+            profileBusinessOrgRemapped?.trim() ||
+              persistedId ||
+              profileLastActiveRemapped?.trim() ||
+              null
+          );
+        }
+
+        const companyWorkspace = switcherList.find((w) =>
+          isCompanyWorkspaceType(w.type)
+        );
         if (companyWorkspace?.orgId && !profile?.activeBusinessOrgId?.trim()) {
           void upsertUserProfile(user.id, {
             activeBusinessOrgId: companyWorkspace.orgId,
@@ -177,33 +276,50 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         }
 
         setTenant({ mode: "app", status: "app" });
-        const persistedId = readPersistedWorkspaceId();
         const resolveOptions = {
           tenantMode: false as const,
           persistedId,
-          profileWorkspaceId: profile?.onboarding?.activeWorkspaceId,
-          profileBusinessOrgId: profile?.activeBusinessOrgId,
+          profileWorkspaceId: profileOnboardingRemapped,
+          profileBusinessOrgId: profileBusinessOrgRemapped,
+          profileLastActiveWorkspaceId: profileLastActiveRemapped,
         };
         const { workspace: resolved, reason } = resolveActiveWorkspaceWithReason(
-          refreshedList,
+          switcherList,
           resolveOptions
         );
         const activeMatch =
-          refreshedList.find((w) => w.id === resolved.id) ?? resolved;
+          switcherList.find((w) => w.id === resolved.id) ?? resolved;
         setActiveWorkspaceState(activeMatch);
         persistActiveWorkspaceId(activeMatch.id);
+        if (user.id) {
+          if (hiddenDuplicateWasReferenced && activeMatch.type === "company") {
+            const canonicalId = activeMatch.orgId ?? activeMatch.id;
+            void persistLastActiveWorkspaceIdOnly(user.id, canonicalId).catch(
+              () => undefined
+            );
+          } else {
+            void persistLastActiveWorkspaceId(user.id, activeMatch).catch(
+              () => undefined
+            );
+          }
+        }
         if (activeMatch.type === "company") {
           clearExplicitPersonalWorkspace();
         }
         logWorkspaceResolveDebug({
-          available: refreshedList,
+          available: switcherList,
           active: activeMatch,
           reason,
           persistedId,
         });
       } catch {
         if (cancelled) return;
-        const personal = listFallbackPersonal(user);
+        const personal = listFallbackPersonal({
+          id: user?.id ?? "unknown",
+          email: user?.email,
+          name: user?.name,
+          firstName: profile?.firstName,
+        });
         setAvailableWorkspaces([personal]);
         setActiveWorkspaceState(personal);
         setTenant(
@@ -227,6 +343,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     user?.name,
     profile?.onboarding?.activeWorkspaceId,
     profile?.activeBusinessOrgId,
+    profile?.lastActiveWorkspaceId,
+    profile?.firstName,
     hostTenant.mode,
     hostTenant.slug,
     hostTenant.hostname,
@@ -277,6 +395,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
       setActiveWorkspaceState(next);
       persistActiveWorkspaceId(next.id);
+      if (user?.id) {
+        void persistLastActiveWorkspaceId(user.id, next).catch(() => undefined);
+      }
       if (next.type === "personal") {
         markExplicitPersonalWorkspace();
       } else {
@@ -317,11 +438,12 @@ function listFallbackPersonal(user: {
   id: string;
   email?: string;
   name?: string;
+  firstName?: string;
 }): ActiveWorkspace {
   return {
     id: "personal",
     type: "personal",
-    name: user.name?.trim() || "Personal",
+    name: getSoloWorkspaceDisplayName(user.firstName ?? user.name?.split(" ")[0]),
     role: "owner",
     source: "personal",
     ownerId: user.id,
