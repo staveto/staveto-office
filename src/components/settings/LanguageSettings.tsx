@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/select";
 import { useI18n } from "@/i18n/I18nContext";
 import { LOCALE_LABELS, LOCALE_NATIVE_LABELS, type Locale } from "@/i18n/config";
+import { useAuth } from "@/context/AuthContext";
+import { upsertUserProfile } from "@/lib/userProfile";
 import { cn } from "@/lib/utils";
 import { SettingsSectionCard } from "./SettingsSectionCard";
 import {
@@ -26,6 +28,14 @@ type Props = {
 
 export function LanguageSettings({ className }: Props) {
   const { t, locale, setLocale, locales } = useI18n();
+  const { user } = useAuth();
+
+  const handleLocaleChange = (next: Locale) => {
+    setLocale(next);
+    if (user?.id) {
+      void upsertUserProfile(user.id, { preferredLanguage: next }).catch(() => undefined);
+    }
+  };
 
   return (
     <SettingsSectionCard className={className} id="language">
@@ -38,7 +48,7 @@ export function LanguageSettings({ className }: Props) {
           <Label htmlFor="app-locale" className={settingsFieldLabelClassName}>
             {t("settings.language.label")}
           </Label>
-          <Select value={locale} onValueChange={(v) => setLocale(v as Locale)}>
+          <Select value={locale} onValueChange={(v) => handleLocaleChange(v as Locale)}>
             <SelectTrigger id="app-locale" className={settingsSelectTriggerClassName}>
               <SelectValue />
             </SelectTrigger>
@@ -63,6 +73,14 @@ type LanguageSelectCompactProps = {
 /** Compact language picker for sidebar flyout. */
 export function LanguageSelectCompact({ className }: LanguageSelectCompactProps) {
   const { t, locale, setLocale, locales } = useI18n();
+  const { user } = useAuth();
+
+  const handleLocaleChange = (next: Locale) => {
+    setLocale(next);
+    if (user?.id) {
+      void upsertUserProfile(user.id, { preferredLanguage: next }).catch(() => undefined);
+    }
+  };
 
   return (
     <div
@@ -76,7 +94,7 @@ export function LanguageSelectCompact({ className }: LanguageSelectCompactProps)
           <button
             key={loc}
             type="button"
-            onClick={() => setLocale(loc)}
+            onClick={() => handleLocaleChange(loc)}
             className={cn(
               "w-full rounded-md px-3 py-2 text-left text-sm transition-colors",
               selected
