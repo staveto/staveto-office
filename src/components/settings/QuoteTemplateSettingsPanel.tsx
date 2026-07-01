@@ -118,8 +118,6 @@ import {
 
   saveDefaultQuoteTemplate,
 
-  quoteTemplateDocPath,
-
 } from "@/services/documents/quoteTemplateService";
 
 import { loadOrganizationQuoteDocumentContext } from "@/lib/documents/quoteDocumentContext";
@@ -822,8 +820,6 @@ export function QuoteTemplateSettingsPanel() {
 
   const [templateLoadState, setTemplateLoadState] = useState<QuoteTemplateLoadState>("loading");
 
-  const [loadErrorCode, setLoadErrorCode] = useState<string | null>(null);
-
 
 
   const [settingsCollapsed, setSettingsCollapsed] = useState(false);
@@ -870,8 +866,6 @@ export function QuoteTemplateSettingsPanel() {
 
     setError(null);
 
-    setLoadErrorCode(null);
-
     setTemplateLoadState("loading");
 
 
@@ -895,8 +889,6 @@ export function QuoteTemplateSettingsPanel() {
         setOrgContext(orgDoc);
 
         setTemplateLoadState(templateResult.loadState);
-
-        setLoadErrorCode(templateResult.errorCode ?? null);
 
       })
 
@@ -1046,8 +1038,6 @@ export function QuoteTemplateSettingsPanel() {
 
       setTemplateLoadState("loaded");
 
-      setLoadErrorCode(null);
-
       setSuccess(t("settings.quoteTemplate.saved"));
 
     } catch (e) {
@@ -1083,8 +1073,6 @@ export function QuoteTemplateSettingsPanel() {
       setSavedTemplate(reset);
 
       setTemplateLoadState("loaded");
-
-      setLoadErrorCode(null);
 
       setSuccess(t("settings.quoteTemplate.resetDone"));
 
@@ -1391,18 +1379,6 @@ export function QuoteTemplateSettingsPanel() {
           <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
 
             {t(templateMessageKey)}
-
-          </p>
-
-        ) : null}
-
-        {process.env.NODE_ENV === "development" && orgId ? (
-
-          <p className="text-xs text-muted-foreground font-mono px-1">
-
-            orgId={orgId} path={quoteTemplateDocPath(orgId)} loadState={templateLoadState}
-
-            {loadErrorCode ? ` error=${loadErrorCode}` : ""}
 
           </p>
 
