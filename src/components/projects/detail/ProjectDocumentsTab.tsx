@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FileText,
   FileType,
+  Eye,
   Image as ImageIcon,
   Loader2,
   Paperclip,
@@ -26,6 +27,7 @@ import {
 import { getStorageInstance, ref, getDownloadURL } from "@/lib/firebase";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { useI18n } from "@/i18n/I18nContext";
+import { ProjectDocumentPreviewDialog } from "./ProjectDocumentPreviewDialog";
 
 type ProjectDocumentsTabProps = {
   project: ProjectDoc;
@@ -51,12 +53,14 @@ const CATEGORY_ICON: Record<CategoryKey, typeof FileText> = {
   other: Paperclip,
 };
 
-function DocumentPreview({
+function DocumentThumbnail({
   doc,
   t,
+  onOpen,
 }: {
   doc: ProjectDocumentRecord;
   t: (key: string) => string;
+  onOpen: () => void;
 }) {
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -85,35 +89,32 @@ function DocumentPreview({
     return <IconFallback doc={doc} />;
   }
 
-  if (url) {
-    return (
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="block shrink-0 overflow-hidden rounded-md border border-border/70 bg-muted/30"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={url}
-          alt={doc.fileName}
-          className="size-16 object-cover sm:size-20"
-        />
-      </a>
-    );
-  }
-
-  if (failed) {
-    return <IconFallback doc={doc} />;
-  }
-
   return (
-    <div
-      className="flex size-16 shrink-0 items-center justify-center rounded-md border border-border/70 bg-muted/30 sm:size-20"
-      aria-label={t("common.loading")}
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen();
+      }}
+      className="block shrink-0 overflow-hidden rounded-md border border-border/70 bg-muted/30"
+      aria-label={t("projects.dashboard.documents.preview")}
     >
-      <Loader2 className="size-5 animate-spin text-muted-foreground" />
-    </div>
+      {url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt={doc.fileName} className="size-16 object-cover sm:size-20" />
+      ) : failed ? (
+        <span className="flex size-16 items-center justify-center sm:size-20">
+          <ImageIcon className="size-5 text-[#1D376A]/70" />
+        </span>
+      ) : (
+        <span
+          className="flex size-16 items-center justify-center sm:size-20"
+          aria-label={t("common.loading")}
+        >
+          <Loader2 className="size-5 animate-spin text-muted-foreground" />
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -144,6 +145,7 @@ export function ProjectDocumentsTab({
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recoverableCount, setRecoverableCount] = useState(0);
+  const [previewDoc, setPreviewDoc] = useState<ProjectDocumentRecord | null>(null);
 
   const grouped = useMemo(() => {
     const map: Record<CategoryKey, ProjectDocumentRecord[]> = {
@@ -336,23 +338,27 @@ export function ProjectDocumentsTab({
                   </h3>
                   <ul className="grid gap-2 sm:grid-cols-2">
                     {grouped[cat].map((doc) => (
-                      <li
-                        key={doc.id}
-                        className="flex items-center gap-3 rounded-lg border border-border/70 px-3 py-2.5 text-sm transition-colors hover:border-[#1D376A]/30 hover:bg-muted/30"
-                      >
-                        {cat === "photos" ? (
-                          <DocumentPreview doc={doc} t={t} />
-                        ) : (
-                          <Icon className="size-4 shrink-0 text-[#1D376A]/70" />
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate font-medium text-foreground">{doc.fileName}</p>
-                          {doc.createdAt ? (
-                            <p className="text-xs text-muted-foreground">
-                              {new Date(doc.createdAt).toLocaleDateString()}
-                            </p>
-                          ) : null}
-                        </div>
+                      <li key={doc.id}>
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDoc(doc)}
+                          className="flex w-full items-center gap-3 rounded-lg border border-border/70 px-3 py-2.5 text-left text-sm transition-colors hover:border-[#1D376A]/30 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e06737]/50"
+                        >
+                          {cat === "photos" ? (
+                            <DocumentThumbnail doc={doc} t={t} onOpen={() => setPreviewDoc(doc)} />
+                          ) : (
+                            <Icon className="size-4 shrink-0 text-[#1D376A]/70" />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate font-medium text-foreground">{doc.fileName}</p>
+                            {doc.createdAt ? (
+                              <p className="text-xs text-muted-foreground">
+                                {new Date(doc.createdAt).toLocaleDateString()}
+                              </p>
+                            ) : null}
+                          </div>
+                          <Eye className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                        </button>
                       </li>
                     ))}
                   </ul>
@@ -361,6 +367,13 @@ export function ProjectDocumentsTab({
             })
         )}
       </CardContent>
+      <ProjectDocumentPreviewDialog
+        doc={previewDoc}
+        open={!!previewDoc}
+        onOpenChange={(open) => {
+          if (!open) setPreviewDoc(null);
+        }}
+      />
     </Card>
   );
 }

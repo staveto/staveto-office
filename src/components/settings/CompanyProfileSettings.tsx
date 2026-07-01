@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Building2, ImagePlus, Loader2, Save, Trash2 } from "lucide-react";
 import {
   CardContent,
@@ -11,6 +11,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAuth } from "@/context/AuthContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { useI18n } from "@/i18n/I18nContext";
@@ -22,15 +29,33 @@ import {
   removeCompanyLogo,
   type OrganizationProfile,
 } from "@/services/organization";
+import type { OrganizationMarketProfile, SupportedCountryCode } from "@/lib/market/marketProfileContract";
+import { resolveOrganizationMarketPreview } from "@/lib/market/companyMarketConfig";
+import {
+  COUNTRY_OPTIONS,
+  resolveSupportedCountryCode,
+} from "@/lib/market/countryOptions";
 import { mapCompanyLogoError } from "@/lib/companyProfileErrors";
+import { CompanyMarketProfileSections } from "./CompanyMarketProfileSections";
 import { SettingsSectionCard } from "./SettingsSectionCard";
 import { settingsAccentIconClassName } from "./settingsStyles";
 import { cn } from "@/lib/utils";
 
 const emptyProfile = (): OrganizationProfile => ({});
 
+const emptyMarket = (): OrganizationMarketProfile => ({
+  countryCode: null,
+  currency: null,
+  timezone: null,
+  locale: null,
+  defaultLanguage: null,
+  taxProfile: null,
+  legalProfile: null,
+  marketConfigVersion: null,
+});
+
 export function CompanyProfileSettings() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { user } = useAuth();
   const { activeWorkspace, workspaceRole } = useWorkspace();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -49,6 +74,25 @@ export function CompanyProfileSettings() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [profile, setProfile] = useState<OrganizationProfile>(emptyProfile());
+  const [countryCode, setCountryCode] = useState<SupportedCountryCode | "">("");
+  const [savedRootCountryCode, setSavedRootCountryCode] = useState<string | null>(null);
+  const [loadedMarket, setLoadedMarket] = useState<OrganizationMarketProfile>(emptyMarket());
+
+  const uiLocale = locale === "sk" || locale === "de" ? locale : "en";
+
+  const marketPreview = useMemo(
+    () =>
+      resolveOrganizationMarketPreview(
+        {
+          ...loadedMarket,
+          countryCode: countryCode || loadedMarket.countryCode,
+          profile: { country: profile.country },
+        },
+        countryCode || null,
+        uiLocale
+      ),
+    [loadedMarket, countryCode, profile.country, uiLocale]
+  );
 
   useEffect(() => {
     if (!orgId) {
@@ -63,7 +107,14 @@ export function CompanyProfileSettings() {
         if (!loaded.legalName?.trim() && org?.name?.trim()) {
           loaded.legalName = org.name.trim();
         }
+        const resolved = resolveSupportedCountryCode(
+          org?.market.countryCode,
+          loaded.country
+        );
         setProfile(loaded);
+        setCountryCode(resolved ?? "");
+        setSavedRootCountryCode(org?.market.countryCode ?? resolved ?? null);
+        setLoadedMarket(org?.market ?? emptyMarket());
       })
       .catch(() => setError(t("settings.companyProfile.loadError")))
       .finally(() => setLoading(false));
@@ -76,11 +127,36 @@ export function CompanyProfileSettings() {
 
   const handleSave = async () => {
     if (!orgId || !user?.id || !canEdit) return;
+
+    if (
+      savedRootCountryCode &&
+      countryCode &&
+      savedRootCountryCode !== countryCode &&
+      !window.confirm(t("settings.companyMarket.countryChangeConfirm"))
+    ) {
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setSuccess(null);
     try {
-      await saveCompanyProfile(orgId, user.id, profile);
+      const saved = await saveCompanyProfile(orgId, user.id, {
+        ...profile,
+        countryCode: countryCode || null,
+        country: countryCode || profile.country,
+      });
+      if (saved) {
+        const loaded = saved.profile ?? emptyProfile();
+        const resolved = resolveSupportedCountryCode(
+          saved.market.countryCode,
+          loaded.country
+        );
+        setProfile(loaded);
+        setCountryCode(resolved ?? "");
+        setSavedRootCountryCode(saved.market.countryCode ?? resolved ?? null);
+        setLoadedMarket(saved.market);
+      }
       setSuccess(t("settings.companyProfile.saved"));
     } catch (e) {
       setError(e instanceof Error ? e.message : t("settings.companyProfile.saveError"));
@@ -126,6 +202,13 @@ export function CompanyProfileSettings() {
     } finally {
       setLogoBusy(false);
     }
+  };
+
+  const countryOptionLabel = (code: SupportedCountryCode) => {
+    const option = COUNTRY_OPTIONS.find((o) => o.countryCode === code);
+    if (!option) return code;
+    const name = uiLocale === "sk" ? option.nativeName : option.englishName;
+    return `${code} — ${name}`;
   };
 
   if (!orgId) {
@@ -265,17 +348,41 @@ export function CompanyProfileSettings() {
                   onChange={(e) => patch("zip", e.target.value)}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="cp-country">{t("settings.companyProfile.country")}</Label>
-                <Input
-                  id="cp-country"
-                  value={profile.country ?? ""}
+              <div className="sm:col-span-2 space-y-2">
+                <Label htmlFor="cp-country">{t("settings.companyProfile.registeredCountry")}</Label>
+                <Select
+                  value={countryCode || undefined}
                   disabled={!canEdit}
-                  onChange={(e) => patch("country", e.target.value)}
-                />
+                  onValueChange={(value) => {
+                    const next = value as SupportedCountryCode;
+                    setCountryCode(next);
+                    setProfile((prev) => ({ ...prev, country: next }));
+                    setSuccess(null);
+                  }}
+                >
+                  <SelectTrigger id="cp-country" data-testid="company-country-select">
+                    <SelectValue placeholder={t("settings.companyMarket.selectCountry")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COUNTRY_OPTIONS.map((option) => (
+                      <SelectItem key={option.countryCode} value={option.countryCode}>
+                        {countryOptionLabel(option.countryCode)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+            </div>
+
+            <CompanyMarketProfileSections preview={marketPreview} t={t} />
+
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="cp-reg">{t("settings.companyProfile.registrationNumber")}</Label>
+                <Label htmlFor="cp-reg">
+                  {marketPreview.registrationNumberLabel !== "—"
+                    ? marketPreview.registrationNumberLabel
+                    : t("settings.companyProfile.registrationNumber")}
+                </Label>
                 <Input
                   id="cp-reg"
                   value={profile.registrationNumber ?? ""}
@@ -284,7 +391,11 @@ export function CompanyProfileSettings() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="cp-tax">{t("settings.companyProfile.taxId")}</Label>
+                <Label htmlFor="cp-tax">
+                  {marketPreview.taxIdLabel !== "—"
+                    ? marketPreview.taxIdLabel
+                    : t("settings.companyProfile.taxId")}
+                </Label>
                 <Input
                   id="cp-tax"
                   value={profile.taxId ?? ""}
@@ -293,7 +404,11 @@ export function CompanyProfileSettings() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="cp-vat">{t("settings.companyProfile.vatId")}</Label>
+                <Label htmlFor="cp-vat">
+                  {marketPreview.vatIdLabel !== "—"
+                    ? marketPreview.vatIdLabel
+                    : t("settings.companyProfile.vatId")}
+                </Label>
                 <Input
                   id="cp-vat"
                   value={profile.vatId ?? ""}
@@ -359,12 +474,12 @@ export function CompanyProfileSettings() {
                   className="bg-[#e06737] hover:bg-[#c95a30] text-white"
                   onClick={() => void handleSave()}
                 >
-                {saving ? (
-                  <Loader2 className="size-4 mr-2 animate-spin" />
-                ) : (
-                  <Save className="size-4 mr-2" />
-                )}
-                {t("settings.companyProfile.save")}
+                  {saving ? (
+                    <Loader2 className="size-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="size-4 mr-2" />
+                  )}
+                  {t("settings.companyProfile.save")}
                 </Button>
               </div>
             ) : null}

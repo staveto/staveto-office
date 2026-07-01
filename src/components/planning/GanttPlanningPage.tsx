@@ -19,8 +19,11 @@ import { useWorkspaceProduct } from "@/hooks/useWorkspaceProduct";
 import { isCompanyWorkspaceType } from "@/types/workspace";
 import {
   buildTimelineDays,
+  buildGanttYearOptions,
+  collectGanttYearBounds,
   getViewRange,
   resolveGanttDayWidth,
+  setAnchorYear,
   type GanttProjectNode,
   type GanttTimeline,
   type GanttViewMode,
@@ -171,6 +174,13 @@ export function GanttPlanningPage() {
   }, [load]);
 
   const range = useMemo(() => getViewRange(anchor, viewMode), [anchor, viewMode]);
+
+  const anchorYear = anchor.getFullYear();
+
+  const yearOptions = useMemo(() => {
+    const bounds = data ? collectGanttYearBounds(data.projects) : collectGanttYearBounds([]);
+    return buildGanttYearOptions(bounds, anchorYear);
+  }, [data, anchorYear]);
 
   const dayWidthPx = useMemo(
     () =>
@@ -701,6 +711,9 @@ export function GanttPlanningPage() {
         onAutoSchedule={() => void handleAutoSchedule()}
         onPrev={() => setAnchor((d) => addDays(d, viewMode === "week" ? -7 : viewMode === "month" ? -30 : -90))}
         onNext={() => setAnchor((d) => addDays(d, viewMode === "week" ? 7 : viewMode === "month" ? 30 : 90))}
+        anchorYear={anchorYear}
+        yearOptions={yearOptions}
+        onYearChange={(year) => setAnchor((d) => setAnchorYear(d, year))}
         chartExpanded={chartExpanded}
         onToggleChartExpanded={toggleChartExpanded}
         resourcesOpen={resourcesOpen}

@@ -176,6 +176,14 @@ service cloud.firestore {
         'phone',
         'countryCode',
         'country',
+        'currency',
+        'timezone',
+        'locale',
+        'defaultLanguage',
+        'taxProfile',
+        'legalProfile',
+        'marketConfigVersion',
+        'updatedBy',
         'profile',
         'updatedAt',
         'slug',
@@ -189,6 +197,13 @@ service cloud.firestore {
     function onlyEnabledModulesChanged() {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
         'enabledModules',
+        'updatedAt'
+      ]);
+    }
+
+    function onlyEnabledWorkTypesChanged() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'enabledWorkTypes',
         'updatedAt'
       ]);
     }
@@ -514,6 +529,9 @@ service cloud.firestore {
         && orgProfileEditableKeysOnly();
       allow update: if canManageOrganization(orgId)
         && onlyEnabledModulesChanged()
+        && orgServerFieldsUnchanged();
+      allow update: if canManageOrganization(orgId)
+        && onlyEnabledWorkTypesChanged()
         && orgServerFieldsUnchanged();
       allow update: if canManageOrganization(orgId)
         && onlyGmailDisconnectIntegration()

@@ -49,6 +49,8 @@ export type Organization = {
   seatsUsed?: number;
   companyType?: string;
   enabledModules?: Partial<import("./enabledModules").EnabledModulesMap>;
+  /** Which job archetypes appear in the new-project wizard. */
+  enabledWorkTypes?: Partial<import("./enabledWorkTypes").EnabledWorkTypesMap>;
   /** Optional integration statuses (App Center v1). Merged on write — unknown keys preserved. */
   integrations?: Record<
     string,

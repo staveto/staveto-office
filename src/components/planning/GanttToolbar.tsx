@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { GanttViewMode } from "@/lib/ganttTimeline";
+import { cn } from "@/lib/utils";
 import styles from "./gantt.module.css";
 
 export type GanttFilterState = {
@@ -51,6 +52,9 @@ type Props = {
   onAutoSchedule: () => void;
   onPrev: () => void;
   onNext: () => void;
+  anchorYear: number;
+  yearOptions: number[];
+  onYearChange: (year: number) => void;
   chartExpanded?: boolean;
   onToggleChartExpanded?: () => void;
   resourcesOpen?: boolean;
@@ -76,6 +80,9 @@ export function GanttToolbar({
   onAutoSchedule,
   onPrev,
   onNext,
+  anchorYear,
+  yearOptions,
+  onYearChange,
   chartExpanded = false,
   onToggleChartExpanded,
   resourcesOpen = false,
@@ -108,6 +115,32 @@ export function GanttToolbar({
             <Calendar className="mr-1 size-3.5" />
             {t("gantt.today")}
           </Button>
+          <label className={cn(styles.filterGroup, "ml-1")}>
+            <span className="sr-only">{t("gantt.year")}</span>
+            <Select
+              value={String(anchorYear)}
+              onValueChange={(v) => {
+                const year = Number(v);
+                if (Number.isFinite(year)) onYearChange(year);
+              }}
+            >
+              <SelectTrigger
+                className="h-8 w-[5.5rem] text-xs font-semibold tabular-nums"
+                aria-label={t("gantt.year")}
+              >
+                <SelectValue>
+                  {(value: string | null) => value ?? String(anchorYear)}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {yearOptions.map((year) => (
+                  <SelectItem key={year} value={String(year)}>
+                    {year}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
           <div className={styles.zoomGroup}>
             <Button
               type="button"

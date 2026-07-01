@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/context/AuthContext";
+import { useEnabledWorkTypes } from "@/context/EnabledWorkTypesContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { createDraftJob, copyProjectConcept } from "@/services/projects";
 import { listProjectsForWorkspace, type ProjectDoc } from "@/lib/projects";
@@ -62,7 +63,6 @@ import { refineGeneratedProjectNode } from "@/services/ai/mobileAiProjectService
 import { extractCallableErrorMessage } from "@/services/ai/projectDraftService";
 import { buildAiProjectBriefForGenerate } from "@/lib/aiProjectGeneratePayload";
 import {
-  WORK_TYPES,
   WORK_TYPE_ICONS,
   contactRecommendedForWorkType,
   customerFieldsOptional,
@@ -113,6 +113,7 @@ export function NewJobForm() {
   const { t, locale } = useI18n();
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
+  const { visibleWorkTypes, loading: workTypesLoading } = useEnabledWorkTypes();
 
   const [step, setStep] = useState<WizardStep>("type");
   const [workType, setWorkType] = useState<WorkType | null>(null);
@@ -170,6 +171,17 @@ export function NewJobForm() {
 
   const wizardPath = useMemo(() => buildWizardPath(creationMethod), [creationMethod]);
   const stepIndex = wizardPath.indexOf(step);
+
+  useEffect(() => {
+    if (workType && !visibleWorkTypes.includes(workType)) {
+      setWorkType(null);
+    }
+  }, [workType, visibleWorkTypes]);
+
+  useEffect(() => {
+    if (workTypesLoading || workType || visibleWorkTypes.length !== 1) return;
+    setWorkType(visibleWorkTypes[0]!);
+  }, [workTypesLoading, workType, visibleWorkTypes]);
 
   useEffect(() => {
     if (!user?.id || !activeWorkspace) return;
@@ -841,12 +853,22 @@ export function NewJobForm() {
             {step === "type" ? (
               <section className={cn(nj.sectionGap, "flex-1")}>
                 <h2 className={nj.sectionHeading}>{t("projects.new.step1Title")}</h2>
+                {workTypesLoading ? (
+                  <p className={nj.bodyMuted}>{t("common.loading")}</p>
+                ) : visibleWorkTypes.length === 0 ? (
+                  <div
+                    className="rounded-xl border border-dashed border-[#CBD5E1] bg-[#F6F8FB] px-5 py-4 text-sm text-[#475569]"
+                    role="alert"
+                  >
+                    {t("projects.new.workTypes.noneEnabled")}
+                  </div>
+                ) : (
                 <div
                   className="grid gap-5 sm:grid-cols-2"
                   role="radiogroup"
                   aria-invalid={!!fieldErrors.workType}
                 >
-                  {WORK_TYPES.map((type) => {
+                  {visibleWorkTypes.map((type) => {
                     const selected = workType === type;
                     const Icon = WORK_TYPE_ICONS[type];
                     return (
@@ -876,6 +898,7 @@ export function NewJobForm() {
                     );
                   })}
                 </div>
+                )}
                 {fieldErrors.workType ? (
                   <p className={cn("text-sm", nj.error)} role="alert">
                     {fieldErrors.workType}

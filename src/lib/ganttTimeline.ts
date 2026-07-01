@@ -91,6 +91,64 @@ export type GanttProjectNode = {
   doneTasks: number;
 };
 
+export function defaultGanttYearBounds(): { minYear: number; maxYear: number } {
+  const now = new Date().getFullYear();
+  return { minYear: now - 2, maxYear: now + 5 };
+}
+
+export function collectGanttYearBounds(projects: GanttProjectNode[]): { minYear: number; maxYear: number } {
+  const bounds = defaultGanttYearBounds();
+  let minYear = bounds.minYear;
+  let maxYear = bounds.maxYear;
+
+  const consider = (ymd?: string) => {
+    if (!ymd) return;
+    const year = parseIsoDateLocal(ymd).getFullYear();
+    minYear = Math.min(minYear, year - 1);
+    maxYear = Math.max(maxYear, year + 1);
+  };
+
+  for (const project of projects) {
+    consider(project.startYmd);
+    consider(project.endYmd);
+    for (const phase of project.phases) {
+      consider(phase.startYmd);
+      consider(phase.endYmd);
+      for (const task of phase.tasks) {
+        consider(task.startYmd);
+        consider(task.endYmd);
+      }
+    }
+  }
+
+  return { minYear, maxYear };
+}
+
+export function buildGanttYearOptions(
+  bounds: { minYear: number; maxYear: number },
+  anchorYear: number
+): number[] {
+  const minYear = Math.min(bounds.minYear, anchorYear);
+  const maxYear = Math.max(bounds.maxYear, anchorYear);
+  const years: number[] = [];
+  for (let year = minYear; year <= maxYear; year += 1) {
+    years.push(year);
+  }
+  return years;
+}
+
+/** Keep month/quarter context when jumping to another calendar year. */
+export function setAnchorYear(anchor: Date, year: number): Date {
+  const month = anchor.getMonth();
+  const day = anchor.getDate();
+  const next = new Date(anchor);
+  next.setFullYear(year, month, day);
+  if (next.getMonth() !== month) {
+    next.setDate(0);
+  }
+  return next;
+}
+
 export function getViewRange(anchor: Date, viewMode: GanttViewMode): { startYmd: string; endYmd: string } {
   if (viewMode === "week") {
     const mon = startOfWeekMonday(anchor);

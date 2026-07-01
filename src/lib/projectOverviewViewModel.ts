@@ -81,6 +81,15 @@ export type ProjectOverviewViewModel = {
     documents: number;
     reports: number;
   };
+  photos: {
+    count: number;
+    recent: Array<{
+      id: string;
+      fileName: string;
+      storagePath: string;
+      createdAt?: string;
+    }>;
+  };
   activity: Array<{
     id: string;
     actor: string;
@@ -177,6 +186,18 @@ function countDocuments(documents: ProjectDocumentRecord[]) {
     else docs += 1;
   }
   return { photos, documents: docs, reports: 0 };
+}
+
+function pickRecentPhotos(documents: ProjectDocumentRecord[]) {
+  return documents
+    .filter((d) => d.mimeType?.startsWith("image/") && d.storagePath?.trim())
+    .slice(0, 4)
+    .map((d) => ({
+      id: d.id,
+      fileName: d.fileName,
+      storagePath: d.storagePath,
+      createdAt: d.createdAt,
+    }));
 }
 
 export function buildProjectOverviewViewModel(input: {
@@ -396,6 +417,7 @@ export function buildProjectOverviewViewModel(input: {
     }));
 
   const docCounts = countDocuments(documents);
+  const recentPhotos = pickRecentPhotos(documents);
   const statusKey = getHumanWorkflowStatusKey(project);
 
   return {
@@ -427,6 +449,10 @@ export function buildProjectOverviewViewModel(input: {
       byPerson,
     },
     documents: docCounts,
+    photos: {
+      count: docCounts.photos,
+      recent: recentPhotos,
+    },
     activity,
   };
 }

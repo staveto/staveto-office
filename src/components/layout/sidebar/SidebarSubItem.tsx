@@ -31,6 +31,22 @@ export function SidebarSubItem({
 }: SidebarSubItemProps) {
   const isFlyout = variant === "flyout";
   const isRail = variant === "rail";
+  const ItemIcon = item.icon;
+
+  const labelContent = (
+    <span className="flex min-w-0 items-center gap-2">
+      {ItemIcon ? (
+        <ItemIcon
+          className={cn(
+            "size-4 shrink-0",
+            isFlyout ? "text-[#1D376A]/70" : "text-white/60"
+          )}
+          aria-hidden
+        />
+      ) : null}
+      <span className="min-w-0 truncate">{label}</span>
+    </span>
+  );
 
   const baseClass = cn(
     "flex w-full items-center justify-between gap-2 rounded-md py-2 text-sm transition-colors duration-150",
@@ -113,7 +129,7 @@ export function SidebarSubItem({
           )}
           aria-disabled="true"
         >
-          <span>{label}</span>
+          {labelContent}
           {!quietComingSoon ? (
             <span
               className={cn(
@@ -150,7 +166,7 @@ export function SidebarSubItem({
         )}
         aria-current={isActive ? "page" : undefined}
       >
-        <span className="min-w-0 truncate">{label}</span>
+        {labelContent}
         <NavCountBadge count={badgeCount} variant={isFlyout ? "flyout" : "sidebar"} />
       </Link>
     </li>

@@ -8,6 +8,8 @@ import {
   CalendarDays,
   Wrench,
   FileText,
+  Package,
+  KeyRound,
 } from "lucide-react";
 import type { EnabledModulesMap, ModuleKey } from "@/lib/enabledModules";
 import { isModuleEnabled } from "@/lib/enabledModules";
@@ -26,6 +28,8 @@ export type NavItemConfig = {
   fieldWorkerOnly?: boolean;
   /** When set, item is hidden in company workspace if module is disabled. */
   moduleKey?: ModuleKey;
+  /** Optional icon shown beside the label in flyout / expanded subnav. */
+  icon?: LucideIcon;
   action?: "locale" | "logout";
 };
 
@@ -156,13 +160,6 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
         moduleKey: "quotes",
       },
       {
-        id: "finance-materials",
-        labelKey: "sidebar.item.finance.materials",
-        href: "/app/materials",
-        managementOnly: true,
-        moduleKey: "jobs",
-      },
-      {
         id: "finance-invoices",
         labelKey: "sidebar.item.finance.invoices",
         comingSoon: true,
@@ -205,6 +202,33 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
         labelKey: "sidebar.item.documents.contracts",
         comingSoon: true,
         hideForFieldWorker: true,
+      },
+    ],
+  },
+  {
+    id: "materials",
+    labelKey: "sidebar.section.materials",
+    icon: Package,
+    defaultHref: "/app/materials",
+    managementOnly: true,
+    moduleKey: "jobs",
+    items: [
+      {
+        id: "materials-overview",
+        labelKey: "sidebar.item.materials.overview",
+        href: "/app/materials",
+        icon: Package,
+        managementOnly: true,
+        moduleKey: "jobs",
+      },
+      {
+        id: "materials-rental",
+        labelKey: "sidebar.item.materials.rental",
+        href: "/app/materials/rental",
+        icon: KeyRound,
+        comingSoon: true,
+        managementOnly: true,
+        moduleKey: "jobs",
       },
     ],
   },
@@ -422,9 +446,8 @@ export function sectionHasFlyout(
     enabledModules?: EnabledModulesMap | null;
   }
 ): boolean {
-  const items = filterNavItems(section.items, options);
-  const linkItems = items.filter((item) => item.href && !item.comingSoon && !item.action);
-  return linkItems.length > 1 || items.some((item) => item.action);
+  const items = filterNavItems(section.items, options).filter((item) => !item.action);
+  return items.length > 1;
 }
 
 /** Expanded sidebar: show nested items when section has sub-links or coming-soon rows. */

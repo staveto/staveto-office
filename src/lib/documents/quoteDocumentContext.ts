@@ -5,6 +5,7 @@ import { getFirestoreInstance, doc, getDoc } from "@/lib/firebase";
 import {
   type OrganizationPrintInfo,
   type OrganizationProfile,
+  parseOrganizationMarketFields,
 } from "@/lib/organizationProfile";
 import { mergeOrganizationIntoProfile } from "@/lib/companyProfileCompletion";
 import type { Organization } from "@/lib/organizations";
@@ -108,12 +109,23 @@ export function resolveQuoteDocumentLocaleTag(
 export function buildQuoteSupplierFromOrganizationProfile(
   orgId: string,
   orgName: string,
-  profile: OrganizationProfile | null
+  profile: OrganizationProfile | null,
+  orgData?: Record<string, unknown>
 ): OrganizationPrintInfo {
   return {
     orgId,
     name: orgName.trim() || orgId,
     profile,
+    market: orgData ? parseOrganizationMarketFields(orgData) : {
+      countryCode: null,
+      currency: null,
+      timezone: null,
+      locale: null,
+      defaultLanguage: null,
+      taxProfile: null,
+      legalProfile: null,
+      marketConfigVersion: null,
+    },
   };
 }
 
@@ -124,7 +136,7 @@ export function buildOrganizationQuoteDocumentContext(
   const org = orgData as Organization & OrganizationMarketInput;
   const name = typeof org.name === "string" ? org.name.trim() || orgId : orgId;
   const profile = mergeOrganizationIntoProfile(orgData);
-  const organization = buildQuoteSupplierFromOrganizationProfile(orgId, name, profile);
+  const organization = buildQuoteSupplierFromOrganizationProfile(orgId, name, profile, orgData);
 
   const market = resolveActiveMarketProfile({
     activeWorkspaceType: "company",

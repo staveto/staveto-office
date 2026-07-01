@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { AppLayout } from "./AppLayout";
 import { WorkspaceProvider } from "@/context/WorkspaceContext";
 import { EnabledModulesProvider } from "@/context/EnabledModulesContext";
+import { EnabledWorkTypesProvider } from "@/context/EnabledWorkTypesContext";
 
 export function ConditionalAppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -16,7 +17,9 @@ export function ConditionalAppLayout({ children }: { children: React.ReactNode }
   if (isPrintRoute) {
     return (
       <WorkspaceProvider>
-        <EnabledModulesProvider>{children}</EnabledModulesProvider>
+        <EnabledModulesProvider>
+          <EnabledWorkTypesProvider>{children}</EnabledWorkTypesProvider>
+        </EnabledModulesProvider>
       </WorkspaceProvider>
     );
   }
@@ -24,7 +27,9 @@ export function ConditionalAppLayout({ children }: { children: React.ReactNode }
   return (
     <WorkspaceProvider>
       <EnabledModulesProvider>
-        <AppLayout>{children}</AppLayout>
+        <EnabledWorkTypesProvider>
+          <AppLayout>{children}</AppLayout>
+        </EnabledWorkTypesProvider>
       </EnabledModulesProvider>
     </WorkspaceProvider>
   );

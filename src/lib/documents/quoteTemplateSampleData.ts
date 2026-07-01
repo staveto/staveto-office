@@ -53,6 +53,16 @@ export const SAMPLE_ORGANIZATION: OrganizationPrintInfo = {
     phone: "+421 900 000 000",
     bankAccount: "SK00 0000 0000 0000 0000 0000",
   },
+  market: {
+    countryCode: "SK",
+    currency: "EUR",
+    timezone: "Europe/Bratislava",
+    locale: "sk-SK",
+    defaultLanguage: "sk",
+    taxProfile: null,
+    legalProfile: null,
+    marketConfigVersion: 1,
+  },
 };
 
 export const SAMPLE_PRINT_CONTEXT: QuotePrintContext = {

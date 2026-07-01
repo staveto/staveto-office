@@ -19,6 +19,7 @@ import { ProjectHealthCard } from "./overview/ProjectHealthCard";
 import { ProjectTeamCard } from "./overview/ProjectTeamCard";
 import { ProjectTimeCard } from "./overview/ProjectTimeCard";
 import { ProjectDocumentsProofCard } from "./overview/ProjectDocumentsProofCard";
+import { ProjectPhotosCard } from "./overview/ProjectPhotosCard";
 import { ProjectActivityPreview } from "./overview/ProjectActivityPreview";
 import {
   ProjectContactCard,
@@ -124,9 +125,12 @@ export function ProjectOverviewTab({
           <ProjectDocumentsProofCard documents={vm.documents} onNavigate={onNavigate} />
         </div>
         <div className="lg:col-start-1 lg:row-start-2">
-          <ProjectActivityPreview activity={vm.activity} onNavigate={onNavigate} />
+          <ProjectPhotosCard photos={vm.photos} onNavigate={onNavigate} />
         </div>
         <div className="lg:col-start-1 lg:row-start-3">
+          <ProjectActivityPreview activity={vm.activity} onNavigate={onNavigate} />
+        </div>
+        <div className="lg:col-start-1 lg:row-start-4">
           <ProjectSummaryCard project={project} />
         </div>
         <div className="lg:col-start-2 lg:row-start-5">

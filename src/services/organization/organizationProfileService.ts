@@ -9,7 +9,7 @@ import {
 } from "@/lib/firebase";
 import {
   readOrganizationProfile,
-  writeOrganizationProfile,
+  writeCompanyProfileSettings,
   patchOrganizationProfileFields,
   type OrganizationProfile,
   type OrganizationProfileInput,
@@ -54,19 +54,22 @@ export async function canEditCompanyProfile(
   uid: string
 ): Promise<boolean> {
   const membership = await isOrganizationMember(orgId, uid);
-  return membership.member && membership.role === "admin";
+  return (
+    membership.member &&
+    (membership.role === "admin" || membership.role === "owner")
+  );
 }
 
 export async function saveCompanyProfile(
   orgId: string,
   userId: string,
   input: OrganizationProfileInput
-): Promise<void> {
+): Promise<OrganizationPrintInfo | null> {
   if (!(await canEditCompanyProfile(orgId, userId))) {
     throw new Error("COMPANY_PROFILE_ACCESS_DENIED");
   }
 
-  await writeOrganizationProfile(orgId, input);
+  return writeCompanyProfileSettings(orgId, userId, input);
 }
 
 export async function uploadCompanyLogo(
