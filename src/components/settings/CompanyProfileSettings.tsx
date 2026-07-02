@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Building2, ImagePlus, Loader2, Save, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { Building2, ImagePlus, Loader2, QrCode, Save, Trash2 } from "lucide-react";
 import {
   CardContent,
   CardDescription,
@@ -27,6 +27,9 @@ import {
   saveCompanyProfile,
   uploadCompanyLogo,
   removeCompanyLogo,
+  uploadCompanyPaymentQr,
+  removeCompanyPaymentQr,
+  canEditCompanyProfile,
   type OrganizationProfile,
 } from "@/services/organization";
 import type { OrganizationMarketProfile, SupportedCountryCode } from "@/lib/market/marketProfileContract";
@@ -40,6 +43,7 @@ import { CompanyMarketProfileSections } from "./CompanyMarketProfileSections";
 import { SettingsSectionCard } from "./SettingsSectionCard";
 import { settingsAccentIconClassName } from "./settingsStyles";
 import { cn } from "@/lib/utils";
+import { useCompanySettingsAgentScreenSync } from "@/hooks/useManagerAgentScreenSync";
 
 const emptyProfile = (): OrganizationProfile => ({});
 
@@ -59,18 +63,37 @@ export function CompanyProfileSettings() {
   const { user } = useAuth();
   const { activeWorkspace, workspaceRole } = useWorkspace();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const paymentQrInputRef = useRef<HTMLInputElement>(null);
+  const logoSectionRef = useRef<HTMLDivElement>(null);
+  const paymentQrSectionRef = useRef<HTMLDivElement>(null);
 
   const orgId =
     activeWorkspace && isCompanyWorkspaceType(activeWorkspace.type)
       ? (activeWorkspace.orgId ?? activeWorkspace.id)
       : null;
 
+  const [canEditProfile, setCanEditProfile] = useState(false);
+
   const canEdit =
-    !!orgId && !!user?.id && (workspaceRole === "owner" || workspaceRole === "admin");
+    !!orgId &&
+    !!user?.id &&
+    canEditProfile &&
+    (workspaceRole === "owner" || workspaceRole === "admin");
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [logoBusy, setLogoBusy] = useState(false);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
+  const [logoFeedback, setLogoFeedback] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
+  const [paymentQrBusy, setPaymentQrBusy] = useState(false);
+  const [paymentQrPreviewUrl, setPaymentQrPreviewUrl] = useState<string | null>(null);
+  const [paymentQrFeedback, setPaymentQrFeedback] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [profile, setProfile] = useState<OrganizationProfile>(emptyProfile());
@@ -93,6 +116,44 @@ export function CompanyProfileSettings() {
       ),
     [loadedMarket, countryCode, profile.country, uiLocale]
   );
+
+  useCompanySettingsAgentScreenSync({
+    legalName: profile.legalName,
+    logoUrl: profile.logoUrl ?? logoPreviewUrl,
+    vatId: profile.vatId,
+    registeredCountry: countryCode || profile.country || savedRootCountryCode,
+    bankAccount: profile.bankAccount,
+  });
+
+  useEffect(() => {
+    if (!orgId || !user?.id) {
+      setCanEditProfile(false);
+      return;
+    }
+    let cancelled = false;
+    void canEditCompanyProfile(orgId, user.id).then((allowed) => {
+      if (!cancelled) setCanEditProfile(allowed);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [orgId, user?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (logoPreviewUrl?.startsWith("blob:")) {
+        URL.revokeObjectURL(logoPreviewUrl);
+      }
+    };
+  }, [logoPreviewUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (paymentQrPreviewUrl?.startsWith("blob:")) {
+        URL.revokeObjectURL(paymentQrPreviewUrl);
+      }
+    };
+  }, [paymentQrPreviewUrl]);
 
   useEffect(() => {
     if (!orgId) {
@@ -166,10 +227,35 @@ export function CompanyProfileSettings() {
   };
 
   const handleLogoPick = async (file: File | undefined) => {
-    if (!file || !orgId || !user?.id || !canEdit) return;
+    if (!file) return;
+
+    if (!orgId || !user?.id) {
+      setLogoFeedback({
+        type: "error",
+        message: t("settings.companyProfile.logoError"),
+      });
+      return;
+    }
+
+    if (!canEdit) {
+      setLogoFeedback({
+        type: "error",
+        message: t("settings.companyProfile.logoErrorAccess"),
+      });
+      return;
+    }
+
+    const localPreview = URL.createObjectURL(file);
+    setLogoPreviewUrl((prev) => {
+      if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+      return localPreview;
+    });
+
     setLogoBusy(true);
+    setLogoFeedback(null);
     setError(null);
     setSuccess(null);
+
     try {
       const res = await uploadCompanyLogo(orgId, user.id, file, profile);
       setProfile((prev) => ({
@@ -177,13 +263,33 @@ export function CompanyProfileSettings() {
         logoUrl: res.logoUrl,
         logoStoragePath: res.logoStoragePath,
       }));
-      setSuccess(t("settings.companyProfile.logoSaved"));
+      setLogoPreviewUrl((prev) => {
+        if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+        return null;
+      });
+      const savedMessage = res.optimized
+        ? t("settings.companyProfile.logoSavedOptimized")
+        : t("settings.companyProfile.logoSaved");
+      setLogoFeedback({ type: "success", message: savedMessage });
+      setSuccess(savedMessage);
     } catch (e) {
-      setError(t(mapCompanyLogoError(e)));
+      setLogoPreviewUrl((prev) => {
+        if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+        return null;
+      });
+      const message = t(mapCompanyLogoError(e));
+      setLogoFeedback({ type: "error", message });
+      setError(message);
+      logoSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     } finally {
       setLogoBusy(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  };
+
+  const handleLogoInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.currentTarget.files?.[0];
+    void handleLogoPick(file);
   };
 
   const handleRemoveLogo = async () => {
@@ -201,6 +307,95 @@ export function CompanyProfileSettings() {
       setError(e instanceof Error ? e.message : t("settings.companyProfile.logoError"));
     } finally {
       setLogoBusy(false);
+    }
+  };
+
+  const handlePaymentQrPick = async (file: File | undefined) => {
+    if (!file) return;
+
+    if (!orgId || !user?.id) {
+      setPaymentQrFeedback({
+        type: "error",
+        message: t("settings.companyProfile.paymentQrError"),
+      });
+      return;
+    }
+
+    if (!canEdit) {
+      setPaymentQrFeedback({
+        type: "error",
+        message: t("settings.companyProfile.logoErrorAccess"),
+      });
+      return;
+    }
+
+    const localPreview = URL.createObjectURL(file);
+    setPaymentQrPreviewUrl((prev) => {
+      if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+      return localPreview;
+    });
+
+    setPaymentQrBusy(true);
+    setPaymentQrFeedback(null);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const res = await uploadCompanyPaymentQr(orgId, user.id, file);
+      setProfile((prev) => ({
+        ...prev,
+        paymentQrUrl: res.paymentQrUrl,
+        paymentQrStoragePath: res.paymentQrStoragePath,
+      }));
+      setPaymentQrPreviewUrl((prev) => {
+        if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+        return null;
+      });
+      const savedMessage = res.optimized
+        ? t("settings.companyProfile.paymentQrSavedOptimized")
+        : t("settings.companyProfile.paymentQrSaved");
+      setPaymentQrFeedback({ type: "success", message: savedMessage });
+    } catch (e) {
+      setPaymentQrPreviewUrl((prev) => {
+        if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+        return null;
+      });
+      const message = t(mapCompanyLogoError(e));
+      setPaymentQrFeedback({ type: "error", message });
+      paymentQrSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } finally {
+      setPaymentQrBusy(false);
+      if (paymentQrInputRef.current) paymentQrInputRef.current.value = "";
+    }
+  };
+
+  const handlePaymentQrInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.currentTarget.files?.[0];
+    void handlePaymentQrPick(file);
+  };
+
+  const handleRemovePaymentQr = async () => {
+    if (!orgId || !user?.id || !canEdit) return;
+    setPaymentQrBusy(true);
+    setPaymentQrFeedback(null);
+    try {
+      await removeCompanyPaymentQr(orgId, user.id);
+      setProfile((prev) => ({
+        ...prev,
+        paymentQrUrl: undefined,
+        paymentQrStoragePath: undefined,
+      }));
+      setPaymentQrPreviewUrl((prev) => {
+        if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev);
+        return null;
+      });
+    } catch (e) {
+      setPaymentQrFeedback({
+        type: "error",
+        message: e instanceof Error ? e.message : t("settings.companyProfile.paymentQrError"),
+      });
+    } finally {
+      setPaymentQrBusy(false);
     }
   };
 
@@ -256,14 +451,19 @@ export function CompanyProfileSettings() {
               </p>
             ) : null}
 
-            <div className="space-y-3">
-              <Label>{t("settings.companyProfile.logo")}</Label>
+            <div ref={logoSectionRef} className="space-y-3">
+              <Label htmlFor="company-logo-input">{t("settings.companyProfile.logo")}</Label>
               <div className="flex flex-wrap items-center gap-4">
-                <div className="flex size-20 items-center justify-center rounded-lg border bg-muted/30 overflow-hidden">
-                  {profile.logoUrl ? (
+                <div className="relative flex size-20 items-center justify-center rounded-lg border bg-muted/30 overflow-hidden">
+                  {logoBusy ? (
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/70">
+                      <Loader2 className="size-6 animate-spin text-[#e06737]" aria-hidden />
+                    </div>
+                  ) : null}
+                  {profile.logoUrl || logoPreviewUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={profile.logoUrl}
+                      src={logoPreviewUrl ?? profile.logoUrl}
                       alt=""
                       className="max-h-20 max-w-full object-contain p-1"
                     />
@@ -274,11 +474,12 @@ export function CompanyProfileSettings() {
                 <div className="flex flex-wrap gap-2">
                   <input
                     ref={fileInputRef}
+                    id="company-logo-input"
                     type="file"
-                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                    className="hidden"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml,.png,.jpg,.jpeg,.webp,.svg"
+                    className="sr-only"
                     disabled={!canEdit || logoBusy}
-                    onChange={(e) => void handleLogoPick(e.target.files?.[0])}
+                    onChange={handleLogoInputChange}
                   />
                   <Button
                     type="button"
@@ -292,7 +493,9 @@ export function CompanyProfileSettings() {
                     ) : (
                       <ImagePlus className="size-4 mr-1" />
                     )}
-                    {t("settings.companyProfile.uploadLogo")}
+                    {logoBusy
+                      ? t("settings.companyProfile.logoUploading")
+                      : t("settings.companyProfile.uploadLogo")}
                   </Button>
                   {profile.logoUrl ? (
                     <Button
@@ -309,6 +512,19 @@ export function CompanyProfileSettings() {
                 </div>
               </div>
               <p className="text-xs text-muted-foreground">{t("settings.companyProfile.logoHint")}</p>
+              {logoFeedback ? (
+                <p
+                  role="alert"
+                  className={cn(
+                    "text-sm",
+                    logoFeedback.type === "success"
+                      ? "text-emerald-700 dark:text-emerald-400"
+                      : "text-destructive"
+                  )}
+                >
+                  {logoFeedback.message}
+                </p>
+              ) : null}
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
@@ -463,6 +679,86 @@ export function CompanyProfileSettings() {
                   placeholder={t("settings.companyProfile.bankAccountPlaceholder")}
                 />
               </div>
+            </div>
+
+            <div ref={paymentQrSectionRef} className="space-y-3">
+              <Label htmlFor="company-payment-qr-input">
+                {t("settings.companyProfile.paymentQr")}
+              </Label>
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="relative flex size-24 items-center justify-center rounded-lg border bg-muted/30 overflow-hidden">
+                  {paymentQrBusy ? (
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/70">
+                      <Loader2 className="size-6 animate-spin text-[#e06737]" aria-hidden />
+                    </div>
+                  ) : null}
+                  {profile.paymentQrUrl || paymentQrPreviewUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={paymentQrPreviewUrl ?? profile.paymentQrUrl}
+                      alt=""
+                      className="max-h-24 max-w-full object-contain p-1"
+                    />
+                  ) : (
+                    <QrCode className="size-10 text-muted-foreground/50" aria-hidden />
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    ref={paymentQrInputRef}
+                    id="company-payment-qr-input"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml,.png,.jpg,.jpeg,.webp,.svg"
+                    className="sr-only"
+                    disabled={!canEdit || paymentQrBusy}
+                    onChange={handlePaymentQrInputChange}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!canEdit || paymentQrBusy}
+                    onClick={() => paymentQrInputRef.current?.click()}
+                  >
+                    {paymentQrBusy ? (
+                      <Loader2 className="size-4 mr-1 animate-spin" />
+                    ) : (
+                      <ImagePlus className="size-4 mr-1" />
+                    )}
+                    {paymentQrBusy
+                      ? t("settings.companyProfile.paymentQrUploading")
+                      : t("settings.companyProfile.uploadPaymentQr")}
+                  </Button>
+                  {profile.paymentQrUrl ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={!canEdit || paymentQrBusy}
+                      onClick={() => void handleRemovePaymentQr()}
+                    >
+                      <Trash2 className="size-4 mr-1" />
+                      {t("settings.companyProfile.removePaymentQr")}
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {t("settings.companyProfile.paymentQrHint")}
+              </p>
+              {paymentQrFeedback ? (
+                <p
+                  role="alert"
+                  className={cn(
+                    "text-sm",
+                    paymentQrFeedback.type === "success"
+                      ? "text-emerald-700 dark:text-emerald-400"
+                      : "text-destructive"
+                  )}
+                >
+                  {paymentQrFeedback.message}
+                </p>
+              ) : null}
             </div>
 
             {canEdit ? (

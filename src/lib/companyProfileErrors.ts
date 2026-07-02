@@ -9,12 +9,22 @@ export function mapCompanyLogoError(err: unknown): string {
   if (message === "COMPANY_PROFILE_STORAGE_NOT_CONFIGURED") {
     return "settings.companyProfile.logoErrorStorageConfig";
   }
+  if (message === "COMPANY_PROFILE_LOGO_UPLOAD_FAILED") {
+    return "settings.companyProfile.logoError";
+  }
   if (
     code.includes("storage/unauthorized") ||
     code.includes("permission-denied") ||
-    message.toLowerCase().includes("unauthorized")
+    message.toLowerCase().includes("unauthorized") ||
+    message.toLowerCase().includes("permission")
   ) {
-    return "settings.companyProfile.logoErrorStorageRules";
+    if (message === "COMPANY_PROFILE_ACCESS_DENIED") {
+      return "settings.companyProfile.logoErrorAccess";
+    }
+    if (code.includes("storage/")) {
+      return "settings.companyProfile.logoErrorStorageRules";
+    }
+    return "settings.companyProfile.logoErrorFirestoreRules";
   }
 
   return "settings.companyProfile.logoError";

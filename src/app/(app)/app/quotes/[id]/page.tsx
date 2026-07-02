@@ -39,6 +39,7 @@ import { hasQuoteAccess, saveQuote, setQuoteStatus, removeQuote } from "@/servic
 import type { QuoteStatus } from "@/lib/quotes";
 import { QuoteStatusBadge } from "@/components/quotes/QuoteStatusBadge";
 import { QUOTE_DRAFT_UNITS } from "@/lib/quoteDraftItems";
+import { useQuoteDetailAgentScreenSync } from "@/hooks/useManagerAgentScreenSync";
 
 const STATUSES: QuoteStatus[] = ["draft", "sent", "accepted", "rejected"];
 const DEFAULT_UNIT = "ks";
@@ -71,6 +72,7 @@ export default function QuoteDetailPage() {
   const [status, setStatus] = useState<QuoteStatus>("draft");
   const [vatPercent, setVatPercent] = useState(20);
   const [notes, setNotes] = useState("");
+  const [currency, setCurrency] = useState<string | null>(null);
   const [items, setItems] = useState<LineItem[]>([]);
 
   const itemsWithTotals = items.map((item) => ({
@@ -97,6 +99,7 @@ export default function QuoteDetailPage() {
         setClientName(q.clientName);
         setClientEmail(q.clientEmail ?? "");
         setStatus(q.status);
+        setCurrency(q.currency ?? null);
         setVatPercent(q.vatPercent);
         setNotes(q.notes ?? "");
         setItems(
@@ -115,6 +118,16 @@ export default function QuoteDetailPage() {
       }
     })();
   }, [id, user?.id, activeWorkspace?.id]);
+
+  useQuoteDetailAgentScreenSync({
+    quoteId: id,
+    title,
+    status,
+    clientEmail,
+    currency,
+    projectId,
+    unsavedChanges: saving,
+  });
 
   function addItem() {
     setItems([...items, { name: "", qty: 1, unit: DEFAULT_UNIT, unitPrice: 0 }]);

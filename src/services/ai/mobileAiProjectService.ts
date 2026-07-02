@@ -72,11 +72,26 @@ export async function generateProjectStructure(
 export async function refineGeneratedProjectNode(
   input: RefineGeneratedNodeInput
 ): Promise<{ kind: "phase"; phase: AiPhase } | { kind: "task"; task: AiTask }> {
+  const payload = {
+    projectBrief: input.projectBrief.trim(),
+    draftSummary: input.draftSummary?.trim().slice(0, 400) || undefined,
+    nodeKind: input.nodeKind,
+    phaseIndex: input.phaseIndex,
+    taskIndex: input.taskIndex,
+    currentPhaseJson: input.currentPhase,
+    currentTaskJson: input.currentTask,
+    userChangeRequest: input.userChangeRequest.trim(),
+    extraContext: input.extraContext?.trim().slice(0, 600) || undefined,
+  };
+
   const fn = getCallable<
-    RefineGeneratedNodeInput,
+    typeof payload,
     { kind: "phase"; phase: AiPhase } | { kind: "task"; task: AiTask }
   >("refineGeneratedProjectNode");
-  const res = await fn(input);
+  const res = await fn(payload);
+  if (!res.data?.kind) {
+    throw new Error("AI returned empty response. Please try again or edit manually.");
+  }
   return res.data;
 }
 

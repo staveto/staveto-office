@@ -49,15 +49,12 @@ type StatChip = {
   label: string;
 };
 
+/** Official brick mark + wordmark — sized for dark flyover header. */
 function FlyoverBrand() {
   return (
     <div className={styles.brand} aria-label="Staveto">
-      <svg viewBox="0 0 28 20" className={styles.brandMark} aria-hidden>
-        <rect x="1" y="1" width="10" height="5" rx="2" fill="#c9481d" />
-        <rect x="14" y="1" width="13" height="5" rx="2" fill="#c9481d" />
-        <rect x="1" y="9" width="13" height="5" rx="2" fill="#c9481d" />
-        <rect x="17" y="9" width="10" height="5" rx="2" fill="#c9481d" />
-      </svg>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/logo.png" alt="" className={styles.brandMark} width={32} height={16} />
       <span className={styles.brandName}>STAVETO</span>
     </div>
   );

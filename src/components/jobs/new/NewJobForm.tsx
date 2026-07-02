@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Search,
@@ -8,7 +8,6 @@ import {
   User,
   ChevronDown,
   ChevronUp,
-  MapPin,
   Check,
   UserPlus,
   Users,
@@ -59,6 +58,10 @@ import {
 } from "@/services/ai/aiWizardGenerationService";
 import { createAiUploadSessionId, type UploadedAiDraftFile } from "@/services/ai/aiDraftFiles";
 import { enrichProjectAfterAiConfirm } from "@/services/ai/aiProjectPostConfirmService";
+import { useNewProjectWizardAgentScreenSync } from "@/hooks/useManagerAgentScreenSync";
+import { useRegisterManagerAgentActionHandler } from "@/context/ManagerAgentContext";
+import type { AgentSuggestedAction } from "@/lib/agent/managerAgentContract";
+import { JobSiteLocationField } from "@/components/location/JobSiteLocationField";
 import { refineGeneratedProjectNode } from "@/services/ai/mobileAiProjectService";
 import { extractCallableErrorMessage } from "@/services/ai/projectDraftService";
 import { buildAiProjectBriefForGenerate } from "@/lib/aiProjectGeneratePayload";
@@ -171,6 +174,14 @@ export function NewJobForm() {
 
   const wizardPath = useMemo(() => buildWizardPath(creationMethod), [creationMethod]);
   const stepIndex = wizardPath.indexOf(step);
+
+  useNewProjectWizardAgentScreenSync({
+    projectName: aiProjectName || name,
+    briefLength: (aiBrief || shortDescription).trim().length,
+    hasAttachments: aiUploadedFiles.length > 0,
+    locationMissing: !location.trim(),
+    wizardStep: step,
+  });
 
   useEffect(() => {
     if (workType && !visibleWorkTypes.includes(workType)) {
@@ -565,6 +576,36 @@ export function NewJobForm() {
     }
   };
 
+  const wizardAgentActionRef = useRef<(action: AgentSuggestedAction) => Promise<void>>(
+    async () => {}
+  );
+
+  wizardAgentActionRef.current = async (action: AgentSuggestedAction) => {
+    if (action.type !== "open_ai_brief") return;
+
+    if (step === "ai-brief") {
+      await goNext();
+      return;
+    }
+
+    if (step === "ai-review") {
+      if (aiReviewMode === "placeholder" || aiGenerateError) {
+        await handleRetryGenerate();
+      }
+      return;
+    }
+
+    if (creationMethod !== "ai") {
+      setCreationMethod("ai");
+    }
+    setStep("ai-brief");
+  };
+
+  useRegisterManagerAgentActionHandler(
+    (action) => wizardAgentActionRef.current(action),
+    true
+  );
+
   const handleRegenerateAiDraft = async () => {
     if (!validateStep("ai-brief")) {
       setStep("ai-brief");
@@ -607,6 +648,8 @@ export function NewJobForm() {
         setAiDraft((prev) =>
           prev ? replaceDraftPhase(prev, aiRefineTarget.phaseId, res.phase) : prev
         );
+      } catch (err) {
+        throw new Error(extractCallableErrorMessage(err) || t("projects.new.ai.refine.error"));
       } finally {
         setAiRefiningKey(null);
       }
@@ -639,6 +682,8 @@ export function NewJobForm() {
       setAiDraft((prev) =>
         prev ? replaceDraftTask(prev, aiRefineTarget.phaseId, aiRefineTarget.taskId, res.task) : prev
       );
+    } catch (err) {
+      throw new Error(extractCallableErrorMessage(err) || t("projects.new.ai.refine.error"));
     } finally {
       setAiRefiningKey(null);
     }
@@ -1419,24 +1464,11 @@ export function NewJobForm() {
                       </p>
                     ) : null}
                   </div>
-                  <div>
-                    <Label htmlFor="copy-location" className={nj.label}>
-                      {t("projects.new.location")}
-                    </Label>
-                    <div className="relative">
-                      <MapPin
-                        className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-[#64748B]"
-                        aria-hidden
-                      />
-                      <Input
-                        id="copy-location"
-                        value={location}
-                        onChange={(e) => setLocation(e.target.value)}
-                        placeholder={t("projects.new.locationPlaceholder")}
-                        className={nj.inputWithIcon}
-                      />
-                    </div>
-                  </div>
+                  <JobSiteLocationField
+                    id="copy-location"
+                    value={location}
+                    onChange={setLocation}
+                  />
                   <div>
                     <Label htmlFor="copy-shortDesc" className={nj.label}>
                       {t("projects.new.shortDescription")}
@@ -1480,24 +1512,11 @@ export function NewJobForm() {
                       </p>
                     ) : null}
                   </div>
-                  <div>
-                    <Label htmlFor="location" className={nj.label}>
-                      {t("projects.new.location")}
-                    </Label>
-                    <div className="relative">
-                      <MapPin
-                        className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-[#64748B]"
-                        aria-hidden
-                      />
-                      <Input
-                        id="location"
-                        value={location}
-                        onChange={(e) => setLocation(e.target.value)}
-                        placeholder={t("projects.new.locationPlaceholder")}
-                        className={nj.inputWithIcon}
-                      />
-                    </div>
-                  </div>
+                  <JobSiteLocationField
+                    id="location"
+                    value={location}
+                    onChange={setLocation}
+                  />
                   <div>
                     <Label htmlFor="shortDesc" className={nj.label}>
                       {t("projects.new.shortDescription")}

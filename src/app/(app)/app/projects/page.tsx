@@ -56,6 +56,7 @@ import { ProjectsMapPanel } from "@/components/projects/ProjectsMapPanel";
 import { ProjectsWorkspaceContextBanner } from "@/components/projects/ProjectsWorkspaceContextBanner";
 import { ProjectMembersQuickAssignDialog } from "@/components/projects/ProjectMembersQuickAssignDialog";
 import { useSetupChecklistVisit } from "@/hooks/useSetupChecklistVisit";
+import { useProjectsAgentScreenSync } from "@/hooks/useManagerAgentScreenSync";
 
 const FILTERS: ProjectListFilter[] = [
   "all",
@@ -243,6 +244,8 @@ export default function ProjectsPage() {
         p.city?.toLowerCase().includes(q)
     );
   }, [projects, search, filter, user?.id, taskProgress]);
+
+  useProjectsAgentScreenSync(loading ? null : filteredProjects.length);
 
   const archivedForAllView = useMemo(() => {
     if (filter !== "all" || isFieldWorker) return [];

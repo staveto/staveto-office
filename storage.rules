@@ -22,6 +22,20 @@ service firebase.storage {
       );
     }
 
+    function isOrgOwnerOrAdmin(orgId) {
+      return isSignedIn() && (
+        firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid
+        || (
+          firestore.exists(/databases/(default)/documents/organizations/$(orgId)/members/$(request.auth.uid))
+          && orgMemberData(orgId).role in ['admin', 'owner']
+          && (
+            !('status' in orgMemberData(orgId))
+            || orgMemberData(orgId).status == 'active'
+          )
+        )
+      );
+    }
+
     function isOrgChatWriter(orgId) {
       return isOrgMemberActive(orgId) && (
         firestore.get(/databases/(default)/documents/organizations/$(orgId)).data.ownerUid == request.auth.uid
@@ -68,10 +82,11 @@ service firebase.storage {
     }
 
     match /organizations/{orgId}/profile/{fileName} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn()
+      allow read: if isOrgMemberActive(orgId);
+      allow write: if isOrgOwnerOrAdmin(orgId)
         && request.resource.size < 2 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
+      allow delete: if isOrgOwnerOrAdmin(orgId);
     }
 
     match /users/{userId}/equipment/{equipmentId}/{fileName} {

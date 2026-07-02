@@ -305,5 +305,11 @@ export function mergeOrganizationIntoProfile(
     logoUrl: typeof profileRaw.logoUrl === "string" ? profileRaw.logoUrl : undefined,
     logoStoragePath:
       typeof profileRaw.logoStoragePath === "string" ? profileRaw.logoStoragePath : undefined,
+    paymentQrUrl:
+      typeof profileRaw.paymentQrUrl === "string" ? profileRaw.paymentQrUrl : undefined,
+    paymentQrStoragePath:
+      typeof profileRaw.paymentQrStoragePath === "string"
+        ? profileRaw.paymentQrStoragePath
+        : undefined,
   };
 }

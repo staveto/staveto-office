@@ -20,6 +20,7 @@ import { formatMoney } from "@/lib/format";
 import { listQuotesForWorkspaceEnsured } from "@/services/quotes";
 import { QuoteStatusBadge } from "@/components/quotes/QuoteStatusBadge";
 import { useSetupChecklistVisit } from "@/hooks/useSetupChecklistVisit";
+import { useQuotesAgentScreenSync } from "@/hooks/useManagerAgentScreenSync";
 
 export default function QuotesPage() {
   const { t } = useI18n();
@@ -53,6 +54,8 @@ export default function QuotesPage() {
   useEffect(() => {
     void load();
   }, [user?.id, activeWorkspace?.id]);
+
+  useQuotesAgentScreenSync(loading ? null : quotes.length);
 
   return (
     <div className="space-y-6">

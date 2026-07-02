@@ -312,6 +312,7 @@ export function QuotePrintDocument({
   const projectLabel = quote.projectName || project?.name;
   const subjectTitle = quote.title?.trim() || projectLabel || t("quotes.detailTitle");
   const bankAccount = organization?.profile?.bankAccount?.trim();
+  const paymentQrUrl = organization?.profile?.paymentQrUrl?.trim();
   const { priceSummary, contactPerson } = printContext;
 
   return (
@@ -576,6 +577,17 @@ export function QuotePrintDocument({
             ) : null}
             {footerNote ? <p className={styles.templateFooterNote}>{footerNote}</p> : null}
           </div>
+          {paymentQrUrl ? (
+            <div className={styles.paymentQrBlock}>
+              <p className={styles.paymentQrLabel}>{t("quotes.print.paymentQr")}</p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={paymentQrUrl}
+                alt={t("quotes.print.paymentQr")}
+                className={styles.paymentQrImage}
+              />
+            </div>
+          ) : null}
           <span className={styles.footerDate}>{formatQuotePrintDate(new Date(), locale)}</span>
         </div>
         {visibility.showStavetoBranding ? (

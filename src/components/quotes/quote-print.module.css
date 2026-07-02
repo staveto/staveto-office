@@ -494,6 +494,29 @@
   color: #1d376a;
 }
 
+.paymentQrBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+}
+
+.paymentQrLabel {
+  margin: 0;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: #1d376a;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.paymentQrImage {
+  width: 88px;
+  height: 88px;
+  object-fit: contain;
+}
+
 .stavetoBranding {
   text-align: center;
   font-size: 0.62rem;

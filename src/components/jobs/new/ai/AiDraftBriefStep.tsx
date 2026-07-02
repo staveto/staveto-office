@@ -1,6 +1,5 @@
 "use client";
 
-import { MapPin } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -8,6 +7,7 @@ import { useI18n } from "@/i18n/I18nContext";
 import type { ActiveWorkspace } from "@/types/workspace";
 import type { UploadedAiDraftFile } from "@/services/ai/aiDraftFiles";
 import { AiDraftFileUpload } from "../AiDraftFileUpload";
+import { JobSiteLocationField } from "@/components/location/JobSiteLocationField";
 import { nj } from "../newJobFormStyles";
 
 type Props = {
@@ -118,24 +118,11 @@ export function AiDraftBriefStep({
         />
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="ai-location" className={nj.label}>
-          {t("projects.new.location")}
-        </Label>
-        <div className="relative">
-          <MapPin
-            className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-[#64748B]"
-            aria-hidden
-          />
-          <Input
-            id="ai-location"
-            value={location}
-            onChange={(e) => onLocationChange(e.target.value)}
-            placeholder={t("projects.new.locationPlaceholder")}
-            className={nj.inputWithIcon}
-          />
-        </div>
-      </div>
+      <JobSiteLocationField
+        id="ai-location"
+        value={location}
+        onChange={onLocationChange}
+      />
 
       <div className="space-y-3 rounded-xl border border-dashed border-[#CBD5E1] bg-white px-4 py-4">
         <div>

@@ -7,6 +7,7 @@ import {
   handleUpdateProjectDraftWithAI,
 } from "./handlers";
 import { handleCreateBusinessOrg } from "./businessOrg";
+import { handleAskManagerAgent } from "./managerAgent";
 import { handleGlobalSearch } from "./search/globalSearch";
 import { gmailBuildAuthUrl, gmailDisconnect, gmailOAuthCallback } from "./gmail";
 import { isGeminiOverloadedError, isGeminiQuotaError } from "./gemini";
@@ -98,6 +99,17 @@ export const createProjectFromDraft = onCall(
   async (request) => {
     try {
       return await handleCreateProjectFromDraft(request.auth?.uid, request.data);
+    } catch (e) {
+      mapError(e);
+    }
+  }
+);
+
+export const askManagerAgent = onCall(
+  { ...callableOptions, secrets: ["GEMINI_API_KEY"], timeoutSeconds: 120, memory: "512MiB" as const },
+  async (request) => {
+    try {
+      return await handleAskManagerAgent(request.auth?.uid, request.data);
     } catch (e) {
       mapError(e);
     }

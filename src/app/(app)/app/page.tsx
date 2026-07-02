@@ -23,6 +23,7 @@ import {
   fetchDashboardStats,
   type DashboardStats,
 } from "@/lib/dashboardStats";
+import { useDashboardAgentScreenSync } from "@/hooks/useManagerAgentScreenSync";
 
 const EMPTY_STATS: DashboardStats = {
   projectsCount: null,
@@ -145,6 +146,8 @@ function OverviewPageContent() {
 
   const companyStatsBootstrapping =
     isCompany && !isWorkerHome && (!statsLoaded || statsLoading);
+
+  useDashboardAgentScreenSync(statsLoaded ? stats : null);
 
   const showFlyover =
     intro.ready &&

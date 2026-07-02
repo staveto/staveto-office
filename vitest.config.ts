@@ -9,6 +9,7 @@ export default defineConfig({
       "src/lib/market/**/*.test.ts",
       "src/lib/quotes/**/*.test.ts",
       "src/lib/documents/**/*.test.ts",
+      "src/lib/agent/**/*.test.ts",
       "src/lib/enabledWorkTypes.test.ts",
     ],
   },

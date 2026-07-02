@@ -25,6 +25,8 @@ export type OrganizationProfile = {
   bankAccount?: string;
   logoUrl?: string;
   logoStoragePath?: string;
+  paymentQrUrl?: string;
+  paymentQrStoragePath?: string;
 };
 
 export type OrganizationProfileInput = OrganizationProfile & {
@@ -67,6 +69,8 @@ export function parseOrganizationProfile(data: Record<string, unknown>): Organiz
     bankAccount: pickString(p, ["bankAccount", "iban", "bankIban"]),
     logoUrl: pickString(p, ["logoUrl"]),
     logoStoragePath: pickString(p, ["logoStoragePath"]),
+    paymentQrUrl: pickString(p, ["paymentQrUrl"]),
+    paymentQrStoragePath: pickString(p, ["paymentQrStoragePath"]),
   };
 
   return hasOrganizationProfileData(parsed) ? parsed : null;
@@ -74,7 +78,10 @@ export function parseOrganizationProfile(data: Record<string, unknown>): Organiz
 
 export function hasOrganizationProfileData(profile: OrganizationProfile): boolean {
   return Object.entries(profile).some(
-    ([key, value]) => key !== "logoStoragePath" && Boolean(value?.trim?.() ?? value)
+    ([key, value]) =>
+      key !== "logoStoragePath" &&
+      key !== "paymentQrStoragePath" &&
+      Boolean(value?.trim?.() ?? value)
   );
 }
 
@@ -111,6 +118,8 @@ export function organizationProfileToFirestore(
     "bankAccount",
     "logoUrl",
     "logoStoragePath",
+    "paymentQrUrl",
+    "paymentQrStoragePath",
   ];
 
   const out: Record<string, string | null> = {};
@@ -321,18 +330,32 @@ export async function writeCompanyProfileSettings(
   return readOrganizationProfile(orgId);
 }
 
-/** Logo-only patch still uses direct merge for storage metadata fields. */
+/** Logo-only patch — merges with existing profile so other fields are not wiped. */
 export async function patchOrganizationProfileFields(
   orgId: string,
-  input: Partial<OrganizationProfileInput>
+  input: Partial<OrganizationProfileInput>,
+  userId?: string
 ): Promise<void> {
   const db = getFirestoreInstance();
   if (!db) throw new Error("Firestore not configured");
 
-  const payload: Record<string, unknown> = {
-    profile: organizationProfileToFirestore(input),
-    updatedAt: serverTimestamp(),
+  const snap = await getDoc(doc(db, "organizations", orgId));
+  const existingProfile = snap.exists()
+    ? mergeOrganizationIntoProfile(snap.data() as Record<string, unknown>)
+    : {};
+
+  const merged: OrganizationProfileInput = {
+    ...existingProfile,
+    ...input,
   };
 
-  await setDoc(doc(db, "organizations", orgId), payload, { merge: true });
+  await setDoc(
+    doc(db, "organizations", orgId),
+    {
+      profile: organizationProfileToFirestore(merged),
+      updatedAt: serverTimestamp(),
+      ...(userId ? { updatedBy: userId } : {}),
+    },
+    { merge: true }
+  );
 }

@@ -40,6 +40,7 @@ import {
   type ChatTeamMember,
 } from "@/services/business/businessChatTeamService";
 import { formatChatListTime, formatMessageTime } from "@/services/business/businessChatUtils";
+import { useRegisterMessagesExpanded } from "@/context/FloatingDockContext";
 
 type DrawerView = "collapsed" | "list" | "thread" | "compose";
 
@@ -62,7 +63,7 @@ function resolveChatTitle(
   return chat.title || t("business.chat.directTitle");
 }
 
-export function BusinessMessagingDrawer() {
+export function BusinessMessagingDrawer({ embedded = false }: { embedded?: boolean }) {
   const { t } = useI18n();
   const { user } = useAuth();
   const { orgId, canAccessBusinessChat, canWriteChat } = useBusinessChatAccess();
@@ -228,6 +229,9 @@ export function BusinessMessagingDrawer() {
     ];
   }, [chats, orgId, t]);
 
+  const messagesExpanded = view !== "collapsed";
+  useRegisterMessagesExpanded(embedded && messagesExpanded);
+
   if (!canAccessBusinessChat || !orgId) return null;
 
   const openThread = (chat: BusinessChatDoc) => {
@@ -297,7 +301,7 @@ export function BusinessMessagingDrawer() {
 
   if (view === "collapsed") {
     return (
-      <div className="fixed bottom-4 right-4 z-50">
+      <div className={cn(!embedded && "fixed bottom-4 right-4 z-50")}>
         <button
           type="button"
           onClick={() => setView("list")}
@@ -321,7 +325,11 @@ export function BusinessMessagingDrawer() {
   }
 
   return (
-    <div className={cn("fixed bottom-4 right-4 z-50 flex flex-col", panelWidth)}>
+    <div
+      className={cn(
+        embedded ? "flex w-[360px] flex-col" : cn("fixed bottom-4 right-4 z-50 flex flex-col", panelWidth)
+      )}
+    >
       <div className="relative flex flex-col overflow-hidden rounded-xl border border-[#E2E8F0] bg-white shadow-[0_12px_40px_rgba(15,42,77,0.18)] max-h-[min(640px,calc(100vh-2rem))]">
         {view === "compose" && (
           <BusinessChatComposePanel

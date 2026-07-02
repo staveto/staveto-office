@@ -183,3 +183,40 @@ export function guardOrgMember(
 ): Promise<NextResponse | null> {
   return guardOrg(() => assertOrgMemberActive(orgId, uid, email));
 }
+
+function isOrgOwnerOrAdminMember(member: OrgMemberAdminRow): boolean {
+  const status = member.status?.toLowerCase?.() ?? member.status ?? "";
+  if (status && status !== "active") return false;
+  const role = member.role.toLowerCase();
+  return role === "owner" || role === "admin";
+}
+
+export async function assertOrgOwnerOrAdmin(
+  orgId: string,
+  uid: string,
+  email?: string
+): Promise<boolean> {
+  try {
+    const db = getAdminDb();
+    if (!db) throw new AdminUnavailableError();
+
+    const orgSnap = await db.doc(`organizations/${orgId}`).get();
+    if (!orgSnap.exists) return false;
+    if (orgSnap.data()?.ownerUid === uid) return true;
+
+    const member = await findOrgMemberAdmin(orgId, uid, email);
+    if (!member) return false;
+    return isOrgOwnerOrAdminMember(member);
+  } catch (err) {
+    if (err instanceof AdminUnavailableError) throw err;
+    return rethrowAsAdminUnavailable("assertOrgOwnerOrAdmin", err);
+  }
+}
+
+export function guardOrgOwnerOrAdmin(
+  orgId: string,
+  uid: string,
+  email?: string
+): Promise<NextResponse | null> {
+  return guardOrg(() => assertOrgOwnerOrAdmin(orgId, uid, email));
+}

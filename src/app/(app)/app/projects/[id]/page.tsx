@@ -12,6 +12,7 @@ import { hasProjectAccess, type ProjectDoc } from "@/lib/projects";
 import { isDraftJob } from "@/lib/projectLifecycle";
 import { AiProjectSetupWorkspace } from "@/components/projects/setup/AiProjectSetupWorkspace";
 import { ProjectDashboard } from "@/components/projects/detail/ProjectDashboard";
+import { useProjectDetailAgentScreenSync } from "@/hooks/useManagerAgentScreenSync";
 
 function ProjectDetailSkeleton() {
   return (
@@ -80,6 +81,8 @@ export default function ProjectDetailPage() {
     const timer = setTimeout(() => setToastMessage(null), 4000);
     return () => clearTimeout(timer);
   }, [toastMessage]);
+
+  useProjectDetailAgentScreenSync({ project });
 
   const handleActionToast = (key: string) => {
     setToastMessage(t(key));

@@ -9,6 +9,12 @@ import { cn } from "@/lib/utils";
 import { SidebarLayoutProvider, useSidebarLayout } from "@/context/SidebarLayoutContext";
 import { EmailInboxBadgeProvider } from "@/context/EmailInboxBadgeContext";
 import { BusinessMessagingDrawer } from "@/components/business-chat/BusinessMessagingDrawer";
+import { FloatingRightDock } from "@/components/layout/FloatingRightDock";
+import {
+  ManagerAgentActionHandlersProvider,
+  ManagerAgentScreenDataProvider,
+} from "@/context/ManagerAgentContext";
+import { FloatingDockProvider } from "@/context/FloatingDockContext";
 import { SettingsSidebar } from "@/components/settings/SettingsSidebar";
 import { isSettingsAreaPath } from "@/lib/settingsNavigation";
 
@@ -69,7 +75,7 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
             <TenantGate>{children}</TenantGate>
           </div>
         </main>
-        {!isSettingsMode ? <BusinessMessagingDrawer /> : null}
+        {!isSettingsMode ? <FloatingRightDock /> : null}
       </div>
     </div>
   );
@@ -79,7 +85,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <SidebarLayoutProvider>
       <EmailInboxBadgeProvider>
-        <AppLayoutInner>{children}</AppLayoutInner>
+        <ManagerAgentScreenDataProvider>
+          <ManagerAgentActionHandlersProvider>
+            <FloatingDockProvider>
+              <AppLayoutInner>{children}</AppLayoutInner>
+            </FloatingDockProvider>
+          </ManagerAgentActionHandlersProvider>
+        </ManagerAgentScreenDataProvider>
       </EmailInboxBadgeProvider>
     </SidebarLayoutProvider>
   );
