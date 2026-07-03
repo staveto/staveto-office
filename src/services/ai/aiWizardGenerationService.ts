@@ -85,11 +85,11 @@ export function getWizardAiErrorDetail(err: unknown): string | undefined {
 
 function isCallableUnavailable(err: unknown): boolean {
   const code = (err as { code?: string })?.code ?? "";
-  return (
-    code === "functions/not-found" ||
-    code === "functions/unavailable" ||
-    mapCallableError(err) === "not_deployed"
-  );
+  // Only fall back to the mobile callable when the office function is genuinely
+  // not deployed / unreachable. Gemini overload maps to "unavailable" and must
+  // surface directly (a mobile retry would hit the same overloaded provider and
+  // return a more cryptic error).
+  return code === "functions/not-found" || mapCallableError(err) === "not_deployed";
 }
 
 function ensureReviewableAiPlan(plan: AiProjectPlan, fallbackSummary?: string): AiProjectPlan {
