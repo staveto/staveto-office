@@ -13,7 +13,7 @@ import {
   isAllowedDraftStoragePath,
   loadDraftFilesFromStoragePaths,
 } from "../../../functions/src/files";
-import { buildGeneratePrompt } from "../../../functions/src/gemini";
+import { buildGeneratePrompt } from "../../../functions/src/draftPrompt";
 import { officeDraftToAiProjectPlan } from "@/lib/officeDraftToAiPlan";
 import {
   formatAttachmentProcessingSummary,
