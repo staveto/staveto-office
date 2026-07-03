@@ -14,6 +14,7 @@ import {
   loadDraftFilesFromStoragePaths,
 } from "../../../functions/src/files";
 import { buildGeneratePrompt } from "../../../functions/src/draftPrompt";
+import { parseProjectDraftJson } from "../../../functions/src/draftSchema";
 import { officeDraftToAiProjectPlan } from "@/lib/officeDraftToAiPlan";
 import {
   formatAttachmentProcessingSummary,
@@ -213,5 +214,25 @@ describe("createProjectFromDraft compatibility", () => {
   it("accepts legacy draft without optional attachment fields", () => {
     expect(baseDraft.attachmentFindings).toBeUndefined();
     expect(baseDraft.materialSuggestions).toBeUndefined();
+  });
+});
+
+describe("gemini draft validation", () => {
+  it("accepts null material suggestion quantities and drops echoed attachmentFindings", () => {
+    const draft = parseProjectDraftJson(
+      JSON.stringify({
+        ...baseDraft,
+        attachmentFindings: [{ documentType: "floor_plan" }],
+        materialSuggestions: Array.from({ length: 3 }, (_, i) => ({
+          name: `Material ${i}`,
+          category: "general",
+          quantity: null,
+          confidence: "low",
+          source: "inferred",
+        })),
+      })
+    );
+    expect(draft.attachmentFindings).toBeUndefined();
+    expect(draft.materialSuggestions?.every((m) => m.quantity === undefined)).toBe(true);
   });
 });

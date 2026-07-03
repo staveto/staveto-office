@@ -68,6 +68,29 @@ export const projectDraftSchema = z
 
 export type ProjectDraftPayload = z.infer<typeof projectDraftSchema>;
 
+/** Gemini often echoes broken attachmentFindings and null quantities — normalize before Zod. */
+export function prepareGeminiDraftForValidation(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+
+  const draft = { ...(value as Record<string, unknown>) };
+  delete draft.attachmentFindings;
+
+  if (Array.isArray(draft.materialSuggestions)) {
+    draft.materialSuggestions = draft.materialSuggestions.map((item) => {
+      if (!item || typeof item !== "object") return item;
+      const row = { ...(item as Record<string, unknown>) };
+      if (row.quantity === null) delete row.quantity;
+      if (row.unit === null) delete row.unit;
+      if (row.sourceNote === null) delete row.sourceNote;
+      return row;
+    });
+  }
+
+  return draft;
+}
+
 export function parseProjectDraftJson(raw: string): ProjectDraftPayload {
   const cleaned = raw
     .replace(/^```json\s*/i, "")
@@ -75,5 +98,5 @@ export function parseProjectDraftJson(raw: string): ProjectDraftPayload {
     .replace(/\s*```$/i, "")
     .trim();
   const parsed = JSON.parse(cleaned) as unknown;
-  return projectDraftSchema.parse(parsed);
+  return projectDraftSchema.parse(prepareGeminiDraftForValidation(parsed));
 }
