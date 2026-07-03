@@ -1,6 +1,6 @@
 import * as admin from "firebase-admin";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
-import { draftLanguageSchema, projectDraftSchema, type ProjectDraftPayload } from "./draftSchema";
+import { draftLanguageSchema, parseProjectDraftPayload, projectDraftSchema, type ProjectDraftPayload } from "./draftSchema";
 import {
   extractFileText,
   collectDraftFilesForGeneration,
@@ -300,7 +300,9 @@ export async function handleGenerateProjectDraft(
       rawDraft.attachmentFindings = attachmentSummaries;
     }
   }
-  const draft = projectDraftSchema.parse(sanitizeDraftMaterials(rawDraft));
+  const draft = sanitizeDraftMaterials(
+    parseProjectDraftPayload(rawDraft)
+  );
 
   const draftRef = db.collection(`workspaces/${access.storageKey}/projectDrafts`).doc();
   const chatMessage = {
@@ -375,7 +377,7 @@ export async function handleUpdateProjectDraftWithAI(
   });
 
   const updated = await generateDraftWithGemini(prompt, { retryInvalidJson: true });
-  const draft = projectDraftSchema.parse(updated);
+  const draft = parseProjectDraftPayload(updated);
   const version = (stored.version ?? 1) + 1;
 
   const userMsg = {

@@ -146,6 +146,47 @@ export function sanitizeAiProjectPlanFromModel(data: unknown): unknown {
   return obj;
 }
 
+const MAX_AI_PHASES = 8;
+const MAX_AI_TASKS_PER_PHASE = 10;
+
+/** Keep office draft review within mobile-aligned phase/task limits. */
+export function rebalanceAiPhasesForReview(phases: AiPhase[]): AiPhase[] {
+  if (phases.length === 0) return phases;
+
+  const needsRebalance =
+    phases.length > MAX_AI_PHASES ||
+    phases.some((phase) => phase.tasks.length > MAX_AI_TASKS_PER_PHASE);
+
+  if (!needsRebalance) return phases;
+
+  const allTasks = phases.flatMap((phase) => phase.tasks);
+  if (allTasks.length === 0) return phases;
+
+  const chunks: AiTask[][] = [];
+  for (let i = 0; i < allTasks.length; i += MAX_AI_TASKS_PER_PHASE) {
+    chunks.push(allTasks.slice(i, i + MAX_AI_TASKS_PER_PHASE));
+    if (chunks.length >= MAX_AI_PHASES) {
+      break;
+    }
+  }
+
+  const overflowStart = MAX_AI_PHASES * MAX_AI_TASKS_PER_PHASE;
+  if (allTasks.length > overflowStart && chunks.length > 0) {
+    const last = chunks[chunks.length - 1];
+    chunks[chunks.length - 1] = [...last, ...allTasks.slice(overflowStart)].slice(
+      0,
+      MAX_AI_TASKS_PER_PHASE
+    );
+  }
+
+  const baseName = phases[0]?.name?.trim() || "Main phase";
+  return chunks.map((tasks, index) => ({
+    name: index === 0 ? baseName : `${baseName} ${index + 1}`,
+    description: index === 0 ? phases[0]?.description : undefined,
+    tasks,
+  }));
+}
+
 /** Validates AI response against schema. Returns errors or null if valid. */
 export function validateAiProjectPlan(data: unknown): ValidationError[] | null {
   const errors: ValidationError[] = [];

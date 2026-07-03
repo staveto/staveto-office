@@ -77,6 +77,14 @@ export function presentAiGenerateError(
     };
   }
 
+  if (err instanceof Error && err.message.startsWith("Invalid AI response:")) {
+    return {
+      headline: t("projects.new.ai.errorGenerate"),
+      detail: err.message,
+      kind: "generic",
+    };
+  }
+
   return {
     headline: t("projects.new.ai.errorGenerate"),
     detail: detail || undefined,

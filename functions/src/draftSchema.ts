@@ -68,6 +68,28 @@ export const projectDraftSchema = z
 
 export type ProjectDraftPayload = z.infer<typeof projectDraftSchema>;
 
+function coerceString(value: unknown, fallback = ""): string {
+  if (typeof value === "string") return value;
+  if (value === null || value === undefined) return fallback;
+  return String(value);
+}
+
+function coerceNullableString(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  const text = coerceString(value).trim();
+  return text.length > 0 ? text : null;
+}
+
+function coercePriority(value: unknown): "low" | "medium" | "high" {
+  if (value === "low" || value === "high") return value;
+  return "medium";
+}
+
+function coerceLineCategory(value: unknown): "work" | "material" | "travel" | "other" {
+  if (value === "material" || value === "travel" || value === "other") return value;
+  return "work";
+}
+
 /** Gemini often echoes broken attachmentFindings and null quantities — normalize before Zod. */
 export function prepareGeminiDraftForValidation(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -91,6 +113,85 @@ export function prepareGeminiDraftForValidation(value: unknown): unknown {
   return draft;
 }
 
+/** Coerce Gemini nulls and missing strings before strict project draft validation. */
+export function normalizeProjectDraftPayload(value: unknown): unknown {
+  const prepared = prepareGeminiDraftForValidation(value);
+  if (!prepared || typeof prepared !== "object" || Array.isArray(prepared)) {
+    return prepared;
+  }
+
+  const draft = { ...(prepared as Record<string, unknown>) };
+
+  draft.projectTitle = coerceString(draft.projectTitle, "New project").trim() || "New project";
+  draft.projectType = coerceString(draft.projectType, "customer_job");
+  draft.summary = coerceString(draft.summary);
+  draft.status = draft.status === "lead" ? "lead" : "draft";
+  draft.location = coerceNullableString(draft.location);
+
+  if (Array.isArray(draft.tasks)) {
+    draft.tasks = draft.tasks.map((task) => {
+      if (!task || typeof task !== "object") return task;
+      const row = task as Record<string, unknown>;
+      return {
+        ...row,
+        title: coerceString(row.title, "Task").trim() || "Task",
+        description: coerceString(row.description),
+        phase: coerceNullableString(row.phase),
+        priority: coercePriority(row.priority),
+        estimatedDuration: coerceNullableString(row.estimatedDuration),
+      };
+    });
+  }
+
+  if (Array.isArray(draft.materials)) {
+    draft.materials = draft.materials.map((item) => {
+      if (!item || typeof item !== "object") return item;
+      const row = item as Record<string, unknown>;
+      return {
+        ...row,
+        name: coerceString(row.name, "Material").trim() || "Material",
+        quantity: typeof row.quantity === "number" ? row.quantity : null,
+        unit: coerceNullableString(row.unit),
+        note: coerceNullableString(row.note),
+      };
+    });
+  }
+
+  if (draft.offerPreparation && typeof draft.offerPreparation === "object") {
+    const offer = { ...(draft.offerPreparation as Record<string, unknown>) };
+    if (Array.isArray(offer.suggestedLineItems)) {
+      offer.suggestedLineItems = offer.suggestedLineItems.map((item) => {
+        if (!item || typeof item !== "object") return item;
+        const row = item as Record<string, unknown>;
+        return {
+          ...row,
+          title: coerceString(row.title, "Line item").trim() || "Line item",
+          description: coerceString(row.description),
+          category: coerceLineCategory(row.category),
+          quantity: typeof row.quantity === "number" ? row.quantity : null,
+          unit: coerceNullableString(row.unit),
+        };
+      });
+    }
+    if (!Array.isArray(offer.missingPricingInputs)) {
+      offer.missingPricingInputs = [];
+    }
+    draft.offerPreparation = offer;
+  }
+
+  for (const key of ["clarificationQuestions", "risks", "nextSteps", "missingQuestions", "draftWarnings"] as const) {
+    if (!Array.isArray(draft[key])) {
+      draft[key] = [];
+    }
+  }
+
+  return draft;
+}
+
+export function parseProjectDraftPayload(value: unknown): ProjectDraftPayload {
+  return projectDraftSchema.parse(normalizeProjectDraftPayload(value));
+}
+
 export function parseProjectDraftJson(raw: string): ProjectDraftPayload {
   const cleaned = raw
     .replace(/^```json\s*/i, "")
@@ -98,5 +199,5 @@ export function parseProjectDraftJson(raw: string): ProjectDraftPayload {
     .replace(/\s*```$/i, "")
     .trim();
   const parsed = JSON.parse(cleaned) as unknown;
-  return projectDraftSchema.parse(prepareGeminiDraftForValidation(parsed));
+  return parseProjectDraftPayload(parsed);
 }

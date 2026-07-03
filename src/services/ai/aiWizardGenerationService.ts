@@ -6,6 +6,7 @@
 import type { AttachmentProcessing } from "@/types/attachmentDraft";
 import type { AiProjectPlan } from "@/lib/aiProjectSchema";
 import {
+  rebalanceAiPhasesForReview,
   sanitizeAiProjectPlanFromModel,
   validateAiProjectPlan,
 } from "@/lib/aiProjectSchema";
@@ -124,7 +125,10 @@ function ensureReviewableAiPlan(plan: AiProjectPlan, fallbackSummary?: string): 
     ];
   }
 
-  const candidate = { ...normalized, phases };
+  const candidate = {
+    ...normalized,
+    phases: rebalanceAiPhasesForReview(phases),
+  };
   const errors = validateAiProjectPlan(candidate);
   if (errors) {
     throw new Error(`Invalid AI response: ${errors.map((e) => `${e.path}: ${e.message}`).join("; ")}`);

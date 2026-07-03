@@ -14,8 +14,9 @@ import {
   loadDraftFilesFromStoragePaths,
 } from "../../../functions/src/files";
 import { buildGeneratePrompt } from "../../../functions/src/draftPrompt";
-import { parseProjectDraftJson } from "../../../functions/src/draftSchema";
+import { parseProjectDraftJson, parseProjectDraftPayload } from "../../../functions/src/draftSchema";
 import { officeDraftToAiProjectPlan } from "@/lib/officeDraftToAiPlan";
+import { rebalanceAiPhasesForReview } from "@/lib/aiProjectSchema";
 import {
   formatAttachmentProcessingSummary,
   resolveMaterialSourceKind,
@@ -234,5 +235,42 @@ describe("gemini draft validation", () => {
     );
     expect(draft.attachmentFindings).toBeUndefined();
     expect(draft.materialSuggestions?.every((m) => m.quantity === undefined)).toBe(true);
+  });
+
+  it("coerces null task descriptions before validation", () => {
+    const draft = parseProjectDraftPayload({
+      ...baseDraft,
+      tasks: [
+        {
+          title: "Demo task",
+          description: null,
+          phase: null,
+          priority: "medium",
+          estimatedDuration: null,
+        },
+      ],
+    });
+    expect(draft.tasks[0]?.description).toBe("");
+  });
+});
+
+describe("office plan review limits", () => {
+  it("rebalances more than 10 tasks in one phase", () => {
+    const plan = officeDraftToAiProjectPlan(
+      {
+        ...baseDraft,
+        tasks: Array.from({ length: 15 }, (_, i) => ({
+          title: `Task ${i + 1}`,
+          description: "",
+          phase: "Hlavná fáza",
+          priority: "medium",
+          estimatedDuration: null,
+        })),
+      },
+      "large_construction_project"
+    );
+    const rebalanced = rebalanceAiPhasesForReview(plan.phases);
+    expect(rebalanced.length).toBeGreaterThan(1);
+    expect(rebalanced.every((phase) => phase.tasks.length <= 10)).toBe(true);
   });
 });
