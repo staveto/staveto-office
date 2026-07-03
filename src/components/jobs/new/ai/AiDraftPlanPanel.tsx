@@ -97,6 +97,12 @@ export function AiDraftPlanPanel({
 
   const materialCount = draft.materialSuggestions?.length ?? 0;
   const findingsCount = draft.attachmentFindings?.length ?? 0;
+  const uploadedFileCount = draft.attachmentProcessing?.uploadedFileCount ?? 0;
+  const showFindingsTab = findingsCount > 0 || uploadedFileCount > 0;
+  const visibleTabs = useMemo(
+    () => TAB_KEYS.filter((tab) => tab !== "findings" || showFindingsTab),
+    [showFindingsTab]
+  );
 
   return (
     <div className={cn(nj.workspaceShell, "bg-white dark:bg-[#1E293B]")} data-testid="ai-plan-panel">
@@ -117,7 +123,7 @@ export function AiDraftPlanPanel({
         role="tablist"
         aria-label={t("projects.new.ai.workspace.planTabs")}
       >
-        {TAB_KEYS.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab}
             type="button"

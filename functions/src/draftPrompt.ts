@@ -71,18 +71,20 @@ Additional plain-text extracts (secondary):
 ${docs}
 
 Material rules:
-- If attachment contains explicit material list, use materials[] with note referencing the document.
-- If attachment is floor plan only, populate materialSuggestions[] with useful construction categories (masonry, insulation, windows/doors, plumbing, electrical, flooring, plaster/paint, etc.) as inferred with low/medium confidence.
-- Set quantity null and add note "Quantity not found in attachment" when not visible.
-- Populate missingQuestions[] from attachment gaps and clarificationQuestions[] for the user.
+- ALWAYS populate materialSuggestions[] with the materials this project needs, even when there are no attachments. Derive them from the user description, the job type, and the phases/tasks you created.
+- Provide at least 6 material suggestions for a full construction project, fewer for a small job or single-trade work. Cover the main trades relevant to the scope (e.g. masonry, concrete, insulation, windows/doors, roofing, plumbing, electrical, HVAC, flooring, plaster/paint) — only those that fit this project.
+- For each materialSuggestions[] item set: name, category, confidence ("low" when purely inferred, "medium"/"high" when clearly stated), source ("user_text" when named in the description, "attachment" when from a document, otherwise "inferred"), and sourceNote explaining why.
+- Set quantity to null when it is not explicitly known. Never invent exact quantities; add unit only when meaningful.
+- If an attachment contains an explicit material list, also add those to materials[] with a note referencing the document.
+- If an attachment is a floor plan, still infer materialSuggestions[] from rooms and scope.
+- Populate missingQuestions[] and clarificationQuestions[] for anything needed to price materials accurately.
 - Populate projectFacts.rooms and projectFacts.dimensions from attachment findings when available.
-- Copy attachmentFindings from the structured summaries provided above.
 
-List each material once only in materials[] — do not repeat the same item in offerPreparation.suggestedLineItems.
+List each material once only. Do not repeat the same item across materials[] and offerPreparation.suggestedLineItems.
 Avoid umbrella duplicates (e.g. do not list both "Elektrokabel" and "Elektromaterial").
-Up to 20 material rows when attachment scope supports it.
+Up to 20 material suggestions.
 
-Up to 6 phases and 20 tasks when attachment scope supports it.
+Up to 8 phases and 10 tasks per phase.
 Prefer short task titles and brief descriptions with estimatedDuration when inferrable.
 
 Set source.creationMethod to "ai" and source.attachedFileIds to the IDs provided in context if any.
