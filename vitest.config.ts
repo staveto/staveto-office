@@ -11,6 +11,7 @@ export default defineConfig({
       "src/lib/documents/**/*.test.ts",
       "src/lib/agent/**/*.test.ts",
       "src/lib/enabledWorkTypes.test.ts",
+      "src/lib/ai/**/*.test.ts",
     ],
   },
   resolve: {

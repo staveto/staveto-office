@@ -13,7 +13,7 @@ import {
 } from "@/services/ai/mobileAiDraftUploadService";
 import { compressImageForAiUpload } from "@/lib/compressAiUploadImage";
 import type { ActiveWorkspace } from "@/types/workspace";
-import { nj } from "./newJobFormStyles";
+import { nj, njOutlineButton } from "./newJobFormStyles";
 
 type Props = {
   userId: string;
@@ -98,7 +98,7 @@ export function AiDraftFileUpload({
         variant="outline"
         size="sm"
         disabled={disabled || uploading}
-        className="border-[#CBD5E1] bg-white text-[#334155] hover:bg-[#F6F8FB]"
+        className={njOutlineButton()}
         onClick={() => inputRef.current?.click()}
       >
         {uploading ? (
@@ -118,12 +118,12 @@ export function AiDraftFileUpload({
           {files.map((f) => (
             <li
               key={f.id}
-              className="flex items-center justify-between gap-2 rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm text-[#334155]"
+              className="flex items-center justify-between gap-2 rounded-lg border border-[#E2E8F0] bg-white px-3 py-2 text-sm text-[#334155] dark:border-[#475569] dark:bg-[#334155] dark:text-[#E2E8F0]"
             >
               <span className="truncate">{f.fileName}</span>
               <button
                 type="button"
-                className="shrink-0 text-[#64748B] hover:text-[#0F2A4D]"
+                className="shrink-0 text-[#64748B] hover:text-[#0F2A4D] dark:text-[#94A3B8] dark:hover:text-[#F8FAFC]"
                 aria-label={t("common.delete")}
                 onClick={() => onFilesChange(files.filter((x) => x.id !== f.id))}
               >

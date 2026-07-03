@@ -1,13 +1,29 @@
 import * as admin from "firebase-admin";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { draftLanguageSchema, projectDraftSchema, type ProjectDraftPayload } from "./draftSchema";
-import { extractFileText, collectDraftFilesForGeneration, isVisualAttachmentMime, loadVisualAttachment } from "./files";
+import {
+  extractFileText,
+  collectDraftFilesForGeneration,
+  isVisualAttachmentMime,
+  loadVisualAttachment,
+  markFileDiagnostic,
+  type DraftFileRecord,
+} from "./files";
 import { mapArchetypeToFirestoreFields } from "./projectArchetype";
 import {
   assertProjectCreatePermission,
   assertWorkspaceAccess,
   functionsPermissionError,
 } from "./permissions";
+import { formatAttachmentFindingsForPrompt } from "./attachmentPrompt";
+import type { AttachmentProcessing, AttachmentSummary } from "./attachmentSummarySchema";
+import {
+  enrichDraftWithAttachmentFindings,
+  finalizeAttachmentProcessing,
+  recordAttachmentFailureDiagnostic,
+  recordAttachmentSkippedDiagnostic,
+  recordAttachmentSummaryDiagnostic,
+} from "./draftAttachmentMerge";
 import { buildGeneratePrompt, buildUpdatePrompt, generateDraftWithGemini, summarizeAttachmentsWithGemini, type GeminiInlineAttachment } from "./gemini";
 import { sanitizeDraftMaterials } from "./materialDedup";
 import { z } from "zod";
@@ -140,7 +156,12 @@ function mergeCustomerIntoDraft(
 export async function handleGenerateProjectDraft(
   authUid: string | undefined,
   data: unknown
-): Promise<{ draftId: string; draft: ProjectDraftPayload; warnings?: string[] }> {
+): Promise<{
+  draftId: string;
+  draft: ProjectDraftPayload;
+  warnings?: string[];
+  attachmentProcessing: AttachmentProcessing;
+}> {
   const input = generateInputSchema.parse(data);
   assertAuth(authUid, input.userId);
 
@@ -160,16 +181,19 @@ export async function handleGenerateProjectDraft(
     input.newContact
   );
 
-  const files = await collectDraftFilesForGeneration({
+  const fileCollection = await collectDraftFilesForGeneration({
     db,
     storageKey: access.storageKey,
     authUid: input.userId,
     attachedFileIds: input.attachedFileIds,
     documentStoragePaths: input.documentStoragePaths,
   });
-  const warnings: string[] = [];
+  const { files } = fileCollection;
+  let attachmentProcessing = fileCollection.attachmentProcessing;
+  const warnings: string[] = [...attachmentProcessing.warnings];
   const documentTexts: { fileName: string; text: string }[] = [];
   const visualAttachments: GeminiInlineAttachment[] = [];
+  const visualFileByName = new Map<string, DraftFileRecord>();
 
   const extractions = await Promise.all(
     files.map(async (file) => {
@@ -178,8 +202,14 @@ export async function handleGenerateProjectDraft(
         const visual = await loadVisualAttachment(bucket, file);
         if (visual) {
           visualAttachments.push(visual);
+          visualFileByName.set(file.fileName, file);
           return { file, extracted: { text: "", status: "ok" as const } };
         }
+        recordAttachmentFailureDiagnostic(
+          attachmentProcessing.processedFiles,
+          file,
+          "Attachment too large or could not be loaded for AI vision."
+        );
         return {
           file,
           extracted: {
@@ -193,6 +223,18 @@ export async function handleGenerateProjectDraft(
         file.extractedText ?
           { text: file.extractedText, status: "ok" as const }
         : await extractFileText(bucket, file);
+      if (extracted.text) {
+        markFileDiagnostic(attachmentProcessing.processedFiles, file, {
+          status: "processed",
+          extractedSignals: { hasMaterialNotes: true },
+        });
+      } else if (extracted.status === "unsupported" || extracted.status === "error") {
+        recordAttachmentSkippedDiagnostic(
+          attachmentProcessing.processedFiles,
+          file,
+          extracted.note ?? "Unsupported file type for text extraction."
+        );
+      }
       return { file, extracted };
     })
   );
@@ -206,20 +248,35 @@ export async function handleGenerateProjectDraft(
     }
   }
 
+  let attachmentSummaries: AttachmentSummary[] = [];
   if (visualAttachments.length > 0) {
-    const summaries = await summarizeAttachmentsWithGemini(visualAttachments, input.language);
-    const summarizedNames = new Set(summaries.map((s) => s.fileName));
-    for (const summary of summaries) {
-      documentTexts.push({ fileName: summary.fileName, text: summary.text });
+    attachmentSummaries = await summarizeAttachmentsWithGemini(visualAttachments, input.language);
+    const summarizedNames = new Set(attachmentSummaries.map((s) => s.fileName));
+    for (const summary of attachmentSummaries) {
+      const file = visualFileByName.get(summary.fileName);
+      if (file) {
+        recordAttachmentSummaryDiagnostic(attachmentProcessing.processedFiles, file, summary);
+      }
     }
     for (const att of visualAttachments) {
       if (!summarizedNames.has(att.fileName)) {
         warnings.push(`${att.fileName}: AI could not read this attachment.`);
+        const file = visualFileByName.get(att.fileName);
+        if (file) {
+          recordAttachmentFailureDiagnostic(
+            attachmentProcessing.processedFiles,
+            file,
+            "AI could not read this attachment."
+          );
+        }
       }
     }
   }
 
+  attachmentProcessing = finalizeAttachmentProcessing(attachmentProcessing, warnings);
+
   const contactSummary = await contactSummaryPromise;
+  const attachmentFindingsText = formatAttachmentFindingsForPrompt(attachmentSummaries);
 
   const prompt = buildGeneratePrompt({
     language: input.language,
@@ -229,6 +286,7 @@ export async function handleGenerateProjectDraft(
     description: input.description,
     location: input.location,
     documentTexts,
+    attachmentFindingsText,
   });
 
   let rawDraft = await generateDraftWithGemini(
@@ -236,6 +294,12 @@ export async function handleGenerateProjectDraft(
     { retryInvalidJson: true }
   );
   rawDraft = mergeCustomerIntoDraft(rawDraft, input);
+  if (attachmentSummaries.length > 0) {
+    rawDraft = enrichDraftWithAttachmentFindings(rawDraft, attachmentSummaries);
+    if (!rawDraft.attachmentFindings?.length) {
+      rawDraft.attachmentFindings = attachmentSummaries;
+    }
+  }
   const draft = projectDraftSchema.parse(sanitizeDraftMaterials(rawDraft));
 
   const draftRef = db.collection(`workspaces/${access.storageKey}/projectDrafts`).doc();
@@ -247,6 +311,7 @@ export async function handleGenerateProjectDraft(
 
   await draftRef.set({
     draft,
+    attachmentProcessing,
     workspaceId: access.storageKey,
     orgId: access.orgId ?? null,
     ownerId: access.isPersonal ? input.userId : null,
@@ -265,7 +330,12 @@ export async function handleGenerateProjectDraft(
     updatedAt: FieldValue.serverTimestamp(),
   });
 
-  return { draftId: draftRef.id, draft, warnings: warnings.length ? warnings : undefined };
+  return {
+    draftId: draftRef.id,
+    draft,
+    warnings: warnings.length ? warnings : undefined,
+    attachmentProcessing,
+  };
 }
 
 export async function handleUpdateProjectDraftWithAI(

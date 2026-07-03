@@ -14,9 +14,14 @@ import { useI18n } from "@/i18n/I18nContext";
 import type { AiProjectDraftLocal } from "@/lib/aiProjectDraftLocal";
 import { cn } from "@/lib/utils";
 import { nj } from "../newJobFormStyles";
+import {
+  AiDraftAttachmentFindingsPanel,
+  AiDraftAttachmentProcessingCard,
+  MaterialSourceBadgeExport,
+} from "./AiDraftAttachmentSection";
 import type { AiRefineNodeTarget } from "./aiDraftReviewTypes";
 
-export type AiReviewTab = "overview" | "tasks" | "materials";
+export type AiReviewTab = "overview" | "tasks" | "materials" | "findings";
 
 type Props = {
   draft: AiProjectDraftLocal;
@@ -40,7 +45,7 @@ type Props = {
   generateWarnings?: string[];
 };
 
-const TAB_KEYS: AiReviewTab[] = ["overview", "tasks", "materials"];
+const TAB_KEYS: AiReviewTab[] = ["overview", "tasks", "materials", "findings"];
 
 export function AiDraftPlanPanel({
   draft,
@@ -91,26 +96,24 @@ export function AiDraftPlanPanel({
     selection.taskId === taskId;
 
   const materialCount = draft.materialSuggestions?.length ?? 0;
+  const findingsCount = draft.attachmentFindings?.length ?? 0;
 
   return (
-    <div
-      className="flex flex-col min-h-0 rounded-xl border-2 border-[#CBD5E1] bg-white overflow-hidden"
-      data-testid="ai-plan-panel"
-    >
-      <div className="px-4 py-3 border-b border-[#E2E8F0] bg-[#F6F8FB]">
-        <p className="text-sm font-bold text-[#0F2A4D]">
+    <div className={cn(nj.workspaceShell, "bg-white dark:bg-[#1E293B]")} data-testid="ai-plan-panel">
+      <div className={nj.workspaceMutedHeader}>
+        <p className="text-sm font-bold text-[#0F2A4D] dark:text-[#F8FAFC]">
           {t("projects.new.ai.workspace.structureSummary", {
             phaseCount: String(phaseCount),
             taskCount: String(taskCount),
           })}
         </p>
-        <p className="mt-0.5 text-xs text-[#64748B]">
+        <p className="mt-0.5 text-xs text-[#64748B] dark:text-[#94A3B8]">
           {t("projects.new.ai.workspace.tapPhaseTaskHint")}
         </p>
       </div>
 
       <div
-        className="flex border-b border-[#E2E8F0] bg-white"
+        className="flex border-b border-[#E2E8F0] bg-white dark:border-[#334155] dark:bg-[#243247]"
         role="tablist"
         aria-label={t("projects.new.ai.workspace.planTabs")}
       >
@@ -125,14 +128,19 @@ export function AiDraftPlanPanel({
             className={cn(
               "flex-1 px-3 py-2.5 text-xs sm:text-sm font-bold transition-colors",
               activeTab === tab
-                ? "text-[#E95F2A] border-b-2 border-[#E95F2A] bg-[#FFF8F5]"
-                : "text-[#64748B] hover:text-[#0F2A4D] hover:bg-[#F8FAFC]"
+                ? "text-[#E95F2A] border-b-2 border-[#E95F2A] bg-[#FFF8F5] dark:bg-[#3A2A22]"
+                : "text-[#64748B] hover:text-[#0F2A4D] hover:bg-[#F8FAFC] dark:text-[#94A3B8] dark:hover:text-[#F8FAFC] dark:hover:bg-[#2C3D55]"
             )}
           >
             {t(`projects.new.ai.workspace.tab.${tab}`)}
             {tab === "materials" && materialCount > 0 ? (
               <span className="ml-1.5 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-[#E95F2A]/15 px-1.5 py-0.5 text-[10px] font-bold text-[#E95F2A]">
                 {materialCount}
+              </span>
+            ) : null}
+            {tab === "findings" && findingsCount > 0 ? (
+              <span className="ml-1.5 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-[#E95F2A]/15 px-1.5 py-0.5 text-[10px] font-bold text-[#E95F2A]">
+                {findingsCount}
               </span>
             ) : null}
           </button>
@@ -154,10 +162,11 @@ export function AiDraftPlanPanel({
               />
             </div>
             {draft.summary?.trim() ? (
-              <div className="rounded-lg border border-[#E2E8F0] bg-[#F6F8FB] px-3 py-2.5">
-                <p className="text-sm text-[#334155] leading-relaxed">{draft.summary.trim()}</p>
+              <div className={cn(nj.workspaceSurface, "px-3 py-2.5")}>
+                <p className="text-sm text-[#334155] dark:text-[#CBD5E1] leading-relaxed">{draft.summary.trim()}</p>
               </div>
             ) : null}
+            <AiDraftAttachmentProcessingCard draft={draft} />
             {generateWarnings.length > 0 ? (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
                 <p className="font-medium">{t("projects.new.ai.documentsPartial")}</p>
@@ -190,10 +199,10 @@ export function AiDraftPlanPanel({
                       "rounded-xl border overflow-hidden transition-shadow",
                       selected
                         ? "border-[#E95F2A] ring-2 ring-[#E95F2A]/25 shadow-sm"
-                        : "border-[#E2E8F0]"
+                        : "border-[#E2E8F0] dark:border-[#334155]"
                     )}
                   >
-                    <div className="flex items-stretch bg-white">
+                    <div className="flex items-stretch bg-white dark:bg-[#243247]">
                       <button
                         type="button"
                         onClick={() => {
@@ -202,13 +211,13 @@ export function AiDraftPlanPanel({
                         }}
                         className={cn(
                           "flex-1 min-w-0 text-left px-3 py-3 transition-colors",
-                          selected ? "bg-[#FFF8F5]" : "hover:bg-[#F8FAFC]"
+                          selected ? "bg-[#FFF8F5] dark:bg-[#3A2A22]" : "hover:bg-[#F8FAFC] dark:hover:bg-[#2C3D55]"
                         )}
                       >
                         <p className="text-[11px] font-bold uppercase tracking-wide text-[#E95F2A] mb-0.5">
                           {t("projects.new.ai.review.phaseLabel", { index: pi + 1 })}
                         </p>
-                        <p className="font-bold text-[#0F2A4D] text-[15px] leading-snug">
+                        <p className="font-bold text-[#0F2A4D] dark:text-[#F8FAFC] text-[15px] leading-snug">
                           {phaseTitle}
                         </p>
                         {!open ? (
@@ -274,7 +283,7 @@ export function AiDraftPlanPanel({
                     </div>
 
                     {open ? (
-                      <ul className="border-t border-[#E2E8F0] bg-[#FAFBFC]" role="list">
+                      <ul className="border-t border-[#E2E8F0] bg-[#FAFBFC] dark:border-[#334155] dark:bg-[#1E293B]" role="list">
                         {phase.tasks.length === 0 ? (
                           <li className="px-3 py-3 text-sm text-[#64748B]">
                             {t("projects.new.ai.review.noTasks")}
@@ -292,7 +301,7 @@ export function AiDraftPlanPanel({
                                 key={task.id}
                                 className={cn(
                                   "flex items-stretch border-t border-[#E2E8F0] first:border-t-0",
-                                  taskSelected && "bg-[#FFF8F5]"
+                                  taskSelected && "bg-[#FFF8F5] dark:bg-[#3A2A22]"
                                 )}
                               >
                                 <button
@@ -302,7 +311,7 @@ export function AiDraftPlanPanel({
                                     "flex-1 min-w-0 flex items-start gap-2.5 text-left px-3 py-2.5 transition-colors",
                                     taskSelected
                                       ? "ring-1 ring-inset ring-[#E95F2A]/30"
-                                      : "hover:bg-white"
+                                      : "hover:bg-white dark:hover:bg-[#2C3D55]"
                                   )}
                                 >
                                   <Circle
@@ -313,7 +322,7 @@ export function AiDraftPlanPanel({
                                     aria-hidden
                                   />
                                   <span className="min-w-0">
-                                    <span className="block font-semibold text-[#0F2A4D] text-sm leading-snug">
+                                    <span className="block font-semibold text-[#0F2A4D] dark:text-[#F8FAFC] text-sm leading-snug">
                                       {taskTitle}
                                     </span>
                                     {task.description?.trim() ? (
@@ -377,7 +386,7 @@ export function AiDraftPlanPanel({
                 <ul className="space-y-2" role="list">
                   {draft.materialSuggestions.map((m) => (
                     <li key={m.id}>
-                      <label className="flex items-start gap-3 rounded-lg border border-[#E2E8F0] px-3 py-2.5 cursor-pointer hover:bg-[#F8FAFC] transition-colors">
+                      <label className="flex items-start gap-3 rounded-lg border border-[#E2E8F0] px-3 py-2.5 cursor-pointer hover:bg-[#F8FAFC] dark:border-[#334155] dark:hover:bg-[#2C3D55] transition-colors">
                         <input
                           type="checkbox"
                           checked={m.selected}
@@ -386,6 +395,9 @@ export function AiDraftPlanPanel({
                         />
                         <span className="text-sm text-[#334155] min-w-0">
                           <span className="font-semibold block">{m.name}</span>
+                          <span className="mt-1 flex flex-wrap gap-1.5">
+                            <MaterialSourceBadgeExport source={m.materialSource} />
+                          </span>
                           {m.description ? (
                             <span className="block text-[#64748B] text-xs mt-0.5">
                               {m.description}
@@ -402,6 +414,8 @@ export function AiDraftPlanPanel({
             )}
           </>
         ) : null}
+
+        {activeTab === "findings" ? <AiDraftAttachmentFindingsPanel draft={draft} /> : null}
       </div>
     </div>
   );

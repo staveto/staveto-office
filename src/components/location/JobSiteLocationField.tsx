@@ -5,12 +5,11 @@ import dynamic from "next/dynamic";
 import { Loader2, MapPin, Map as MapIcon, Type } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nContext";
 import { useActiveWorkspaceContext } from "@/hooks/useActiveWorkspaceContext";
 import type { ProjectCoordinates } from "@/lib/projectLocation";
 import { cn } from "@/lib/utils";
-import { nj } from "@/components/jobs/new/newJobFormStyles";
+import { nj, njLocationModeToggle } from "@/components/jobs/new/newJobFormStyles";
 import styles from "./job-site-location-map.module.css";
 
 const JobSiteLocationMapPicker = dynamic(
@@ -20,7 +19,7 @@ const JobSiteLocationMapPicker = dynamic(
     ssr: false,
     loading: () => (
       <div className={cn(styles.mapFrame, "flex items-center justify-center")}>
-        <Loader2 className="size-6 animate-spin text-[#1D376A]" aria-hidden />
+        <Loader2 className="size-6 animate-spin text-[#1D376A] dark:text-[#CBD5E1]" aria-hidden />
       </div>
     ),
   }
@@ -63,40 +62,37 @@ export function JobSiteLocationField({
         <Label htmlFor={id} className={nj.label}>
           {resolvedLabel}
         </Label>
-        <div className="inline-flex rounded-lg border border-[#CBD5E1] bg-white p-1">
-          <Button
+        <div
+          className={cn(
+            nj.segmentedWrap,
+            "inline-flex w-auto shrink-0 gap-0.5 p-1"
+          )}
+          role="group"
+          aria-label={resolvedLabel}
+        >
+          <button
             type="button"
-            size="sm"
-            variant={mode === "text" ? "default" : "ghost"}
-            className={cn(
-              "h-8 gap-1.5",
-              mode === "text" && "bg-[#1D376A] hover:bg-[#152a52] text-white"
-            )}
+            className={njLocationModeToggle(mode === "text")}
             onClick={() => setMode("text")}
           >
             <Type className="size-3.5" aria-hidden />
             {t("projects.new.locationModeText")}
-          </Button>
-          <Button
+          </button>
+          <button
             type="button"
-            size="sm"
-            variant={mode === "map" ? "default" : "ghost"}
-            className={cn(
-              "h-8 gap-1.5",
-              mode === "map" && "bg-[#1D376A] hover:bg-[#152a52] text-white"
-            )}
+            className={njLocationModeToggle(mode === "map")}
             onClick={() => setMode("map")}
           >
             <MapIcon className="size-3.5" aria-hidden />
             {t("projects.new.locationModeMap")}
-          </Button>
+          </button>
         </div>
       </div>
 
       {mode === "text" ? (
         <div className="relative">
           <MapPin
-            className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-[#64748B]"
+            className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-[#64748B] dark:text-[#94A3B8]"
             aria-hidden
           />
           <Input

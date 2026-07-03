@@ -66,10 +66,21 @@ function buildGenerateProjectDraftPayload(
 
 export async function generateProjectDraft(
   input: GenerateProjectDraftInput
-): Promise<{ draftId: string; draft: ProjectDraftPayload; warnings?: string[] }> {
-  const fn = getAiCallable<Record<string, unknown>, { draftId: string; draft: ProjectDraftPayload; warnings?: string[] }>(
-    "generateProjectDraft"
-  );
+): Promise<{
+  draftId: string;
+  draft: ProjectDraftPayload;
+  warnings?: string[];
+  attachmentProcessing?: import("@/types/attachmentDraft").AttachmentProcessing;
+}> {
+  const fn = getAiCallable<
+    Record<string, unknown>,
+    {
+      draftId: string;
+      draft: ProjectDraftPayload;
+      warnings?: string[];
+      attachmentProcessing?: import("@/types/attachmentDraft").AttachmentProcessing;
+    }
+  >("generateProjectDraft");
   const res = await fn(buildGenerateProjectDraftPayload(input));
   return res.data;
 }

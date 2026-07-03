@@ -5,11 +5,17 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nContext";
 import type { AiProjectDraftLocal } from "@/lib/aiProjectDraftLocal";
-import { njNavPrimary, njNavSecondary } from "../newJobFormStyles";
+import { njNavPrimary, njNavSecondary, nj } from "../newJobFormStyles";
 import { AiDraftAssistantPanel } from "./AiDraftAssistantPanel";
 import { AiDraftEditNodeDialog, type AiDraftEditTarget } from "./AiDraftEditNodeDialog";
 import { AiDraftPlanPanel, type AiReviewTab } from "./AiDraftPlanPanel";
 import type { AiRefineNodeTarget } from "./aiDraftReviewTypes";
+
+export type AttachmentQuickAction =
+  | "materials_from_attachments"
+  | "extract_rooms"
+  | "missing_questions"
+  | "detailed_tasks";
 
 type Props = {
   draft: AiProjectDraftLocal;
@@ -17,6 +23,7 @@ type Props = {
   regenerating?: boolean;
   refiningKey?: string | null;
   generateWarnings?: string[];
+  attachmentQuickActionsDisabled?: boolean;
   onProjectTitleChange: (title: string) => void;
   onPhaseChange: (phaseId: string, patch: { name?: string; description?: string }) => void;
   onPhaseRemove: (phaseId: string) => void;
@@ -29,6 +36,7 @@ type Props = {
   onMaterialToggle: (materialId: string, selected: boolean) => void;
   onRefine: (target: AiRefineNodeTarget, changeRequest: string) => Promise<void>;
   onRegenerate?: () => void;
+  onAttachmentQuickAction?: (action: AttachmentQuickAction) => Promise<void>;
   onContinueManual: () => void;
   onConfirm?: () => void;
   confirmError?: string | null;
@@ -40,6 +48,7 @@ export function AiDraftReviewWorkspace({
   regenerating,
   refiningKey,
   generateWarnings = [],
+  attachmentQuickActionsDisabled = false,
   onProjectTitleChange,
   onPhaseChange,
   onPhaseRemove,
@@ -48,6 +57,7 @@ export function AiDraftReviewWorkspace({
   onMaterialToggle,
   onRefine,
   onRegenerate,
+  onAttachmentQuickAction,
   onContinueManual,
   onConfirm,
   confirmError = null,
@@ -205,14 +215,14 @@ export function AiDraftReviewWorkspace({
   return (
     <div className="space-y-4" data-testid="ai-review-workspace">
       <div
-        className="rounded-xl border border-[#CBD5E1] bg-[#F6F8FB] px-4 py-3 text-sm text-[#475569]"
+        className={nj.infoBox}
         role="status"
       >
         {t("projects.new.ai.safetyNotice")}
       </div>
 
       <div
-        className="rounded-xl border border-[#CBD5E1] bg-[#F6F8FB] px-4 py-3 text-sm text-[#475569]"
+        className={nj.infoBox}
         role="status"
       >
         {t("projects.new.ai.review.unsavedNotice")}
@@ -244,6 +254,31 @@ export function AiDraftReviewWorkspace({
           onEditManually={handleEditManually}
         />
       </div>
+
+      {onAttachmentQuickAction ? (
+        <div className="flex flex-wrap gap-2" data-testid="ai-attachment-quick-actions">
+          {(
+            [
+              "materials_from_attachments",
+              "extract_rooms",
+              "missing_questions",
+              "detailed_tasks",
+            ] as AttachmentQuickAction[]
+          ).map((action) => (
+            <Button
+              key={action}
+              type="button"
+              variant="outline"
+              size="sm"
+              className={njNavSecondary()}
+              disabled={busy || attachmentQuickActionsDisabled}
+              onClick={() => void onAttachmentQuickAction(action)}
+            >
+              {t(`projects.new.ai.workspace.quickAction.${action}`)}
+            </Button>
+          ))}
+        </div>
+      ) : null}
 
       {confirmError ? (
         <div

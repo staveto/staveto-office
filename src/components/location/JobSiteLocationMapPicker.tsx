@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import { Loader2 } from "lucide-react";
+import { useTheme } from "next-themes";
 import { useI18n } from "@/i18n/I18nContext";
 import {
   geocodeProjectAddress,
@@ -14,6 +15,20 @@ import {
 import { cn } from "@/lib/utils";
 import "leaflet/dist/leaflet.css";
 import styles from "./job-site-location-map.module.css";
+
+const MAP_TILES = {
+  light: {
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  },
+  dark: {
+    // Voyager: readable streets/labels inside dark UI (dark_all was too low-contrast)
+    url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+  },
+} as const;
 
 const pickerMarkerIcon = L.divIcon({
   className: styles.markerIcon,
@@ -67,6 +82,9 @@ export function JobSiteLocationMapPicker({
   onCoordinatesChange,
 }: Props) {
   const { t } = useI18n();
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
+  const tiles = isDark ? MAP_TILES.dark : MAP_TILES.light;
   const defaultCenter = useMemo(() => getDefaultMapCenter(countryCode), [countryCode]);
   const [center, setCenter] = useState<ProjectCoordinates>(defaultCenter);
   const [marker, setMarker] = useState<ProjectCoordinates | null>(null);
@@ -116,16 +134,13 @@ export function JobSiteLocationMapPicker({
     <div>
       <div className={cn(styles.mapFrame)}>
         <MapContainer center={[center.lat, center.lng]} zoom={13} className={styles.map} scrollWheelZoom>
-          <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
+          <TileLayer attribution={tiles.attribution} url={tiles.url} />
           <MapClickHandler onPick={(coords) => void handlePick(coords)} />
           <MapViewport center={center} zoom={marker ? 15 : 13} marker={marker} />
         </MapContainer>
         {resolving ? (
           <div className={styles.loadingOverlay}>
-            <Loader2 className="size-6 animate-spin text-[#1D376A]" aria-hidden />
+            <Loader2 className="size-6 animate-spin text-[#1D376A] dark:text-[#CBD5E1]" aria-hidden />
           </div>
         ) : null}
       </div>

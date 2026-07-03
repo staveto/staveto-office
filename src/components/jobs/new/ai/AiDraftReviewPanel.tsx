@@ -7,7 +7,11 @@ import type { AiProjectDraftLocal } from "@/lib/aiProjectDraftLocal";
 import { isWizardAiGenerationEnabled } from "@/services/ai/aiWizardGenerationService";
 import { njNavPrimary, njNavSecondary } from "../newJobFormStyles";
 import type { AiRefineNodeTarget } from "./aiDraftReviewTypes";
-import { AiDraftReviewWorkspace } from "./AiDraftReviewWorkspace";
+import { AiDraftGenerationProgress } from "./AiDraftGenerationProgress";
+import {
+  AiDraftReviewWorkspace,
+  type AttachmentQuickAction,
+} from "./AiDraftReviewWorkspace";
 
 export type AiDraftReviewMode = "placeholder" | "draft" | "generating";
 
@@ -37,6 +41,11 @@ type Props = {
   generateWarnings?: string[];
   confirmError?: string | null;
   generatingWithAttachments?: boolean;
+  generatingStartedAt?: number | null;
+  attachmentFileNames?: string[];
+  generateErrorDetail?: string | null;
+  onAttachmentQuickAction?: (action: AttachmentQuickAction) => Promise<void>;
+  attachmentQuickActionsDisabled?: boolean;
 };
 
 export function AiDraftReviewPanel({
@@ -61,19 +70,23 @@ export function AiDraftReviewPanel({
   generateWarnings = [],
   confirmError = null,
   generatingWithAttachments = false,
+  generatingStartedAt = null,
+  attachmentFileNames = [],
+  generateErrorDetail = null,
+  onAttachmentQuickAction,
+  attachmentQuickActionsDisabled = false,
 }: Props) {
   const { t } = useI18n();
   const canGenerate = isWizardAiGenerationEnabled();
 
   if (mode === "generating") {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-        <Loader2 className="size-10 animate-spin text-[#E95F2A]" aria-hidden />
-        <p className="text-[#475569]">
-          {generatingWithAttachments
-            ? t("projects.new.ai.review.generatingWithDocs")
-            : t("projects.new.ai.review.generating")}
-        </p>
+      <div className="py-8">
+        <AiDraftGenerationProgress
+          attachmentCount={generatingWithAttachments ? attachmentFileNames.length : 0}
+          attachmentNames={attachmentFileNames}
+          startedAt={generatingStartedAt ?? undefined}
+        />
       </div>
     );
   }
@@ -88,14 +101,17 @@ export function AiDraftReviewPanel({
           {t("projects.new.ai.safetyNotice")}
         </div>
 
-        <div className="rounded-xl border border-dashed border-[#E95F2A]/40 bg-[#FFF8F5] px-5 py-6 space-y-3">
-          <div className="flex items-center gap-2 text-[#0F2A4D] font-semibold">
+        <div
+          className="rounded-xl border border-dashed border-[#E95F2A]/40 bg-[#FFF8F5] px-5 py-6 space-y-3 dark:bg-[#3A2A22] dark:border-[#E95F2A]/50"
+          role="status"
+        >
+          <div className="flex items-center gap-2 text-[#0F2A4D] dark:text-[#F8FAFC] font-semibold">
             <Sparkles className="size-5 text-[#E95F2A]" aria-hidden />
             {generateError
               ? t("projects.new.ai.review.failedTitle")
               : t("projects.new.ai.review.placeholderTitle")}
           </div>
-          <p className="text-sm text-[#475569] leading-relaxed">
+          <p className="text-sm text-[#475569] dark:text-[#94A3B8] leading-relaxed">
             {generateError
               ? t("projects.new.ai.review.failedBody")
               : t("projects.new.ai.review.placeholderBody")}
@@ -120,9 +136,17 @@ export function AiDraftReviewPanel({
         </div>
 
         {generateError ? (
-          <div className="flex gap-2 text-sm text-destructive" role="alert">
-            <AlertCircle className="size-5 shrink-0" aria-hidden />
-            <span>{generateError}</span>
+          <div className="space-y-2" role="alert">
+            <div className="flex gap-2 text-sm text-destructive">
+              <AlertCircle className="size-5 shrink-0" aria-hidden />
+              <span className="font-semibold">{generateError}</span>
+            </div>
+            {generateErrorDetail && generateErrorDetail !== generateError ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200">
+                <p className="font-semibold mb-1">{t("projects.new.ai.review.errorDetailLabel")}</p>
+                <p className="font-mono break-words whitespace-pre-wrap">{generateErrorDetail}</p>
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -155,6 +179,8 @@ export function AiDraftReviewPanel({
       onMaterialToggle={(materialId, selected) => onMaterialToggle?.(materialId, selected)}
       onRefine={onRefine ?? (async () => {})}
       onRegenerate={onRegenerate}
+      onAttachmentQuickAction={onAttachmentQuickAction}
+      attachmentQuickActionsDisabled={attachmentQuickActionsDisabled}
       onContinueManual={onContinueManual}
       onConfirm={onConfirm}
       confirmError={confirmError}

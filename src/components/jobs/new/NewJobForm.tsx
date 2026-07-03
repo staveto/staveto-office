@@ -53,8 +53,6 @@ import {
   confirmWizardAiProject,
   generateWizardAiPlan,
   isWizardAiGenerationEnabled,
-  getWizardAiErrorDetail,
-  mapWizardAiError,
 } from "@/services/ai/aiWizardGenerationService";
 import { createAiUploadSessionId, type UploadedAiDraftFile } from "@/services/ai/aiDraftFiles";
 import { enrichProjectAfterAiConfirm } from "@/services/ai/aiProjectPostConfirmService";
@@ -63,7 +61,13 @@ import { useRegisterManagerAgentActionHandler } from "@/context/ManagerAgentCont
 import type { AgentSuggestedAction } from "@/lib/agent/managerAgentContract";
 import { JobSiteLocationField } from "@/components/location/JobSiteLocationField";
 import { refineGeneratedProjectNode } from "@/services/ai/mobileAiProjectService";
-import { extractCallableErrorMessage } from "@/services/ai/projectDraftService";
+import { presentAiGenerateError } from "@/lib/ai/aiGenerateErrorMessage";
+import {
+  extractCallableErrorMessage,
+  localeToDraftLanguage,
+  updateProjectDraftWithAI,
+} from "@/services/ai/projectDraftService";
+import { officeDraftToAiProjectPlan } from "@/lib/officeDraftToAiPlan";
 import { buildAiProjectBriefForGenerate } from "@/lib/aiProjectGeneratePayload";
 import {
   WORK_TYPE_ICONS,
@@ -93,6 +97,7 @@ import { CopySourceStep } from "./copy/CopySourceStep";
 import { CopyOptionsStep, type CopyOptionsState } from "./copy/CopyOptionsStep";
 import { AiDraftBriefStep } from "./ai/AiDraftBriefStep";
 import { AiDraftReviewPanel, type AiDraftReviewMode } from "./ai/AiDraftReviewPanel";
+import type { AttachmentQuickAction } from "./ai/AiDraftReviewWorkspace";
 import type { AiRefineNodeTarget } from "./ai/aiDraftReviewTypes";
 import {
   buildWizardPath,
@@ -164,6 +169,8 @@ export function NewJobForm() {
   const [aiGenerateWarnings, setAiGenerateWarnings] = useState<string[]>([]);
   const [aiReviewMode, setAiReviewMode] = useState<AiDraftReviewMode>("placeholder");
   const [aiGenerateError, setAiGenerateError] = useState<string | null>(null);
+  const [aiGenerateErrorDetail, setAiGenerateErrorDetail] = useState<string | null>(null);
+  const [aiGenerateStartedAt, setAiGenerateStartedAt] = useState<number | null>(null);
   const [aiConfirming, setAiConfirming] = useState(false);
   const [aiRegenerating, setAiRegenerating] = useState(false);
   const [aiRefiningKey, setAiRefiningKey] = useState<string | null>(null);
@@ -452,64 +459,23 @@ export function NewJobForm() {
     };
   };
 
-  const mapAiGenerateErrorMessage = (err: unknown): string => {
-    if (process.env.NODE_ENV === "development") {
-      console.warn("[staveto ai generate]", extractCallableErrorMessage(err) || err);
-    }
-    if (err instanceof Error && err.message === "AI_GENERATION_DISABLED") {
-      return t("projects.new.ai.errorNotConfigured");
-    }
-    if (err instanceof Error && err.message.startsWith("DRAFT_PROJECT:")) {
-      return err.message.replace(/^DRAFT_PROJECT:\s*/, "");
-    }
-    const kind = mapWizardAiError(err);
-    const detail = getWizardAiErrorDetail(err);
-    const detailLower = detail?.toLowerCase() ?? "";
-    if (kind === "unauthenticated" || kind === "permission") {
-      return detail ? `${t("projects.new.ai.errorPermission")} ${detail}` : t("projects.new.ai.errorPermission");
-    }
-    if (kind === "not_configured") {
-      return detail || t("projects.new.ai.errorNotConfigured");
-    }
-    if (kind === "not_deployed") {
-      return detail || t("projects.new.ai.errorFunctionsNotDeployed");
-    }
-    if (kind === "quota") {
-      return t("projects.new.ai.errorQuota");
-    }
-    if (
-      kind === "overloaded" ||
-      detailLower.includes("503") ||
-      detailLower.includes("high demand") ||
-      detailLower.includes("service unavailable") ||
-      detailLower.includes("googlegenerativeai")
-    ) {
-      return t("projects.new.ai.errorOverloaded");
-    }
-    if (kind === "timeout" || detailLower.includes("deadline-exceeded")) {
-      return t("projects.new.ai.errorTimeout");
-    }
-    if (
-      detailLower.includes("invalid ai response") ||
-      detailLower.includes("ai returned empty") ||
-      detailLower.includes("ai returned invalid") ||
-      detailLower.includes("ai generation failed") ||
-      detailLower.includes("try again or create manually")
-    ) {
-      return t("projects.new.ai.errorGenerate");
-    }
-    if (detail) return detail;
-    return t("projects.new.ai.errorGenerate");
+  const setAiGenerateFailure = (err: unknown) => {
+    const presented = presentAiGenerateError(err, t);
+    setAiGenerateError(presented.headline);
+    setAiGenerateErrorDetail(presented.detail ?? null);
   };
 
   const runAiGenerate = async () => {
     if (!isWizardAiGenerationEnabled()) {
       throw new Error("AI_GENERATION_DISABLED");
     }
+    setAiGenerateStartedAt(Date.now());
     const result = await generateWizardAiPlan(buildAiGenerateInput());
     setAiDraftSource(result.source);
     setAiOfficeDraftId(result.officeDraftId ?? null);
     setAiGenerateWarnings(result.warnings ?? []);
+    setAiGenerateError(null);
+    setAiGenerateErrorDetail(null);
     setAiDraft(aiPlanToLocalDraft(result.plan, undefined));
     setAiReviewMode("draft");
   };
@@ -522,6 +488,7 @@ export function NewJobForm() {
     if (step === "ai-brief" && next === "ai-review") {
       setStep(next);
       setAiGenerateError(null);
+      setAiGenerateErrorDetail(null);
       if (!isWizardAiGenerationEnabled()) {
         setAiDraft(null);
         setAiReviewMode("placeholder");
@@ -535,7 +502,7 @@ export function NewJobForm() {
         setAiDraftSource(null);
         setAiOfficeDraftId(null);
         setAiReviewMode("placeholder");
-        setAiGenerateError(mapAiGenerateErrorMessage(err));
+        setAiGenerateFailure(err);
       }
       return;
     }
@@ -555,6 +522,7 @@ export function NewJobForm() {
     setAiDraft(null);
     setAiReviewMode("placeholder");
     setAiGenerateError(null);
+    setAiGenerateErrorDetail(null);
     setStep("manual-details");
   };
 
@@ -564,6 +532,7 @@ export function NewJobForm() {
       return;
     }
     setAiGenerateError(null);
+    setAiGenerateErrorDetail(null);
     setAiReviewMode("generating");
     try {
       await runAiGenerate();
@@ -572,7 +541,7 @@ export function NewJobForm() {
       setAiDraftSource(null);
       setAiOfficeDraftId(null);
       setAiReviewMode("placeholder");
-      setAiGenerateError(mapAiGenerateErrorMessage(err));
+      setAiGenerateFailure(err);
     }
   };
 
@@ -616,7 +585,35 @@ export function NewJobForm() {
     try {
       await runAiGenerate();
     } catch (err) {
-      setAiGenerateError(mapAiGenerateErrorMessage(err));
+      setAiGenerateFailure(err);
+    } finally {
+      setAiRegenerating(false);
+    }
+  };
+
+  const handleAttachmentQuickAction = async (action: AttachmentQuickAction) => {
+    if (!aiDraft || !user?.id || !activeWorkspace || !aiOfficeDraftId || aiDraftSource !== "office") {
+      return;
+    }
+    setAiRegenerating(true);
+    setAiGenerateError(null);
+    try {
+      const res = await updateProjectDraftWithAI({
+        workspace: activeWorkspace,
+        userId: user.id,
+        draftId: aiOfficeDraftId,
+        userMessage: t(`projects.new.ai.workspace.quickActionPrompt.${action}`),
+        language: localeToDraftLanguage(locale),
+      });
+      const plan = officeDraftToAiProjectPlan(
+        res.draft,
+        workType!,
+        aiProjectName.trim() || res.draft.projectTitle,
+        { attachmentProcessing: aiDraft.attachmentProcessing }
+      );
+      setAiDraft(aiPlanToLocalDraft(plan, undefined));
+    } catch (err) {
+      setAiGenerateFailure(err);
     } finally {
       setAiRegenerating(false);
     }
@@ -902,7 +899,7 @@ export function NewJobForm() {
                   <p className={nj.bodyMuted}>{t("common.loading")}</p>
                 ) : visibleWorkTypes.length === 0 ? (
                   <div
-                    className="rounded-xl border border-dashed border-[#CBD5E1] bg-[#F6F8FB] px-5 py-4 text-sm text-[#475569]"
+                    className="rounded-xl border border-dashed border-[#CBD5E1] bg-[#F6F8FB] px-5 py-4 text-sm text-[#475569] dark:border-[#475569] dark:bg-[#243247] dark:text-[#94A3B8]"
                     role="alert"
                   >
                     {t("projects.new.workTypes.noneEnabled")}
@@ -933,10 +930,10 @@ export function NewJobForm() {
                         <div className={njIconCircle(selected)}>
                           <Icon className="size-7" aria-hidden />
                         </div>
-                        <span className="block text-[17px] sm:text-lg font-bold text-[#0F2A4D] leading-snug pr-6">
+                        <span className={cn("block text-[17px] sm:text-lg font-bold leading-snug pr-6", nj.choiceCardTitle)}>
                           {t(workTypeLabelKey(type))}
                         </span>
-                        <span className="block text-[14px] sm:text-[15px] text-[#64748B] leading-relaxed">
+                        <span className={cn("block text-[14px] sm:text-[15px] leading-relaxed", nj.choiceCardHint)}>
                           {t(workTypeHintKey(type))}
                         </span>
                       </button>
@@ -1001,14 +998,14 @@ export function NewJobForm() {
                             "flex size-12 shrink-0 items-center justify-center rounded-xl border-2",
                             selected
                               ? "bg-[#E95F2A] border-[#E95F2A] text-white"
-                              : "bg-[#EEF2F7] border-[#CBD5E1] text-[#475569]"
+                              : "bg-[#EEF2F7] border-[#CBD5E1] text-[#475569] dark:bg-[#334155] dark:border-[#475569] dark:text-[#CBD5E1]"
                           )}
                         >
                           <Icon className="size-6" aria-hidden />
                         </div>
                         <span className="min-w-0 flex-1">
                           <span className="flex items-center gap-2">
-                            <span className="block text-base font-bold text-[#0F2A4D]">{title}</span>
+                            <span className={cn("block text-base font-bold", nj.choiceCardTitle)}>{title}</span>
                             {selected ? (
                               <span
                                 className="flex size-6 items-center justify-center rounded-full bg-[#E95F2A] text-white shrink-0"
@@ -1018,7 +1015,7 @@ export function NewJobForm() {
                               </span>
                             ) : null}
                           </span>
-                          <span className="block text-sm text-[#64748B] mt-1">{desc}</span>
+                          <span className={cn("block text-sm mt-1", nj.choiceCardHint)}>{desc}</span>
                         </span>
                       </button>
                     );
@@ -1572,7 +1569,10 @@ export function NewJobForm() {
                   mode={aiReviewMode}
                   draft={aiDraft}
                   generateError={aiGenerateError}
+                  generateErrorDetail={aiGenerateErrorDetail}
                   generatingWithAttachments={aiUploadedFiles.length > 0}
+                  generatingStartedAt={aiGenerateStartedAt}
+                  attachmentFileNames={aiUploadedFiles.map((f) => f.fileName)}
                   confirming={aiConfirming}
                   regenerating={aiRegenerating}
                   refiningKey={aiRefiningKey}
@@ -1606,6 +1606,12 @@ export function NewJobForm() {
                   onRegenerate={
                     isWizardAiGenerationEnabled() ? () => void handleRegenerateAiDraft() : undefined
                   }
+                  onAttachmentQuickAction={
+                    aiDraftSource === "office" && aiOfficeDraftId
+                      ? handleAttachmentQuickAction
+                      : undefined
+                  }
+                  attachmentQuickActionsDisabled={aiDraftSource !== "office" || !aiOfficeDraftId}
                   onContinueManual={handleContinueManual}
                   onConfirm={
                     aiReviewMode === "draft" && aiDraftSource

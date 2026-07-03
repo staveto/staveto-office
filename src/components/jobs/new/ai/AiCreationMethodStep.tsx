@@ -3,7 +3,7 @@
 import { Check, Copy, PenLine, Sparkles } from "lucide-react";
 import { useI18n } from "@/i18n/I18nContext";
 import { cn } from "@/lib/utils";
-import { njLargeChoice } from "../newJobFormStyles";
+import { nj, njLargeChoice } from "../newJobFormStyles";
 import type { CreationMethod } from "../newJobWizardTypes";
 
 type Props = {
@@ -42,7 +42,7 @@ export function AiCreationMethodStep({ value, onChange, copyAvailable, error }: 
 
   return (
     <div className="space-y-4">
-      <p className="text-[15px] text-[#64748B] leading-relaxed max-w-2xl">
+      <p className={cn("text-[15px] leading-relaxed max-w-2xl", nj.choiceCardHint)}>
         {t("projects.new.method.lead")}
       </p>
       <div className="space-y-3" role="radiogroup" aria-label={t("projects.new.step3Title")}>
@@ -70,14 +70,14 @@ export function AiCreationMethodStep({ value, onChange, copyAvailable, error }: 
                   "flex size-12 shrink-0 items-center justify-center rounded-xl border-2",
                   selected
                     ? "bg-[#E95F2A] border-[#E95F2A] text-white"
-                    : "bg-[#EEF2F7] border-[#CBD5E1] text-[#475569]"
+                    : "bg-[#EEF2F7] border-[#CBD5E1] text-[#475569] dark:bg-[#334155] dark:border-[#475569] dark:text-[#CBD5E1]"
                 )}
               >
                 <Icon className="size-6" aria-hidden />
               </div>
               <span className="min-w-0 flex-1 text-left">
                 <span className="flex items-center gap-2">
-                  <span className="block text-base font-bold text-[#0F2A4D]">{title}</span>
+                  <span className={cn("block text-base font-bold", nj.choiceCardTitle)}>{title}</span>
                   {selected ? (
                     <span
                       className="flex size-6 items-center justify-center rounded-full bg-[#E95F2A] text-white shrink-0"
@@ -87,7 +87,7 @@ export function AiCreationMethodStep({ value, onChange, copyAvailable, error }: 
                     </span>
                   ) : null}
                 </span>
-                <span className="block text-sm text-[#64748B] mt-1">{desc}</span>
+                <span className={cn("block text-sm mt-1", nj.choiceCardHint)}>{desc}</span>
               </span>
             </button>
           );

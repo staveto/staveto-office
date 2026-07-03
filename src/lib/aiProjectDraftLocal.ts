@@ -8,6 +8,12 @@ import type {
   AiProjectPlan,
   AiTask,
 } from "./aiProjectSchema";
+import type {
+  AttachmentProcessing,
+  AttachmentSummary,
+  MaterialSourceKind,
+} from "@/types/attachmentDraft";
+import type { OfficeAiProjectPlan } from "./officeDraftToAiPlan";
 
 function newNodeId(): string {
   return `d_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -23,9 +29,10 @@ export type DraftPhase = Omit<AiPhase, "tasks"> & {
 export type DraftMaterialSuggestion = AiMaterialSuggestion & {
   id: string;
   selected: boolean;
+  materialSource?: MaterialSourceKind;
 };
 
-export type AiProjectDraftLocal = Omit<AiProjectPlan, "phases" | "materialSuggestions"> & {
+export type AiProjectDraftLocal = Omit<OfficeAiProjectPlan, "phases" | "materialSuggestions"> & {
   draftId: string;
   phases: DraftPhase[];
   materialSuggestions?: DraftMaterialSuggestion[];
@@ -33,9 +40,10 @@ export type AiProjectDraftLocal = Omit<AiProjectPlan, "phases" | "materialSugges
 };
 
 export function aiPlanToLocalDraft(
-  plan: AiProjectPlan,
+  plan: OfficeAiProjectPlan | AiProjectPlan,
   opts?: { projectNumber?: string }
 ): AiProjectDraftLocal {
+  const extended = plan as OfficeAiProjectPlan;
   return {
     draftId: newNodeId(),
     projectTitle: plan.projectTitle,
@@ -44,6 +52,11 @@ export function aiPlanToLocalDraft(
     summary: plan.summary,
     uiMode: plan.uiMode,
     projectNumber: opts?.projectNumber?.trim() || undefined,
+    attachmentFindings: extended.attachmentFindings,
+    projectFacts: extended.projectFacts,
+    missingQuestions: extended.missingQuestions,
+    draftWarnings: extended.draftWarnings,
+    attachmentProcessing: extended.attachmentProcessing,
     phases: plan.phases.map((p) => ({
       id: newNodeId(),
       name: p.name,
@@ -54,6 +67,7 @@ export function aiPlanToLocalDraft(
       ...m,
       id: newNodeId(),
       selected: m.confidence !== "low",
+      materialSource: (m as DraftMaterialSuggestion).materialSource,
     })),
   };
 }

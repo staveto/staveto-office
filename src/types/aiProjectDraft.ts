@@ -1,3 +1,10 @@
+import type {
+  AttachmentSummary,
+  AttachmentProcessing,
+  DraftMaterialSuggestion,
+  DraftProjectFacts,
+} from "./attachmentDraft";
+
 export type DraftLanguage = "sk" | "de" | "en";
 
 export type ProjectDraftCustomer = {
@@ -31,6 +38,8 @@ export type ProjectDraftLineItem = {
   unit: string | null;
 };
 
+export type { AttachmentSummary, AttachmentProcessing, DraftMaterialSuggestion, DraftProjectFacts };
+
 export type ProjectDraftPayload = {
   projectTitle: string;
   projectType: string;
@@ -52,6 +61,11 @@ export type ProjectDraftPayload = {
     attachedFileIds: string[];
     generatedAt?: string;
   };
+  attachmentFindings?: AttachmentSummary[];
+  projectFacts?: DraftProjectFacts;
+  materialSuggestions?: DraftMaterialSuggestion[];
+  missingQuestions?: string[];
+  draftWarnings?: string[];
 };
 
 export type DraftChatMessage = {

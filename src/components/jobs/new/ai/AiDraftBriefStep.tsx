@@ -8,6 +8,7 @@ import type { ActiveWorkspace } from "@/types/workspace";
 import type { UploadedAiDraftFile } from "@/services/ai/aiDraftFiles";
 import { AiDraftFileUpload } from "../AiDraftFileUpload";
 import { JobSiteLocationField } from "@/components/location/JobSiteLocationField";
+import { cn } from "@/lib/utils";
 import { nj } from "../newJobFormStyles";
 
 type Props = {
@@ -59,10 +60,7 @@ export function AiDraftBriefStep({
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <div
-        className="rounded-xl border border-[#CBD5E1] bg-[#F6F8FB] px-4 py-3 text-sm text-[#475569] leading-relaxed"
-        role="status"
-      >
+      <div className={nj.infoBox} role="status">
         {t("projects.new.ai.safetyNotice")}
       </div>
 
@@ -124,9 +122,11 @@ export function AiDraftBriefStep({
         onChange={onLocationChange}
       />
 
-      <div className="space-y-3 rounded-xl border border-dashed border-[#CBD5E1] bg-white px-4 py-4">
+      <div className={cn("space-y-3", nj.dashedPanel)}>
         <div>
-          <p className="font-semibold text-[#334155]">{t("projects.new.ai.attachmentsTitle")}</p>
+          <p className="font-semibold text-[#334155] dark:text-[#E2E8F0]">
+            {t("projects.new.ai.attachmentsTitle")}
+          </p>
           <p className="mt-1 text-sm text-[#64748B] leading-relaxed">
             {t("projects.new.ai.attachmentsHint")}
           </p>

@@ -39,7 +39,7 @@ export function NewJobStepper({ steps, activeId }: Props) {
               <span
                 className={cn(
                   "hidden sm:block w-6 lg:w-10 h-0.5 mx-1 shrink-0 rounded-full",
-                  done || active ? "bg-[#E95F2A]/40" : "bg-[#E2E8F0]"
+                  done || active ? "bg-[#E95F2A]/40 dark:bg-[#E95F2A]/50" : "bg-[#E2E8F0] dark:bg-[#334155]"
                 )}
                 aria-hidden
               />
@@ -47,7 +47,7 @@ export function NewJobStepper({ steps, activeId }: Props) {
             <div
               className={cn(
                 "flex items-center gap-3 rounded-full px-1 py-1 sm:px-2 transition-colors",
-                active && "bg-[#FFF3EC]/80 ring-1 ring-[#E95F2A]/20 pr-4 sm:pr-5"
+                active && "bg-[#FFF3EC]/80 ring-1 ring-[#E95F2A]/20 pr-4 sm:pr-5 dark:bg-[#3A2A22]/80 dark:ring-[#E95F2A]/30"
               )}
               aria-current={active ? "step" : undefined}
             >
@@ -56,7 +56,7 @@ export function NewJobStepper({ steps, activeId }: Props) {
                   "flex size-9 sm:size-10 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-colors",
                   done || active
                     ? "bg-[#E95F2A] text-white shadow-[0_4px_12px_rgba(233,95,42,0.35)]"
-                    : "bg-[#E2E8F0] text-[#64748B]"
+                    : "bg-[#E2E8F0] text-[#64748B] dark:bg-[#334155] dark:text-[#94A3B8]"
                 )}
               >
                 {done ? <Check className="size-4" strokeWidth={3} aria-hidden /> : index + 1}
@@ -64,7 +64,7 @@ export function NewJobStepper({ steps, activeId }: Props) {
               <span
                 className={cn(
                   "text-[15px] sm:text-base font-semibold truncate",
-                  active ? "text-[#0F2A4D]" : done ? "text-[#334155]" : "text-[#94A3B8]"
+                  active ? "text-[#0F2A4D] dark:text-[#F8FAFC]" : done ? "text-[#334155] dark:text-[#CBD5E1]" : "text-[#94A3B8] dark:text-[#64748B]"
                 )}
               >
                 {step.label}

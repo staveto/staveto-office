@@ -3,6 +3,7 @@
  * Office generateProjectDraft is primary on web (vision + deployed stack); mobile callables fallback.
  */
 
+import type { AttachmentProcessing } from "@/types/attachmentDraft";
 import type { AiProjectPlan } from "@/lib/aiProjectSchema";
 import {
   sanitizeAiProjectPlanFromModel,
@@ -65,6 +66,7 @@ export type AiWizardGenerateResult = {
   source: "mobile" | "office";
   officeDraftId?: string;
   warnings?: string[];
+  attachmentProcessing?: AttachmentProcessing;
 };
 
 export function isWizardAiGenerationEnabled(): boolean {
@@ -238,7 +240,8 @@ async function generateViaOffice(input: AiWizardGenerateInput): Promise<AiWizard
     officeDraftToAiProjectPlan(
       res.draft,
       input.workType,
-      input.projectTitle.trim() || res.draft.projectTitle
+      input.projectTitle.trim() || res.draft.projectTitle,
+      { attachmentProcessing: res.attachmentProcessing }
     ),
     res.draft.summary
   );
@@ -248,6 +251,7 @@ async function generateViaOffice(input: AiWizardGenerateInput): Promise<AiWizard
     source: "office",
     officeDraftId: res.draftId,
     warnings: res.warnings,
+    attachmentProcessing: res.attachmentProcessing,
   };
 }
 

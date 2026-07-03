@@ -80,42 +80,39 @@ export function AiDraftAssistantPanel({
         : null;
 
   return (
-    <aside
-      className="flex flex-col min-h-0 rounded-xl border-2 border-[#CBD5E1] bg-[#F8FAFC] overflow-hidden"
-      data-testid="ai-assistant-panel"
-    >
-      <div className="px-4 py-3 border-b border-[#E2E8F0] bg-white">
+    <aside className={cn(nj.workspaceShell)} data-testid="ai-assistant-panel">
+      <div className={nj.workspaceHeader}>
         <div className="flex items-center gap-2">
           <Sparkles className="size-4 text-[#E95F2A] shrink-0" aria-hidden />
-          <h3 className="text-sm font-bold text-[#0F2A4D]">
+          <h3 className="text-sm font-bold text-[#0F2A4D] dark:text-[#F8FAFC]">
             {t("projects.new.ai.workspace.assistantTitle")}
           </h3>
         </div>
-        <p className="mt-1 text-xs text-[#64748B] leading-relaxed">
+        <p className="mt-1 text-xs text-[#64748B] dark:text-[#94A3B8] leading-relaxed">
           {t("projects.new.ai.workspace.assistantHint")}
         </p>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {!selection ? (
-          <div className="rounded-lg border border-dashed border-[#CBD5E1] bg-white px-4 py-8 text-center">
-            <p className="text-sm text-[#64748B] leading-relaxed">
+          <div className={nj.workspaceEmpty}>
+            <p className="text-sm text-[#64748B] dark:text-[#94A3B8] leading-relaxed">
               {t("projects.new.ai.workspace.selectHint")}
             </p>
           </div>
         ) : (
           <>
-            <div className="rounded-lg border border-[#E2E8F0] bg-white px-3 py-3">
+            <div className={cn(nj.workspaceSurface, "px-3 py-3")}>
               {contextLabel ? (
-                <p className="text-[11px] font-bold uppercase tracking-wide text-[#64748B] mb-1.5">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-[#64748B] dark:text-[#94A3B8] mb-1.5">
                   {contextLabel}
                 </p>
               ) : null}
-              <p className="font-semibold text-[#0F2A4D] text-[15px] leading-snug">
+              <p className="font-semibold text-[#0F2A4D] dark:text-[#F8FAFC] text-[15px] leading-snug">
                 {selection.title?.trim() || t("projects.new.ai.workspace.unnamed")}
               </p>
               {selection.description?.trim() ? (
-                <p className="mt-1.5 text-sm text-[#64748B] leading-relaxed line-clamp-6">
+                <p className="mt-1.5 text-sm text-[#64748B] dark:text-[#94A3B8] leading-relaxed line-clamp-6">
                   {selection.description.trim()}
                 </p>
               ) : null}
@@ -137,7 +134,7 @@ export function AiDraftAssistantPanel({
             </div>
 
             <div className="space-y-2">
-              <p className="text-xs font-semibold text-[#64748B]">
+              <p className="text-xs font-semibold text-[#64748B] dark:text-[#94A3B8]">
                 {t("projects.new.ai.workspace.quickSuggestions")}
               </p>
               <p className="text-xs text-[#64748B] leading-relaxed">
@@ -153,6 +150,7 @@ export function AiDraftAssistantPanel({
                     className={cn(
                       "rounded-full border border-[#CBD5E1] bg-white px-3 py-1.5 text-xs font-semibold text-[#334155]",
                       "hover:border-[#E95F2A]/50 hover:bg-[#FFF8F5] transition-colors",
+                      "dark:border-[#475569] dark:bg-[#243247] dark:text-[#CBD5E1] dark:hover:bg-[#2C3D55]",
                       "disabled:opacity-50 disabled:cursor-not-allowed"
                     )}
                   >
@@ -173,7 +171,7 @@ export function AiDraftAssistantPanel({
         )}
       </div>
 
-      <div className="p-4 border-t border-[#E2E8F0] bg-white space-y-2">
+      <div className={nj.workspaceFooter}>
         <Button
           type="button"
           className="w-full"

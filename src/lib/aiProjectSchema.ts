@@ -42,6 +42,7 @@ export type AiMaterialSuggestion = {
   currency?: string;
   confidence?: "low" | "medium" | "high";
   sourceNote?: string;
+  materialSource?: "attachment" | "inferred" | "needs_confirmation";
   phaseName?: string;
   taskTitle?: string;
 };
