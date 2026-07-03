@@ -4,12 +4,13 @@ import type { ProjectDoc } from "@/lib/projects";
 import type { QuoteDraftItemDoc } from "@/lib/quoteDraftItems";
 import {
   computeAiSetupTotals,
-  defaultCalculation,
   parseAiSetupMeta,
   plainNotesFromQuoteDraft,
+  resolveAiSetupCalculation,
   resolveSetupMaterialRows,
   workEstimateFromQuoteItems,
 } from "@/components/projects/setup/aiSetupHelpers";
+import { resolveQuoteCurrency } from "@/lib/workspace/countryConfig";
 import type { TaskDoc } from "@/lib/projects";
 import type { MaterialSuggestionDoc } from "@/services/materials/types";
 import { buildProjectQuoteDisplayLines } from "@/lib/projectQuoteDraft";
@@ -30,12 +31,18 @@ export function buildQuoteDocFromProjectDraft(
   project: ProjectDoc,
   quoteItems: QuoteDraftItemDoc[],
   tasks: TaskDoc[] = [],
-  currency = "CHF",
-  suggestions: MaterialSuggestionDoc[] = []
+  currency?: string,
+  suggestions: MaterialSuggestionDoc[] = [],
+  countryCode?: string | null
 ): QuoteDoc {
   const meta = parseAiSetupMeta(project.quoteDraftNotes);
   const workEstimate = meta?.workEstimate ?? workEstimateFromQuoteItems(quoteItems, tasks);
-  const calculation = meta?.calculation ?? defaultCalculation(project.quoteDraftVatPercent);
+  const calculation = resolveAiSetupCalculation(
+    meta?.calculation,
+    project.quoteDraftVatPercent,
+    countryCode
+  );
+  const resolvedCurrency = resolveQuoteCurrency({ currency, countryCode });
   const materialRows = resolveSetupMaterialRows(quoteItems, suggestions, []);
   const visibleQuoteItems = filterCustomerQuoteItems(quoteItems, materialRows);
   const displayLines = buildProjectQuoteDisplayLines(
@@ -89,7 +96,7 @@ export function buildQuoteDocFromProjectDraft(
     vatPercent: calculation.vatPercent,
     vatAmount: totals.vatAmount,
     grandTotal: totals.grossTotal,
-    currency,
+    currency: resolvedCurrency,
     notes: plainNotesFromQuoteDraft(project.quoteDraftNotes),
     orgId: project.orgId,
     ownerId: project.ownerId,

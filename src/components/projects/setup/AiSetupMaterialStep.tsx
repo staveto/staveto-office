@@ -15,12 +15,18 @@ import { cn } from "@/lib/utils";
 import type { MaterialUnit } from "@/services/materials/types";
 import { AI_SETUP_MATERIAL_UNITS, newLocalId, normalizeSetupUnit, setupUnitLabel } from "./aiSetupHelpers";
 import type { AiSetupMaterialRow } from "./aiSetupTypes";
+import { AiSetupProjectFactsPanel } from "./AiSetupProjectFactsPanel";
+import type { AiProjectFactsPersisted } from "./aiSetupTypes";
 
 type Props = {
   materials: AiSetupMaterialRow[];
   onMaterialsChange: (rows: AiSetupMaterialRow[]) => void;
   onContinue: () => void;
   saving?: boolean;
+  projectFacts?: AiProjectFactsPersisted;
+  onProjectFactsChange?: (facts: AiProjectFactsPersisted) => void;
+  onApplyFactsToMaterials?: () => void;
+  applyingFacts?: boolean;
 };
 
 export function AiSetupMaterialStep({
@@ -28,6 +34,10 @@ export function AiSetupMaterialStep({
   onMaterialsChange,
   onContinue,
   saving,
+  projectFacts,
+  onProjectFactsChange,
+  onApplyFactsToMaterials,
+  applyingFacts,
 }: Props) {
   const { t } = useI18n();
 
@@ -42,6 +52,13 @@ export function AiSetupMaterialStep({
         <p className="mt-1 text-sm text-[#475569] leading-relaxed">{t("projects.aiSetup.material.lead")}</p>
         <p className="mt-1 text-xs text-[#64748B]">{t("quotes.print.customerVisibleHint")}</p>
       </div>
+
+      <AiSetupProjectFactsPanel
+        projectFacts={projectFacts}
+        onProjectFactsChange={(facts) => onProjectFactsChange?.(facts)}
+        onApplyToMaterials={() => onApplyFactsToMaterials?.()}
+        applying={applyingFacts}
+      />
 
       {materials.length === 0 ? (
         <div className="rounded-xl border border-dashed border-[#CBD5E1] bg-[#F8FAFC] px-4 py-10 text-center">
@@ -82,6 +99,11 @@ export function AiSetupMaterialStep({
                     className="h-11 text-base font-semibold border-[#CBD5E1]"
                     placeholder={t("projects.aiSetup.material.namePlaceholder")}
                   />
+                  {m.sourceNote?.trim() ? (
+                    <p className="text-xs text-[#64748B] leading-relaxed border-l-2 border-[#1D376A]/30 pl-2">
+                      {m.sourceNote}
+                    </p>
+                  ) : null}
                   <div className="flex flex-wrap gap-3 items-end">
                     <label className="space-y-1">
                       <span className="text-xs font-semibold text-[#64748B]">

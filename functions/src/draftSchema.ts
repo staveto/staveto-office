@@ -4,6 +4,7 @@ import {
   draftMaterialSuggestionSchema,
   projectFactsSchema,
 } from "./attachmentSummarySchema";
+import { parseLocalizedNumber, roundDocumentQuantity } from "./localizedNumber";
 
 export const draftLanguageSchema = z.enum(["sk", "de", "en"]);
 
@@ -80,6 +81,13 @@ function coerceNullableString(value: unknown): string | null {
   return text.length > 0 ? text : null;
 }
 
+function coerceLocalizedQuantity(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = parseLocalizedNumber(value as string | number);
+  if (parsed === undefined) return null;
+  return roundDocumentQuantity(parsed);
+}
+
 function coercePriority(value: unknown): "low" | "medium" | "high" {
   if (value === "low" || value === "high") return value;
   return "medium";
@@ -104,10 +112,27 @@ export function prepareGeminiDraftForValidation(value: unknown): unknown {
       if (!item || typeof item !== "object") return item;
       const row = { ...(item as Record<string, unknown>) };
       if (row.quantity === null) delete row.quantity;
+      else if (row.quantity !== undefined) row.quantity = coerceLocalizedQuantity(row.quantity);
       if (row.unit === null) delete row.unit;
       if (row.sourceNote === null) delete row.sourceNote;
       return row;
     });
+  }
+
+  if (draft.projectFacts && typeof draft.projectFacts === "object") {
+    const facts = { ...(draft.projectFacts as Record<string, unknown>) };
+    if (facts.totalKnownAreaM2 !== undefined) {
+      facts.totalKnownAreaM2 = coerceLocalizedQuantity(facts.totalKnownAreaM2);
+    }
+    if (Array.isArray(facts.rooms)) {
+      facts.rooms = facts.rooms.map((room) => {
+        if (!room || typeof room !== "object") return room;
+        const row = { ...(room as Record<string, unknown>) };
+        if (row.areaM2 !== undefined) row.areaM2 = coerceLocalizedQuantity(row.areaM2);
+        return row;
+      });
+    }
+    draft.projectFacts = facts;
   }
 
   return draft;
@@ -150,7 +175,7 @@ export function normalizeProjectDraftPayload(value: unknown): unknown {
       return {
         ...row,
         name: coerceString(row.name, "Material").trim() || "Material",
-        quantity: typeof row.quantity === "number" ? row.quantity : null,
+        quantity: coerceLocalizedQuantity(row.quantity),
         unit: coerceNullableString(row.unit),
         note: coerceNullableString(row.note),
       };
@@ -168,7 +193,7 @@ export function normalizeProjectDraftPayload(value: unknown): unknown {
           title: coerceString(row.title, "Line item").trim() || "Line item",
           description: coerceString(row.description),
           category: coerceLineCategory(row.category),
-          quantity: typeof row.quantity === "number" ? row.quantity : null,
+          quantity: coerceLocalizedQuantity(row.quantity),
           unit: coerceNullableString(row.unit),
         };
       });

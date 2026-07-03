@@ -141,6 +141,7 @@ export function ProjectDocumentsTab({
   const { t } = useI18n();
   const { activeWorkspace } = useWorkspace();
   const inputRef = useRef<HTMLInputElement>(null);
+  const autoImportAttempted = useRef(false);
   const [uploading, setUploading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -229,6 +230,14 @@ export function ProjectDocumentsTab({
       setImporting(false);
     }
   };
+
+  useEffect(() => {
+    if (autoImportAttempted.current || !activeWorkspace || documents.length > 0) return;
+    if (!canRecoverAiAttachments(project)) return;
+    autoImportAttempted.current = true;
+    void handleImportAiAttachments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once when tab opens empty
+  }, [activeWorkspace, documents.length, project.id]);
 
   const categories: CategoryKey[] = ["documents", "photos", "other"];
   const isEmpty = documents.length === 0;

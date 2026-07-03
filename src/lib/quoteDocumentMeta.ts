@@ -8,11 +8,12 @@ import type { QuoteDoc } from "@/lib/quotes";
 import type { OrganizationPrintInfo } from "./organizationProfile";
 import {
   computeAiSetupTotals,
-  defaultCalculation,
   parseAiSetupMeta,
+  resolveAiSetupCalculation,
   resolveSetupMaterialRows,
   workEstimateFromQuoteItems,
 } from "@/components/projects/setup/aiSetupHelpers";
+import { resolveQuoteCurrency } from "@/lib/workspace/countryConfig";
 import type { MaterialSuggestionDoc } from "@/services/materials/types";
 import { buildProjectQuoteDisplayLines } from "./projectQuoteDraft";
 import { isCustomerVisibleItemName } from "./quoteCustomerItems";
@@ -238,7 +239,10 @@ export function buildQuotePrintContextFromQuote(params: {
       isComplete: hasPricedLines || quote.grandTotal > 0,
       isFlatRate,
     },
-    currency: quote.currency || "CHF",
+    currency: resolveQuoteCurrency({
+      currency: quote.currency,
+      countryCode: organization?.market?.countryCode ?? organization?.profile?.country,
+    }),
     customerNumber: project?.customerId?.trim() || undefined,
     projectNumber: project?.id?.slice(0, 8).toUpperCase(),
   };
@@ -258,7 +262,12 @@ export function buildQuotePrintContext(params: {
     params;
   const docMeta = parseQuoteDocumentMeta(project.quoteDraftNotes);
   const setupMeta = parseAiSetupMeta(project.quoteDraftNotes);
-  const calc = setupMeta?.calculation ?? defaultCalculation(project.quoteDraftVatPercent);
+  const countryCode = organization?.market?.countryCode ?? organization?.profile?.country ?? null;
+  const calc = resolveAiSetupCalculation(
+    setupMeta?.calculation,
+    project.quoteDraftVatPercent,
+    countryCode
+  );
   const materialRows = resolveSetupMaterialRows(quoteItems, suggestions, []);
   const work = setupMeta?.workEstimate ?? workEstimateFromQuoteItems(quoteItems, tasks);
   const totals = computeAiSetupTotals(materialRows, work, calc);
@@ -296,7 +305,10 @@ export function buildQuotePrintContext(params: {
       isComplete,
       isFlatRate,
     },
-    currency: quote.currency || "CHF",
+    currency: resolveQuoteCurrency({
+      currency: quote.currency,
+      countryCode: organization?.market?.countryCode ?? organization?.profile?.country,
+    }),
     customerNumber: project.customerId?.trim() || undefined,
     projectNumber: project.id?.slice(0, 8).toUpperCase(),
   };

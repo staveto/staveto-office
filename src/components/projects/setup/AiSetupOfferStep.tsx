@@ -24,6 +24,7 @@ type Props = {
   saved?: boolean;
   savedQuoteId?: string | null;
   exportingPdf?: boolean;
+  currency?: string;
 };
 
 function patchContact(
@@ -49,6 +50,7 @@ export function AiSetupOfferStep({
   saved,
   savedQuoteId,
   exportingPdf,
+  currency = "EUR",
 }: Props) {
   const { t } = useI18n();
   const customer =
@@ -107,7 +109,7 @@ export function AiSetupOfferStep({
                   </span>
                   {m.price > 0 ? (
                     <span className="tabular-nums font-medium shrink-0">
-                      {formatMoney(m.qty * m.price, "CHF")}
+                      {formatMoney(m.qty * m.price, currency)}
                     </span>
                   ) : null}
                 </li>
@@ -115,7 +117,7 @@ export function AiSetupOfferStep({
           </ul>
           <p className="text-sm font-semibold text-[#0F2A4D] mt-2 tabular-nums flex justify-between">
             <span>{t("projects.aiSetup.summary.material")}</span>
-            <span>{formatMoney(totals.materialCost, "CHF")}</span>
+            <span>{formatMoney(totals.materialCost, currency)}</span>
           </p>
         </section>
 
@@ -128,18 +130,19 @@ export function AiSetupOfferStep({
               workers: String(work.workers),
               hours: String(work.hours),
               rate: String(work.hourlyRate),
+              currency,
             })}
             {work.note.trim() ? ` — ${work.note.trim()}` : ""}
           </p>
           <p className="text-sm font-semibold text-[#0F2A4D] mt-1 tabular-nums">
-            {formatMoney(totals.workCost, "CHF")}
+            {formatMoney(totals.workCost, currency)}
           </p>
         </section>
 
         <section className="border-t border-[#E2E8F0] pt-4 flex justify-between items-baseline">
           <span className="font-bold text-[#0F2A4D]">{t("projects.aiSetup.summary.total")}</span>
           <span className="text-xl font-bold text-[#E95F2A] tabular-nums">
-            {formatMoney(totals.grossTotal, "CHF")}
+            {formatMoney(totals.grossTotal, currency)}
           </span>
         </section>
 

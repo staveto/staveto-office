@@ -1,4 +1,5 @@
 import type { AttachmentSummary } from "./attachmentSummarySchema";
+import { NUMBER_FORMAT_RULES } from "./attachmentSummarySchema";
 
 export function buildAttachmentVisionPrompt(language: string, fileName: string): string {
   return `You are analyzing construction project documents for Staveto.
@@ -27,6 +28,8 @@ Rules:
 - If no material list exists in the PDF, say so in extractedTextSummary and missingQuestions.
 - Human-readable strings language: ${language}
 - File name: ${fileName}
+
+${NUMBER_FORMAT_RULES}
 
 Return JSON matching this schema:
 {

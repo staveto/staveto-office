@@ -23,7 +23,8 @@ import {
 } from "@/lib/projects";
 import { resolveProjectQuoteLineItems, projectHasQuoteDraft } from "@/lib/projectQuoteDraft";
 import { parseAiSetupMeta } from "@/components/projects/setup/aiSetupHelpers";
-import { getFirestoreInstance, doc, updateDoc, serverTimestamp } from "@/lib/firebase";
+import { defaultVatPercentForCountry, mergeWorkspaceLocale, resolveCountryConfig } from "@/lib/workspace/countryConfig";
+import { getFirestoreInstance, doc, getDoc, updateDoc, serverTimestamp } from "@/lib/firebase";
 import type { ActiveWorkspace } from "@/types/workspace";
 import type { Workspace } from "@/lib/workspace-types";
 import { fromLegacyWorkspace } from "@/lib/workspace-types";
@@ -42,6 +43,21 @@ function plainNotesFromProjectDraft(notes?: string | null): string {
   } catch {
     return notes.trim();
   }
+}
+
+async function resolveQuoteCurrencyForWorkspace(workspace: ActiveWorkspace): Promise<string> {
+  if (workspace.type !== "company" || !workspace.orgId) {
+    return resolveCountryConfig("SK").currency;
+  }
+  const db = getFirestoreInstance();
+  if (!db) return resolveCountryConfig("SK").currency;
+  const snap = await getDoc(doc(db, "organizations", workspace.orgId));
+  if (!snap.exists()) return resolveCountryConfig("SK").currency;
+  const data = snap.data() as { countryCode?: string; country?: string; currency?: string };
+  const countryCode = data.countryCode ?? data.country ?? null;
+  return mergeWorkspaceLocale(countryCode, {
+    currency: data.currency ?? undefined,
+  }).currency;
 }
 
 function toActiveWorkspace(workspace: Workspace | ActiveWorkspace, uid: string): ActiveWorkspace {
@@ -215,6 +231,7 @@ export async function createQuoteFromProject(
 
   const meta = parseAiSetupMeta(project.quoteDraftNotes);
   const active = toActiveWorkspace(workspace, uid);
+  const currency = await resolveQuoteCurrencyForWorkspace(active);
   const scopeProject = {
     orgId: project.orgId ?? active.orgId ?? (active.type === "company" ? active.id : undefined),
     ownerId: project.ownerId ?? uid,
@@ -235,9 +252,9 @@ export async function createQuoteFromProject(
       projectId,
       projectName: project.name,
       status: "draft",
-      vatPercent: meta?.calculation.vatPercent ?? project.quoteDraftVatPercent ?? 8.1,
+      vatPercent: meta?.calculation?.vatPercent ?? project.quoteDraftVatPercent ?? defaultVatPercentForCountry(null),
       notes: plainNotesFromProjectDraft(project.quoteDraftNotes),
-      currency: "CHF",
+      currency,
       items: lineItems,
     },
     scopeProject
@@ -280,7 +297,7 @@ export async function upsertQuoteFromProject(
     clientName,
     clientEmail: project.customerEmail,
     status: "draft" as const,
-    vatPercent: meta?.calculation.vatPercent ?? project.quoteDraftVatPercent ?? 8.1,
+    vatPercent: meta?.calculation?.vatPercent ?? project.quoteDraftVatPercent ?? defaultVatPercentForCountry(null),
     notes: plainNotesFromProjectDraft(project.quoteDraftNotes),
     items: lineItems,
   };

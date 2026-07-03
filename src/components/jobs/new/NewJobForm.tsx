@@ -23,7 +23,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useEnabledWorkTypes } from "@/context/EnabledWorkTypesContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { createDraftJob, copyProjectConcept } from "@/services/projects";
-import { listProjectsForWorkspace, type ProjectDoc } from "@/lib/projects";
+import { listProjectsForWorkspace, getProject, type ProjectDoc } from "@/lib/projects";
 import { filterCopySourceProjects } from "@/lib/copyProjectSources";
 import { createCustomer, listCustomersForWorkspace } from "@/lib/customers";
 import type { CustomerDoc, CustomerType } from "@/lib/customers";
@@ -56,6 +56,7 @@ import {
 } from "@/services/ai/aiWizardGenerationService";
 import { createAiUploadSessionId, type UploadedAiDraftFile } from "@/services/ai/aiDraftFiles";
 import { enrichProjectAfterAiConfirm } from "@/services/ai/aiProjectPostConfirmService";
+import { importAiWizardAttachmentsToProject } from "@/services/projects/projectAiAttachmentsService";
 import { useNewProjectWizardAgentScreenSync } from "@/hooks/useManagerAgentScreenSync";
 import { useRegisterManagerAgentActionHandler } from "@/context/ManagerAgentContext";
 import type { AgentSuggestedAction } from "@/lib/agent/managerAgentContract";
@@ -693,39 +694,66 @@ export function NewJobForm() {
     setSubmitError(null);
     try {
       const plan = localDraftToAiProjectPlan(aiDraft);
-      const projectId = await confirmWizardAiProject({
-        source: aiDraftSource,
-        officeDraftId: aiOfficeDraftId ?? undefined,
-        workspace: activeWorkspace,
-        userId: user.id,
-        plan,
-        originalBrief: aiBrief.trim() || undefined,
-        addressText: location.trim() || undefined,
-      });
+      const [projectId, customer] = await Promise.all([
+        confirmWizardAiProject({
+          source: aiDraftSource,
+          officeDraftId: aiOfficeDraftId ?? undefined,
+          workspace: activeWorkspace,
+          userId: user.id,
+          plan,
+          originalBrief: aiBrief.trim() || undefined,
+          addressText: location.trim() || undefined,
+        }),
+        resolveCustomerFields(),
+      ]);
 
-      const enrichPayload = {
-        projectId,
-        workspace: activeWorkspace,
-        userId: user.id,
-        workType,
-        addressText: location.trim() || undefined,
-        materialSuggestions: plan.materialSuggestions,
-        uploadedFiles: aiUploadedFiles,
-      };
+      const hasAttachments =
+        aiUploadedFiles.length > 0 ||
+        (aiDraft.attachmentProcessing?.uploadedFileCount ?? 0) > 0;
 
-      const customer = await resolveCustomerFields();
-      await enrichProjectAfterAiConfirm({
-        ...enrichPayload,
-        aiDraftId: aiOfficeDraftId ?? undefined,
-        customerId: customer.customerId,
-        customerName: customer.customerName,
-        customerCompanyName: customer.customerCompanyName,
-        customerContactPersonName: customer.customerContactPersonName,
-        customerEmail: customer.customerEmail,
-        customerPhone: customer.customerPhone,
-      });
+      await enrichProjectAfterAiConfirm(
+        {
+          projectId,
+          workspace: activeWorkspace,
+          userId: user.id,
+          workType,
+          aiDraftId: aiOfficeDraftId ?? undefined,
+          customerId: customer.customerId,
+          customerName: customer.customerName,
+          customerCompanyName: customer.customerCompanyName,
+          customerContactPersonName: customer.customerContactPersonName,
+          customerEmail: customer.customerEmail,
+          customerPhone: customer.customerPhone,
+          addressText: location.trim() || undefined,
+          materialSuggestions: plan.materialSuggestions,
+          uploadedFiles: aiUploadedFiles,
+        },
+        {
+          skipMaterialSuggestions: aiDraftSource === "office",
+          skipAttachmentImport: true,
+        }
+      );
 
       router.push(`/app/projects/${projectId}?setup=ai`);
+
+      if (hasAttachments) {
+        void (async () => {
+          try {
+            const freshProject = await getProject(projectId);
+            if (!freshProject) return;
+            await importAiWizardAttachmentsToProject({
+              projectId,
+              workspace: activeWorkspace,
+              userId: user.id,
+              project: freshProject,
+            });
+          } catch (err) {
+            if (process.env.NODE_ENV === "development") {
+              console.warn("[staveto ai confirm] background attachment import", err);
+            }
+          }
+        })();
+      }
     } catch (err) {
       setSubmitError(
         err instanceof Error ? err.message : t("projects.new.ai.errorConfirm")

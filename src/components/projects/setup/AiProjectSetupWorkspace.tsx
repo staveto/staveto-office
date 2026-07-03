@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -19,24 +19,38 @@ import { AiSetupWorkStep } from "./AiSetupWorkStep";
 import { AiSetupPriceStep } from "./AiSetupPriceStep";
 import { AiSetupOfferStep } from "./AiSetupOfferStep";
 import {
+  applyProjectFactsToMaterialRows,
   computeAiSetupTotals,
   defaultCalculation,
   freezeCalculationForSave,
   parseAiSetupMeta,
+  resolveAiSetupCalculation,
   resolveSetupMaterialRows,
   seedWorkEstimate,
   serializeAiSetupMeta,
   workEstimateFromQuoteItems,
 } from "./aiSetupHelpers";
+import { loadAiSetupProjectContext, mergeAttachmentContextIntoProjectFacts } from "./aiSetupProjectContext";
+import { useActiveWorkspaceContext } from "@/hooks/useActiveWorkspaceContext";
 import { parseQuoteDocumentMeta, type QuoteDocumentMeta } from "@/lib/quoteDocumentMeta";
 import { syncMaterialRowsToQuoteItems, syncWorkEstimateToQuoteItems } from "./aiSetupPersistence";
 import type {
+  AiProjectFactsPersisted,
   AiSetupCalculation,
   AiSetupMaterialRow,
   AiSetupStepId,
   AiSetupWorkEstimate,
 } from "./aiSetupTypes";
 import { AI_SETUP_STEPS } from "./aiSetupTypes";
+
+function hasEditableProjectFacts(facts?: AiProjectFactsPersisted): boolean {
+  if (!facts) return false;
+  if (facts.buildingType?.trim()) return true;
+  if ((facts.totalKnownAreaM2 ?? 0) > 0) return true;
+  if ((facts.rooms?.length ?? 0) > 0) return true;
+  if ((facts.dimensions?.length ?? 0) > 0) return true;
+  return false;
+}
 
 type Props = {
   project: ProjectDoc;
@@ -47,6 +61,9 @@ type Props = {
 export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: Props) {
   const { t } = useI18n();
   const { activeWorkspace } = useWorkspace();
+  const workspaceCtx = useActiveWorkspaceContext();
+  const currency = workspaceCtx.activeCurrency || "EUR";
+  const countryCode = workspaceCtx.activeCountryCode;
   const [activeStep, setActiveStep] = useState<AiSetupStepId>("overview");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -60,11 +77,18 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
   const [materials, setMaterials] = useState<AiSetupMaterialRow[]>([]);
   const [workEstimate, setWorkEstimate] = useState<AiSetupWorkEstimate>(() => seedWorkEstimate([]));
   const [calculation, setCalculation] = useState<AiSetupCalculation>(() =>
-    defaultCalculation(project.quoteDraftVatPercent)
+    resolveAiSetupCalculation(
+      undefined,
+      project.quoteDraftVatPercent,
+      countryCode
+    )
   );
   const [documentMeta, setDocumentMeta] = useState<QuoteDocumentMeta>(() =>
     parseQuoteDocumentMeta(project.quoteDraftNotes)
   );
+  const [projectFacts, setProjectFacts] = useState<AiProjectFactsPersisted | undefined>();
+  const [applyingFacts, setApplyingFacts] = useState(false);
+  const factsSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,11 +108,46 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
         const phases = new Set(tasks.map((x) => x.phaseId).filter(Boolean));
         setPhaseCount(phases.size || (tasks.length > 0 ? 1 : 0));
         setTaskCount(tasks.length);
-        setMaterials(resolveSetupMaterialRows(quoteItems, suggestions, projectMaterials));
 
         const meta = parseAiSetupMeta(project.quoteDraftNotes);
+        let materialRows = resolveSetupMaterialRows(quoteItems, suggestions, projectMaterials);
+
+        const savedFacts = meta?.projectFacts;
+        let loadedFacts = savedFacts;
+
+        if (activeWorkspace) {
+          const ctx = await loadAiSetupProjectContext({
+            projectId: project.id,
+            aiDraftId: project.aiDraftId,
+            quoteDraftNotes: project.quoteDraftNotes,
+            workspace: activeWorkspace,
+            userId,
+          });
+          loadedFacts = hasEditableProjectFacts(savedFacts)
+            ? savedFacts
+            : mergeAttachmentContextIntoProjectFacts(
+                ctx.projectFacts ?? savedFacts,
+                ctx.attachmentFindings
+              );
+        }
+
+        if (loadedFacts) {
+          materialRows = applyProjectFactsToMaterialRows(materialRows, loadedFacts, null);
+        }
+
+        if (!cancelled) {
+          setMaterials(materialRows);
+          setProjectFacts(loadedFacts);
+        }
+
         setWorkEstimate(meta?.workEstimate ?? workEstimateFromQuoteItems(quoteItems, tasks));
-        setCalculation(meta?.calculation ?? defaultCalculation(project.quoteDraftVatPercent));
+        setCalculation(
+          resolveAiSetupCalculation(
+            meta?.calculation,
+            project.quoteDraftVatPercent,
+            countryCode
+          )
+        );
         setDocumentMeta(parseQuoteDocumentMeta(project.quoteDraftNotes));
       } catch (e) {
         if (!cancelled) {
@@ -103,15 +162,17 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
     return () => {
       cancelled = true;
     };
-  }, [project.id, t]);
+  }, [project.id, project.aiDraftId, project.quoteDraftNotes, activeWorkspace, userId, countryCode, t]);
 
   // Sync calculation meta after save — do not reload materials or quote notes.
   useEffect(() => {
     if (loading) return;
     const meta = parseAiSetupMeta(project.quoteDraftNotes);
     if (meta?.workEstimate) setWorkEstimate(meta.workEstimate);
-    if (meta?.calculation) setCalculation(meta.calculation);
-  }, [project.quoteDraftNotes, loading]);
+    if (meta?.calculation) {
+      setCalculation(resolveAiSetupCalculation(meta.calculation, project.quoteDraftVatPercent, countryCode));
+    }
+  }, [project.quoteDraftNotes, project.quoteDraftVatPercent, countryCode, loading]);
 
   const totals = useMemo(
     () => computeAiSetupTotals(materials, workEstimate, calculation),
@@ -119,10 +180,11 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
   );
 
   const persistMeta = useCallback(
-    async (calcOverride?: AiSetupCalculation) => {
+    async (calcOverride?: AiSetupCalculation, factsOverride?: AiProjectFactsPersisted) => {
       const calc = calcOverride ?? calculation;
+      const facts = factsOverride ?? projectFacts;
       const notes = serializeAiSetupMeta(
-        { workEstimate, calculation: calc },
+        { workEstimate, calculation: calc, projectFacts: facts },
         undefined,
         documentMeta
       );
@@ -132,8 +194,37 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
       });
       onProjectUpdated(updated);
     },
-    [calculation, documentMeta, onProjectUpdated, project.id, workEstimate]
+    [calculation, documentMeta, onProjectUpdated, project.id, projectFacts, workEstimate]
   );
+
+  const handleProjectFactsChange = useCallback(
+    (facts: AiProjectFactsPersisted) => {
+      setProjectFacts(facts);
+      if (factsSaveTimerRef.current) clearTimeout(factsSaveTimerRef.current);
+      factsSaveTimerRef.current = setTimeout(() => {
+        void persistMeta(undefined, facts);
+      }, 700);
+    },
+    [persistMeta]
+  );
+
+  useEffect(
+    () => () => {
+      if (factsSaveTimerRef.current) clearTimeout(factsSaveTimerRef.current);
+    },
+    []
+  );
+
+  const applyFactsToMaterials = useCallback(() => {
+    if (!projectFacts) return;
+    setApplyingFacts(true);
+    try {
+      setMaterials((prev) => applyProjectFactsToMaterialRows(prev, projectFacts, null));
+      void persistMeta(undefined, projectFacts);
+    } finally {
+      setApplyingFacts(false);
+    }
+  }, [persistMeta, projectFacts]);
 
   const goToStep = (step: AiSetupStepId) => setActiveStep(step);
 
@@ -341,6 +432,10 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
               onMaterialsChange={setMaterials}
               onContinue={() => void advanceFromMaterial()}
               saving={saving}
+              projectFacts={projectFacts}
+              onProjectFactsChange={handleProjectFactsChange}
+              onApplyFactsToMaterials={applyFactsToMaterials}
+              applyingFacts={applyingFacts}
             />
           ) : null}
           {activeStep === "work" ? (
@@ -349,6 +444,7 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
               onChange={setWorkEstimate}
               onContinue={() => void advanceFromWork()}
               saving={saving}
+              currency={currency}
             />
           ) : null}
           {activeStep === "price" ? (
@@ -358,6 +454,7 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
               onChange={setCalculation}
               onContinue={() => void advanceFromPrice()}
               saving={saving}
+              currency={currency}
             />
           ) : null}
           {activeStep === "offer" ? (
@@ -374,11 +471,12 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
               saved={quoteSaved}
               savedQuoteId={savedQuoteId}
               exportingPdf={exportingPdf}
+              currency={currency}
             />
           ) : null}
         </div>
 
-        <AiSetupSummaryPanel totals={totals} calculation={calculation} />
+        <AiSetupSummaryPanel totals={totals} calculation={calculation} currency={currency} />
       </div>
     </div>
   );

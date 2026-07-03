@@ -115,7 +115,8 @@ export async function createProjectFromDraft(params: {
   draftId: string;
 }): Promise<{ projectId: string }> {
   const fn = getCallable<Record<string, unknown>, { projectId: string }>(
-    "createProjectFromDraft"
+    "createProjectFromDraft",
+    { timeoutMs: 120_000 }
   );
   const wsKey = getWorkspaceStorageKey(params.workspace, params.userId);
   const payload: Record<string, unknown> = {

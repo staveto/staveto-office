@@ -456,7 +456,7 @@ export function QuotePrintDocument({
                   items={sectionItems}
                   t={t}
                   startIndex={startIndex}
-                  currency={quote.currency}
+                  currency={printContext.currency}
                 />
               </div>
             );

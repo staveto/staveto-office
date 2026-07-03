@@ -324,30 +324,35 @@ export async function importAiWizardAttachmentsToProjectDetailed(input: {
   const existing = await listExistingDestPaths(input.projectId);
   const imported: ProjectDocumentRecord[] = [];
   const errors: string[] = [];
+  const copyJobs: Array<() => Promise<void>> = [];
 
   for (const file of attachments) {
     const safeName = sanitizeFileName(file.fileName);
     const expectedDest = `projects/${input.projectId}/documents/${safeName}`;
     if (existing.has(expectedDest) || existing.has(file.fileName)) continue;
 
-    try {
-      const record = await copyAttachmentToProjectDocument(
-        input.projectId,
-        input.userId,
-        file,
-        input.workspace
-      );
-      imported.push(record);
-      existing.add(record.storagePath);
-      existing.add(record.fileName);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      errors.push(`${file.fileName}: ${msg}`);
-      if (process.env.NODE_ENV === "development") {
-        console.warn("[ai attachments] copy failed", file.storagePath, err);
+    copyJobs.push(async () => {
+      try {
+        const record = await copyAttachmentToProjectDocument(
+          input.projectId,
+          input.userId,
+          file,
+          input.workspace
+        );
+        imported.push(record);
+        existing.add(record.storagePath);
+        existing.add(record.fileName);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push(`${file.fileName}: ${msg}`);
+        if (process.env.NODE_ENV === "development") {
+          console.warn("[ai attachments] copy failed", file.storagePath, err);
+        }
       }
-    }
+    });
   }
+
+  await Promise.all(copyJobs.map((job) => job()));
 
   return { imported, errors };
 }

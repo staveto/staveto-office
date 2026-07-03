@@ -98,3 +98,34 @@ export function mergeWorkspaceLocale(
     defaultLanguage: overrides?.defaultLanguage?.trim() || base.defaultLanguage,
   };
 }
+
+/** Standard VAT % for quote defaults (not a tax engine — user can override). */
+const DEFAULT_VAT_PERCENT: Record<string, number> = {
+  SK: 20,
+  CZ: 21,
+  DE: 19,
+  AT: 20,
+  CH: 8.1,
+  PL: 23,
+  HU: 27,
+  GB: 20,
+};
+
+export function defaultVatPercentForCountry(countryCode: string | null | undefined): number {
+  const normalized = normalizeCountryCode(countryCode);
+  if (normalized && DEFAULT_VAT_PERCENT[normalized] != null) {
+    return DEFAULT_VAT_PERCENT[normalized];
+  }
+  return DEFAULT_VAT_PERCENT.SK;
+}
+
+/** Resolve display currency for quotes/PDF from org market or country. */
+export function resolveQuoteCurrency(input?: {
+  currency?: string | null;
+  countryCode?: string | null;
+  country?: string | null;
+}): string {
+  if (input?.currency?.trim()) return input.currency.trim().toUpperCase();
+  const cc = input?.countryCode ?? input?.country ?? null;
+  return mergeWorkspaceLocale(cc).currency;
+}

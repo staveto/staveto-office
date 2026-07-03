@@ -74,6 +74,7 @@ export default function QuoteDetailPage() {
   const [notes, setNotes] = useState("");
   const [currency, setCurrency] = useState<string | null>(null);
   const [items, setItems] = useState<LineItem[]>([]);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const itemsWithTotals = items.map((item) => ({
     ...item,
@@ -158,6 +159,7 @@ export default function QuoteDetailPage() {
     if (Object.keys(err).length > 0) return;
 
     setSaving(true);
+    setSaveSuccess(false);
     try {
       await saveQuote(id, user.id, {
         title: title.trim(),
@@ -175,6 +177,7 @@ export default function QuoteDetailPage() {
         })),
       }, activeWorkspace);
       setErrors({});
+      setSaveSuccess(true);
     } catch (error) {
       setErrors({
         submit: error instanceof Error ? error.message : t("quotes.saveError"),
@@ -297,10 +300,15 @@ export default function QuoteDetailPage() {
 
       <p className="text-sm text-muted-foreground">{t("projects.draft.quoteItem.disclaimer")}</p>
 
-      <form onSubmit={handleSave} className="space-y-6">
+      <form onSubmit={(e) => void handleSave(e)} className="space-y-6">
         {errors.submit && (
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive text-sm">
             {errors.submit}
+          </div>
+        )}
+        {saveSuccess && !errors.submit && (
+          <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 p-4 text-sm text-emerald-800 dark:text-emerald-200">
+            {t("quotes.saved")}
           </div>
         )}
 
@@ -311,7 +319,16 @@ export default function QuoteDetailPage() {
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="title">{t("quotes.fieldTitle")}</Label>
-              <Input id="title" value={title} onChange={(e) => setTitle(e.target.value)} />
+              <Input
+                id="title"
+                value={title}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  setSaveSuccess(false);
+                }}
+                aria-invalid={!!errors.title}
+              />
+              {errors.title ? <p className="text-sm text-destructive">{errors.title}</p> : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="status">{t("quotes.colStatus")}</Label>
@@ -330,7 +347,18 @@ export default function QuoteDetailPage() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="client">{t("quotes.colClient")}</Label>
-              <Input id="client" value={clientName} onChange={(e) => setClientName(e.target.value)} />
+              <Input
+                id="client"
+                value={clientName}
+                onChange={(e) => {
+                  setClientName(e.target.value);
+                  setSaveSuccess(false);
+                }}
+                aria-invalid={!!errors.clientName}
+              />
+              {errors.clientName ? (
+                <p className="text-sm text-destructive">{errors.clientName}</p>
+              ) : null}
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">{t("projects.draft.customerEmail")}</Label>
@@ -356,6 +384,7 @@ export default function QuoteDetailPage() {
             </Button>
           </CardHeader>
           <CardContent>
+            {errors.items ? <p className="mb-3 text-sm text-destructive">{errors.items}</p> : null}
             <Table>
               <TableHeader>
                 <TableRow>

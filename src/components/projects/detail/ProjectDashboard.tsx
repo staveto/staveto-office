@@ -156,20 +156,6 @@ export function ProjectDashboard({
             (freshProject.attachedFileIds?.length ?? 0) > 0 ||
             (freshProject.aiWizardAttachmentPaths?.length ?? 0) > 0);
 
-        if (canImportAiAttachments) {
-          const { imported } = await importAiWizardAttachmentsToProjectDetailed({
-            projectId: project.id,
-            workspace: activeWorkspace,
-            userId,
-            project: freshProject,
-          }).catch(() => ({ imported: [], errors: [] }));
-          if (imported.length > 0) {
-            resolvedDocs = imported;
-          } else {
-            resolvedDocs = await listProjectDocuments(project.id).catch(() => docs);
-          }
-        }
-
         if (cancelled) return;
         setOpenProblemsCount(problemsList.filter((p) => isOpenProblem(p)).length);
         setTasks(tasksList);
@@ -183,6 +169,25 @@ export function ProjectDashboard({
           () => new Map<string, ActiveTimerState>()
         );
         if (!cancelled) setActiveTimers(timers);
+
+        if (canImportAiAttachments && activeWorkspace) {
+          void importAiWizardAttachmentsToProjectDetailed({
+            projectId: project.id,
+            workspace: activeWorkspace,
+            userId,
+            project: freshProject,
+          })
+            .then(async ({ imported }) => {
+              if (cancelled) return;
+              if (imported.length > 0) {
+                setDocuments(imported);
+                return;
+              }
+              const listed = await listProjectDocuments(project.id).catch(() => []);
+              if (!cancelled && listed.length > 0) setDocuments(listed);
+            })
+            .catch(() => undefined);
+        }
       } catch (e) {
         if (!cancelled) {
           setTasksError(e instanceof FirestoreIndexError ? e.message : null);

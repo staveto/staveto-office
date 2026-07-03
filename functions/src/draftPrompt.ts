@@ -1,4 +1,5 @@
 import type { ProjectDraftPayload } from "./draftSchema";
+import { NUMBER_FORMAT_RULES } from "./attachmentSummarySchema";
 
 export function languageLabel(lang: "sk" | "de" | "en"): string {
   if (lang === "de") return "German (formal Sie, Swiss spelling with ss not ß)";
@@ -67,6 +68,8 @@ If user text and attachment conflict, mention the conflict in draftWarnings.
 Do not ignore attachment findings.
 Do not invent exact quantities unless clearly visible in attachments.
 
+${NUMBER_FORMAT_RULES}
+
 Additional plain-text extracts (secondary):
 ${docs}
 
@@ -75,9 +78,7 @@ Material rules:
 - Provide at least 6 material suggestions for a full construction project, fewer for a small job or single-trade work. Cover the main trades relevant to the scope (e.g. masonry, concrete, insulation, windows/doors, roofing, plumbing, electrical, HVAC, flooring, plaster/paint) — only those that fit this project.
 - For each materialSuggestions[] item set: name, category, confidence ("low" when purely inferred, "medium"/"high" when clearly stated), source ("user_text" when named in the description, "attachment" when from a document, otherwise "inferred"), and sourceNote explaining why.
 - Set quantity to null when it is not explicitly known. Never invent exact quantities; add unit only when meaningful.
-- If an attachment contains an explicit material list, also add those to materials[] with a note referencing the document.
-- If an attachment is a floor plan, still infer materialSuggestions[] from rooms and scope.
-- Populate missingQuestions[] and clarificationQuestions[] for anything needed to price materials accurately.
+- When projectFacts.rooms, projectFacts.totalKnownAreaM2, or attachment dimensions provide floor areas, derive materialSuggestions quantities for area-based materials (flooring, roofing footprint, facade plaster, interior plaster, insulation in m²). Set source to "attachment" and sourceNote citing the area used (e.g. "Súčet podlahových plôch 86 m²").
 - Populate projectFacts.rooms and projectFacts.dimensions from attachment findings when available.
 
 List each material once only. Do not repeat the same item across materials[] and offerPreparation.suggestedLineItems.
@@ -113,6 +114,7 @@ ATTACHMENT FINDINGS (preserve and use when refining materials, rooms, tasks, or 
 ${findings}
 
 Do not invent exact quantities unless visible in attachment findings.
+${NUMBER_FORMAT_RULES}
 If refining materials from attachments, populate materialSuggestions[] with source and confidence.
 
 Current draft:

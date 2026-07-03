@@ -6,7 +6,14 @@ import type { QuoteDraftItemDoc } from "@/lib/quoteDraftItems";
 import type { TaskDoc } from "@/lib/projects";
 import type { QuoteDocumentMeta } from "@/lib/quoteDocumentMeta";
 import { isCustomerVisibleItemName } from "@/lib/quoteCustomerItems";
+import { defaultVatPercentForCountry } from "@/lib/workspace/countryConfig";
+import {
+  applyFactsToMaterialRows,
+  type AttachmentFindingLike,
+  type ProjectFactsLike,
+} from "@/lib/ai/materialQuantityFromFacts";
 import type {
+  AiProjectFactsPersisted,
   AiSetupCalculation,
   AiSetupMaterialRow,
   AiSetupPersistedMeta,
@@ -20,27 +27,49 @@ export function parseAiSetupMeta(notes?: string | null): AiSetupPersistedMeta | 
     const parsed = JSON.parse(notes) as { aiSetupMeta?: AiSetupPersistedMeta & Record<string, unknown> };
     if (!parsed?.aiSetupMeta) return null;
     const meta = parsed.aiSetupMeta;
+    const result: AiSetupPersistedMeta = {};
     if (meta.workEstimate && meta.calculation) {
-      return {
-        workEstimate: meta.workEstimate,
-        calculation: normalizeCalculation(meta.calculation),
-      };
+      result.workEstimate = meta.workEstimate;
+      result.calculation = normalizeCalculation(meta.calculation, undefined);
     }
-    return null;
+    if (meta.projectFacts) {
+      result.projectFacts = meta.projectFacts as AiProjectFactsPersisted;
+    }
+    return Object.keys(result).length > 0 ? result : null;
   } catch {
     return null;
   }
 }
 
-function normalizeCalculation(calc: AiSetupCalculation): AiSetupCalculation {
+function normalizeCalculation(
+  calc: AiSetupCalculation,
+  countryCode?: string | null
+): AiSetupCalculation {
   return {
     marginPercent: calc.marginPercent ?? 15,
-    vatPercent: calc.vatPercent ?? 8.1,
+    vatPercent: calc.vatPercent ?? defaultVatPercentForCountry(countryCode),
     otherCosts: calc.otherCosts ?? 0,
     materialTotalOverride: calc.materialTotalOverride ?? null,
     workTotalOverride: calc.workTotalOverride ?? null,
     manualGrossTotal: calc.manualGrossTotal ?? null,
   };
+}
+
+/** Apply workspace market defaults; fixes legacy CH-only VAT when company is SK/EU. */
+export function resolveAiSetupCalculation(
+  saved: AiSetupCalculation | undefined,
+  projectVatPercent: number | undefined,
+  countryCode: string | null | undefined
+): AiSetupCalculation {
+  const marketVat = defaultVatPercentForCountry(countryCode);
+  if (!saved) {
+    return defaultCalculation(projectVatPercent, countryCode);
+  }
+  const cc = countryCode?.trim().toUpperCase();
+  if (cc && cc !== "CH" && saved.vatPercent === 8.1) {
+    return { ...saved, vatPercent: marketVat };
+  }
+  return normalizeCalculation(saved, countryCode);
 }
 
 export function serializeAiSetupMeta(
@@ -85,7 +114,17 @@ export function materialRowsFromSuggestions(suggestions: MaterialSuggestionDoc[]
     price: s.estimatedUnitPrice ?? 0,
     included: s.status !== "rejected",
     customerVisible: isCustomerVisibleItemName(s.name),
+    sourceNote: s.sourceNote?.trim() || s.description?.trim() || undefined,
+    confidence: s.confidence,
   }));
+}
+
+export function applyProjectFactsToMaterialRows(
+  rows: AiSetupMaterialRow[],
+  facts?: ProjectFactsLike | null,
+  findings?: AttachmentFindingLike[] | null
+): AiSetupMaterialRow[] {
+  return applyFactsToMaterialRows(rows, facts, findings);
 }
 
 export function materialRowsFromProjectMaterials(materials: ProjectMaterialDoc[]): AiSetupMaterialRow[] {
@@ -177,8 +216,11 @@ function mergeQuoteRowsWithAiHints(
     return {
       ...row,
       price: row.price > 0 ? row.price : ai.price,
-      qty: row.qty > 0 ? row.qty : ai.qty,
+      qty: row.qty > 1 ? row.qty : ai.qty > 0 ? ai.qty : row.qty,
+      unit: row.qty > 1 ? row.unit : ai.qty > 1 ? ai.unit : row.unit,
       suggestionId: row.suggestionId ?? ai.suggestionId,
+      sourceNote: row.sourceNote?.trim() || ai.sourceNote,
+      confidence: row.confidence ?? ai.confidence,
     };
   });
 
@@ -238,10 +280,13 @@ export function workEstimateFromQuoteItems(
   };
 }
 
-export function defaultCalculation(vatPercent?: number): AiSetupCalculation {
+export function defaultCalculation(
+  vatPercent?: number,
+  countryCode?: string | null
+): AiSetupCalculation {
   return {
     marginPercent: 15,
-    vatPercent: vatPercent ?? 8.1,
+    vatPercent: vatPercent ?? defaultVatPercentForCountry(countryCode),
     otherCosts: 0,
     materialTotalOverride: null,
     workTotalOverride: null,

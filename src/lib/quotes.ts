@@ -31,6 +31,7 @@ import {
 import type { ProjectDoc } from "./projects";
 import { computeItemTotal, computeEstimateTotals } from "./estimateUtils";
 import type { QuoteDraftItemCategory } from "./quoteDraftItems";
+import { resolveQuoteCurrency } from "@/lib/workspace/countryConfig";
 
 export type QuoteStatus = "draft" | "sent" | "accepted" | "rejected";
 
@@ -454,7 +455,7 @@ export async function createQuote(
     vatPercent,
     vatAmount: totals.vatAmount,
     grandTotal: totals.grandTotal,
-    currency: input.currency?.trim() || "CHF",
+    currency: resolveQuoteCurrency({ currency: input.currency }),
     notes: input.notes?.trim() || null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),

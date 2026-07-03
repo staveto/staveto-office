@@ -41,8 +41,16 @@ export type AiProjectPostConfirmInput = {
   uploadedFiles?: UploadedAiDraftFile[];
 };
 
+export type AiProjectPostConfirmOptions = {
+  /** Office createProjectFromDraft already writes materialSuggestions server-side. */
+  skipMaterialSuggestions?: boolean;
+  /** Copying attachments via download+upload is slow — run after navigation instead. */
+  skipAttachmentImport?: boolean;
+};
+
 export async function enrichProjectAfterAiConfirm(
-  input: AiProjectPostConfirmInput
+  input: AiProjectPostConfirmInput,
+  options?: AiProjectPostConfirmOptions
 ): Promise<{ importedDocuments: number }> {
   const db = getFirestoreInstance();
   if (!db) throw new Error("Firestore not configured");
@@ -94,7 +102,7 @@ export async function enrichProjectAfterAiConfirm(
 
   await updateDoc(doc(db, "projects", input.projectId), patch);
 
-  if (materials.length > 0) {
+  if (!options?.skipMaterialSuggestions && materials.length > 0) {
     await createMaterialSuggestionsBatch(
       input.projectId,
       materials
@@ -113,6 +121,10 @@ export async function enrichProjectAfterAiConfirm(
           sourceNote: m.sourceNote?.trim() || undefined,
         }))
     ).catch(() => undefined);
+  }
+
+  if (options?.skipAttachmentImport) {
+    return { importedDocuments: 0 };
   }
 
   const projectForImport: ProjectDoc = {

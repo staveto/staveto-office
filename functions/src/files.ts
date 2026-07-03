@@ -163,9 +163,16 @@ export async function collectDraftFilesForGeneration(params: {
   documentStoragePaths?: string[];
 }): Promise<DraftFileCollectionResult> {
   const processedFiles: ProcessedFileDiagnostic[] = [];
+  const pathIdsFromAttached = (params.attachedFileIds ?? [])
+    .filter((id) => id?.startsWith("path:"))
+    .map((id) => id.slice("path:".length));
+  const allStoragePaths = [
+    ...(params.documentStoragePaths ?? []),
+    ...pathIdsFromAttached,
+  ];
   const uploadedFileCount =
     (params.attachedFileIds?.filter((id) => id && !id.startsWith("path:")).length ?? 0) +
-    (params.documentStoragePaths?.length ?? 0);
+    allStoragePaths.length;
 
   const fromIds = await loadDraftFiles(
     params.db,
@@ -177,7 +184,7 @@ export async function collectDraftFilesForGeneration(params: {
   const fromPaths = loadDraftFilesFromStoragePaths(
     params.authUid,
     params.storageKey,
-    params.documentStoragePaths,
+    allStoragePaths,
     processedFiles
   );
   const files = mergeDraftFilesByPath(fromIds, fromPaths);
@@ -289,4 +296,51 @@ export function markFileDiagnostic(
     mimeType: file.mimeType,
     ...patch,
   });
+}
+
+function sanitizeProjectDocumentFileName(name: string): string {
+  return name.replace(/[^\w.\-()+ ]/g, "_").slice(0, 120);
+}
+
+/** Copy AI wizard draft files into projects/{id}/documents (server-side on confirm). */
+export async function copyDraftFilesToProjectDocuments(
+  bucket: Bucket,
+  db: admin.firestore.Firestore,
+  projectId: string,
+  authUid: string,
+  files: DraftFileRecord[]
+): Promise<{ storagePaths: string[] }> {
+  const storagePaths: string[] = [];
+  const seenNames = new Set<string>();
+
+  for (const file of files) {
+    const safeName = sanitizeProjectDocumentFileName(file.fileName);
+    if (seenNames.has(safeName)) continue;
+    seenNames.add(safeName);
+
+    const destPath = `projects/${projectId}/documents/${safeName}`;
+    const srcFile = bucket.file(file.storagePath);
+    const destFile = bucket.file(destPath);
+    const mime = file.mimeType || guessMimeType(safeName);
+
+    try {
+      await srcFile.copy(destFile);
+    } catch {
+      const [bytes] = await srcFile.download();
+      await destFile.save(bytes, { contentType: mime });
+    }
+
+    await db.collection(`projects/${projectId}/documents`).add({
+      fileName: file.fileName,
+      mimeType: mime,
+      storagePath: destPath,
+      uploadedBy: authUid,
+      source: "ai_wizard",
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    storagePaths.push(destPath);
+  }
+
+  return { storagePaths };
 }

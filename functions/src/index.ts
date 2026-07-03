@@ -95,7 +95,7 @@ export const updateProjectDraftWithAI = onCall(
 );
 
 export const createProjectFromDraft = onCall(
-  { ...callableOptions, timeoutSeconds: 60, memory: "256MiB" as const },
+  { ...callableOptions, timeoutSeconds: 120, memory: "512MiB" as const },
   async (request) => {
     try {
       return await handleCreateProjectFromDraft(request.auth?.uid, request.data);

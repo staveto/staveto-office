@@ -4,6 +4,7 @@ import { draftLanguageSchema, parseProjectDraftPayload, projectDraftSchema, type
 import {
   extractFileText,
   collectDraftFilesForGeneration,
+  copyDraftFilesToProjectDocuments,
   isVisualAttachmentMime,
   loadVisualAttachment,
   markFileDiagnostic,
@@ -26,7 +27,41 @@ import {
 } from "./draftAttachmentMerge";
 import { buildGeneratePrompt, buildUpdatePrompt, generateDraftWithGemini, summarizeAttachmentsWithGemini, type GeminiInlineAttachment } from "./gemini";
 import { sanitizeDraftMaterials } from "./materialDedup";
+import { enrichDraftMaterialSuggestions } from "./materialQuantityFromFacts";
 import { z } from "zod";
+
+function withEnrichedMaterialQuantities(
+  draft: ProjectDraftPayload,
+  attachmentSummaries: AttachmentSummary[] = []
+): ProjectDraftPayload {
+  const enriched = enrichDraftMaterialSuggestions({
+    materialSuggestions: draft.materialSuggestions,
+    projectFacts: draft.projectFacts,
+    attachmentFindings: attachmentSummaries,
+  });
+  if (!enriched.length) return draft;
+  return { ...draft, materialSuggestions: enriched };
+}
+
+function buildInitialQuoteDraftNotes(projectFacts?: ProjectDraftPayload["projectFacts"]): string | null {
+  if (!projectFacts) return null;
+  const hasRooms = (projectFacts.rooms?.length ?? 0) > 0;
+  const hasDimensions = (projectFacts.dimensions?.length ?? 0) > 0;
+  const hasArea = (projectFacts.totalKnownAreaM2 ?? 0) > 0;
+  const hasType = Boolean(projectFacts.buildingType?.trim());
+  if (!hasRooms && !hasDimensions && !hasArea && !hasType) return null;
+
+  return JSON.stringify({
+    aiSetupMeta: {
+      projectFacts: {
+        buildingType: projectFacts.buildingType,
+        totalKnownAreaM2: projectFacts.totalKnownAreaM2,
+        rooms: projectFacts.rooms,
+        dimensions: projectFacts.dimensions,
+      },
+    },
+  });
+}
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -301,7 +336,10 @@ export async function handleGenerateProjectDraft(
     }
   }
   const draft = sanitizeDraftMaterials(
-    parseProjectDraftPayload(rawDraft)
+    withEnrichedMaterialQuantities(
+      parseProjectDraftPayload(rawDraft),
+      attachmentSummaries
+    )
   );
 
   const draftRef = db.collection(`workspaces/${access.storageKey}/projectDrafts`).doc();
@@ -313,6 +351,7 @@ export async function handleGenerateProjectDraft(
 
   await draftRef.set({
     draft,
+    attachmentSummaries: attachmentSummaries.length ? attachmentSummaries : null,
     attachmentProcessing,
     workspaceId: access.storageKey,
     orgId: access.orgId ?? null,
@@ -442,6 +481,7 @@ export async function handleCreateProjectFromDraft(
 
   const stored = snap.data() as {
     draft: ProjectDraftPayload;
+    attachmentSummaries?: AttachmentSummary[];
     jobType?: string;
     contactMode?: string;
     contactId?: string | null;
@@ -455,7 +495,10 @@ export async function handleCreateProjectFromDraft(
     throw new Error("Draft was already converted to a project.");
   }
 
-  const draft = projectDraftSchema.parse(stored.draft);
+  const draft = withEnrichedMaterialQuantities(
+    projectDraftSchema.parse(stored.draft),
+    stored.attachmentSummaries ?? []
+  );
   let customerId: string | null = draft.customer.contactId;
 
   if (draft.customer.mode === "new") {
@@ -491,6 +534,7 @@ export async function handleCreateProjectFromDraft(
 
   const jobTypeRaw = stored.jobType ?? draft.projectType;
   const engine = mapArchetypeToFirestoreFields(String(jobTypeRaw ?? ""));
+  const initialQuoteNotes = buildInitialQuoteDraftNotes(draft.projectFacts);
   const projectRef = await db.collection("projects").add({
     name: draft.projectTitle,
     projectType: engine?.projectType ?? "TRADE",
@@ -514,6 +558,7 @@ export async function handleCreateProjectFromDraft(
     createdByAI: true,
     confirmedByUser: true,
     attachedFileIds: draft.source.attachedFileIds ?? [],
+    ...(initialQuoteNotes ? { quoteDraftNotes: initialQuoteNotes } : {}),
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
     ...projectWriteFields(access, authUid),
@@ -523,6 +568,7 @@ export async function handleCreateProjectFromDraft(
   const batch = db.batch();
   let order = 0;
   let quoteOrder = 0;
+  const quoteItemNames = new Set<string>();
 
   // Build phases subcollection (mobile/office dashboard reads projects/{id}/phases).
   const phaseIdByKey = new Map<string, string>();
@@ -594,6 +640,7 @@ export async function handleCreateProjectFromDraft(
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
+    quoteItemNames.add(mat.name.trim().toLowerCase());
   }
 
   for (const line of draft.offerPreparation.suggestedLineItems) {
@@ -616,9 +663,72 @@ export async function handleCreateProjectFromDraft(
       createdAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
+    if (line.category !== "work") {
+      quoteItemNames.add(line.title.trim().toLowerCase());
+    }
+  }
+
+  for (const suggestion of draft.materialSuggestions ?? []) {
+    const name = suggestion.name?.trim();
+    if (!name) continue;
+    const sugRef = db.collection(`projects/${projectId}/materialSuggestions`).doc();
+    batch.set(sugRef, {
+      projectId,
+      name,
+      category: suggestion.category ?? null,
+      description: suggestion.sourceNote?.trim() ?? null,
+      suggestedQuantity: suggestion.quantity ?? null,
+      unit: suggestion.unit ?? null,
+      confidence: suggestion.confidence ?? null,
+      source: "ai",
+      sourceNote: suggestion.sourceNote?.trim() ?? null,
+      status: "planned",
+      createdBy: authUid,
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+
+    const nameKey = name.toLowerCase();
+    if (!quoteItemNames.has(nameKey)) {
+      quoteItemNames.add(nameKey);
+      const itemRef = db.collection(`projects/${projectId}/quoteItems`).doc();
+      batch.set(itemRef, {
+        name,
+        description: suggestion.sourceNote?.trim() ?? "",
+        category: "material",
+        qty: suggestion.quantity && suggestion.quantity > 0 ? suggestion.quantity : 1,
+        unit: suggestion.unit ?? "ks",
+        unitPrice: 0,
+        order: quoteOrder++,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
   }
 
   await batch.commit();
+
+  const attachmentFiles = await collectDraftFilesForGeneration({
+    db,
+    storageKey: access.storageKey,
+    authUid,
+    attachedFileIds: draft.source.attachedFileIds ?? [],
+  });
+  if (attachmentFiles.files.length > 0) {
+    const { storagePaths } = await copyDraftFilesToProjectDocuments(
+      bucket,
+      db,
+      projectId,
+      authUid,
+      attachmentFiles.files
+    );
+    if (storagePaths.length > 0) {
+      await projectRef.update({
+        aiWizardAttachmentPaths: storagePaths,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+  }
 
   await draftRef.update({
     status: "confirmed",

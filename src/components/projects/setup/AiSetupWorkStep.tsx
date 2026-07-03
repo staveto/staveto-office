@@ -13,9 +13,10 @@ type Props = {
   onChange: (work: AiSetupWorkEstimate) => void;
   onContinue: () => void;
   saving?: boolean;
+  currency?: string;
 };
 
-export function AiSetupWorkStep({ work, onChange, onContinue, saving }: Props) {
+export function AiSetupWorkStep({ work, onChange, onContinue, saving, currency = "EUR" }: Props) {
   const { t } = useI18n();
   const subtotal = work.hours * work.hourlyRate;
 
@@ -63,7 +64,7 @@ export function AiSetupWorkStep({ work, onChange, onContinue, saving }: Props) {
                 onChange={(e) => set({ hourlyRate: Number(e.target.value) || 0 })}
                 className="h-11 text-lg font-semibold tabular-nums"
               />
-              <span className="text-sm text-[#64748B] shrink-0">CHF / h</span>
+              <span className="text-sm text-[#64748B] shrink-0">{currency} / h</span>
             </div>
           </div>
         </div>
@@ -82,7 +83,7 @@ export function AiSetupWorkStep({ work, onChange, onContinue, saving }: Props) {
         <div className="rounded-xl bg-[#F6F8FB] px-4 py-3 flex justify-between items-center">
           <span className="text-sm font-semibold text-[#64748B]">{t("projects.aiSetup.work.subtotal")}</span>
           <span className="text-lg font-bold text-[#0F2A4D] tabular-nums">
-            {formatMoney(subtotal, "CHF")}
+            {formatMoney(subtotal, currency)}
           </span>
         </div>
       </div>

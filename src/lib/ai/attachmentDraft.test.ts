@@ -237,6 +237,62 @@ describe("gemini draft validation", () => {
     expect(draft.materialSuggestions?.every((m) => m.quantity === undefined)).toBe(true);
   });
 
+  it("coerces Slovak comma decimals in attachment summary JSON", () => {
+    const summary = parseAttachmentSummaryJson(
+      JSON.stringify({
+        fileName: "pudorys.pdf",
+        documentType: "floor_plan",
+        extractedTextSummary: "Pôdorys bungalovu",
+        roomsAndAreas: [
+          {
+            roomName: "Obývacia izba",
+            areaM2: "24,3",
+            sourceNote: "tabuľka miestností: 24,3 m²",
+          },
+          {
+            roomName: "Kuchyňa",
+            areaM2: "12,50",
+            sourceNote: "12,50 m²",
+          },
+        ],
+        dimensions: [{ label: "Zastavaná plocha", value: "1.234,56 m²", sourceNote: "titulná strana" }],
+        detectedScopeOfWork: [],
+        detectedMaterials: [{ name: "Tehla", quantity: "1.250,5", unit: "ks", confidence: "high", sourceNote: "výkaz" }],
+        timeOrDurationHints: [],
+        risksOrConstraints: [],
+        missingQuestions: [],
+        confidence: "high",
+      }),
+      "pudorys.pdf"
+    );
+    expect(summary.roomsAndAreas[0]?.areaM2).toBe(24.3);
+    expect(summary.roomsAndAreas[1]?.areaM2).toBe(12.5);
+    expect(summary.detectedMaterials[0]?.quantity).toBe(1250.5);
+  });
+
+  it("coerces comma quantities in project draft JSON", () => {
+    const draft = parseProjectDraftPayload({
+      ...baseDraft,
+      projectFacts: {
+        totalKnownAreaM2: "86,5",
+        rooms: [{ name: "Spálňa", areaM2: "14,25" }],
+      },
+      materialSuggestions: [
+        {
+          name: "Podlahové krytiny",
+          category: "floor",
+          quantity: "86,5",
+          unit: "m2",
+          confidence: "medium",
+          source: "attachment",
+        },
+      ],
+    });
+    expect(draft.projectFacts?.totalKnownAreaM2).toBe(86.5);
+    expect(draft.projectFacts?.rooms?.[0]?.areaM2).toBe(14.25);
+    expect(draft.materialSuggestions?.[0]?.quantity).toBe(86.5);
+  });
+
   it("coerces null task descriptions before validation", () => {
     const draft = parseProjectDraftPayload({
       ...baseDraft,

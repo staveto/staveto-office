@@ -19,6 +19,8 @@ export type AiSetupMaterialRow = {
   included: boolean;
   /** Default true — when false, line is hidden on customer PDF. */
   customerVisible?: boolean;
+  sourceNote?: string;
+  confidence?: "low" | "medium" | "high";
 };
 
 export type AiSetupWorkEstimate = {
@@ -38,9 +40,17 @@ export type AiSetupCalculation = {
   manualGrossTotal: number | null;
 };
 
+export type AiProjectFactsPersisted = {
+  buildingType?: string;
+  totalKnownAreaM2?: number;
+  rooms?: { name: string; areaM2?: number }[];
+  dimensions?: { label: string; value: string }[];
+};
+
 export type AiSetupPersistedMeta = {
-  workEstimate: AiSetupWorkEstimate;
-  calculation: AiSetupCalculation;
+  workEstimate?: AiSetupWorkEstimate;
+  calculation?: AiSetupCalculation;
+  projectFacts?: AiProjectFactsPersisted;
 };
 
 export type AiSetupTotals = {

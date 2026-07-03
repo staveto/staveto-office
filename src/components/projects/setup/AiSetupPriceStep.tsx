@@ -13,6 +13,7 @@ type Props = {
   onChange: (calc: AiSetupCalculation) => void;
   onContinue: () => void;
   saving?: boolean;
+  currency?: string;
 };
 
 export function AiSetupPriceStep({
@@ -21,6 +22,7 @@ export function AiSetupPriceStep({
   onChange,
   onContinue,
   saving,
+  currency = "EUR",
 }: Props) {
   const { t } = useI18n();
   const set = (patch: Partial<AiSetupCalculation>) => onChange({ ...calculation, ...patch });
@@ -38,17 +40,20 @@ export function AiSetupPriceStep({
           computed={totals.materialCost}
           override={calculation.materialTotalOverride}
           onOverride={(v) => set({ materialTotalOverride: v })}
+          currency={currency}
         />
         <PriceField
           label={t("projects.aiSetup.summary.work")}
           computed={totals.workCost}
           override={calculation.workTotalOverride}
           onOverride={(v) => set({ workTotalOverride: v })}
+          currency={currency}
         />
         <SimpleField
           label={t("projects.aiSetup.calc.other")}
           value={calculation.otherCosts}
           onChange={(v) => set({ otherCosts: v })}
+          suffix={currency}
         />
         <SimpleField
           label={t("projects.aiSetup.calc.margin")}
@@ -66,11 +71,11 @@ export function AiSetupPriceStep({
         <div className="border-t border-[#E2E8F0] pt-4 space-y-2">
           <Row
             label={t("projects.aiSetup.summary.margin", { percent: String(calculation.marginPercent) })}
-            value={formatMoney(totals.marginAmount, "CHF")}
+            value={formatMoney(totals.marginAmount, currency)}
           />
           <Row
             label={t("projects.aiSetup.summary.vat", { percent: String(calculation.vatPercent) })}
-            value={formatMoney(totals.vatAmount, "CHF")}
+            value={formatMoney(totals.vatAmount, currency)}
           />
         </div>
 
@@ -78,7 +83,7 @@ export function AiSetupPriceStep({
           <div className="flex justify-between items-baseline">
             <span className="font-bold text-[#0F2A4D]">{t("projects.aiSetup.summary.total")}</span>
             <span className="text-xl font-bold text-[#E95F2A] tabular-nums">
-              {formatMoney(totals.grossTotal, "CHF")}
+              {formatMoney(totals.grossTotal, currency)}
             </span>
           </div>
           <Label className="text-xs font-semibold text-[#64748B]">
@@ -129,7 +134,7 @@ function SimpleField({
   label,
   value,
   onChange,
-  suffix = "CHF",
+  suffix = "EUR",
 }: {
   label: string;
   value: number;
@@ -158,11 +163,13 @@ function PriceField({
   computed,
   override,
   onOverride,
+  currency = "EUR",
 }: {
   label: string;
   computed: number;
   override: number | null;
   onOverride: (v: number) => void;
+  currency?: string;
 }) {
   const { t } = useI18n();
   return (
@@ -182,7 +189,7 @@ function PriceField({
       />
       {override != null && override !== computed ? (
         <p className="text-xs text-[#64748B]">
-          {t("projects.aiSetup.price.computedHint", { amount: formatMoney(computed, "CHF") })}
+          {t("projects.aiSetup.price.computedHint", { amount: formatMoney(computed, currency) })}
         </p>
       ) : null}
     </div>

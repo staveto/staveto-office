@@ -22,6 +22,7 @@ import {
 } from "@/lib/quoteDocumentMeta";
 import { isProjectDraftQuoteId, projectIdFromDraftQuoteId } from "@/lib/projectQuotePrint";
 import { buildQuoteDocFromProjectDraft } from "@/lib/projectQuotePrint";
+import { resolveQuoteCurrency } from "@/lib/workspace/countryConfig";
 import { listMaterialSuggestions } from "@/services/materials/projectMaterialsService";
 import type { MaterialSuggestionDoc } from "@/services/materials/types";
 import styles from "@/components/quotes/quote-print.module.css";
@@ -63,6 +64,31 @@ export default function QuotePrintPage() {
 
         let loadedQuote = access.quote;
         let loadedProject: ProjectDoc | null = null;
+        let orgDoc: OrganizationQuoteDocumentContext | null = null;
+
+        if (loadedQuote.orgId) {
+          const activeOrgId = isCompanyWorkspaceType(activeWorkspace.type)
+            ? (activeWorkspace.orgId ?? activeWorkspace.id)
+            : null;
+
+          const [loadedOrgDoc, loadedTemplate] = await Promise.all([
+            loadOrganizationQuoteDocumentContext(loadedQuote.orgId),
+            loadQuoteTemplateForOrg(loadedQuote.orgId, activeOrgId),
+          ]);
+          orgDoc = loadedOrgDoc;
+          setOrgContext(loadedOrgDoc);
+          setTemplate(loadedTemplate);
+        }
+
+        const printCurrency = resolveQuoteCurrency({
+          currency: orgDoc?.currency ?? orgDoc?.market?.activeCurrency,
+          countryCode:
+            orgDoc?.market?.activeCountryCode ?? orgDoc?.organization?.market?.countryCode,
+        });
+        const countryCode =
+          orgDoc?.market?.activeCountryCode ??
+          orgDoc?.organization?.market?.countryCode ??
+          null;
 
         const draftProjectId = isProjectDraftQuoteId(id)
           ? projectIdFromDraftQuoteId(id)
@@ -85,8 +111,9 @@ export default function QuotePrintPage() {
                 loadedProject,
                 items,
                 loadedTasks,
-                loadedQuote.currency,
-                loadedSuggestions
+                printCurrency,
+                loadedSuggestions,
+                countryCode
               );
             }
           }
@@ -94,19 +121,6 @@ export default function QuotePrintPage() {
 
         setQuote(loadedQuote);
         setProject(loadedProject);
-
-        if (loadedQuote.orgId) {
-          const activeOrgId = isCompanyWorkspaceType(activeWorkspace.type)
-            ? (activeWorkspace.orgId ?? activeWorkspace.id)
-            : null;
-
-          const [orgDoc, loadedTemplate] = await Promise.all([
-            loadOrganizationQuoteDocumentContext(loadedQuote.orgId),
-            loadQuoteTemplateForOrg(loadedQuote.orgId, activeOrgId),
-          ]);
-          setOrgContext(orgDoc);
-          setTemplate(loadedTemplate);
-        }
       } catch {
         setNotFound(true);
       } finally {

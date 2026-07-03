@@ -10,7 +10,7 @@ type Props = {
   currency?: string;
 };
 
-export function AiSetupSummaryPanel({ totals, calculation, currency = "CHF" }: Props) {
+export function AiSetupSummaryPanel({ totals, calculation, currency = "EUR" }: Props) {
   const { t } = useI18n();
 
   return (

@@ -1,6 +1,30 @@
 import { z } from "zod";
+import {
+  parseAreaM2FromText,
+  parseLocalizedNumber,
+  roundDocumentQuantity,
+} from "./localizedNumber";
 
-export const confidenceSchema = z.enum(["low", "medium", "high"]);
+export const NUMBER_FORMAT_RULES = `NUMBER FORMAT (critical — Slovak/Czech/German/Swiss documents):
+- Comma is the DECIMAL separator: "12,5 m²" means twelve point five (12.5), NOT 125 or 1250.
+- Dot is the THOUSANDS separator: "1.234,56" means 1234.56.
+- In JSON numeric fields (areaM2, quantity, totalKnownAreaM2) always output standard JSON numbers with a dot decimal: 12.5 — never strings like "12,5".
+- Copy the printed value exactly; convert European notation to JSON number correctly.
+- Room area "24,30 m²" → areaM2: 24.3. Wrong: 2430, 243, or 24,30 as string.
+- If unsure about a digit, omit the number and ask in missingQuestions instead of guessing.`;
+
+const localizedNumberSchema = z.preprocess((value) => {
+  const parsed = parseLocalizedNumber(value as string | number | null | undefined);
+  if (parsed === undefined) return undefined;
+  return roundDocumentQuantity(parsed);
+}, z.number().optional());
+
+const nullishLocalizedNumber = z.preprocess((value) => {
+  if (value === null || value === undefined) return undefined;
+  const parsed = parseLocalizedNumber(value as string | number);
+  if (parsed === undefined) return undefined;
+  return roundDocumentQuantity(parsed);
+}, z.number().optional());
 
 export const documentTypeSchema = z.enum([
   "floor_plan",
@@ -16,10 +40,7 @@ const optionalString = z
   .optional()
   .transform((value) => value ?? undefined);
 
-const nullishNumber = z
-  .union([z.number(), z.null()])
-  .optional()
-  .transform((value) => (value === null || value === undefined ? undefined : value));
+export const confidenceSchema = z.enum(["low", "medium", "high"]);
 
 export const attachmentSummarySchema = z.object({
   fileName: z.string(),
@@ -29,7 +50,7 @@ export const attachmentSummarySchema = z.object({
     .array(
       z.object({
         roomName: z.string(),
-        areaM2: z.number().optional(),
+        areaM2: localizedNumberSchema,
         floor: optionalString,
         sourceNote: optionalString,
       })
@@ -50,7 +71,7 @@ export const attachmentSummarySchema = z.object({
       z.object({
         name: z.string(),
         category: optionalString,
-        quantity: nullishNumber,
+        quantity: nullishLocalizedNumber,
         unit: optionalString,
         confidence: confidenceSchema.default("low"),
         sourceNote: optionalString,
@@ -78,7 +99,7 @@ export const materialSourceSchema = z.enum(["attachment", "user_text", "inferred
 export const draftMaterialSuggestionSchema = z.object({
   name: z.string(),
   category: z.string(),
-  quantity: nullishNumber,
+  quantity: nullishLocalizedNumber,
   unit: optionalString,
   confidence: confidenceSchema.default("low"),
   source: materialSourceSchema,
@@ -87,12 +108,12 @@ export const draftMaterialSuggestionSchema = z.object({
 
 export const projectFactsSchema = z.object({
   buildingType: z.string().optional(),
-  totalKnownAreaM2: z.number().optional(),
+  totalKnownAreaM2: localizedNumberSchema,
   rooms: z
     .array(
       z.object({
         name: z.string(),
-        areaM2: z.number().optional(),
+        areaM2: localizedNumberSchema,
       })
     )
     .optional(),
@@ -135,6 +156,53 @@ export const attachmentProcessingSchema = z.object({
 export type AttachmentProcessing = z.infer<typeof attachmentProcessingSchema>;
 export type ProcessedFileDiagnostic = z.infer<typeof processedFileDiagnosticSchema>;
 
+function coerceRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+/** Pre-coerce string numbers before Zod — Gemini often returns "12,5" in JSON. */
+export function normalizeAttachmentSummaryPayload(value: unknown): unknown {
+  const root = coerceRecord(value);
+  if (!root) return value;
+
+  const rooms = Array.isArray(root.roomsAndAreas)
+    ? root.roomsAndAreas.map((item) => {
+        const row = coerceRecord(item);
+        if (!row) return item;
+        const area = parseLocalizedNumber(row.areaM2 as string | number);
+        return {
+          ...row,
+          areaM2: area === undefined ? row.areaM2 : roundDocumentQuantity(area),
+        };
+      })
+    : root.roomsAndAreas;
+
+  const materials = Array.isArray(root.detectedMaterials)
+    ? root.detectedMaterials.map((item) => {
+        const row = coerceRecord(item);
+        if (!row) return item;
+        const qty = parseLocalizedNumber(row.quantity as string | number);
+        return {
+          ...row,
+          quantity: qty === undefined ? row.quantity : roundDocumentQuantity(qty),
+        };
+      })
+    : root.detectedMaterials;
+
+  return { ...root, roomsAndAreas: rooms, detectedMaterials: materials };
+}
+
+function salvageRoomAreasFromNotes(summary: AttachmentSummary): AttachmentSummary {
+  const rooms = summary.roomsAndAreas.map((room) => {
+    if (room.areaM2 != null && room.areaM2 > 0) return room;
+    const fromNote = room.sourceNote ? parseAreaM2FromText(room.sourceNote) : undefined;
+    if (fromNote === undefined) return room;
+    return { ...room, areaM2: roundDocumentQuantity(fromNote) };
+  });
+  return { ...summary, roomsAndAreas: rooms };
+}
+
 export function parseAttachmentSummaryJson(raw: string, fileName: string): AttachmentSummary {
   const cleaned = raw
     .replace(/^```json\s*/i, "")
@@ -142,8 +210,9 @@ export function parseAttachmentSummaryJson(raw: string, fileName: string): Attac
     .replace(/\s*```$/i, "")
     .trim();
   const parsed = JSON.parse(cleaned) as unknown;
-  const result = attachmentSummarySchema.safeParse(parsed);
-  if (result.success) return result.data;
+  const normalized = normalizeAttachmentSummaryPayload(parsed);
+  const result = attachmentSummarySchema.safeParse(normalized);
+  if (result.success) return salvageRoomAreasFromNotes(result.data);
   return emptyAttachmentSummary(fileName, "Could not parse structured attachment summary.");
 }
 

@@ -33,6 +33,7 @@ import type { TaskDoc } from "@/lib/projects";
 import { QuotePrintDocument } from "@/components/quotes/QuotePrintDocument";
 
 import { buildQuoteDocFromProjectDraft } from "@/lib/projectQuotePrint";
+import { resolveQuoteCurrency } from "@/lib/workspace/countryConfig";
 
 import { buildQuotePrintContext } from "@/lib/quoteDocumentMeta";
 
@@ -108,6 +109,30 @@ export default function ProjectQuotePrintPage() {
 
 
 
+        let org: OrganizationPrintInfo | null = null;
+
+        if (loadedProject.orgId) {
+
+          org = await getOrganizationForQuotePrint(loadedProject.orgId);
+
+          setOrganization(org);
+
+        }
+
+
+
+        const currency = resolveQuoteCurrency({
+
+          currency: org?.market?.currency,
+
+          countryCode: org?.market?.countryCode ?? org?.profile?.country,
+
+        });
+
+        const countryCode = org?.market?.countryCode ?? org?.profile?.country ?? null;
+
+
+
         const [items, loadedTasks, loadedSuggestions] = await Promise.all([
 
           listProjectQuoteDraftItems(id),
@@ -128,19 +153,23 @@ export default function ProjectQuotePrintPage() {
 
         setQuote(
 
-          buildQuoteDocFromProjectDraft(loadedProject, items, loadedTasks, "CHF", loadedSuggestions)
+          buildQuoteDocFromProjectDraft(
+
+            loadedProject,
+
+            items,
+
+            loadedTasks,
+
+            currency,
+
+            loadedSuggestions,
+
+            countryCode
+
+          )
 
         );
-
-
-
-        if (loadedProject.orgId) {
-
-          const org = await getOrganizationForQuotePrint(loadedProject.orgId);
-
-          setOrganization(org);
-
-        }
 
       } catch {
 
