@@ -47,12 +47,12 @@ export function ProjectPlanningInspector({
   const missingTools = openTasks.filter(taskMissingTools).length;
 
   return (
-    <aside className="space-y-3 rounded-xl border border-border/70 bg-card p-4 shadow-sm">
+    <aside className="space-y-3 rounded-xl border border-[var(--po-card-border)] bg-[var(--po-card-bg)] p-4 shadow-sm">
       <div>
         <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
           {t("projects.planning.inspectorTitle")}
         </p>
-        <h3 className="mt-1 text-base font-bold text-[#1D376A]">{name}</h3>
+        <h3 className="mt-1 text-base font-bold text-[var(--po-text-primary)]">{name}</h3>
         <p className="text-sm text-muted-foreground">{range}</p>
       </div>
 

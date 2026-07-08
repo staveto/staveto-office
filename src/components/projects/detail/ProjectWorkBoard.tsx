@@ -114,9 +114,9 @@ function TaskPlanCard({
   return (
     <article
       className={cn(
-        "rounded-xl border bg-white p-3 shadow-sm transition-shadow hover:shadow-md",
-        selected && "ring-2 ring-[#1D376A]/40 border-[#1D376A]/30",
-        hasConflict ? "border-amber-300" : warn ? "border-amber-200/80" : "border-border/70"
+        "rounded-xl border bg-[var(--po-card-bg)] p-3 shadow-sm transition-shadow hover:shadow-md",
+        selected && "ring-2 ring-[var(--po-primary)]/40 border-[var(--po-primary)]/30",
+        hasConflict ? "border-amber-500/40" : warn ? "border-amber-500/30" : "border-[var(--po-card-border)]"
       )}
     >
       <div className="flex items-start gap-2">
@@ -125,7 +125,7 @@ function TaskPlanCard({
             type="checkbox"
             checked={selected}
             onChange={onToggleSelect}
-            className="mt-1 size-4 accent-[#1D376A] shrink-0"
+            className="mt-1 size-4 accent-[var(--po-primary)] shrink-0"
             aria-label={t("projects.workPlan.selectTask")}
           />
         ) : null}
@@ -133,7 +133,7 @@ function TaskPlanCard({
           <div className="flex items-start justify-between gap-2">
             <h4
               className={cn(
-                "font-semibold text-sm text-[#0F2A4D] leading-snug",
+                "font-semibold text-sm text-[var(--po-text-primary)] leading-snug",
                 task.status === "DONE" && "line-through text-muted-foreground"
               )}
             >
@@ -171,7 +171,7 @@ function TaskPlanCard({
               onClick={onOpenAssignee}
               className={cn(
                 "flex items-center gap-1.5 text-xs rounded-md px-2 py-1 w-full text-left hover:bg-muted/50",
-                missingPerson ? "text-amber-800" : "text-[#1D376A]"
+                missingPerson ? "text-amber-700 dark:text-amber-300" : "text-[var(--po-text-secondary)]"
               )}
             >
               <UserRound className="size-3.5 shrink-0" />
@@ -209,8 +209,8 @@ function TaskPlanCard({
             className={cn(
               "inline-block text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full",
               task.status === "DONE"
-                ? "bg-emerald-100 text-emerald-800"
-                : "bg-slate-100 text-slate-600"
+                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                : "bg-[var(--po-card-muted)] text-[var(--po-text-secondary)]"
             )}
           >
             {task.status === "DONE"
@@ -256,10 +256,10 @@ export function ProjectWorkBoard({
         return (
           <div
             key={columnId}
-            className="flex flex-col w-[min(100%,280px)] shrink-0 snap-start rounded-xl bg-muted/30 border border-border/50"
+            className="flex flex-col w-[min(100%,280px)] shrink-0 snap-start rounded-xl bg-[var(--po-card-muted)] border border-[var(--po-card-border)]"
           >
-            <div className="px-3 py-2.5 border-b border-border/50 bg-white/60 rounded-t-xl">
-              <h3 className="text-xs font-bold uppercase tracking-wide text-[#1D376A]">
+            <div className="px-3 py-2.5 border-b border-[var(--po-card-border)] bg-[var(--po-card-bg)] rounded-t-xl">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-[var(--po-text-primary)]">
                 {t(COLUMN_I18N[columnId])}
               </h3>
               <span className="text-[11px] text-muted-foreground tabular-nums">

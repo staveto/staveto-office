@@ -129,14 +129,14 @@ export function ProjectWorkerBoard({
                 <div
                   key={w.userId}
                   className={cn(
-                    "min-w-[180px] shrink-0 rounded-xl border bg-white p-3 shadow-sm",
+                    "min-w-[180px] shrink-0 rounded-xl border border-[var(--po-card-border)] bg-[var(--po-card-bg)] p-3 shadow-sm",
                     w.hasConflict ? "border-amber-300" : "border-border/70"
                   )}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="flex min-w-0 items-center gap-1.5">
-                      <UserRound className="size-4 shrink-0 text-[#1D376A]" />
-                      <span className="truncate text-sm font-semibold text-[#1D376A]">
+                      <UserRound className="size-4 shrink-0 text-[var(--po-text-secondary)]" />
+                      <span className="truncate text-sm font-semibold text-[var(--po-text-primary)]">
                         {w.name}
                       </span>
                     </span>
@@ -144,7 +144,7 @@ export function ProjectWorkerBoard({
                   </div>
                   <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
                     <div
-                      className="h-full rounded-full bg-[#1D376A]/60"
+                      className="h-full rounded-full bg-[var(--po-primary)]/60"
                       style={{ width: `${w.loadPercent}%` }}
                     />
                   </div>
@@ -210,10 +210,10 @@ export function ProjectWorkerBoard({
                   key={w.userId}
                   className="flex w-[min(100%,300px)] shrink-0 flex-col rounded-xl border border-border/60 bg-muted/20"
                 >
-                  <div className="flex items-center justify-between gap-2 rounded-t-xl border-b border-border/50 bg-white/70 px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-2 rounded-t-xl border-b border-[var(--po-card-border)] bg-[var(--po-card-muted)] px-3 py-2.5">
                     <span className="flex min-w-0 items-center gap-1.5">
-                      <UserRound className="size-4 shrink-0 text-[#1D376A]" />
-                      <span className="truncate text-sm font-semibold text-[#1D376A]">
+                      <UserRound className="size-4 shrink-0 text-[var(--po-text-secondary)]" />
+                      <span className="truncate text-sm font-semibold text-[var(--po-text-primary)]">
                         {memberName(w.userId)}
                       </span>
                     </span>
@@ -329,8 +329,8 @@ function WorkerTaskCard({
   return (
     <article
       className={cn(
-        "rounded-lg border bg-white p-2.5 shadow-sm transition-shadow hover:shadow-md",
-        selected && "ring-2 ring-[#1D376A]/40",
+        "rounded-lg border border-[var(--po-card-border)] bg-[var(--po-card-bg)] p-2.5 shadow-sm transition-shadow hover:shadow-md",
+        selected && "ring-2 ring-[var(--po-primary)]/40",
         hasConflict ? "border-amber-300" : warn ? "border-amber-200/80" : "border-border/70"
       )}
     >
@@ -340,7 +340,7 @@ function WorkerTaskCard({
             type="checkbox"
             checked={selected}
             onChange={onToggleSelect}
-            className="mt-0.5 size-4 shrink-0 accent-[#1D376A]"
+            className="mt-0.5 size-4 shrink-0 accent-[var(--po-primary)]"
             aria-label={t("projects.workPlan.selectTask")}
           />
         ) : null}

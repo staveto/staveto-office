@@ -15,13 +15,16 @@ import {
 } from "@/components/ui/table";
 import type { ProjectDoc, TaskDoc } from "@/lib/projects";
 import type { QuoteDraftItemDoc } from "@/lib/quoteDraftItems";
-import { computeQuoteSummary, formatMoney } from "@/lib/projectDashboard";
+import { computeQuoteSummary } from "@/lib/projectDashboard";
+import { formatMoney } from "@/lib/format";
+import { useActiveWorkspaceContext } from "@/hooks/useActiveWorkspaceContext";
 import { isDraftJob } from "@/lib/projectLifecycle";
 import { buildProjectQuoteDisplayLines } from "@/lib/projectQuoteDraft";
 import { listMaterialSuggestions } from "@/services/materials/projectMaterialsService";
 import type { MaterialSuggestionDoc } from "@/services/materials/types";
 import { useI18n } from "@/i18n/I18nContext";
 import { cn } from "@/lib/utils";
+import { po } from "./overview/poStyles";
 
 type ProjectQuoteTabProps = {
   project: ProjectDoc;
@@ -31,6 +34,7 @@ type ProjectQuoteTabProps = {
 
 export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabProps) {
   const { t } = useI18n();
+  const { activeCurrency } = useActiveWorkspaceContext();
   const [suggestions, setSuggestions] = useState<MaterialSuggestionDoc[]>([]);
 
   useEffect(() => {
@@ -55,11 +59,12 @@ export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabP
   const isSales = isDraftJob(project);
   const setupHref = `/app/projects/${project.id}?setup=ai`;
   const printHref = `/app/projects/${project.id}/print?from=quote`;
+  const money = (amount: number | null) => formatMoney(amount ?? 0, activeCurrency);
 
   return (
     <div className="space-y-4">
       {!summary.hasQuote && isSales ? (
-        <Card className="border-[#1D376A]/15">
+        <Card className={cn(po.card, "border-[var(--po-card-border)]")}>
           <CardContent className="py-8 text-center space-y-4">
             <p className="text-sm text-muted-foreground max-w-md mx-auto">
               {t("projects.dashboard.quote.emptyHint")}
@@ -77,9 +82,9 @@ export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabP
         </Card>
       ) : null}
 
-      <Card>
+      <Card className={cn(po.card, "border-[var(--po-card-border)]")}>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <CardTitle className="text-base text-[#1D376A]">
+          <CardTitle className={po.title}>
             {t("projects.dashboard.quote.title")}
           </CardTitle>
           {summary.hasQuote ? (
@@ -88,10 +93,7 @@ export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabP
                 href={printHref}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={cn(
-                  buttonVariants({ variant: "default", size: "sm" }),
-                  "bg-[#1D376A] hover:bg-[#1D376A]/90"
-                )}
+                className={cn(buttonVariants({ variant: "default", size: "sm" }), po.btnPrimary)}
               >
                 <Printer className="size-4 mr-1.5" />
                 {t("projects.dashboard.quote.viewPdf")}
@@ -118,23 +120,23 @@ export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabP
           </div>
 
           {summary.hasQuote ? (
-            <dl className="grid gap-3 sm:grid-cols-3 text-sm border-t border-border/60 pt-4">
+            <dl className="grid gap-3 sm:grid-cols-3 border-t border-[var(--po-card-border)] pt-4 text-sm">
               <div>
-                <dt className="text-muted-foreground">{t("projects.aiSetup.summary.material")}</dt>
-                <dd className="font-semibold text-[#1D376A] mt-0.5 tabular-nums">
-                  {formatMoney(summary.materialTotal)}
+                <dt className="text-[var(--po-text-muted)]">{t("projects.aiSetup.summary.material")}</dt>
+                <dd className="mt-0.5 font-semibold tabular-nums text-[var(--po-text-primary)]">
+                  {money(summary.materialTotal)}
                 </dd>
               </div>
               <div>
-                <dt className="text-muted-foreground">{t("projects.aiSetup.summary.work")}</dt>
-                <dd className="font-semibold text-[#1D376A] mt-0.5 tabular-nums">
-                  {formatMoney(summary.workTotal)}
+                <dt className="text-[var(--po-text-muted)]">{t("projects.aiSetup.summary.work")}</dt>
+                <dd className="mt-0.5 font-semibold tabular-nums text-[var(--po-text-primary)]">
+                  {money(summary.workTotal)}
                 </dd>
               </div>
               <div>
-                <dt className="text-muted-foreground">{t("projects.draft.quoteItem.grandTotal")}</dt>
-                <dd className="text-xl font-bold text-[#1D376A] mt-0.5 tabular-nums">
-                  {summary.grossTotal != null ? formatMoney(summary.grossTotal) : "—"}
+                <dt className="text-[var(--po-text-muted)]">{t("projects.draft.quoteItem.grandTotal")}</dt>
+                <dd className="mt-0.5 text-xl font-bold tabular-nums text-[var(--po-text-primary)]">
+                  {summary.grossTotal != null ? money(summary.grossTotal) : "—"}
                 </dd>
               </div>
             </dl>
@@ -147,10 +149,10 @@ export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabP
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 {t("projects.dashboard.quote.lines", { count: String(displayLines.length) })}
               </p>
-              <div className="rounded-lg border border-border/70 overflow-hidden">
+              <div className="overflow-hidden rounded-lg border border-[var(--po-card-border)]">
                 <Table>
                   <TableHeader>
-                    <TableRow className="bg-muted/40 hover:bg-muted/40">
+                    <TableRow className="bg-[var(--po-card-muted)] hover:bg-[var(--po-card-muted)]">
                       <TableHead>{t("quotes.print.colDescription")}</TableHead>
                       <TableHead className="w-[72px] text-right">{t("quotes.print.colQty")}</TableHead>
                       <TableHead className="w-[64px]">{t("quotes.print.colUnit")}</TableHead>
@@ -161,7 +163,7 @@ export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabP
                   <TableBody>
                     {displayLines.map((item) => (
                       <TableRow key={item.id}>
-                        <TableCell className="font-medium text-[#1D376A] max-w-[280px]">
+                        <TableCell className="max-w-[280px] font-medium text-[var(--po-text-primary)]">
                           <span className="line-clamp-2">{item.name}</span>
                           {item.category === "work" ? (
                             <span className="ml-1.5 text-xs text-muted-foreground font-normal">
@@ -172,10 +174,10 @@ export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabP
                         <TableCell className="text-right tabular-nums">{item.qty}</TableCell>
                         <TableCell className="text-muted-foreground">{item.unit}</TableCell>
                         <TableCell className="text-right tabular-nums">
-                          {formatMoney(item.unitPrice)}
+                          {money(item.unitPrice)}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums font-medium">
-                          {formatMoney(item.lineTotal)}
+                        <TableCell className="text-right font-medium tabular-nums">
+                          {money(item.lineTotal)}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -192,9 +194,9 @@ export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabP
       </Card>
 
       {!isSales ? (
-        <Card>
+        <Card className={cn(po.card, "border-[var(--po-card-border)]")}>
           <CardContent className="py-6">
-            <p className="text-sm text-muted-foreground">{t("projects.dashboard.quote.deliveryHint")}</p>
+            <p className="text-sm text-[var(--po-text-muted)]">{t("projects.dashboard.quote.deliveryHint")}</p>
             <Link
               href={`/app/projects/${project.id}?tab=expenses`}
               className="inline-block mt-2 text-sm font-medium text-[#e06737] hover:underline"

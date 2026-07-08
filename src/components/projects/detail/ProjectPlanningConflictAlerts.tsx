@@ -44,10 +44,10 @@ export function ProjectPlanningConflictAlerts({
   if (items.length === 0) return null;
 
   return (
-    <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 space-y-1.5">
+    <div className="rounded-xl border border-amber-500/40 bg-amber-950/25 px-4 py-3 space-y-1.5">
       {items.map((text, i) => (
-        <p key={i} className="text-sm text-amber-900 flex items-start gap-2">
-          <AlertTriangle className="size-4 shrink-0 mt-0.5" aria-hidden />
+        <p key={i} className="text-sm text-amber-900 dark:text-amber-100 flex items-start gap-2">
+          <AlertTriangle className="size-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" aria-hidden />
           <span>{text}</span>
         </p>
       ))}

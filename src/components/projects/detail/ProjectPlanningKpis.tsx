@@ -22,16 +22,16 @@ function KpiCard({
   return (
     <div
       className={cn(
-        "rounded-xl border bg-white px-4 py-3 shadow-sm min-w-[120px] flex-1",
-        warn ? "border-amber-300 bg-amber-50/50" : "border-border/70",
-        accent && !warn && "border-[#1D376A]/25 bg-[#1D376A]/[0.03]"
+        "rounded-xl border bg-[var(--po-card-bg)] px-4 py-3 shadow-sm min-w-[120px] flex-1",
+        warn ? "border-amber-500/40 bg-amber-950/20" : "border-[var(--po-card-border)]",
+        accent && !warn && "border-[var(--po-primary)]/25 bg-[var(--po-card-muted)]"
       )}
     >
       <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
       <p
         className={cn(
           "text-2xl font-bold tabular-nums mt-1",
-          warn ? "text-amber-800" : "text-[#1D376A]"
+          warn ? "text-amber-700 dark:text-amber-300" : "text-[var(--po-text-primary)]"
         )}
       >
         {value}

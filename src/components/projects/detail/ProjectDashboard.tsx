@@ -12,10 +12,11 @@ import {
 import type { QuoteDraftItemDoc } from "@/lib/quoteDraftItems";
 import {
   isBlockedByUnsentQuote,
+  isProjectDashboardTabVisible,
   type ProjectDashboardTab,
 } from "@/lib/projectDashboard";
+import { useEnabledModules } from "@/context/EnabledModulesContext";
 import { listProjectDocuments, type ProjectDocumentRecord } from "@/services/projects/projectDocuments";
-import { importAiWizardAttachmentsToProjectDetailed } from "@/services/projects/projectAiAttachmentsService";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { listAssignableProjectMembers } from "@/services/projects/projectMembersService";
 import {
@@ -100,6 +101,7 @@ export function ProjectDashboard({
   const router = useRouter();
   const searchParams = useSearchParams();
   const { activeWorkspace } = useWorkspace();
+  const { modules } = useEnabledModules();
   const [activeTab, setActiveTab] = useState<ProjectDashboardTab>(() =>
     parseTab(searchParams.get("tab"))
   );
@@ -116,11 +118,27 @@ export function ProjectDashboard({
   const selectedProblemId = searchParams.get("problemId");
 
   useEffect(() => {
-    setActiveTab(parseTab(searchParams.get("tab")));
-    if (searchParams.get("problemId") && searchParams.get("tab") !== "problems") {
-      setActiveTab("problems");
+    const parsed = parseTab(searchParams.get("tab"));
+    if (!isProjectDashboardTabVisible(parsed, modules)) {
+      setActiveTab("overview");
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("tab");
+      params.delete("problemId");
+      router.replace(
+        params.toString()
+          ? `/app/projects/${project.id}?${params.toString()}`
+          : `/app/projects/${project.id}`,
+        { scroll: false }
+      );
+      return;
     }
-  }, [searchParams]);
+    setActiveTab(parsed);
+    if (searchParams.get("problemId") && searchParams.get("tab") !== "problems") {
+      if (isProjectDashboardTabVisible("problems", modules)) {
+        setActiveTab("problems");
+      }
+    }
+  }, [searchParams, modules, project.id, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,13 +166,6 @@ export function ProjectDashboard({
         ]);
 
         let resolvedDocs = docs;
-        const canImportAiAttachments =
-          resolvedDocs.length === 0 &&
-          activeWorkspace &&
-          (freshProject.createdByAI ||
-            !!freshProject.aiDraftId ||
-            (freshProject.attachedFileIds?.length ?? 0) > 0 ||
-            (freshProject.aiWizardAttachmentPaths?.length ?? 0) > 0);
 
         if (cancelled) return;
         setOpenProblemsCount(problemsList.filter((p) => isOpenProblem(p)).length);
@@ -169,25 +180,6 @@ export function ProjectDashboard({
           () => new Map<string, ActiveTimerState>()
         );
         if (!cancelled) setActiveTimers(timers);
-
-        if (canImportAiAttachments && activeWorkspace) {
-          void importAiWizardAttachmentsToProjectDetailed({
-            projectId: project.id,
-            workspace: activeWorkspace,
-            userId,
-            project: freshProject,
-          })
-            .then(async ({ imported }) => {
-              if (cancelled) return;
-              if (imported.length > 0) {
-                setDocuments(imported);
-                return;
-              }
-              const listed = await listProjectDocuments(project.id).catch(() => []);
-              if (!cancelled && listed.length > 0) setDocuments(listed);
-            })
-            .catch(() => undefined);
-        }
       } catch (e) {
         if (!cancelled) {
           setTasksError(e instanceof FirestoreIndexError ? e.message : null);
@@ -261,6 +253,7 @@ export function ProjectDashboard({
   }, [project, tasks, timeEntries, documents, openProblemsCount]);
 
   const handleTabChange = (tab: ProjectDashboardTab) => {
+    if (!isProjectDashboardTabVisible(tab, modules)) return;
     setActiveTab(tab);
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", tab);

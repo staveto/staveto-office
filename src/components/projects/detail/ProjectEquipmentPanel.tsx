@@ -48,11 +48,11 @@ export function ProjectEquipmentPanel({
   };
 
   return (
-    <section className="rounded-xl border border-border/70 bg-white p-4 shadow-sm space-y-3">
+    <section className="space-y-3 rounded-xl border border-[var(--po-card-border)] bg-[var(--po-card-bg)] p-4 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h3 className="text-sm font-bold text-[#1D376A]">{t("projects.equipment.projectTitle")}</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
+          <h3 className="text-sm font-bold text-[var(--po-text-primary)]">{t("projects.equipment.projectTitle")}</h3>
+          <p className="text-xs text-[var(--po-text-muted)] mt-0.5">
             {t("projects.equipment.projectHint")}
           </p>
         </div>
@@ -79,8 +79,8 @@ export function ProjectEquipmentPanel({
             <li
               key={tool.id}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border border-[#1D376A]/25",
-                "bg-[#1D376A]/5 px-3 py-1.5 text-sm text-[#1D376A]"
+                "inline-flex items-center gap-1.5 rounded-full border border-[var(--po-card-border)]",
+                "bg-[var(--po-card-muted)] px-3 py-1.5 text-sm text-[var(--po-text-primary)]"
               )}
             >
               <Truck className="size-3.5 shrink-0 opacity-70" />
@@ -91,7 +91,7 @@ export function ProjectEquipmentPanel({
               {canManage ? (
                 <button
                   type="button"
-                  className="ml-1 p-0.5 rounded hover:bg-[#1D376A]/10 disabled:opacity-50"
+                  className="ml-1 p-0.5 rounded hover:bg-[var(--po-card-muted)] disabled:opacity-50"
                   disabled={busy || removingId === tool.id}
                   onClick={() => void handleRemove(tool.id)}
                   aria-label={t("projects.equipment.removeFromProject")}

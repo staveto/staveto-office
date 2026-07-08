@@ -112,18 +112,18 @@ function PhaseGroupCard({
     <div
       className={cn(
         "overflow-hidden rounded-xl border",
-        phase.isActive ? "border-[#1D376A]/40" : "border-border/70"
+        phase.isActive ? "border-[var(--po-primary)]/40" : "border-[var(--po-card-border)]"
       )}
     >
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center justify-between gap-3 bg-muted/30 px-4 py-3 text-left transition-colors hover:bg-muted/50"
+        className="flex w-full items-center justify-between gap-3 bg-[var(--po-card-muted)] px-4 py-3 text-left transition-colors hover:bg-[var(--po-card-bg-elevated)]"
       >
         <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-sm font-semibold text-[#1D376A]">{name}</span>
+          <span className="truncate text-sm font-semibold text-[var(--po-text-primary)]">{name}</span>
           {phase.isActive ? (
-            <span className="rounded-full bg-[#1D376A] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
+            <span className="rounded-full bg-[var(--po-primary)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">
               {t("projects.phaseWorkflow.current")}
             </span>
           ) : null}
@@ -136,7 +136,7 @@ function PhaseGroupCard({
               open: phase.open,
             })}
           </span>
-          <span className="text-xs font-semibold tabular-nums text-[#1D376A]">
+          <span className="text-xs font-semibold tabular-nums text-[var(--po-text-secondary)]">
             {phase.percent}%
           </span>
           <ChevronDown

@@ -14,6 +14,12 @@ import {
   resolveSetupMaterialRows,
   workEstimateFromQuoteItems,
 } from "@/components/projects/setup/aiSetupHelpers";
+import {
+  type EnabledModulesMap,
+  isModuleEnabled,
+  resolveEnabledModules,
+} from "@/lib/enabledModules";
+import { resolveQuoteCurrency } from "@/lib/workspace/countryConfig";
 
 export type ProjectDashboardTab =
   | "overview"
@@ -23,6 +29,37 @@ export type ProjectDashboardTab =
   | "documents"
   | "activity"
   | "problems";
+
+const ALL_PROJECT_DASHBOARD_TABS: ProjectDashboardTab[] = [
+  "overview",
+  "tasks",
+  "workplan",
+  "problems",
+  "quote",
+  "documents",
+  "activity",
+];
+
+/** Tabs shown in project detail — respects org module settings (matches sidebar / production). */
+export function getVisibleProjectDashboardTabs(
+  modules?: EnabledModulesMap | null
+): ProjectDashboardTab[] {
+  const resolved = resolveEnabledModules(modules ?? undefined);
+  return ALL_PROJECT_DASHBOARD_TABS.filter((tab) => {
+    if (tab === "workplan") return isModuleEnabled(resolved, "planning");
+    if (tab === "problems") return isModuleEnabled(resolved, "issues");
+    if (tab === "quote") return isModuleEnabled(resolved, "quotes");
+    if (tab === "documents") return isModuleEnabled(resolved, "documents");
+    return true;
+  });
+}
+
+export function isProjectDashboardTabVisible(
+  tab: ProjectDashboardTab,
+  modules?: EnabledModulesMap | null
+): boolean {
+  return getVisibleProjectDashboardTabs(modules).includes(tab);
+}
 
 export type HumanWorkflowStatusKey =
   | "entwurf"
@@ -420,16 +457,18 @@ export function computeQuoteSummary(
     materialTotal: totals.materialCost,
     workTotal: totals.workCost,
     workHours: work.hours > 0 ? work.hours : null,
-    currency: "CHF",
+    currency: resolveQuoteCurrency(),
   };
 }
 
-export function formatMoney(amount: number | null, currency = "CHF"): string {
+/** @deprecated Prefer formatMoney from @/lib/format with workspace currency */
+export function formatMoney(amount: number | null, currency = "EUR"): string {
   if (amount == null || Number.isNaN(amount)) return "";
-  return new Intl.NumberFormat("de-CH", {
+  return new Intl.NumberFormat("sk-SK", {
     style: "currency",
     currency,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(amount);
 }
 

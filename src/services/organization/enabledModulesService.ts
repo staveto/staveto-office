@@ -12,12 +12,7 @@ export async function loadOrganizationEnabledModules(
   orgId: string
 ): Promise<EnabledModulesMap> {
   const org = await getOrganization(orgId);
-  const resolved = resolveEnabledModules(org?.enabledModules ?? null);
-  // Legacy orgs from onboarding stored planning:false by default — feature is live now.
-  if (org?.enabledModules?.planning === false) {
-    return { ...resolved, planning: true };
-  }
-  return resolved;
+  return resolveEnabledModules(org?.enabledModules ?? null);
 }
 
 export async function saveOrganizationEnabledModules(

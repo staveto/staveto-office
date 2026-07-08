@@ -39,7 +39,7 @@ export const DEFAULT_ENABLED_MODULES: EnabledModulesMap = {
   team: true,
   documents: true,
   billing: true,
-  planning: true,
+  planning: false,
   vehicles: false,
   equipment: false,
   expenses: false,

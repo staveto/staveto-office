@@ -1,6 +1,8 @@
-const MAX_EDGE_PX = 1600;
-const JPEG_QUALITY = 0.82;
-const SKIP_BELOW_BYTES = 350_000;
+import { ATTACHMENT_SIZE_POLICY } from "@/lib/attachmentSizePolicy";
+
+const MAX_EDGE_PX = ATTACHMENT_SIZE_POLICY.image.maxEdgePx;
+const JPEG_QUALITY = ATTACHMENT_SIZE_POLICY.image.jpegQuality;
+const SKIP_BELOW_BYTES = ATTACHMENT_SIZE_POLICY.image.skipBelowBytes;
 
 /** Resize large photos before AI upload — faster upload + vision on server. */
 export async function compressImageForAiUpload(file: File): Promise<File> {

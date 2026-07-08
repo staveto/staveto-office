@@ -6,6 +6,7 @@ import {
   getFirestoreInstance,
   doc,
   updateDoc,
+  getDoc,
   serverTimestamp,
 } from "@/lib/firebase";
 import { parseMaterialCategory, parseMaterialUnit, resolveMaterialCurrency } from "@/lib/materialCatalog";
@@ -60,7 +61,21 @@ export async function enrichProjectAfterAiConfirm(
   const attachmentPaths = files.map((f) => f.storagePath).filter(Boolean);
   const attachedFileIds = files
     .map((f) => f.id)
-    .filter((id) => id && !id.startsWith("path:"));
+    .filter((id) => id && id.trim().length > 0);
+  const pathIds = files
+    .filter((f) => f.id.startsWith("path:") || f.storagePath)
+    .map((f) => (f.id.startsWith("path:") ? f.id : `path:${f.storagePath}`));
+
+  const existingSnap = await getDoc(doc(db, "projects", input.projectId));
+  const existingData = existingSnap.exists()
+    ? (existingSnap.data() as Record<string, unknown>)
+    : null;
+  const existingPaths = Array.isArray(existingData?.aiWizardAttachmentPaths)
+    ? (existingData.aiWizardAttachmentPaths as string[]).filter(Boolean)
+    : [];
+  const existingFileIds = Array.isArray(existingData?.attachedFileIds)
+    ? (existingData.attachedFileIds as string[]).filter(Boolean)
+    : [];
 
   const patch: Record<string, unknown> = {
     ...getProjectWorkspaceWriteFields(input.workspace, input.userId),
@@ -77,12 +92,11 @@ export async function enrichProjectAfterAiConfirm(
     updatedAt: serverTimestamp(),
   };
 
-  if (attachmentPaths.length > 0) patch.aiWizardAttachmentPaths = attachmentPaths;
-  if (attachedFileIds.length > 0) {
-    patch.attachedFileIds = attachedFileIds;
-  } else if (files.some((f) => f.id.startsWith("path:"))) {
-    patch.attachedFileIds = files.map((f) => f.id).filter((id) => id.startsWith("path:"));
-  }
+  const mergedPaths = [...new Set([...existingPaths, ...attachmentPaths])];
+  if (mergedPaths.length > 0) patch.aiWizardAttachmentPaths = mergedPaths;
+
+  const mergedFileIds = [...new Set([...existingFileIds, ...attachedFileIds, ...pathIds])];
+  if (mergedFileIds.length > 0) patch.attachedFileIds = mergedFileIds;
   if (input.aiDraftId?.trim()) patch.aiDraftId = input.aiDraftId.trim();
 
   if (engine.jobWorkflowKind) patch.jobWorkflowKind = engine.jobWorkflowKind;

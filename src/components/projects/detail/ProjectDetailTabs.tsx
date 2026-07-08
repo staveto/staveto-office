@@ -2,18 +2,10 @@
 
 import { AlertTriangle } from "lucide-react";
 import type { ProjectDashboardTab } from "@/lib/projectDashboard";
+import { getVisibleProjectDashboardTabs } from "@/lib/projectDashboard";
+import { useEnabledModules } from "@/context/EnabledModulesContext";
 import { useI18n } from "@/i18n/I18nContext";
 import { cn } from "@/lib/utils";
-
-const TABS: ProjectDashboardTab[] = [
-  "overview",
-  "tasks",
-  "workplan",
-  "problems",
-  "quote",
-  "documents",
-  "activity",
-];
 
 export type TabBadge = {
   count?: number;
@@ -32,6 +24,8 @@ export function ProjectDetailTabs({
   badges,
 }: ProjectDetailTabsProps) {
   const { t } = useI18n();
+  const { modules } = useEnabledModules();
+  const visibleTabs = getVisibleProjectDashboardTabs(modules);
 
   return (
     <div
@@ -39,7 +33,7 @@ export function ProjectDetailTabs({
       role="tablist"
       aria-label={t("projects.dashboard.tabs.label")}
     >
-      {TABS.map((tab) => {
+      {visibleTabs.map((tab) => {
         const badge = badges?.[tab];
         const isActive = activeTab === tab;
         const showCount = typeof badge?.count === "number" && badge.count > 0;

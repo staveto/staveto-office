@@ -23,7 +23,10 @@ export type ProjectDocumentRecord = UploadedAiDraftFile & {
   createdAt?: string;
 };
 
-const MAX_FILE_BYTES = 25 * 1024 * 1024;
+import { ATTACHMENT_SIZE_POLICY } from "@/lib/attachmentSizePolicy";
+import { prepareProjectAttachmentFile } from "@/lib/prepareProjectAttachmentFile";
+
+const MAX_FILE_BYTES = ATTACHMENT_SIZE_POLICY.maxUploadBytes;
 const ALLOWED_TYPES = new Set([
   "text/plain",
   "application/pdf",
@@ -87,37 +90,44 @@ export async function uploadProjectDocument(
     throw new Error("FILE_TYPE_UNSUPPORTED");
   }
 
-  const safeName = sanitizeFileName(file.name);
+  const { file: prepared, optimized } = await prepareProjectAttachmentFile(file);
+  const uploadMime = prepared.type || mime;
+  const uploadName = prepared.name || file.name;
+
+  const safeName = sanitizeFileName(uploadName);
   const storagePath = `projects/${projectId}/documents/${safeName}`;
   const storageRef = ref(storage, storagePath);
-  await uploadBytes(storageRef, file, { contentType: mime });
+  await uploadBytes(storageRef, prepared, { contentType: uploadMime });
 
   const docRef = await addDoc(collection(db, "projects", projectId, "documents"), {
-    fileName: file.name,
-    mimeType: mime,
+    fileName: uploadName,
+    mimeType: uploadMime,
     storagePath,
     uploadedBy: uid,
-    source: "ai_wizard",
+    source: "upload",
+    optimized: optimized || null,
+    byteSize: prepared.size,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 
   const wsKey = getWorkspaceStorageKey(workspace, uid);
   await setDoc(doc(db, "workspaces", wsKey, "aiDraftFiles", docRef.id), {
-    fileName: file.name,
-    mimeType: mime,
+    fileName: uploadName,
+    mimeType: uploadMime,
     storagePath,
     uploadedBy: uid,
     workspaceId: wsKey,
     projectId,
     projectDocumentId: docRef.id,
+    byteSize: prepared.size,
     createdAt: serverTimestamp(),
   });
 
   return {
     id: docRef.id,
-    fileName: file.name,
-    mimeType: mime,
+    fileName: uploadName,
+    mimeType: uploadMime,
     storagePath,
     projectId,
   };

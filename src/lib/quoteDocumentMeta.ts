@@ -12,8 +12,10 @@ import {
   resolveAiSetupCalculation,
   resolveSetupMaterialRows,
   workEstimateFromQuoteItems,
+  type AiSetupTotals,
 } from "@/components/projects/setup/aiSetupHelpers";
 import { resolveQuoteCurrency } from "@/lib/workspace/countryConfig";
+import { normalizeQuotePrintCategory } from "@/lib/quotePrint";
 import type { MaterialSuggestionDoc } from "@/services/materials/types";
 import { buildProjectQuoteDisplayLines } from "./projectQuoteDraft";
 import { isCustomerVisibleItemName } from "./quoteCustomerItems";
@@ -195,6 +197,68 @@ export function filterCustomerQuoteItems(
   });
 }
 
+/** Sum material / work / other from quote line items (editor & saved quote doc). */
+export function buildPriceSummaryFromQuote(quote: QuoteDoc): QuotePrintPriceSummary {
+  const materialTotal = quote.items
+    .filter((i) => normalizeQuotePrintCategory(i.category) === "material")
+    .reduce((s, i) => s + i.total, 0);
+  const workTotal = quote.items
+    .filter((i) => normalizeQuotePrintCategory(i.category) === "work")
+    .reduce((s, i) => s + i.total, 0);
+  const otherTotal = quote.items
+    .filter((i) => {
+      const cat = normalizeQuotePrintCategory(i.category);
+      return cat !== "material" && cat !== "work";
+    })
+    .reduce((s, i) => s + i.total, 0);
+  const lineSubtotal = materialTotal + workTotal + otherTotal;
+  const hasPricedLines = quote.items.some((i) => i.total > 0);
+  const isFlatRate =
+    !hasPricedLines && quote.grandTotal > 0 && quote.subtotal === 0;
+
+  return {
+    materialTotal,
+    workTotal,
+    otherTotal,
+    netTotal: quote.subtotal > 0 ? quote.subtotal : lineSubtotal,
+    vatPercent: quote.vatPercent,
+    vatAmount: quote.vatAmount,
+    grossTotal:
+      quote.grandTotal > 0
+        ? quote.grandTotal
+        : Math.round((lineSubtotal + quote.vatAmount) * 100) / 100,
+    isComplete: hasPricedLines || quote.grandTotal > 0,
+    isFlatRate,
+  };
+}
+
+/**
+ * Saved quote lines trump frozen AI setup overrides when they disagree
+ * (e.g. materialTotalOverride: 0 or old manual flat-rate gross).
+ */
+export function shouldPreferQuoteDocumentPricing(
+  quote: QuoteDoc,
+  setupTotals: AiSetupTotals
+): boolean {
+  const lineSubtotal = quote.items.reduce((sum, item) => sum + item.total, 0);
+  if (lineSubtotal <= 0 || quote.grandTotal <= 0) return false;
+
+  const materialFromLines = quote.items
+    .filter((i) => normalizeQuotePrintCategory(i.category) === "material")
+    .reduce((sum, i) => sum + i.total, 0);
+
+  if (materialFromLines > 0 && setupTotals.materialCost < materialFromLines * 0.5) {
+    return true;
+  }
+  if (setupTotals.manualTotalActive && quote.grandTotal > setupTotals.grossTotal * 1.2) {
+    return true;
+  }
+  if (Math.abs(quote.grandTotal - setupTotals.grossTotal) > 1) {
+    return true;
+  }
+  return false;
+}
+
 /** Fallback when only QuoteDoc is available (no project quoteItems subcollection). */
 export function buildQuotePrintContextFromQuote(params: {
   quote: QuoteDoc;
@@ -205,18 +269,6 @@ export function buildQuotePrintContextFromQuote(params: {
 }): QuotePrintContext {
   const { quote, project, organization, user, t } = params;
   const docMeta = parseQuoteDocumentMeta(project?.quoteDraftNotes);
-  const hasPricedLines = quote.items.some((item) => item.total > 0);
-  const isFlatRate = quote.grandTotal > 0 && quote.subtotal === 0 && !hasPricedLines;
-
-  const materialTotal = quote.items
-    .filter((i) => i.category === "material")
-    .reduce((s, i) => s + i.total, 0);
-  const workTotal = quote.items
-    .filter((i) => i.category === "work")
-    .reduce((s, i) => s + i.total, 0);
-  const otherTotal = quote.items
-    .filter((i) => i.category !== "material" && i.category !== "work")
-    .reduce((s, i) => s + i.total, 0);
 
   return {
     scopeOfWork: project
@@ -228,17 +280,7 @@ export function buildQuotePrintContextFromQuote(params: {
     warranty: docMeta.warranty?.trim() || undefined,
     exclusions: docMeta.exclusions?.trim() || undefined,
     contactPerson: resolveContactPerson(docMeta, user, organization),
-    priceSummary: {
-      materialTotal,
-      workTotal,
-      otherTotal,
-      netTotal: quote.subtotal,
-      vatPercent: quote.vatPercent,
-      vatAmount: quote.vatAmount,
-      grossTotal: quote.grandTotal,
-      isComplete: hasPricedLines || quote.grandTotal > 0,
-      isFlatRate,
-    },
+    priceSummary: buildPriceSummaryFromQuote(quote),
     currency: resolveQuoteCurrency({
       currency: quote.currency,
       countryCode: organization?.market?.countryCode ?? organization?.profile?.country,
@@ -270,7 +312,6 @@ export function buildQuotePrintContext(params: {
   );
   const materialRows = resolveSetupMaterialRows(quoteItems, suggestions, []);
   const work = setupMeta?.workEstimate ?? workEstimateFromQuoteItems(quoteItems, tasks);
-  const totals = computeAiSetupTotals(materialRows, work, calc);
 
   const visibleItems = filterCustomerQuoteItems(quoteItems, materialRows);
   const displayLines = buildProjectQuoteDisplayLines(
@@ -282,9 +323,26 @@ export function buildQuotePrintContext(params: {
     line.category === "work" ? true : isCustomerVisibleItemName(line.name)
   );
 
-  const hasPricedLines = displayLines.some((l) => l.lineTotal > 0);
-  const isFlatRate = calc.manualGrossTotal != null && calc.manualGrossTotal >= 0;
-  const isComplete = hasPricedLines || isFlatRate;
+  const hasPricedLines =
+    displayLines.some((l) => l.lineTotal > 0) || quote.items.some((i) => i.total > 0);
+  const totals = computeAiSetupTotals(materialRows, work, calc);
+  const quotePriceSummary = buildPriceSummaryFromQuote(quote);
+  const useQuotePricing = shouldPreferQuoteDocumentPricing(quote, totals);
+
+  const priceSummary: QuotePrintPriceSummary = useQuotePricing
+    ? quotePriceSummary
+    : {
+        materialTotal: totals.materialCost,
+        workTotal: totals.workCost,
+        otherTotal: totals.otherCosts,
+        netTotal: totals.netTotal,
+        vatPercent: calc.vatPercent,
+        vatAmount: totals.vatAmount,
+        grossTotal: totals.grossTotal,
+        isComplete: hasPricedLines || totals.manualTotalActive,
+        isFlatRate:
+          calc.manualGrossTotal != null && calc.manualGrossTotal >= 0 && !hasPricedLines,
+      };
 
   return {
     scopeOfWork: buildScopeOfWorkText(project, tasks, docMeta, t),
@@ -294,17 +352,7 @@ export function buildQuotePrintContext(params: {
     warranty: docMeta.warranty?.trim() || undefined,
     exclusions: docMeta.exclusions?.trim() || undefined,
     contactPerson: resolveContactPerson(docMeta, user, organization),
-    priceSummary: {
-      materialTotal: totals.materialCost,
-      workTotal: totals.workCost,
-      otherTotal: totals.otherCosts,
-      netTotal: totals.netTotal,
-      vatPercent: calc.vatPercent,
-      vatAmount: totals.vatAmount,
-      grossTotal: totals.grossTotal,
-      isComplete,
-      isFlatRate,
-    },
+    priceSummary,
     currency: resolveQuoteCurrency({
       currency: quote.currency,
       countryCode: organization?.market?.countryCode ?? organization?.profile?.country,

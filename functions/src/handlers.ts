@@ -4,7 +4,8 @@ import { draftLanguageSchema, parseProjectDraftPayload, projectDraftSchema, type
 import {
   extractFileText,
   collectDraftFilesForGeneration,
-  copyDraftFilesToProjectDocuments,
+  collectProjectImportFilesAdmin,
+  linkDraftFilesToProjectDocuments,
   isVisualAttachmentMime,
   loadVisualAttachment,
   markFileDiagnostic,
@@ -154,6 +155,23 @@ async function loadContactSummary(
   return "Not provided";
 }
 
+function buildDraftAttachedFileIds(
+  attachedFileIds: string[] | undefined,
+  documentStoragePaths: string[] | undefined
+): string[] {
+  const ids = new Set<string>();
+  for (const id of attachedFileIds ?? []) {
+    const trimmed = id?.trim();
+    if (trimmed) ids.add(trimmed);
+  }
+  for (const rawPath of documentStoragePaths ?? []) {
+    const path = rawPath?.trim();
+    if (!path) continue;
+    ids.add(path.startsWith("path:") ? path : `path:${path}`);
+  }
+  return [...ids];
+}
+
 function mergeCustomerIntoDraft(
   draft: ProjectDraftPayload,
   input: z.infer<typeof generateInputSchema>
@@ -182,7 +200,10 @@ function mergeCustomerIntoDraft(
     source: {
       ...draft.source,
       creationMethod: "ai",
-      attachedFileIds: input.attachedFileIds ?? [],
+      attachedFileIds: buildDraftAttachedFileIds(
+        input.attachedFileIds,
+        input.documentStoragePaths
+      ),
       generatedAt: new Date().toISOString(),
     },
   };
@@ -353,6 +374,7 @@ export async function handleGenerateProjectDraft(
     draft,
     attachmentSummaries: attachmentSummaries.length ? attachmentSummaries : null,
     attachmentProcessing,
+    attachmentStoragePaths: input.documentStoragePaths ?? [],
     workspaceId: access.storageKey,
     orgId: access.orgId ?? null,
     ownerId: access.isPersonal ? input.userId : null,
@@ -405,6 +427,7 @@ export async function handleUpdateProjectDraftWithAI(
     version?: number;
     chatHistory?: { role: string; content: string; at: unknown }[];
     source?: { attachedFileIds?: string[] };
+    attachmentStoragePaths?: string[];
   };
 
   const attachedIds = stored.draft?.source?.attachedFileIds ?? [];
@@ -482,6 +505,7 @@ export async function handleCreateProjectFromDraft(
   const stored = snap.data() as {
     draft: ProjectDraftPayload;
     attachmentSummaries?: AttachmentSummary[];
+    attachmentStoragePaths?: string[];
     jobType?: string;
     contactMode?: string;
     contactId?: string | null;
@@ -713,10 +737,10 @@ export async function handleCreateProjectFromDraft(
     storageKey: access.storageKey,
     authUid,
     attachedFileIds: draft.source.attachedFileIds ?? [],
+    documentStoragePaths: stored.attachmentStoragePaths ?? [],
   });
   if (attachmentFiles.files.length > 0) {
-    const { storagePaths } = await copyDraftFilesToProjectDocuments(
-      bucket,
+    const { storagePaths } = await linkDraftFilesToProjectDocuments(
       db,
       projectId,
       authUid,
@@ -739,4 +763,172 @@ export async function handleCreateProjectFromDraft(
   });
 
   return { projectId };
+}
+
+const importProjectAttachmentsInputSchema = z.object({
+  projectId: z.string().min(1),
+});
+
+export type ImportProjectDraftAttachmentsResponse = {
+  documents: Array<{
+    id: string;
+    projectId: string;
+    fileName: string;
+    mimeType: string;
+    storagePath: string;
+  }>;
+  errors: string[];
+};
+
+async function assertCanAccessProject(
+  authUid: string,
+  project: Record<string, unknown>
+): Promise<void> {
+  const ownerId = String(project.ownerId ?? "");
+  if (ownerId === authUid) return;
+
+  const orgId = project.orgId ? String(project.orgId) : "";
+  if (!orgId) {
+    throw new functionsPermissionError("Project not found or access denied.");
+  }
+
+  const orgSnap = await db.doc(`organizations/${orgId}`).get();
+  if (!orgSnap.exists) {
+    throw new functionsPermissionError("Project not found or access denied.");
+  }
+  const org = orgSnap.data() as { ownerUid?: string };
+  if (org.ownerUid === authUid) return;
+
+  const memberSnap = await db.doc(`organizations/${orgId}/members/${authUid}`).get();
+  if (!memberSnap.exists) {
+    throw new functionsPermissionError("Project not found or access denied.");
+  }
+  const member = memberSnap.data() as { status?: string };
+  const status = member.status?.toLowerCase?.() ?? member.status;
+  if (status === "removed" || status === "invited") {
+    throw new functionsPermissionError("Project not found or access denied.");
+  }
+}
+
+function mapProjectDocumentRecords(
+  projectId: string,
+  snap: admin.firestore.QuerySnapshot
+): ImportProjectDraftAttachmentsResponse["documents"] {
+  return snap.docs.map((docSnap) => {
+    const data = docSnap.data() as Record<string, unknown>;
+    return {
+      id: docSnap.id,
+      projectId,
+      fileName: String(data.fileName ?? "file"),
+      mimeType: String(data.mimeType ?? "application/octet-stream"),
+      storagePath: String(data.storagePath ?? ""),
+    };
+  });
+}
+
+export async function handleImportProjectDraftAttachments(
+  authUid: string | undefined,
+  data: unknown
+): Promise<ImportProjectDraftAttachmentsResponse> {
+  if (!authUid) throw new functionsPermissionError("Authentication required.");
+  const input = importProjectAttachmentsInputSchema.parse(data);
+  const projectId = input.projectId;
+
+  const projectSnap = await db.doc(`projects/${projectId}`).get();
+  if (!projectSnap.exists) {
+    throw new functionsPermissionError("Project not found.");
+  }
+  const project = projectSnap.data() as Record<string, unknown>;
+  await assertCanAccessProject(authUid, project);
+
+  const existingSnap = await db.collection(`projects/${projectId}/documents`).get();
+  if (existingSnap.size > 0) {
+    return { documents: mapProjectDocumentRecords(projectId, existingSnap), errors: [] };
+  }
+
+  const allFiles = await collectProjectImportFilesAdmin(db, project, authUid);
+  if (allFiles.length === 0) {
+    return { documents: [], errors: [] };
+  }
+
+  try {
+    const { documents, storagePaths } = await linkDraftFilesToProjectDocuments(
+      db,
+      projectId,
+      authUid,
+      allFiles
+    );
+    if (storagePaths.length > 0) {
+      await db.doc(`projects/${projectId}`).update({
+        aiWizardAttachmentPaths: storagePaths,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+    }
+    return { documents, errors: [] };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { documents: [], errors: [msg] };
+  }
+}
+
+const projectDocumentUrlInputSchema = z.object({
+  projectId: z.string().min(1),
+  storagePath: z.string().min(1),
+});
+
+function collectAllowedProjectStoragePaths(project: Record<string, unknown>): Set<string> {
+  const allowed = new Set<string>();
+  for (const raw of (project.aiWizardAttachmentPaths as string[]) ?? []) {
+    const path = String(raw).trim();
+    if (path) allowed.add(path);
+  }
+  for (const id of (project.attachedFileIds as string[]) ?? []) {
+    if (!id) continue;
+    if (id.startsWith("path:")) allowed.add(id.slice("path:".length));
+    else if (id.includes("/")) allowed.add(id);
+  }
+  return allowed;
+}
+
+async function assertProjectDocumentStoragePath(
+  projectId: string,
+  project: Record<string, unknown>,
+  storagePath: string
+): Promise<void> {
+  if (storagePath.startsWith(`projects/${projectId}/documents/`)) return;
+
+  const allowed = collectAllowedProjectStoragePaths(project);
+  if (allowed.has(storagePath)) return;
+
+  const docSnap = await db
+    .collection(`projects/${projectId}/documents`)
+    .where("storagePath", "==", storagePath)
+    .limit(1)
+    .get();
+  if (!docSnap.empty) return;
+
+  throw new functionsPermissionError("Document is not linked to this project.");
+}
+
+export async function handleGetProjectDocumentDownloadUrl(
+  authUid: string | undefined,
+  data: unknown
+): Promise<{ url: string }> {
+  if (!authUid) throw new functionsPermissionError("Authentication required.");
+  const input = projectDocumentUrlInputSchema.parse(data);
+  const { projectId, storagePath } = input;
+
+  const projectSnap = await db.doc(`projects/${projectId}`).get();
+  if (!projectSnap.exists) {
+    throw new functionsPermissionError("Project not found.");
+  }
+  const project = projectSnap.data() as Record<string, unknown>;
+  await assertCanAccessProject(authUid, project);
+  await assertProjectDocumentStoragePath(projectId, project, storagePath);
+
+  const [url] = await bucket.file(storagePath).getSignedUrl({
+    action: "read",
+    expires: Date.now() + 60 * 60 * 1000,
+  });
+  return { url };
 }

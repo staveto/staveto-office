@@ -4,6 +4,8 @@ import { ZodError } from "zod";
 import {
   handleCreateProjectFromDraft,
   handleGenerateProjectDraft,
+  handleGetProjectDocumentDownloadUrl,
+  handleImportProjectDraftAttachments,
   handleUpdateProjectDraftWithAI,
 } from "./handlers";
 import { handleCreateBusinessOrg } from "./businessOrg";
@@ -99,6 +101,28 @@ export const createProjectFromDraft = onCall(
   async (request) => {
     try {
       return await handleCreateProjectFromDraft(request.auth?.uid, request.data);
+    } catch (e) {
+      mapError(e);
+    }
+  }
+);
+
+export const importProjectDraftAttachments = onCall(
+  { ...callableOptions, timeoutSeconds: 60, memory: "256MiB" as const },
+  async (request) => {
+    try {
+      return await handleImportProjectDraftAttachments(request.auth?.uid, request.data);
+    } catch (e) {
+      mapError(e);
+    }
+  }
+);
+
+export const getProjectDocumentDownloadUrl = onCall(
+  { ...callableOptions, timeoutSeconds: 30, memory: "256MiB" as const },
+  async (request) => {
+    try {
+      return await handleGetProjectDocumentDownloadUrl(request.auth?.uid, request.data);
     } catch (e) {
       mapError(e);
     }

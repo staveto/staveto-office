@@ -323,8 +323,8 @@ export function computeAiSetupTotals(
 ): AiSetupTotals {
   const materialComputed = computeMaterialSubtotal(materials);
   const workComputed = computeWorkSubtotal(work);
-  const materialCost = calc.materialTotalOverride ?? materialComputed;
-  const workCost = calc.workTotalOverride ?? workComputed;
+  const materialCost = resolveFrozenOverride(calc.materialTotalOverride, materialComputed);
+  const workCost = resolveFrozenOverride(calc.workTotalOverride, workComputed);
   const otherCosts = calc.otherCosts;
 
   const subtotalBeforeMargin = materialCost + workCost + otherCosts;
@@ -333,7 +333,11 @@ export function computeAiSetupTotals(
   const netTotal = Math.round((subtotalBeforeMargin + marginAmount) * 100) / 100;
   const vatAmount = Math.round(netTotal * (calc.vatPercent / 100) * 100) / 100;
   const grossComputed = Math.round((netTotal + vatAmount) * 100) / 100;
-  const manualTotalActive = calc.manualGrossTotal != null && calc.manualGrossTotal >= 0;
+  const lineSubtotal = materialComputed + workComputed + otherCosts;
+  const manualTotalActive =
+    calc.manualGrossTotal != null &&
+    calc.manualGrossTotal >= 0 &&
+    lineSubtotal <= 0.001;
   const grossTotal = manualTotalActive ? calc.manualGrossTotal! : grossComputed;
 
   return {
@@ -347,4 +351,14 @@ export function computeAiSetupTotals(
     grossTotal,
     manualTotalActive,
   };
+}
+
+/** Ignore frozen 0 overrides when line items now have real totals. */
+function resolveFrozenOverride(
+  override: number | null | undefined,
+  computed: number
+): number {
+  if (override == null) return computed;
+  if (override === 0 && computed > 0) return computed;
+  return override;
 }

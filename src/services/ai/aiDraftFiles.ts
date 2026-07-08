@@ -32,7 +32,10 @@ export function filterOfficeAttachedFileIds(files: UploadedAiDraftFile[]): strin
   return files.filter(isRegisteredAiDraftFile).map((f) => f.id);
 }
 
-const MAX_FILE_BYTES = 25 * 1024 * 1024;
+import { ATTACHMENT_SIZE_POLICY } from "@/lib/attachmentSizePolicy";
+import { prepareProjectAttachmentFile } from "@/lib/prepareProjectAttachmentFile";
+
+const MAX_FILE_BYTES = ATTACHMENT_SIZE_POLICY.maxUploadBytes;
 const ALLOWED_TYPES = new Set([
   "text/plain",
   "application/pdf",
@@ -78,24 +81,30 @@ export async function uploadAiDraftFile(
     throw new Error("FILE_TYPE_UNSUPPORTED");
   }
 
+  const { file: prepared, optimized } = await prepareProjectAttachmentFile(file);
+  const uploadMime = prepared.type || mime;
+  const uploadName = prepared.name || file.name;
+
   const wsKey = getWorkspaceStorageKey(workspace, uid);
-  const safeName = file.name.replace(/[^\w.\-()+ ]/g, "_").slice(0, 120);
+  const safeName = uploadName.replace(/[^\w.\-()+ ]/g, "_").slice(0, 120);
   const storagePath = `workspaces/${wsKey}/ai-drafts/${sessionId}/${safeName}`;
   const storageRef = ref(storage, storagePath);
-  await uploadBytes(storageRef, file, { contentType: mime });
+  await uploadBytes(storageRef, prepared, { contentType: uploadMime });
 
   try {
     const fileRef = await addDoc(collection(db, "workspaces", wsKey, "aiDraftFiles"), {
-      fileName: file.name,
-      mimeType: mime,
+      fileName: uploadName,
+      mimeType: uploadMime,
       storagePath,
       uploadedBy: uid,
       workspaceId: wsKey,
       uploadSessionId: sessionId,
+      optimized: optimized || null,
+      byteSize: prepared.size,
       createdAt: serverTimestamp(),
     });
 
-    return { id: fileRef.id, fileName: file.name, mimeType: mime, storagePath };
+    return { id: fileRef.id, fileName: uploadName, mimeType: uploadMime, storagePath };
   } catch (err) {
     if (isFirestorePermissionError(err)) {
       return createStorageOnlyDraftFile(storagePath, file.name, mime);

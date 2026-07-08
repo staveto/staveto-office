@@ -33,11 +33,11 @@ export function ProjectPlanningToolbar({
   return (
     <div
       className={cn(
-        "flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-card px-3 py-2.5 shadow-sm",
+        "flex flex-wrap items-center gap-2 rounded-xl border border-[var(--po-card-border)] bg-[var(--po-card-bg)] px-3 py-2.5 shadow-sm",
         className
       )}
     >
-      <span className="mr-1 text-xs font-bold uppercase tracking-wide text-[#1D376A]">
+      <span className="mr-1 text-xs font-bold uppercase tracking-wide text-[var(--po-text-primary)]">
         {t("projects.planning.toolbarLabel")}
       </span>
       <Button

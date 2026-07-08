@@ -730,7 +730,7 @@ export function NewJobForm() {
         },
         {
           skipMaterialSuggestions: aiDraftSource === "office",
-          skipAttachmentImport: true,
+          skipAttachmentImport: false,
         }
       );
 

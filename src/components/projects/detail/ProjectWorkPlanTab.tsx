@@ -304,7 +304,7 @@ export function ProjectWorkPlanTab({
   return (
     <div className="space-y-4">
       <header>
-        <h2 className="text-lg font-bold text-[#1D376A]">{t("projects.workPlan.title")}</h2>
+        <h2 className="text-lg font-bold text-[var(--po-text-primary)]">{t("projects.workPlan.title")}</h2>
         <p className="text-sm text-muted-foreground mt-0.5">{t("projects.workPlan.subtitle")}</p>
       </header>
 
@@ -435,7 +435,7 @@ export function ProjectWorkPlanTab({
             </Button>
             <Button
               type="button"
-              className="bg-[#1D376A]"
+              className="bg-[var(--po-primary)] hover:bg-[var(--po-primary-hover)]"
               disabled={bulkBusy || !bulkDate}
               onClick={() => void applyBulkDate()}
             >

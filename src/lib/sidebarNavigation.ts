@@ -106,6 +106,7 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
     icon: CalendarDays,
     defaultHref: "/app/planning",
     managementOnly: true,
+    moduleKey: "planning",
     items: [
       {
         id: "planning-overview",

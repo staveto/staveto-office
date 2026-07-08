@@ -70,6 +70,8 @@ import {
 } from "./ProjectPhasePlanDialog";
 import { ProjectTaskQuickAdd } from "./ProjectTaskQuickAdd";
 import { useI18n } from "@/i18n/I18nContext";
+import { useEnabledModules } from "@/context/EnabledModulesContext";
+import { isModuleEnabled } from "@/lib/enabledModules";
 import { cn } from "@/lib/utils";
 
 type ProjectTasksTabProps = {
@@ -100,6 +102,8 @@ export function ProjectTasksTab({
   role,
 }: ProjectTasksTabProps) {
   const { t, locale } = useI18n();
+  const { modules } = useEnabledModules();
+  const planningEnabled = isModuleEnabled(modules, "planning");
   const localeTag = locale === "de" ? "de-DE" : locale === "en" ? "en-GB" : "sk-SK";
 
   const [togglingTaskId, setTogglingTaskId] = useState<string | null>(null);
@@ -140,6 +144,7 @@ export function ProjectTasksTab({
     () => canManageTaskPlanning(project, userId, role, myMemberRecord),
     [project, userId, role, myMemberRecord]
   );
+  const showPlanningUi = canManage && planningEnabled;
 
   const reloadPhases = async () => {
     const phaseList = await listProjectPhases(project.id);
@@ -475,24 +480,26 @@ export function ProjectTasksTab({
 
   return (
     <div className="space-y-4">
-      <ProjectPlanningToolbar
-        canManage={canManage}
-        t={t}
-        onAddPhase={() => setAddPhaseOpen(true)}
-        onAddTask={() => {
-          if (selectedPhaseId) void handleQuickAdd(selectedPhaseMetric?.isGeneral ? null : selectedPhaseId, t("projects.planning.starterTaskTitle"));
-        }}
-        onBulkPlan={() => setBulkPlanOpen(true)}
-        onAssignCrew={() => {
-          setAssignScope("project");
-          setAssigneeTask(null);
-          setAssigneeOpen(true);
-        }}
-      />
+      {showPlanningUi ? (
+        <ProjectPlanningToolbar
+          canManage={canManage}
+          t={t}
+          onAddPhase={() => setAddPhaseOpen(true)}
+          onAddTask={() => {
+            if (selectedPhaseId) void handleQuickAdd(selectedPhaseMetric?.isGeneral ? null : selectedPhaseId, t("projects.planning.starterTaskTitle"));
+          }}
+          onBulkPlan={() => setBulkPlanOpen(true)}
+          onAssignCrew={() => {
+            setAssignScope("project");
+            setAssigneeTask(null);
+            setAssigneeOpen(true);
+          }}
+        />
+      ) : null}
 
       {attentionChips.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200/80 bg-amber-50/50 px-3 py-2">
-          <span className="text-xs font-semibold text-amber-900">
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200/80 bg-amber-50/50 px-3 py-2 dark:border-amber-500/30 dark:bg-amber-950/40">
+          <span className="text-xs font-semibold text-amber-900 dark:text-amber-100">
             {t("projects.tasks.attentionRequired")}
           </span>
           {attentionChips.map((chip) => {
@@ -504,7 +511,9 @@ export function ProjectTasksTab({
                 onClick={chip.onClick}
                 className={cn(
                   "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
-                  chip.active ? "bg-[#1D376A] text-white" : "bg-white text-amber-900"
+                  chip.active
+                    ? "bg-[var(--po-primary)] text-white"
+                    : "bg-[var(--po-card-bg)] text-amber-900 dark:text-amber-100"
                 )}
               >
                 <Icon className="size-3" />
@@ -515,6 +524,7 @@ export function ProjectTasksTab({
         </div>
       ) : null}
 
+      {showPlanningUi ? (
       <div className="grid gap-4 lg:grid-cols-12">
         <div className="space-y-2 lg:col-span-3">
           {phaseMetrics.phases
@@ -672,6 +682,42 @@ export function ProjectTasksTab({
           />
         </div>
       </div>
+      ) : (
+        <Card className="border-[var(--po-card-border)] bg-[var(--po-card-bg)]">
+          <CardContent className="space-y-4 pt-4">
+            {tasksError ? <p className="text-sm text-destructive">{tasksError}</p> : null}
+            {visibleTasks.length === 0 && !tasksError ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                {tasks.length === 0
+                  ? t("projects.tasksEmpty")
+                  : t("projects.tasks.noFilterResults")}
+              </p>
+            ) : (
+              <ProjectTaskGroups
+                tasks={visibleTasks}
+                phaseMetrics={phaseMetrics}
+                focusPhaseId={null}
+                showEmptyPhases={false}
+                canManage={canManage}
+                userId={userId}
+                togglingTaskId={togglingTaskId}
+                savingTaskId={savingTaskId}
+                canToggleStatus={(task) => canWorkerToggleTaskStatus(task, userId, canManage)}
+                onToggleStatus={(task) => void handleToggleTask(task)}
+                onOpenAssignee={(task) => {
+                  setAssignScope("single");
+                  setAssigneeTask(task);
+                  setAssigneeOpen(true);
+                }}
+                onOpenTools={setToolsTask}
+                onPlanDateChange={(task, date) => void handlePlanDateChange(task, date)}
+                onQuickAddTask={(phaseId, title) => void handleQuickAdd(phaseId, title)}
+                quickAddBusy={quickAddBusy}
+              />
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <ProjectAddPhaseDialog
         open={addPhaseOpen}
@@ -715,7 +761,7 @@ export function ProjectTasksTab({
               {t("common.cancel")}
             </Button>
             <Button
-              className="bg-[#1D376A]"
+              className="bg-[var(--po-primary)] hover:bg-[var(--po-primary-hover)]"
               disabled={!editPhaseName.trim()}
               onClick={() => void handleEditPhaseSave()}
             >
@@ -740,7 +786,7 @@ export function ProjectTasksTab({
               {t("common.cancel")}
             </Button>
             <Button
-              className="bg-[#1D376A]"
+              className="bg-[var(--po-primary)] hover:bg-[var(--po-primary-hover)]"
               disabled={!sameDateValue}
               onClick={() => void applySameDateToPhase()}
             >

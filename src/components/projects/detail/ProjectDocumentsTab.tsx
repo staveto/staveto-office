@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FileText,
   FileType,
@@ -20,14 +20,13 @@ import {
   listProjectDocuments,
   uploadProjectDocument,
 } from "@/services/projects/projectDocuments";
-import {
-  importAiWizardAttachmentsToProjectDetailed,
-  resolveAiWizardAttachments,
-} from "@/services/projects/projectAiAttachmentsService";
-import { getStorageInstance, ref, getDownloadURL } from "@/lib/firebase";
+import { importAiWizardAttachmentsToProjectDetailed } from "@/services/projects/projectAiAttachmentsService";
+import { resolveProjectDocumentUrl } from "@/lib/projectDocumentPreview";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { useI18n } from "@/i18n/I18nContext";
 import { ProjectDocumentPreviewDialog } from "./ProjectDocumentPreviewDialog";
+import { po } from "./overview/poStyles";
+import { cn } from "@/lib/utils";
 
 type ProjectDocumentsTabProps = {
   project: ProjectDoc;
@@ -69,10 +68,8 @@ function DocumentThumbnail({
   useEffect(() => {
     if (!isImage || !doc.storagePath) return;
     let cancelled = false;
-    const storage = getStorageInstance();
-    if (!storage) return;
 
-    void getDownloadURL(ref(storage, doc.storagePath))
+    void resolveProjectDocumentUrl(doc)
       .then((resolved) => {
         if (!cancelled) setUrl(resolved);
       })
@@ -83,7 +80,7 @@ function DocumentThumbnail({
     return () => {
       cancelled = true;
     };
-  }, [doc.storagePath, isImage]);
+  }, [doc, isImage]);
 
   if (!isImage) {
     return <IconFallback doc={doc} />;
@@ -96,7 +93,7 @@ function DocumentThumbnail({
         e.stopPropagation();
         onOpen();
       }}
-      className="block shrink-0 overflow-hidden rounded-md border border-border/70 bg-muted/30"
+      className="block shrink-0 overflow-hidden rounded-md border border-[var(--po-card-border)] bg-[var(--po-card-muted)]"
       aria-label={t("projects.dashboard.documents.preview")}
     >
       {url ? (
@@ -104,7 +101,7 @@ function DocumentThumbnail({
         <img src={url} alt={doc.fileName} className="size-16 object-cover sm:size-20" />
       ) : failed ? (
         <span className="flex size-16 items-center justify-center sm:size-20">
-          <ImageIcon className="size-5 text-[#1D376A]/70" />
+          <ImageIcon className="size-5 text-[var(--po-text-muted)]" />
         </span>
       ) : (
         <span
@@ -120,7 +117,7 @@ function DocumentThumbnail({
 
 function IconFallback({ doc }: { doc: ProjectDocumentRecord }) {
   const Icon = CATEGORY_ICON[categoryOf(doc)];
-  return <Icon className="size-5 shrink-0 text-[#1D376A]/70" />;
+  return <Icon className="size-5 shrink-0 text-[var(--po-text-muted)]" />;
 }
 
 function canRecoverAiAttachments(project: ProjectDoc): boolean {
@@ -145,7 +142,6 @@ export function ProjectDocumentsTab({
   const [uploading, setUploading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [recoverableCount, setRecoverableCount] = useState(0);
   const [previewDoc, setPreviewDoc] = useState<ProjectDocumentRecord | null>(null);
 
   const grouped = useMemo(() => {
@@ -158,25 +154,74 @@ export function ProjectDocumentsTab({
     return map;
   }, [documents]);
 
-  useEffect(() => {
-    if (!activeWorkspace || documents.length > 0 || !canRecoverAiAttachments(project)) {
-      setRecoverableCount(0);
-      return;
-    }
+  const handleImportAiAttachments = useCallback(async () => {
+    if (!activeWorkspace) return;
+    setImporting(true);
+    setError(null);
 
-    let cancelled = false;
-    void resolveAiWizardAttachments(project, activeWorkspace, userId)
-      .then((files) => {
-        if (!cancelled) setRecoverableCount(files.length);
-      })
-      .catch(() => {
-        if (!cancelled) setRecoverableCount(0);
+    const pollForDocuments = window.setInterval(() => {
+      void listProjectDocuments(project.id).then((listed) => {
+        if (listed.length > 0) {
+          window.clearInterval(pollForDocuments);
+          onDocumentsChange(listed);
+          setImporting(false);
+        }
+      });
+    }, 2000);
+
+    try {
+      const listed = await listProjectDocuments(project.id);
+      if (listed.length > 0) {
+        onDocumentsChange(listed);
+        return;
+      }
+
+      const freshProject = (await getProject(project.id)) ?? project;
+      const { imported, errors } = await importAiWizardAttachmentsToProjectDetailed({
+        projectId: project.id,
+        workspace: activeWorkspace,
+        userId,
+        project: freshProject,
       });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [activeWorkspace, documents.length, project, userId]);
+      if (imported.length > 0) {
+        onDocumentsChange(imported);
+        return;
+      }
+
+      const afterImport = await listProjectDocuments(project.id);
+      if (afterImport.length > 0) {
+        onDocumentsChange(afterImport);
+        return;
+      }
+
+      if (errors.length > 0) {
+        if (process.env.NODE_ENV === "development") {
+          console.warn("[documents] AI import errors", errors);
+        }
+        const detail = errors[0]?.trim();
+        setError(
+          detail
+            ? `${t("projects.dashboard.documents.importFailed")} (${detail})`
+            : t("projects.dashboard.documents.importFailed")
+        );
+      } else {
+        setError(t("projects.dashboard.documents.importNone"));
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("projects.dashboard.documents.importFailed"));
+    } finally {
+      window.clearInterval(pollForDocuments);
+      setImporting(false);
+    }
+  }, [activeWorkspace, onDocumentsChange, project, t, userId]);
+
+  useEffect(() => {
+    if (autoImportAttempted.current || documents.length > 0) return;
+    if (!canRecoverAiAttachments(project)) return;
+    autoImportAttempted.current = true;
+    void handleImportAiAttachments();
+  }, [documents.length, handleImportAiAttachments, project]);
 
   const handleUpload = async (file: File) => {
     if (!activeWorkspace) return;
@@ -193,61 +238,15 @@ export function ProjectDocumentsTab({
     }
   };
 
-  const handleImportAiAttachments = async () => {
-    if (!activeWorkspace) return;
-    setImporting(true);
-    setError(null);
-    try {
-      const freshProject = (await getProject(project.id)) ?? project;
-      const { imported, errors } = await importAiWizardAttachmentsToProjectDetailed({
-        projectId: project.id,
-        workspace: activeWorkspace,
-        userId,
-        project: freshProject,
-      });
-
-      if (imported.length > 0) {
-        onDocumentsChange(imported);
-        setRecoverableCount(0);
-        return;
-      }
-
-      const listed = await listProjectDocuments(project.id);
-      if (listed.length > 0) {
-        onDocumentsChange(listed);
-        setRecoverableCount(0);
-        return;
-      }
-
-      if (errors.length > 0) {
-        setError(t("projects.dashboard.documents.importFailed"));
-      } else {
-        setError(t("projects.dashboard.documents.importNone"));
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("projects.dashboard.documents.importFailed"));
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  useEffect(() => {
-    if (autoImportAttempted.current || !activeWorkspace || documents.length > 0) return;
-    if (!canRecoverAiAttachments(project)) return;
-    autoImportAttempted.current = true;
-    void handleImportAiAttachments();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once when tab opens empty
-  }, [activeWorkspace, documents.length, project.id]);
-
   const categories: CategoryKey[] = ["documents", "photos", "other"];
   const isEmpty = documents.length === 0;
-  const showImport =
-    isEmpty && canRecoverAiAttachments(project) && (recoverableCount > 0 || importing);
+  const showImport = isEmpty && canRecoverAiAttachments(project);
+  const isBusy = importing;
 
   return (
-    <Card>
+    <Card className={cn(po.card, "border-[var(--po-card-border)]")}>
       <CardHeader className="flex flex-row items-center justify-between gap-2">
-        <CardTitle className="text-base text-[#1D376A]">
+        <CardTitle className={po.title}>
           {t("projects.dashboard.tab.documents")}
         </CardTitle>
         <div className="flex flex-wrap items-center gap-2">
@@ -255,10 +254,10 @@ export function ProjectDocumentsTab({
             <Button
               size="sm"
               variant="outline"
-              disabled={importing || !activeWorkspace}
+              disabled={isBusy || !activeWorkspace}
               onClick={() => void handleImportAiAttachments()}
             >
-              {importing ? (
+              {isBusy ? (
                 <Loader2 className="mr-1 size-4 animate-spin" />
               ) : (
                 <RefreshCw className="mr-1 size-4" />
@@ -280,7 +279,7 @@ export function ProjectDocumentsTab({
             />
             <Button
               size="sm"
-              className="bg-[#e06737] hover:bg-[#c9582f]"
+              className="bg-[var(--po-primary)] hover:bg-[var(--po-primary-hover)]"
               disabled={uploading || !activeWorkspace}
               onClick={() => inputRef.current?.click()}
             >
@@ -295,14 +294,20 @@ export function ProjectDocumentsTab({
         </div>
       </CardHeader>
       <CardContent className="space-y-5">
+        {importing ? (
+          <div className="flex items-center gap-2 rounded-lg border border-[var(--po-card-border)] bg-[var(--po-card-muted)] px-3 py-2 text-sm text-[var(--po-text-muted)]">
+            <Loader2 className="size-4 shrink-0 animate-spin text-[var(--po-primary)]" aria-hidden />
+            {t("projects.dashboard.documents.importing")}
+          </div>
+        ) : null}
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
         {isEmpty ? (
-          <div className="py-12 text-center text-muted-foreground">
+          <div className="py-12 text-center text-[var(--po-text-muted)]">
             <FileText className="mx-auto mb-3 size-10 opacity-40" />
             <p className="text-sm">{t("projects.dashboard.documents.empty")}</p>
             {showImport ? (
-              <p className="mt-2 text-xs text-muted-foreground">
+              <p className="mt-2 text-xs text-[var(--po-text-muted)]">
                 {t("projects.dashboard.documents.importAiHint")}
               </p>
             ) : null}
@@ -311,10 +316,10 @@ export function ProjectDocumentsTab({
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={importing || !activeWorkspace}
+                  disabled={isBusy || !activeWorkspace}
                   onClick={() => void handleImportAiAttachments()}
                 >
-                  {importing ? (
+                  {isBusy ? (
                     <Loader2 className="mr-1 size-4 animate-spin" />
                   ) : (
                     <RefreshCw className="mr-1 size-4" />
@@ -340,7 +345,7 @@ export function ProjectDocumentsTab({
               const Icon = CATEGORY_ICON[cat];
               return (
                 <section key={cat} className="space-y-2">
-                  <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[var(--po-text-muted)]">
                     <Icon className="size-4" />
                     {t(`projects.documents.category.${cat}`)}
                     <span className="tabular-nums">({grouped[cat].length})</span>
@@ -351,22 +356,24 @@ export function ProjectDocumentsTab({
                         <button
                           type="button"
                           onClick={() => setPreviewDoc(doc)}
-                          className="flex w-full items-center gap-3 rounded-lg border border-border/70 px-3 py-2.5 text-left text-sm transition-colors hover:border-[#1D376A]/30 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e06737]/50"
+                          className="flex w-full items-center gap-3 rounded-lg border border-[var(--po-card-border)] px-3 py-2.5 text-left text-sm transition-colors hover:bg-[var(--po-card-muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--po-primary)]/50"
                         >
                           {cat === "photos" ? (
                             <DocumentThumbnail doc={doc} t={t} onOpen={() => setPreviewDoc(doc)} />
                           ) : (
-                            <Icon className="size-4 shrink-0 text-[#1D376A]/70" />
+                            <Icon className="size-4 shrink-0 text-[var(--po-text-muted)]" />
                           )}
                           <div className="min-w-0 flex-1">
-                            <p className="truncate font-medium text-foreground">{doc.fileName}</p>
+                            <p className="truncate font-medium text-[var(--po-text-primary)]">
+                              {doc.fileName}
+                            </p>
                             {doc.createdAt ? (
-                              <p className="text-xs text-muted-foreground">
+                              <p className="text-xs text-[var(--po-text-muted)]">
                                 {new Date(doc.createdAt).toLocaleDateString()}
                               </p>
                             ) : null}
                           </div>
-                          <Eye className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+                          <Eye className="size-4 shrink-0 text-[var(--po-text-muted)]" aria-hidden />
                         </button>
                       </li>
                     ))}

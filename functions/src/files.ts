@@ -81,6 +81,31 @@ export async function loadDraftFiles(
   return results;
 }
 
+export function draftFileFromTrustedStoragePath(
+  storagePath: string,
+  authUid: string
+): DraftFileRecord | null {
+  const trimmed = storagePath.trim();
+  if (!trimmed) return null;
+  const isWizardPath =
+    trimmed.includes("/ai-drafts/") ||
+    trimmed.includes("/aiProjectDrafts/") ||
+    (trimmed.startsWith("projects/") && trimmed.includes("/documents/"));
+  if (!isWizardPath) return null;
+
+  const fileName = trimmed.split("/").pop() || "attachment";
+  const workspaceId = trimmed.startsWith("workspaces/")
+    ? trimmed.split("/")[1] ?? authUid
+    : authUid;
+  return {
+    fileName,
+    mimeType: guessMimeType(fileName),
+    storagePath: trimmed,
+    uploadedBy: authUid,
+    workspaceId,
+  };
+}
+
 function guessMimeType(fileName: string): string {
   const lower = fileName.toLowerCase();
   if (lower.endsWith(".pdf")) return "application/pdf";
@@ -143,7 +168,7 @@ export function loadDraftFilesFromStoragePaths(
   return results;
 }
 
-function mergeDraftFilesByPath(...groups: DraftFileRecord[][]): DraftFileRecord[] {
+export function mergeDraftFilesByPath(...groups: DraftFileRecord[][]): DraftFileRecord[] {
   const byPath = new Map<string, DraftFileRecord>();
   for (const group of groups) {
     for (const file of group) {
@@ -300,6 +325,151 @@ export function markFileDiagnostic(
 
 function sanitizeProjectDocumentFileName(name: string): string {
   return name.replace(/[^\w.\-()+ ]/g, "_").slice(0, 120);
+}
+
+export function workspaceKeysFromProject(project: Record<string, unknown>): string[] {
+  const keys = new Set<string>();
+  const add = (value: unknown) => {
+    if (typeof value === "string" && value.trim()) keys.add(value.trim());
+  };
+  add(project.orgId);
+  add(project.workspaceId);
+  add(project.ownerId);
+  for (const raw of (project.aiWizardAttachmentPaths as string[]) ?? []) {
+    const match = String(raw).match(/^workspaces\/([^/]+)\//);
+    if (match?.[1]) keys.add(match[1]);
+  }
+  return [...keys];
+}
+
+export async function loadDraftFilesFromWorkspaceKeys(
+  db: admin.firestore.Firestore,
+  workspaceKeys: string[],
+  fileIds: string[]
+): Promise<DraftFileRecord[]> {
+  const ids = fileIds.filter((id) => id && !id.includes("/") && !id.startsWith("path:"));
+  const results: DraftFileRecord[] = [];
+  const seenPaths = new Set<string>();
+
+  for (const id of ids) {
+    for (const wsKey of workspaceKeys) {
+      const snap = await db.doc(`workspaces/${wsKey}/aiDraftFiles/${id}`).get();
+      if (!snap.exists) continue;
+      const data = snap.data() as DraftFileRecord;
+      if (!data.storagePath || seenPaths.has(data.storagePath)) break;
+      seenPaths.add(data.storagePath);
+      results.push(data);
+      break;
+    }
+  }
+  return results;
+}
+
+export async function collectProjectImportFilesAdmin(
+  db: admin.firestore.Firestore,
+  project: Record<string, unknown>,
+  authUid: string
+): Promise<DraftFileRecord[]> {
+  const paths = new Set<string>();
+  const fileIds: string[] = [];
+
+  const addPath = (raw: string | undefined) => {
+    const trimmed = raw?.trim();
+    if (trimmed) paths.add(trimmed);
+  };
+
+  for (const raw of (project.aiWizardAttachmentPaths as string[]) ?? []) {
+    addPath(String(raw));
+  }
+  for (const id of (project.attachedFileIds as string[]) ?? []) {
+    if (!id) continue;
+    if (id.startsWith("path:")) addPath(id.slice("path:".length));
+    else if (id.includes("/")) addPath(id);
+    else fileIds.push(id);
+  }
+
+  const draftId = project.aiDraftId ? String(project.aiDraftId) : "";
+  if (draftId) {
+    const wsKeys = workspaceKeysFromProject(project);
+    const draftSnaps = await Promise.all(
+      wsKeys.map((wsKey) => db.doc(`workspaces/${wsKey}/projectDrafts/${draftId}`).get())
+    );
+    for (const snap of draftSnaps) {
+      if (!snap.exists) continue;
+      const data = snap.data() as Record<string, unknown>;
+      for (const raw of (data.attachmentStoragePaths as string[]) ?? []) {
+        addPath(String(raw));
+      }
+      const draft = data.draft as { source?: { attachedFileIds?: string[] } } | undefined;
+      for (const id of draft?.source?.attachedFileIds ?? []) {
+        if (!id) continue;
+        if (id.startsWith("path:")) addPath(id.slice("path:".length));
+        else if (id.includes("/")) addPath(id);
+        else fileIds.push(id);
+      }
+    }
+  }
+
+  const fromPaths: DraftFileRecord[] = [];
+  for (const storagePath of paths) {
+    const file = draftFileFromTrustedStoragePath(storagePath, authUid);
+    if (file) fromPaths.push(file);
+  }
+
+  const fromIds = await loadDraftFilesFromWorkspaceKeys(
+    db,
+    workspaceKeysFromProject(project),
+    fileIds
+  );
+  return mergeDraftFilesByPath(fromPaths, fromIds);
+}
+
+export type LinkedProjectDocument = {
+  id: string;
+  projectId: string;
+  fileName: string;
+  mimeType: string;
+  storagePath: string;
+};
+
+/** Link wizard files to project documents without copying bytes (fast import). */
+export async function linkDraftFilesToProjectDocuments(
+  db: admin.firestore.Firestore,
+  projectId: string,
+  authUid: string,
+  files: DraftFileRecord[]
+): Promise<{ documents: LinkedProjectDocument[]; storagePaths: string[] }> {
+  const documents: LinkedProjectDocument[] = [];
+  const storagePaths: string[] = [];
+  const seenNames = new Set<string>();
+
+  for (const file of files) {
+    const safeName = sanitizeProjectDocumentFileName(file.fileName);
+    if (seenNames.has(safeName)) continue;
+    seenNames.add(safeName);
+
+    const mime = file.mimeType || guessMimeType(file.fileName);
+    const docRef = await db.collection(`projects/${projectId}/documents`).add({
+      fileName: file.fileName,
+      mimeType: mime,
+      storagePath: file.storagePath,
+      uploadedBy: authUid,
+      source: "ai_wizard",
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    documents.push({
+      id: docRef.id,
+      projectId,
+      fileName: file.fileName,
+      mimeType: mime,
+      storagePath: file.storagePath,
+    });
+    storagePaths.push(file.storagePath);
+  }
+
+  return { documents, storagePaths };
 }
 
 /** Copy AI wizard draft files into projects/{id}/documents (server-side on confirm). */

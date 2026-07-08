@@ -56,8 +56,8 @@ export function ProjectPhasePlanningCard({
     <article
       className={cn(
         "rounded-xl border bg-card transition-colors",
-        selected ? "border-[#1D376A] ring-1 ring-[#1D376A]/30" : "border-border/70",
-        phase.isActive && !selected && "border-[#1D376A]/40"
+        selected ? "border-[var(--po-primary)] ring-1 ring-[var(--po-primary)]/30" : "border-[var(--po-card-border)]",
+        phase.isActive && !selected && "border-[var(--po-primary)]/40"
       )}
     >
       <button
@@ -67,14 +67,14 @@ export function ProjectPhasePlanningCard({
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
-            <p className="truncate text-sm font-bold text-[#1D376A]">{name}</p>
+            <p className="truncate text-sm font-bold text-[var(--po-text-primary)]">{name}</p>
             <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
               <Calendar className="size-3 shrink-0" />
               {dateRange}
             </p>
           </div>
           {phase.isActive ? (
-            <span className="shrink-0 rounded-full bg-[#1D376A] px-1.5 py-0.5 text-[9px] font-bold uppercase text-white">
+            <span className="shrink-0 rounded-full bg-[var(--po-primary)] px-1.5 py-0.5 text-[9px] font-bold uppercase text-white">
               {t("projects.phaseWorkflow.current")}
             </span>
           ) : null}
@@ -95,7 +95,7 @@ export function ProjectPhasePlanningCard({
         </div>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
           <div
-            className="h-full rounded-full bg-[#1D376A]"
+            className="h-full rounded-full bg-[var(--po-primary)]"
             style={{ width: `${phase.percent}%` }}
           />
         </div>
@@ -146,7 +146,7 @@ function ActionChip({
         e.stopPropagation();
         onClick();
       }}
-      className="inline-flex items-center gap-1 rounded-md border border-border/70 px-2 py-1 text-[10px] font-semibold text-[#1D376A] hover:bg-muted/50"
+      className="inline-flex items-center gap-1 rounded-md border border-[var(--po-card-border)] px-2 py-1 text-[10px] font-semibold text-[var(--po-text-primary)] hover:bg-[var(--po-card-muted)]"
     >
       <Icon className="size-3" />
       {label}
