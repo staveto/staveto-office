@@ -129,15 +129,37 @@ export function distributeDatesAcrossTasks(
   return result;
 }
 
+function taskScheduleBounds(task: TaskDoc): { start: string; end: string } | null {
+  const start = task.plannedStart?.slice(0, 10);
+  const end = task.plannedEnd?.slice(0, 10) || task.dueDate?.slice(0, 10);
+  const single = getTaskPlanDate(task);
+
+  if (start && /^\d{4}-\d{2}-\d{2}$/.test(start)) {
+    const resolvedEnd = end && /^\d{4}-\d{2}-\d{2}$/.test(end) ? end : start;
+    const s = start <= resolvedEnd ? start : resolvedEnd;
+    const e = start <= resolvedEnd ? resolvedEnd : start;
+    return { start: s, end: e };
+  }
+  if (single) {
+    return { start: single, end: single };
+  }
+  return null;
+}
+
+/** Earliest plannedStart and latest effective end among scheduled child tasks. */
 export function getPhaseDateRangeFromTasks(
   tasks: TaskDoc[]
 ): { start?: string; end?: string } | null {
-  const dates = tasks
-    .map(getTaskPlanDate)
-    .filter((d): d is string => !!d)
-    .sort();
-  if (dates.length === 0) return null;
-  return { start: dates[0], end: dates[dates.length - 1] };
+  let start: string | undefined;
+  let end: string | undefined;
+  for (const task of tasks) {
+    const bounds = taskScheduleBounds(task);
+    if (!bounds) continue;
+    if (!start || bounds.start < start) start = bounds.start;
+    if (!end || bounds.end > end) end = bounds.end;
+  }
+  if (!start || !end) return null;
+  return { start, end };
 }
 
 export function shiftTaskDate(

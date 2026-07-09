@@ -3,7 +3,6 @@
 import { ArrowRight } from "lucide-react";
 import type { ProjectOverviewViewModel } from "@/lib/projectOverviewViewModel";
 import type { ProjectDashboardTab } from "@/lib/projectDashboard";
-import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nContext";
 import { cn } from "@/lib/utils";
 import { po } from "./poStyles";
@@ -17,17 +16,17 @@ export function ProjectActivityPreview({ activity, onNavigate }: Props) {
   const { t } = useI18n();
 
   return (
-    <section className={cn(po.card, "p-4")}>
+    <section className={cn(po.cardCalm, "p-4 sm:p-5")}>
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className={po.title}>{t("projects.overview.recentActivity")}</h2>
-        <Button
-          variant="link"
-          className={cn("h-auto p-0", po.link)}
+        <button
+          type="button"
+          className={po.linkAction}
           onClick={() => onNavigate("activity")}
         >
           {t("projects.overview.viewAll")}
-          <ArrowRight className="ml-1 size-3.5" />
-        </Button>
+          <ArrowRight className="size-3.5" />
+        </button>
       </div>
 
       {activity.length === 0 ? (

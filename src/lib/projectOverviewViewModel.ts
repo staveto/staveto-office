@@ -43,6 +43,7 @@ export type ProjectOverviewViewModel = {
     completedTasks: number;
     totalTasks: number;
     percent: number;
+    overdueCount: number;
     status: ProjectOverviewPhaseStatus;
   }>;
   nextAction: {
@@ -52,6 +53,23 @@ export type ProjectOverviewViewModel = {
     primaryLabelKey: string;
     primaryTab: "tasks" | "workplan" | "quote" | "documents";
     severity: "neutral" | "attention" | "warning" | "danger";
+  };
+  todayFocus: {
+    hasUrgentIssues: boolean;
+    overdueCount: number;
+    openTasksCount: number;
+    activePhaseName?: string;
+    criticalTask?: {
+      id: string;
+      title: string;
+      assigneeName?: string;
+    };
+    nextPlannedTask?: {
+      id: string;
+      title: string;
+      assigneeName?: string;
+      dueDate?: string;
+    };
   };
   activePhaseTasks: Array<{
     id: string;
@@ -191,7 +209,8 @@ function countDocuments(documents: ProjectDocumentRecord[]) {
 function pickRecentPhotos(documents: ProjectDocumentRecord[]) {
   return documents
     .filter((d) => d.mimeType?.startsWith("image/") && d.storagePath?.trim())
-    .slice(0, 4)
+    .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""))
+    .slice(0, 3)
     .map((d) => ({
       id: d.id,
       fileName: d.fileName,
@@ -277,7 +296,17 @@ export function buildProjectOverviewViewModel(input: {
       };
     })
     .sort((a, b) => taskSortRank(a.status) - taskSortRank(b.status))
-    .slice(0, 5);
+    .slice(0, 3);
+
+  const phaseOverdueCount = (phaseId: string, isGeneral: boolean) =>
+    activeTasks.filter((t) => {
+      if (!isOpenTask(t) || !isOverdueTask(t, today)) return false;
+      if (isGeneral) {
+        const pid = t.phaseId?.trim();
+        return !pid || pid === phaseId;
+      }
+      return t.phaseId?.trim() === phaseId;
+    }).length;
 
   const phases = phaseMetrics.phases.map((phase) => {
     const phaseTasks = activeTasks.filter((t) =>
@@ -299,6 +328,7 @@ export function buildProjectOverviewViewModel(input: {
       completedTasks: phase.done,
       totalTasks: phase.total,
       percent: phase.percent,
+      overdueCount: phaseOverdueCount(phase.id, phase.isGeneral),
       status,
     };
   });
@@ -374,6 +404,42 @@ export function buildProjectOverviewViewModel(input: {
     };
   }
 
+  const criticalOverdue = [...activePhaseTasks, ...openTasks]
+    .filter((t) => isOverdueTask(t, today))
+    .sort((a, b) => (getTaskPlanDate(a) ?? "").localeCompare(getTaskPlanDate(b) ?? ""))[0];
+
+  const nextPlanned = openTasks
+    .filter((t) => !isOverdueTask(t, today) && getTaskPlanDate(t))
+    .sort((a, b) =>
+      (getTaskPlanDate(a) ?? "").localeCompare(getTaskPlanDate(b) ?? "")
+    )[0];
+
+  const todayFocus: ProjectOverviewViewModel["todayFocus"] = {
+    hasUrgentIssues:
+      overdueAll.length > 0 ||
+      blockedCount > 0 ||
+      health.status === "ATTENTION" ||
+      health.status === "BLOCKED",
+    overdueCount: overdueAll.length,
+    openTasksCount: openTasks.length,
+    activePhaseName,
+    criticalTask: criticalOverdue
+      ? {
+          id: criticalOverdue.id,
+          title: criticalOverdue.title?.trim() || "—",
+          assigneeName: resolveAssignee(criticalOverdue),
+        }
+      : undefined,
+    nextPlannedTask: nextPlanned
+      ? {
+          id: nextPlanned.id,
+          title: nextPlanned.title?.trim() || "—",
+          assigneeName: resolveAssignee(nextPlanned),
+          dueDate: getTaskPlanDate(nextPlanned),
+        }
+      : undefined,
+  };
+
   const team = members
     .map((m) => {
       const timer = activeTimers.get(m.userId);
@@ -403,7 +469,7 @@ export function buildProjectOverviewViewModel(input: {
     .map(([name, minutes]) => ({ name, minutes }));
 
   const activity = buildProjectActivity({ project, tasks, timeEntries, documents })
-    .slice(0, 5)
+    .slice(0, 3)
     .map((event) => ({
       id: event.id,
       actor:
@@ -439,6 +505,7 @@ export function buildProjectOverviewViewModel(input: {
     },
     phases,
     nextAction,
+    todayFocus,
     activePhaseTasks: activePhaseTaskRows,
     team,
     time: {

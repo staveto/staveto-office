@@ -66,8 +66,24 @@ export const SAMPLE_ORGANIZATION: OrganizationPrintInfo = {
 };
 
 export const SAMPLE_PRINT_CONTEXT: QuotePrintContext = {
+  introMessage:
+    "Thank you for your interest. We prepared a transparent proposal with clear scope, pricing and next steps for your project.",
   scopeOfWork:
     "✓ Site preparation\n✓ Material delivery\n✓ Installation and testing\n✓ Final handover",
+  includedInPrice:
+    "✓ All listed materials and labour\n✓ Site preparation and waste disposal\n✓ Final cleaning and handover documentation",
+  notIncludedInPrice:
+    "✗ Permits and official fees\n✗ Structural changes beyond agreed scope\n✗ Client-supplied fixtures installation",
+  timeline:
+    "Week 1–2: preparation and material delivery\nWeek 3–5: installation\nWeek 6: testing and handover",
+  paymentMilestones:
+    "40% advance on order confirmation\n40% after rough installation\n20% on final handover",
+  whyChooseUs:
+    "15+ years on residential projects\nCertified team and warranty on workmanship\nClear communication throughout the build",
+  referencesNote:
+    "Reference projects available on request — photos from recent renovations in the Bratislava region.",
+  callToAction:
+    "Reply to this quote or call us to confirm the offer. We reserve capacity for 14 days from the issue date.",
   conditions:
     "Quote valid for 14 days.\nWork according to agreed scope.\nChanges billed separately.",
   paymentTerms: "50% advance, 50% on completion.",

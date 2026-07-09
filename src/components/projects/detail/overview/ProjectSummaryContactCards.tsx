@@ -32,7 +32,7 @@ export function ProjectSummaryCard({ project }: { project: ProjectDoc }) {
 
   return (
     <>
-      <section className={cn(po.card, "p-4 opacity-95")}>
+      <section className={cn(po.cardCalm, "p-4 sm:p-5 opacity-95")}>
         <h2 className={cn(po.titleSm, "mb-2 text-[var(--po-text-secondary)]")}>
           {t("projects.dashboard.summary.title")}
         </h2>
@@ -66,7 +66,7 @@ export function ProjectContactCard({ project, customerName, location }: Props) {
   const phone = project.customerPhone?.trim();
 
   return (
-    <section className={cn(po.card, "p-4")}>
+    <section className={cn(po.cardCalm, "p-4 sm:p-5")}>
       <h2 className={cn(po.title, "mb-3")}>{t("projects.dashboard.contactCard.title")}</h2>
       <dl className="space-y-2 text-sm">
         {customerName ? (

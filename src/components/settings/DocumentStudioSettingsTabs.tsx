@@ -38,7 +38,7 @@ const SIGNATURE_LAYOUTS: QuoteTemplateSignatureLayout[] = ["classic", "modern"];
 
 type VisibilityKey = keyof QuoteDocumentTemplate["visibility"];
 
-const VISIBILITY_KEYS: VisibilityKey[] = [
+const CORE_VISIBILITY_KEYS: VisibilityKey[] = [
   "showLogo",
   "showCompanyAddress",
   "showRegistrationNumber",
@@ -54,6 +54,17 @@ const VISIBILITY_KEYS: VisibilityKey[] = [
   "showContactBlock",
   "showSignatureBlock",
   "showStavetoBranding",
+];
+
+const SALES_VISIBILITY_KEYS: VisibilityKey[] = [
+  "showIntroMessage",
+  "showIncludedInPrice",
+  "showNotIncludedInPrice",
+  "showTimeline",
+  "showPaymentMilestones",
+  "showWhyChooseUs",
+  "showReferences",
+  "showCallToAction",
 ];
 
 type StudioTab = "basic" | "brand" | "layout" | "sections" | "ai";
@@ -400,26 +411,40 @@ export function DocumentStudioSettingsTabs({
           <div className="space-y-4 p-4 lg:p-5">
             <SettingsSectionCard>
               <CardContent className="pt-6">
-                <h2 className="mb-4 font-semibold text-foreground">
+                <h2 className="mb-1 font-semibold text-foreground">
                   {t("settings.quoteTemplate.sectionsTitle")}
                 </h2>
-                <div className="grid gap-3">
-                  {VISIBILITY_KEYS.map((key) => (
-                    <label
+                <p className="mb-4 text-sm text-muted-foreground">
+                  {t("settings.documentStudio.sections.hint")}
+                </p>
+                <h3 className="mb-2 text-sm font-medium text-foreground">
+                  {t("settings.documentStudio.sections.coreTitle")}
+                </h3>
+                <div className="mb-5 grid gap-3">
+                  {CORE_VISIBILITY_KEYS.map((key) => (
+                    <VisibilityToggle
                       key={key}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2"
-                    >
-                      <span className="text-sm text-foreground">
-                        {t(`settings.quoteTemplate.visibility.${key}`)}
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={template.visibility[key]}
-                        disabled={!canEdit}
-                        onChange={(e) => patchVisibility(key, e.target.checked)}
-                        className="size-4 accent-[#1D376A]"
-                      />
-                    </label>
+                      visibilityKey={key}
+                      checked={template.visibility[key]}
+                      canEdit={canEdit}
+                      t={t}
+                      onChange={(value) => patchVisibility(key, value)}
+                    />
+                  ))}
+                </div>
+                <h3 className="mb-2 text-sm font-medium text-foreground">
+                  {t("settings.documentStudio.sections.salesTitle")}
+                </h3>
+                <div className="grid gap-3">
+                  {SALES_VISIBILITY_KEYS.map((key) => (
+                    <VisibilityToggle
+                      key={key}
+                      visibilityKey={key}
+                      checked={template.visibility[key]}
+                      canEdit={canEdit}
+                      t={t}
+                      onChange={(value) => patchVisibility(key, value)}
+                    />
                   ))}
                 </div>
               </CardContent>
@@ -437,5 +462,34 @@ export function DocumentStudioSettingsTabs({
         ) : null}
       </div>
     </div>
+  );
+}
+
+function VisibilityToggle({
+  visibilityKey,
+  checked,
+  canEdit,
+  t,
+  onChange,
+}: {
+  visibilityKey: VisibilityKey;
+  checked: boolean;
+  canEdit: boolean;
+  t: (key: string) => string;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5 transition-colors hover:bg-muted/30">
+      <span className="text-sm text-foreground">
+        {t(`settings.quoteTemplate.visibility.${visibilityKey}`)}
+      </span>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={!canEdit}
+        onChange={(e) => onChange(e.target.checked)}
+        className="size-4 accent-[#1D376A]"
+      />
+    </label>
   );
 }

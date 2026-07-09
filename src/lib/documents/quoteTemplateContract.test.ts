@@ -33,6 +33,15 @@ describe("normalizeQuoteTemplate", () => {
     expect(normalized.layout.pageSize).toBe("A4");
     expect(normalized.visibility.showLogo).toBe(true);
   });
+
+  it("fills missing sales visibility fields as false", () => {
+    const normalized = normalizeQuoteTemplate({});
+    expect(normalized.visibility.showIntroMessage).toBe(false);
+    expect(normalized.visibility.showCallToAction).toBe(false);
+    expect(Object.keys(normalized.visibility).length).toBe(
+      ALLOWED_QUOTE_TEMPLATE_SECTIONS.length
+    );
+  });
 });
 
 describe("validateQuoteTemplate", () => {

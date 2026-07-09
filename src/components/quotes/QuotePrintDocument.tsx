@@ -390,6 +390,12 @@ export function QuotePrintDocument({
         ) : null}
       </div>
 
+      {visibility.showIntroMessage && printContext.introMessage?.trim() ? (
+        <section className={styles.proposalIntroBlock}>
+          <p className={styles.proposalIntroText}>{printContext.introMessage}</p>
+        </section>
+      ) : null}
+
       <section className={styles.subjectBlock}>
         <p className={styles.sectionTitle}>{t("quotes.print.subject")}</p>
         <p className={styles.subjectTitle}>{subjectTitle}</p>
@@ -408,6 +414,23 @@ export function QuotePrintDocument({
         <section className={styles.scopeBlock}>
           <p className={styles.sectionTitle}>{t("quotes.print.scopeOfWork")}</p>
           <div className={styles.scopeBody}>{printContext.scopeOfWork}</div>
+        </section>
+      ) : null}
+
+      {visibility.showIncludedInPrice || visibility.showNotIncludedInPrice ? (
+        <section className={styles.inclusionGrid}>
+          {visibility.showIncludedInPrice && printContext.includedInPrice?.trim() ? (
+            <div className={styles.inclusionCardIncluded}>
+              <p className={styles.inclusionTitle}>{t("quotes.print.includedInPrice")}</p>
+              <div className={styles.inclusionBody}>{printContext.includedInPrice}</div>
+            </div>
+          ) : null}
+          {visibility.showNotIncludedInPrice && printContext.notIncludedInPrice?.trim() ? (
+            <div className={styles.inclusionCardExcluded}>
+              <p className={styles.inclusionTitle}>{t("quotes.print.notIncludedInPrice")}</p>
+              <div className={styles.inclusionBody}>{printContext.notIncludedInPrice}</div>
+            </div>
+          ) : null}
         </section>
       ) : null}
 
@@ -495,6 +518,20 @@ export function QuotePrintDocument({
         )}
       </section>
 
+      {visibility.showTimeline && printContext.timeline?.trim() ? (
+        <section className={styles.proposalBlock}>
+          <p className={styles.sectionTitle}>{t("quotes.print.timeline")}</p>
+          <div className={styles.proposalBody}>{printContext.timeline}</div>
+        </section>
+      ) : null}
+
+      {visibility.showPaymentMilestones && printContext.paymentMilestones?.trim() ? (
+        <section className={styles.proposalBlock}>
+          <p className={styles.sectionTitle}>{t("quotes.print.paymentMilestones")}</p>
+          <div className={styles.proposalBody}>{printContext.paymentMilestones}</div>
+        </section>
+      ) : null}
+
       <section className={styles.notes}>
         {visibility.showTerms ? (
           <>
@@ -528,6 +565,20 @@ export function QuotePrintDocument({
         ) : null}
       </section>
 
+      {visibility.showWhyChooseUs && printContext.whyChooseUs?.trim() ? (
+        <section className={styles.proposalHighlightBlock}>
+          <p className={styles.sectionTitle}>{t("quotes.print.whyChooseUs")}</p>
+          <div className={styles.proposalBody}>{printContext.whyChooseUs}</div>
+        </section>
+      ) : null}
+
+      {visibility.showReferences && printContext.referencesNote?.trim() ? (
+        <section className={styles.proposalBlock}>
+          <p className={styles.sectionTitle}>{t("quotes.print.references")}</p>
+          <div className={styles.proposalBody}>{printContext.referencesNote}</div>
+        </section>
+      ) : null}
+
       {visibility.showContactBlock ? (
       <section className={styles.contactSection}>
         <p className={styles.sectionTitle}>{t("quotes.print.yourContact")}</p>
@@ -544,6 +595,13 @@ export function QuotePrintDocument({
           <p className={styles.detailLine}>{contactPerson.email}</p>
         ) : null}
       </section>
+      ) : null}
+
+      {visibility.showCallToAction && printContext.callToAction?.trim() ? (
+        <section className={styles.callToActionBlock}>
+          <p className={styles.callToActionTitle}>{t("quotes.print.callToAction")}</p>
+          <p className={styles.callToActionBody}>{printContext.callToAction}</p>
+        </section>
       ) : null}
 
       {visibility.showSignatureBlock ? (

@@ -3,7 +3,6 @@
 import { ArrowRight } from "lucide-react";
 import type { ProjectOverviewViewModel } from "@/lib/projectOverviewViewModel";
 import type { ProjectDashboardTab } from "@/lib/projectDashboard";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useI18n } from "@/i18n/I18nContext";
 import { cn } from "@/lib/utils";
@@ -55,83 +54,71 @@ export function ProjectActivePhaseWorkBoard({
     done: tasks.filter((x) => x.status === "done"),
   };
 
-  const sections: Array<{ key: keyof typeof grouped; labelKey: string }> = [
-    { key: "overdue", labelKey: "projects.command.workBoard.group.overdue" },
-    { key: "in_progress", labelKey: "projects.command.workBoard.group.inProgress" },
-    { key: "open", labelKey: "projects.command.workBoard.group.open" },
-    { key: "done", labelKey: "projects.command.workBoard.group.done" },
-  ];
+  const flatTasks = [
+    ...grouped.overdue,
+    ...grouped.in_progress,
+    ...grouped.open,
+    ...grouped.done,
+  ].slice(0, 3);
 
   return (
-    <section className={cn(po.card, "p-4")}>
+    <section className={cn(po.cardCalm, "p-4 sm:p-5")}>
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className={po.title}>{title}</h2>
-        <Button
-          variant="link"
-          className={cn("h-auto p-0", po.link)}
+        <button
+          type="button"
+          className={po.linkAction}
           onClick={() => onNavigate("tasks")}
         >
           {t("projects.command.workBoard.viewAll")}
-          <ArrowRight className="ml-1 size-3.5" />
-        </Button>
+          <ArrowRight className="size-3.5" />
+        </button>
       </div>
 
       {tasks.length === 0 ? (
         <p className={cn(po.body, "py-6 text-center")}>{t("projects.command.workBoard.empty")}</p>
       ) : (
-        <div className="space-y-4">
-          {sections.map(({ key, labelKey }) => {
-            const rows = grouped[key];
-            if (rows.length === 0) return null;
+        <ul className="space-y-1.5">
+          {flatTasks.map((task) => {
+            const badge = statusBadge[task.status];
             return (
-              <div key={key}>
-                <p className={cn(po.label, "mb-2")}>{t(labelKey)}</p>
-                <ul className="space-y-1.5">
-                  {rows.map((task) => {
-                    const badge = statusBadge[task.status];
-                    return (
-                      <li key={task.id}>
-                        <button
-                          type="button"
-                          onClick={() => onNavigate("tasks")}
-                          className={cn(
-                            po.cardMuted,
-                            "flex w-full min-h-11 items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:border-[var(--po-primary)]/30"
-                          )}
-                        >
-                          <span className="min-w-0 flex-1">
-                            <span className={po.bodyStrong}>{task.title}</span>
-                            <span className={cn(po.muted, "mt-0.5 flex flex-wrap gap-x-2")}>
-                              {task.assigneeName ? (
-                                <span>{task.assigneeName}</span>
-                              ) : (
-                                <span className="text-amber-700 dark:text-amber-300">
-                                  {t("projects.command.task.unassigned")}
-                                </span>
-                              )}
-                              {task.dueLabelKey ? (
-                                <span>· {t(task.dueLabelKey, task.dueLabelParams)}</span>
-                              ) : null}
-                              {task.phaseName ? <span>· {task.phaseName}</span> : null}
-                            </span>
-                          </span>
-                          <Badge
-                            variant="outline"
-                            className={cn("shrink-0 text-[10px]", badge.className)}
-                          >
-                            {task.blocked
-                              ? t("projects.command.task.status.blocked")
-                              : t(badge.key)}
-                          </Badge>
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
+              <li key={task.id}>
+                <button
+                  type="button"
+                  onClick={() => onNavigate("tasks")}
+                  className={cn(
+                    po.cardMuted,
+                    "flex w-full min-h-11 cursor-pointer items-center justify-between gap-3 px-3 py-2.5 text-left transition-colors hover:border-[var(--po-primary)]/35 hover:shadow-sm"
+                  )}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className={po.bodyStrong}>{task.title}</span>
+                    <span className={cn(po.muted, "mt-0.5 flex flex-wrap gap-x-2")}>
+                      {task.assigneeName ? (
+                        <span>{task.assigneeName}</span>
+                      ) : (
+                        <span className="text-amber-700 dark:text-amber-300">
+                          {t("projects.command.task.unassigned")}
+                        </span>
+                      )}
+                      {task.dueLabelKey ? (
+                        <span>· {t(task.dueLabelKey, task.dueLabelParams)}</span>
+                      ) : null}
+                    </span>
+                  </span>
+                  <Badge
+                    variant="outline"
+                    className={cn("shrink-0 text-[10px]", badge.className)}
+                  >
+                    {task.blocked
+                      ? t("projects.command.task.status.blocked")
+                      : t(badge.key)}
+                  </Badge>
+                </button>
+              </li>
             );
           })}
-        </div>
+        </ul>
       )}
     </section>
   );

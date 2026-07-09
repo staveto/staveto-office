@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Camera, ImageIcon, Loader2, Upload } from "lucide-react";
+import { ArrowRight, Camera, ImageIcon, Loader2, Upload } from "lucide-react";
 import type { ProjectOverviewViewModel } from "@/lib/projectOverviewViewModel";
 import type { ProjectDashboardTab } from "@/lib/projectDashboard";
 import type { ProjectDocumentRecord } from "@/services/projects/projectDocuments";
@@ -63,6 +63,7 @@ function PhotoThumb({
       onClick={() => onOpen(previewDoc)}
       className={cn(
         "block overflow-hidden rounded-lg border border-[var(--po-card-border)] bg-[var(--po-card-muted)]",
+        "cursor-pointer transition-all hover:border-[var(--po-primary)]/35 hover:shadow-sm",
         className
       )}
       aria-label={photo.fileName}
@@ -86,20 +87,24 @@ function PhotoThumb({
 export function ProjectPhotosCard({ photos, onNavigate }: Props) {
   const { t } = useI18n();
   const empty = photos.count === 0;
-  const [hero, ...rest] = photos.recent;
   const [previewDoc, setPreviewDoc] = useState<ProjectDocumentRecord | null>(null);
 
   return (
-    <section className={cn(po.card, "p-4")}>
+    <section className={cn(po.cardCalm, "p-4 sm:p-5")}>
       <div className="mb-3 flex items-start justify-between gap-2">
-        <h2 className={cn(po.title, "flex items-center gap-2")}>
+        <h2 className={cn(po.sectionTitle, "flex items-center gap-2")}>
           <Camera className="size-4" aria-hidden />
           {t("projects.overview.photos.title")}
         </h2>
         {!empty ? (
-          <span className={cn(po.muted, "tabular-nums")}>
-            {t("projects.overview.photos.count", { count: photos.count })}
-          </span>
+          <button
+            type="button"
+            className={po.linkAction}
+            onClick={() => onNavigate("documents")}
+          >
+            {t("projects.overview.photos.viewAll")}
+            <ArrowRight className="size-3.5" />
+          </button>
         ) : null}
       </div>
 
@@ -109,42 +114,24 @@ export function ProjectPhotosCard({ photos, onNavigate }: Props) {
           <p className={cn(po.muted, "text-sm")}>{t("projects.overview.photos.empty")}</p>
         </div>
       ) : (
-        <div className="mb-3 grid gap-2 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-          {hero ? (
+        <div className="mb-3 grid grid-cols-3 gap-2">
+          {photos.recent.map((photo) => (
             <PhotoThumb
-              photo={hero}
-              className="aspect-[4/3] min-h-[140px] sm:min-h-[180px]"
+              key={photo.id}
+              photo={photo}
+              className="aspect-square min-h-[72px]"
               t={t}
               onOpen={setPreviewDoc}
             />
-          ) : null}
-          {rest.length > 0 ? (
-            <div className="grid grid-cols-2 gap-2">
-              {rest.map((photo) => (
-                <PhotoThumb
-                  key={photo.id}
-                  photo={photo}
-                  className="aspect-square min-h-[68px]"
-                  t={t}
-                  onOpen={setPreviewDoc}
-                />
-              ))}
-            </div>
-          ) : null}
+          ))}
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" className={po.btnPrimary} onClick={() => onNavigate("documents")}>
-          <Upload className="mr-1 size-4" />
-          {t("projects.overview.photos.upload")}
-        </Button>
-        {!empty ? (
-          <Button size="sm" variant="outline" className={po.btnOutline} onClick={() => onNavigate("documents")}>
-            {t("projects.overview.photos.viewAll")}
-          </Button>
-        ) : null}
-      </div>
+      <Button size="sm" variant="outline" className={po.btnOutline} onClick={() => onNavigate("documents")}>
+        <Upload className="mr-1 size-4" />
+        {t("projects.overview.photos.upload")}
+      </Button>
+
       <ProjectDocumentPreviewDialog
         doc={previewDoc}
         open={!!previewDoc}

@@ -12,6 +12,8 @@ import {
 
   LayoutTemplate,
 
+  Info,
+
   Loader2,
 
   Maximize2,
@@ -102,9 +104,13 @@ import { DocumentStudioSettingsTabs } from "@/components/settings/DocumentStudio
 
 import { DocumentStudioTemplateGallery } from "@/components/settings/DocumentStudioTemplateGallery";
 
+import { DocumentStudioActiveTemplateCard } from "@/components/settings/DocumentStudioActiveTemplateCard";
+
 import {
   applyDocumentStudioPreset,
+  detectActiveDocumentStudioPreset,
   DOCUMENT_STUDIO_TYPES,
+  getDocumentStudioPreset,
   type DocumentStudioDocumentType,
   type DocumentStudioPresetId,
 } from "@/lib/documents/documentStudioPresets";
@@ -245,6 +251,8 @@ export function QuoteTemplateSettingsPanel() {
 
         setTemplateLoadState(templateResult.loadState);
 
+        setActivePresetId(detectActiveDocumentStudioPreset(loaded));
+
       })
 
       .finally(() => setLoading(false));
@@ -297,6 +305,23 @@ export function QuoteTemplateSettingsPanel() {
 
   );
 
+  const activePreset = useMemo(
+    () => (activePresetId ? getDocumentStudioPreset(activePresetId) : null),
+    [activePresetId]
+  );
+
+  const styleDescription = useMemo(() => {
+    if (activePreset) return t(activePreset.styleSummaryKey);
+    return t("settings.documentStudio.activeTemplate.customStyle");
+  }, [activePreset, t]);
+
+  const documentTypeLabel = t("settings.documentStudio.docType.quote");
+
+  const templateDisplayName = useMemo(() => {
+    if (activePreset) return t(activePreset.nameKey);
+    return previewTemplate.name?.trim() || t("settings.documentStudio.activeTemplate.defaultName");
+  }, [activePreset, previewTemplate.name, t]);
+
 
 
   const showSettingsPanel = !previewFullWidth && !settingsCollapsed;
@@ -304,6 +329,8 @@ export function QuoteTemplateSettingsPanel() {
 
 
   const patchSettings = (key: keyof QuoteDocumentTemplate["settings"], value: string | number) => {
+
+    setActivePresetId(null);
 
     setTemplate((prev) => ({
 
@@ -320,6 +347,8 @@ export function QuoteTemplateSettingsPanel() {
 
 
   const patchTheme = (key: keyof QuoteDocumentTemplate["theme"], value: string) => {
+
+    setActivePresetId(null);
 
     setTemplate((prev) => ({
 
@@ -343,6 +372,8 @@ export function QuoteTemplateSettingsPanel() {
 
   ) => {
 
+    setActivePresetId(null);
+
     setTemplate((prev) => ({
 
       ...prev,
@@ -358,6 +389,8 @@ export function QuoteTemplateSettingsPanel() {
 
 
   const patchVisibility = (key: VisibilityKey, value: boolean) => {
+
+    setActivePresetId(null);
 
     setTemplate((prev) => ({
 
@@ -428,6 +461,8 @@ export function QuoteTemplateSettingsPanel() {
       setSavedTemplate(reset);
 
       setTemplateLoadState("loaded");
+
+      setActivePresetId(detectActiveDocumentStudioPreset(reset));
 
       setSuccess(t("settings.quoteTemplate.resetDone"));
 
@@ -631,7 +666,10 @@ export function QuoteTemplateSettingsPanel() {
 
             onClick={() => void handleSave()}
 
-            className="bg-[#e06737] hover:bg-[#c95a30] text-white"
+            className={cn(
+              "bg-[#e06737] hover:bg-[#c95a30] text-white transition-shadow",
+              isDirty && "ring-2 ring-[#e06737]/50 ring-offset-2 shadow-md"
+            )}
 
           >
 
@@ -714,6 +752,24 @@ export function QuoteTemplateSettingsPanel() {
           </Button>
 
         </div>
+
+        <div className="mx-1 flex gap-2 rounded-lg border border-[#1D376A]/15 bg-[#1D376A]/5 px-3 py-2.5">
+          <Info className="mt-0.5 size-4 shrink-0 text-[#1D376A]" aria-hidden />
+          <div className="min-w-0 text-xs leading-relaxed">
+            <p className="font-semibold text-[#1D376A]">
+              {t("settings.quoteTemplate.printCleanPdfTipTitle")}
+            </p>
+            <p className="mt-0.5 text-muted-foreground">
+              {t("settings.quoteTemplate.printCleanPdfTip")}
+            </p>
+          </div>
+        </div>
+
+        {isDirty ? (
+          <div className="mx-1 mb-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">
+            {t("settings.documentStudio.unsavedBanner")}
+          </div>
+        ) : null}
 
         <div className="flex flex-col gap-2 border-t border-border/60 px-1 py-2 sm:flex-row sm:flex-wrap sm:items-center">
 
@@ -846,6 +902,14 @@ export function QuoteTemplateSettingsPanel() {
 
               >
 
+                <DocumentStudioActiveTemplateCard
+                  templateName={templateDisplayName}
+                  documentTypeLabel={documentTypeLabel}
+                  isDirty={isDirty}
+                  styleDescription={styleDescription}
+                  t={t}
+                />
+
                 <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex">
                   <DocumentStudioSettingsTabs
 
@@ -870,6 +934,14 @@ export function QuoteTemplateSettingsPanel() {
               </div>
 
               <div className="lg:hidden flex-1 overflow-y-auto">
+
+                <DocumentStudioActiveTemplateCard
+                  templateName={templateDisplayName}
+                  documentTypeLabel={documentTypeLabel}
+                  isDirty={isDirty}
+                  styleDescription={styleDescription}
+                  t={t}
+                />
 
                 <DocumentStudioSettingsTabs
 

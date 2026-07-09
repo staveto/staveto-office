@@ -18,15 +18,19 @@ export function ProjectTeamCard({ team, onNavigate }: Props) {
   const activeCount = team.filter((m) => m.activeNow).length;
 
   return (
-    <section className={cn(po.card, "p-4")}>
+    <section className={cn(po.cardCalm, "p-4 sm:p-5")}>
       <div className="mb-3 flex items-center justify-between gap-2">
         <h2 className={cn(po.title, "flex items-center gap-2")}>
-          <Users className="size-4" aria-hidden />
+          <Users className="size-4 text-[var(--po-text-muted)]" aria-hidden />
           {t("projects.crew.title")}
         </h2>
-        <Button size="sm" variant="outline" className={po.btnOutline} onClick={() => onNavigate("workplan")}>
+        <button
+          type="button"
+          className={po.linkAction}
+          onClick={() => onNavigate("workplan")}
+        >
           {t("projects.workPlan.assignWorker")}
-        </Button>
+        </button>
       </div>
 
       {team.length === 0 ? (
@@ -44,7 +48,7 @@ export function ProjectTeamCard({ team, onNavigate }: Props) {
             </p>
           ) : null}
           <ul className="space-y-1.5">
-            {team.map((member) => (
+            {team.slice(0, 4).map((member) => (
               <li
                 key={member.id}
                 className={cn(
@@ -65,6 +69,15 @@ export function ProjectTeamCard({ team, onNavigate }: Props) {
               </li>
             ))}
           </ul>
+          {team.length > 4 ? (
+            <Button
+              variant="link"
+              className={cn("mt-2 h-auto p-0", po.link)}
+              onClick={() => onNavigate("workplan")}
+            >
+              {t("projects.overview.viewAll")}
+            </Button>
+          ) : null}
         </>
       )}
     </section>

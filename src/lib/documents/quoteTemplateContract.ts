@@ -71,6 +71,14 @@ export type QuoteTemplateVisibility = {
   showContactBlock: boolean;
   showSignatureBlock: boolean;
   showStavetoBranding: boolean;
+  showIntroMessage: boolean;
+  showIncludedInPrice: boolean;
+  showNotIncludedInPrice: boolean;
+  showTimeline: boolean;
+  showPaymentMilestones: boolean;
+  showWhyChooseUs: boolean;
+  showReferences: boolean;
+  showCallToAction: boolean;
 };
 
 export type QuoteDocumentTemplate = {
@@ -102,6 +110,14 @@ export const ALLOWED_QUOTE_TEMPLATE_SECTIONS = [
   "contactBlock",
   "signatureBlock",
   "stavetoBranding",
+  "introMessage",
+  "includedInPrice",
+  "notIncludedInPrice",
+  "timeline",
+  "paymentMilestones",
+  "whyChooseUs",
+  "references",
+  "callToAction",
 ] as const;
 
 const MAX_TEXT_FIELD_LENGTH = 4000;
@@ -156,6 +172,14 @@ const DEFAULT_VISIBILITY: QuoteTemplateVisibility = {
   showContactBlock: true,
   showSignatureBlock: true,
   showStavetoBranding: true,
+  showIntroMessage: false,
+  showIncludedInPrice: false,
+  showNotIncludedInPrice: false,
+  showTimeline: false,
+  showPaymentMilestones: false,
+  showWhyChooseUs: false,
+  showReferences: false,
+  showCallToAction: false,
 };
 
 export const DEFAULT_QUOTE_TEMPLATE: QuoteDocumentTemplate = {
@@ -304,6 +328,14 @@ function normalizeVisibility(raw: unknown): QuoteTemplateVisibility {
     showContactBlock: pickBoolean(input.showContactBlock, d.showContactBlock),
     showSignatureBlock: pickBoolean(input.showSignatureBlock, d.showSignatureBlock),
     showStavetoBranding: pickBoolean(input.showStavetoBranding, d.showStavetoBranding),
+    showIntroMessage: pickBoolean(input.showIntroMessage, d.showIntroMessage),
+    showIncludedInPrice: pickBoolean(input.showIncludedInPrice, d.showIncludedInPrice),
+    showNotIncludedInPrice: pickBoolean(input.showNotIncludedInPrice, d.showNotIncludedInPrice),
+    showTimeline: pickBoolean(input.showTimeline, d.showTimeline),
+    showPaymentMilestones: pickBoolean(input.showPaymentMilestones, d.showPaymentMilestones),
+    showWhyChooseUs: pickBoolean(input.showWhyChooseUs, d.showWhyChooseUs),
+    showReferences: pickBoolean(input.showReferences, d.showReferences),
+    showCallToAction: pickBoolean(input.showCallToAction, d.showCallToAction),
   };
 }
 

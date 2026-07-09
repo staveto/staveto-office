@@ -23,13 +23,19 @@ import {
   type GanttTaskNode,
 } from "@/lib/ganttTimeline";
 import { shiftTaskDate } from "@/lib/projectPlanningDates";
-import { getTaskDateRange } from "@/lib/ganttTimeline";
+import {
+  computeTaskResizePatch,
+  getTaskDateRange,
+} from "@/lib/ganttTimeline";
+
+import type { ProjectPhaseRecord } from "@/services/projects/taskPlanningTypes";
 
 export type GanttPlanningData = {
   projects: GanttProjectNode[];
   unscheduled: GanttTaskNode[];
   canEdit: boolean;
   tasksByProject: Record<string, TaskDoc[]>;
+  phasesByProject: Record<string, ProjectPhaseRecord[]>;
   projectList: ProjectDoc[];
   teamMembers: { id: string; name: string }[];
 };
@@ -91,15 +97,58 @@ export async function fetchGanttPlanningData(
 
   const tasksRecord: Record<string, TaskDoc[]> = {};
   for (const [k, v] of tasksByProject) tasksRecord[k] = v;
+  const phasesRecord: Record<string, ProjectPhaseRecord[]> = {};
+  for (const [k, v] of phasesByProject) phasesRecord[k] = v;
 
   return {
     projects,
     unscheduled,
     canEdit,
     tasksByProject: tasksRecord,
+    phasesByProject: phasesRecord,
     projectList: active,
     teamMembers,
   };
+}
+
+export function mergeTaskSchedulePatch(task: TaskDoc, patch: TaskSchedulePatch): TaskDoc {
+  return {
+    ...task,
+    ...(patch.plannedStart !== undefined
+      ? { plannedStart: patch.plannedStart ?? undefined }
+      : {}),
+    ...(patch.plannedEnd !== undefined ? { plannedEnd: patch.plannedEnd } : {}),
+    ...(patch.dueDate !== undefined ? { dueDate: patch.dueDate ?? undefined } : {}),
+  };
+}
+
+export function rebuildGanttPlanningData(
+  data: GanttPlanningData
+): Pick<GanttPlanningData, "projects" | "unscheduled"> {
+  return buildGanttHierarchy({
+    projects: data.projectList,
+    phasesByProject: new Map(Object.entries(data.phasesByProject)),
+    tasksByProject: new Map(Object.entries(data.tasksByProject)),
+  });
+}
+
+export function applyTaskSchedulePatchToGanttData(
+  data: GanttPlanningData,
+  projectId: string,
+  taskId: string,
+  patch: TaskSchedulePatch
+): GanttPlanningData {
+  const tasks = data.tasksByProject[projectId];
+  if (!tasks) return data;
+
+  const updatedTasks = tasks.map((t) =>
+    t.id === taskId ? mergeTaskSchedulePatch(t, patch) : t
+  );
+  const next: GanttPlanningData = {
+    ...data,
+    tasksByProject: { ...data.tasksByProject, [projectId]: updatedTasks },
+  };
+  return { ...next, ...rebuildGanttPlanningData(next) };
 }
 
 export type TaskSchedulePatch = {
@@ -147,17 +196,16 @@ export async function scheduleTaskOnTimeline(
     durationDays <= 1 ? startYmd : addCalendarDays(startYmd, durationDays - 1);
   await updateTaskSchedule(projectId, taskId, {
     plannedStart: startYmd,
-    plannedEnd: endYmd,
+    plannedEnd: endYmd === startYmd ? null : endYmd,
     dueDate: endYmd,
   });
 }
 
-export async function moveTaskScheduleByDays(
-  projectId: string,
+export function computeMoveTaskSchedulePatch(
   task: TaskDoc,
   days: number,
   workingDaysOnly = false
-): Promise<TaskSchedulePatch> {
+): TaskSchedulePatch {
   const range = getTaskDateRange(task);
   if (range.isUnscheduled || !range.startYmd) {
     throw new Error("Task has no schedule");
@@ -167,11 +215,22 @@ export async function moveTaskScheduleByDays(
     ? shiftTaskDate(range.endYmd, days, workingDaysOnly)
     : newStart;
 
-  const patch: TaskSchedulePatch =
-    range.canResize
-      ? { plannedStart: newStart, plannedEnd: newEnd, dueDate: newEnd }
-      : { plannedStart: newStart, dueDate: newStart, plannedEnd: null };
+  return range.canResize
+    ? {
+        plannedStart: newStart,
+        plannedEnd: newStart === newEnd ? null : newEnd,
+        dueDate: newEnd,
+      }
+    : { plannedStart: newStart, dueDate: newStart, plannedEnd: null };
+}
 
+export async function moveTaskScheduleByDays(
+  projectId: string,
+  task: TaskDoc,
+  days: number,
+  workingDaysOnly = false
+): Promise<TaskSchedulePatch> {
+  const patch = computeMoveTaskSchedulePatch(task, days, workingDaysOnly);
   await updateTaskSchedule(projectId, task.id, patch);
   return patch;
 }
@@ -204,20 +263,8 @@ export async function resizeTaskSchedule(
   edge: "start" | "end",
   newDateYmd: string
 ): Promise<void> {
-  const range = getTaskDateRange(task);
-  if (!range.canResize) throw new Error("Task cannot be resized");
-
-  if (edge === "start") {
-    await updateTaskSchedule(projectId, task.id, {
-      plannedStart: newDateYmd,
-      dueDate: range.endYmd ?? newDateYmd,
-    });
-  } else {
-    await updateTaskSchedule(projectId, task.id, {
-      plannedEnd: newDateYmd,
-      dueDate: newDateYmd,
-    });
-  }
+  const patch = computeTaskResizePatch(task, edge, newDateYmd);
+  await updateTaskSchedule(projectId, task.id, patch);
 }
 
 export type { ProjectDoc, TaskDoc };

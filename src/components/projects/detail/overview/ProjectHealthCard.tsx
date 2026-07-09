@@ -14,10 +14,10 @@ export function ProjectHealthCard({ progress }: Props) {
   const { t } = useI18n();
 
   return (
-    <section className={cn(po.cardElevated, "p-4")}>
+    <section className={cn(po.infoCard, "p-4 sm:p-5")}>
       <div className="mb-3 flex items-center gap-2">
         <Activity className="size-4 text-[var(--po-primary)]" aria-hidden />
-        <h2 className={po.title}>{t("projects.command.health.title")}</h2>
+        <h2 className={po.sectionTitle}>{t("projects.command.health.title")}</h2>
       </div>
 
       <div className="flex items-end justify-between gap-3">

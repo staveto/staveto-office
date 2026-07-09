@@ -13,7 +13,6 @@ import type { ProjectPhaseRecord } from "@/services/projects/taskPlanningTypes";
 import { buildPhaseLabelMap } from "@/lib/taskPlanningDisplay";
 import { buildProjectOverviewViewModel } from "@/lib/projectOverviewViewModel";
 import { ProjectNextActions } from "./ProjectNextActions";
-import { ProjectNextActionStrip } from "./overview/ProjectNextActionStrip";
 import { ProjectActivePhaseWorkBoard } from "./overview/ProjectActivePhaseWorkBoard";
 import { ProjectHealthCard } from "./overview/ProjectHealthCard";
 import { ProjectTeamCard } from "./overview/ProjectTeamCard";
@@ -25,6 +24,7 @@ import {
   ProjectContactCard,
   ProjectSummaryCard,
 } from "./overview/ProjectSummaryContactCards";
+import { po } from "./overview/poStyles";
 
 type ProjectOverviewTabProps = {
   project: ProjectDoc;
@@ -39,8 +39,7 @@ type ProjectOverviewTabProps = {
   health: ProjectHealth;
   onProjectUpdated: (project: ProjectDoc) => void;
   onNavigate: (tab: ProjectDashboardTab) => void;
-  /** When true, next-action strip is rendered by the parent (mobile order). */
-  hideNextActionStrip?: boolean;
+  onPhaseOpen?: (phaseId: string) => void;
 };
 
 export function ProjectOverviewTab({
@@ -56,7 +55,6 @@ export function ProjectOverviewTab({
   health,
   onProjectUpdated,
   onNavigate,
-  hideNextActionStrip = false,
 }: ProjectOverviewTabProps) {
   const phaseLabels = useMemo(() => buildPhaseLabelMap(phases), [phases]);
 
@@ -99,41 +97,24 @@ export function ProjectOverviewTab({
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      {!hideNextActionStrip ? (
-        <ProjectNextActionStrip nextAction={vm.nextAction} onNavigate={onNavigate} />
-      ) : null}
-
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.85fr)_minmax(0,1fr)]">
-        <div className="lg:col-start-1 lg:row-start-1">
+    <div className={po.sectionGap}>
+      <div className="grid gap-7 lg:grid-cols-[minmax(0,1.85fr)_minmax(0,1fr)]">
+        <div className="flex flex-col gap-7 lg:col-start-1">
           <ProjectActivePhaseWorkBoard
             activePhaseName={vm.progress.activePhaseName}
             tasks={vm.activePhaseTasks}
             onNavigate={onNavigate}
           />
-        </div>
-        <div className="lg:col-start-2 lg:row-start-1">
-          <ProjectHealthCard progress={vm.progress} />
-        </div>
-        <div className="lg:col-start-2 lg:row-start-2">
-          <ProjectTeamCard team={vm.team} onNavigate={onNavigate} />
-        </div>
-        <div className="lg:col-start-2 lg:row-start-3">
-          <ProjectTimeCard time={vm.time} />
-        </div>
-        <div className="lg:col-start-2 lg:row-start-4">
-          <ProjectDocumentsProofCard documents={vm.documents} onNavigate={onNavigate} />
-        </div>
-        <div className="lg:col-start-1 lg:row-start-2">
           <ProjectPhotosCard photos={vm.photos} onNavigate={onNavigate} />
-        </div>
-        <div className="lg:col-start-1 lg:row-start-3">
           <ProjectActivityPreview activity={vm.activity} onNavigate={onNavigate} />
-        </div>
-        <div className="lg:col-start-1 lg:row-start-4">
           <ProjectSummaryCard project={project} />
         </div>
-        <div className="lg:col-start-2 lg:row-start-5">
+
+        <div className="flex flex-col gap-7 lg:col-start-2">
+          <ProjectHealthCard progress={vm.progress} />
+          <ProjectTeamCard team={vm.team} onNavigate={onNavigate} />
+          <ProjectTimeCard time={vm.time} />
+          <ProjectDocumentsProofCard documents={vm.documents} onNavigate={onNavigate} />
           <ProjectContactCard
             project={project}
             customerName={vm.project.customerName}
@@ -145,19 +126,25 @@ export function ProjectOverviewTab({
   );
 }
 
-export function ProjectOverviewNextActionStrip({
+export function ProjectOverviewTodayFocus({
   vm,
   onNavigate,
+  onNotifyTeam,
   className,
 }: {
   vm: ReturnType<typeof buildProjectOverviewViewModel>;
   onNavigate: (tab: ProjectDashboardTab) => void;
+  onNotifyTeam?: () => void;
   className?: string;
 }) {
   if (vm.project.isDraft) return null;
   return (
     <div className={className}>
-      <ProjectNextActionStrip nextAction={vm.nextAction} onNavigate={onNavigate} />
+      <ProjectTodayFocusCard
+        todayFocus={vm.todayFocus}
+        onNavigate={onNavigate}
+        onNotifyTeam={onNotifyTeam}
+      />
     </div>
   );
 }

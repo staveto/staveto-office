@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { OctagonAlert, UserX, Wrench } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -102,6 +103,8 @@ export function ProjectTasksTab({
   role,
 }: ProjectTasksTabProps) {
   const { t, locale } = useI18n();
+  const searchParams = useSearchParams();
+  const urlPhaseId = searchParams.get("phaseId");
   const { modules } = useEnabledModules();
   const planningEnabled = isModuleEnabled(modules, "planning");
   const localeTag = locale === "de" ? "de-DE" : locale === "en" ? "en-GB" : "sk-SK";
@@ -166,13 +169,19 @@ export function ProjectTasksTab({
         setMembers(m);
         setTools(toolList);
         setPhases(phaseList);
-        if (phaseList.length > 0) setSelectedPhaseId(phaseList[0].id);
+        if (phaseList.length > 0) {
+          const preferred =
+            urlPhaseId && phaseList.some((p) => p.id === urlPhaseId)
+              ? urlPhaseId
+              : phaseList[0].id;
+          setSelectedPhaseId(preferred);
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [project.id, userId]);
+  }, [project.id, userId, urlPhaseId]);
 
   const baseTasks = useMemo(
     () => (canManage ? tasks : filterTasksForWorkerView(tasks, userId)),

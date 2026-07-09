@@ -56,6 +56,14 @@ export type QuotePrintContext = {
   paymentTerms?: string;
   warranty?: string;
   exclusions?: string;
+  introMessage?: string;
+  includedInPrice?: string;
+  notIncludedInPrice?: string;
+  timeline?: string;
+  paymentMilestones?: string;
+  whyChooseUs?: string;
+  referencesNote?: string;
+  callToAction?: string;
   contactPerson: QuoteContactPerson;
   priceSummary: QuotePrintPriceSummary;
   currency: string;

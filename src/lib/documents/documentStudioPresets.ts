@@ -4,6 +4,7 @@ import type {
   QuoteTemplateTheme,
   QuoteTemplateVisibility,
 } from "@/lib/documents/quoteTemplateContract";
+import { DEFAULT_QUOTE_TEMPLATE } from "@/lib/documents/quoteTemplateContract";
 
 export type DocumentStudioPresetId =
   | "modern-construction"
@@ -22,6 +23,9 @@ export type DocumentStudioPreset = {
   id: DocumentStudioPresetId;
   nameKey: string;
   descriptionKey: string;
+  bestForKey: string;
+  styleSummaryKey: string;
+  tagKeys: string[];
   preview: {
     primaryColor: string;
     accentColor: string;
@@ -56,6 +60,13 @@ export const DOCUMENT_STUDIO_PRESETS: DocumentStudioPreset[] = [
     id: "modern-construction",
     nameKey: "settings.documentStudio.preset.modernConstruction.name",
     descriptionKey: "settings.documentStudio.preset.modernConstruction.description",
+    bestForKey: "settings.documentStudio.preset.modernConstruction.bestFor",
+    styleSummaryKey: "settings.documentStudio.preset.modernConstruction.styleSummary",
+    tagKeys: [
+      "settings.documentStudio.tag.modern",
+      "settings.documentStudio.tag.technical",
+      "settings.documentStudio.tag.premium",
+    ],
     preview: {
       primaryColor: "#1D376A",
       accentColor: "#E06737",
@@ -90,6 +101,13 @@ export const DOCUMENT_STUDIO_PRESETS: DocumentStudioPreset[] = [
     id: "classic-invoice",
     nameKey: "settings.documentStudio.preset.classicInvoice.name",
     descriptionKey: "settings.documentStudio.preset.classicInvoice.description",
+    bestForKey: "settings.documentStudio.preset.classicInvoice.bestFor",
+    styleSummaryKey: "settings.documentStudio.preset.classicInvoice.styleSummary",
+    tagKeys: [
+      "settings.documentStudio.tag.classic",
+      "settings.documentStudio.tag.technical",
+      "settings.documentStudio.tag.minimal",
+    ],
     preview: {
       primaryColor: "#2C3E50",
       accentColor: "#8B5E3C",
@@ -122,6 +140,13 @@ export const DOCUMENT_STUDIO_PRESETS: DocumentStudioPreset[] = [
     id: "premium-offer",
     nameKey: "settings.documentStudio.preset.premiumOffer.name",
     descriptionKey: "settings.documentStudio.preset.premiumOffer.description",
+    bestForKey: "settings.documentStudio.preset.premiumOffer.bestFor",
+    styleSummaryKey: "settings.documentStudio.preset.premiumOffer.styleSummary",
+    tagKeys: [
+      "settings.documentStudio.tag.premium",
+      "settings.documentStudio.tag.modern",
+      "settings.documentStudio.tag.classic",
+    ],
     preview: {
       primaryColor: "#0F172A",
       accentColor: "#C9A227",
@@ -149,12 +174,26 @@ export const DOCUMENT_STUDIO_PRESETS: DocumentStudioPreset[] = [
       showScopeOfWork: true,
       showSignatureBlock: true,
       showStavetoBranding: false,
+      showIntroMessage: true,
+      showIncludedInPrice: true,
+      showNotIncludedInPrice: true,
+      showTimeline: true,
+      showPaymentMilestones: true,
+      showWhyChooseUs: true,
+      showCallToAction: true,
     },
   },
   {
     id: "minimal-technical",
     nameKey: "settings.documentStudio.preset.minimalTechnical.name",
     descriptionKey: "settings.documentStudio.preset.minimalTechnical.description",
+    bestForKey: "settings.documentStudio.preset.minimalTechnical.bestFor",
+    styleSummaryKey: "settings.documentStudio.preset.minimalTechnical.styleSummary",
+    tagKeys: [
+      "settings.documentStudio.tag.minimal",
+      "settings.documentStudio.tag.technical",
+      "settings.documentStudio.tag.modern",
+    ],
     preview: {
       primaryColor: "#334155",
       accentColor: "#64748B",
@@ -188,6 +227,13 @@ export const DOCUMENT_STUDIO_PRESETS: DocumentStudioPreset[] = [
     id: "slovak-builder",
     nameKey: "settings.documentStudio.preset.slovakBuilder.name",
     descriptionKey: "settings.documentStudio.preset.slovakBuilder.description",
+    bestForKey: "settings.documentStudio.preset.slovakBuilder.bestFor",
+    styleSummaryKey: "settings.documentStudio.preset.slovakBuilder.styleSummary",
+    tagKeys: [
+      "settings.documentStudio.tag.slovak",
+      "settings.documentStudio.tag.classic",
+      "settings.documentStudio.tag.technical",
+    ],
     preview: {
       primaryColor: "#1D376A",
       accentColor: "#E06737",
@@ -217,9 +263,42 @@ export const DOCUMENT_STUDIO_PRESETS: DocumentStudioPreset[] = [
       showScopeOfWork: true,
       showTerms: true,
       showSignatureBlock: true,
+      showIntroMessage: true,
+      showIncludedInPrice: true,
+      showTimeline: true,
+      showCallToAction: true,
     },
   },
 ];
+
+export function detectActiveDocumentStudioPreset(
+  template: QuoteDocumentTemplate
+): DocumentStudioPresetId | null {
+  const currentSig = JSON.stringify({
+    theme: template.theme,
+    layout: template.layout,
+    visibility: template.visibility,
+  });
+  for (const preset of DOCUMENT_STUDIO_PRESETS) {
+    const applied = applyDocumentStudioPreset(
+      { ...DEFAULT_QUOTE_TEMPLATE, settings: { ...template.settings } },
+      preset.id
+    );
+    const presetSig = JSON.stringify({
+      theme: applied.theme,
+      layout: applied.layout,
+      visibility: applied.visibility,
+    });
+    if (currentSig === presetSig) return preset.id;
+  }
+  return null;
+}
+
+export function getDocumentStudioPreset(
+  presetId: DocumentStudioPresetId
+): DocumentStudioPreset | undefined {
+  return DOCUMENT_STUDIO_PRESETS.find((p) => p.id === presetId);
+}
 
 export function applyDocumentStudioPreset(
   template: QuoteDocumentTemplate,

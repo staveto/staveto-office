@@ -6,18 +6,16 @@ import Link from "next/link";
 import { Building2, Car, Cog, Package, Wrench } from "lucide-react";
 import type { GanttBarStatus, GanttTimeline, GanttAssignedTool } from "@/lib/ganttTimeline";
 import { barStyleFromRange, getGanttStatusColor } from "@/lib/ganttTimeline";
+import {
+  getGanttBarLabelMode,
+  type GanttBarTooltipData,
+} from "@/lib/ganttBarDisplay";
 import { cn } from "@/lib/utils";
 import styles from "./gantt.module.css";
 
 export type GanttBarKind = "project" | "phase" | "task";
 
-export type GanttBarTooltip = {
-  title: string;
-  dateRange?: string;
-  assignee?: string;
-  statusLabel?: string;
-  meta?: string;
-};
+export type GanttBarTooltip = GanttBarTooltipData;
 
 type Props = {
   kind: GanttBarKind;
@@ -29,6 +27,7 @@ type Props = {
   timeline: GanttTimeline;
   canEdit: boolean;
   canResize?: boolean;
+  isMilestone?: boolean;
   href?: string;
   tooltip?: string;
   tooltipData?: GanttBarTooltip;
@@ -41,6 +40,11 @@ type Props = {
   isResizing?: boolean;
   onDragStart?: (e: React.MouseEvent) => void;
   onResizeStart?: (edge: "start" | "end", e: React.MouseEvent) => void;
+  onSelect?: () => void;
+  onEditDates?: () => void;
+  onContextMenu?: (e: React.MouseEvent) => void;
+  isSelected?: boolean;
+  resizeTooltips?: { start?: string; end?: string; move?: string };
 };
 
 function initialsOf(name: string): string {
@@ -75,6 +79,7 @@ export function GanttBar({
   timeline,
   canEdit,
   canResize,
+  isMilestone: isMilestoneProp,
   href,
   tooltip,
   tooltipData,
@@ -87,13 +92,19 @@ export function GanttBar({
   isResizing,
   onDragStart,
   onResizeStart,
+  onSelect,
+  onEditDates,
+  onContextMenu,
+  isSelected,
+  resizeTooltips,
 }: Props) {
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
   const geom = barStyleFromRange(startYmd, endYmd, timeline);
   if (!geom.visible) return null;
 
   const isMilestone =
-    kind === "task" && startYmd === endYmd && !canResize && status !== "done";
+    kind === "task" && !!isMilestoneProp && startYmd === endYmd && status !== "done";
+  const minBarWidth = Math.max(12, timeline.dayWidthPx * 0.55);
   const color = kind === "project" ? "#1D376A" : getGanttStatusColor(status);
   let left = geom.left + dragOffsetPx;
   let width = geom.width;
@@ -103,7 +114,10 @@ export function GanttBar({
   } else if (resizeEdge === "end" && resizeOffsetPx !== 0) {
     width += resizeOffsetPx;
   }
-  width = Math.max(width, Math.max(8, timeline.dayWidthPx * 0.45));
+  width = Math.max(width, minBarWidth);
+  const labelMode = getGanttBarLabelMode(width);
+  const showInternalLabel = labelMode === "full";
+  const showCompactDot = labelMode === "compact";
   const donePct =
     kind === "project" && typeof progress === "number"
       ? Math.min(100, Math.max(0, progress))
@@ -113,9 +127,11 @@ export function GanttBar({
           ? 55
           : 0;
 
-  const showAvatar = kind === "task" && !!assigneeName && geom.width >= 48;
+  const showAvatar =
+    kind === "task" && !!assigneeName && labelMode !== "compact" && width >= 48;
   const tools = kind === "task" ? (assignedTools ?? []) : [];
-  const maxToolIcons = geom.width >= 120 ? 2 : geom.width >= 80 ? 1 : 0;
+  const maxToolIcons =
+    labelMode === "full" && width >= 120 ? 2 : labelMode === "hidden" && width >= 60 ? 1 : 0;
   const visibleTools = tools.slice(0, maxToolIcons);
   const extraTools = tools.length - visibleTools.length;
 
@@ -146,6 +162,9 @@ export function GanttBar({
                 {tooltipData.dateRange ? (
                   <div className={styles.tooltipRow}>{tooltipData.dateRange}</div>
                 ) : null}
+                {tooltipData.durationLabel ? (
+                  <div className={styles.tooltipRow}>{tooltipData.durationLabel}</div>
+                ) : null}
                 {tooltipData.assignee ? (
                   <div className={styles.tooltipRow}>{tooltipData.assignee}</div>
                 ) : null}
@@ -170,6 +189,24 @@ export function GanttBar({
       style={{ left: left + geom.width / 2 - 9 }}
       onMouseEnter={handleEnter}
       onMouseLeave={handleLeave}
+      onDoubleClick={
+        onEditDates
+          ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onEditDates();
+            }
+          : undefined
+      }
+      onContextMenu={
+        onContextMenu
+          ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onContextMenu(e);
+            }
+          : undefined
+      }
       onMouseDown={
         canEdit && onDragStart
           ? (e) => {
@@ -201,6 +238,8 @@ export function GanttBar({
         isDragging && styles.barDragging,
         isResizing && styles.barResizing,
         canEdit && canResize && styles.barResizable,
+        isSelected && styles.barSelected,
+        showCompactDot && styles.barCompact,
         !canEdit && "cursor-default"
       )}
       style={{
@@ -208,8 +247,35 @@ export function GanttBar({
         width,
         background: kind === "project" ? undefined : color,
       }}
+      title={canEdit && resizeTooltips?.move ? resizeTooltips.move : undefined}
       onMouseEnter={handleEnter}
       onMouseLeave={handleLeave}
+      onClick={
+        !canEdit && onSelect
+          ? (e) => {
+              e.stopPropagation();
+              onSelect();
+            }
+          : undefined
+      }
+      onDoubleClick={
+        onEditDates
+          ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onEditDates();
+            }
+          : undefined
+      }
+      onContextMenu={
+        onContextMenu
+          ? (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onContextMenu(e);
+            }
+          : undefined
+      }
       onMouseDown={
         canEdit && onDragStart
           ? (e) => {
@@ -248,13 +314,20 @@ export function GanttBar({
           ) : null}
         </span>
       ) : null}
-      <span className={styles.barLabel}>
-        {kind === "project" && typeof progress === "number" ? `${progress}%` : label}
-      </span>
+      {showCompactDot ? (
+        <span className={styles.barCompactDot} style={{ background: color }} aria-hidden />
+      ) : null}
+      {showInternalLabel ? (
+        <span className={styles.barLabel}>
+          {kind === "project" && typeof progress === "number" ? `${progress}%` : label}
+        </span>
+      ) : null}
       {canEdit && canResize && onResizeStart ? (
         <>
           <span
-            className={cn(styles.resizeHandle, styles.resizeHandleStart)}
+            className={cn(styles.resizeHandle, styles.resizeHandleStart, styles.resizeHandleVisible)}
+            style={{ cursor: "ew-resize" }}
+            title={resizeTooltips?.start}
             onMouseDown={(e) => {
               if (e.button !== 0) return;
               e.preventDefault();
@@ -263,7 +336,9 @@ export function GanttBar({
             }}
           />
           <span
-            className={cn(styles.resizeHandle, styles.resizeHandleEnd)}
+            className={cn(styles.resizeHandle, styles.resizeHandleEnd, styles.resizeHandleVisible)}
+            style={{ cursor: "ew-resize" }}
+            title={resizeTooltips?.end}
             onMouseDown={(e) => {
               if (e.button !== 0) return;
               e.preventDefault();

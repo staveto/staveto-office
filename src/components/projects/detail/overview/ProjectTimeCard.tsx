@@ -15,7 +15,7 @@ export function ProjectTimeCard({ time }: Props) {
   const { t } = useI18n();
 
   return (
-    <section className={cn(po.card, "p-4")}>
+    <section className={cn(po.cardCalm, "p-4 sm:p-5")}>
       <h2 className={cn(po.title, "mb-3 flex items-center gap-2")}>
         <Clock className="size-4" aria-hidden />
         {t("projects.time.title")}

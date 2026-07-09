@@ -30,15 +30,17 @@ import {
 import type { ProjectMemberRecord } from "@/services/projects/taskPlanningTypes";
 import type { WorkspaceRole } from "@/types/workspace";
 import { isDraftJob } from "@/lib/projectLifecycle";
-import { buildPhaseLabelMap, taskMissingAssignee } from "@/lib/taskPlanningDisplay";
+import { buildPhaseLabelMap } from "@/lib/taskPlanningDisplay";
 import { buildProjectOverviewViewModel } from "@/lib/projectOverviewViewModel";
 import { ProjectCompactHeader } from "./ProjectCompactHeader";
 import { ProjectPhaseWorkflow } from "./ProjectPhaseWorkflow";
 import { ProjectDetailTabs, type TabBadge } from "./ProjectDetailTabs";
 import {
   ProjectOverviewTab,
-  ProjectOverviewNextActionStrip,
+  ProjectOverviewTodayFocus,
 } from "./ProjectOverviewTab";
+import { ProjectCockpitHelpButton } from "./overview/ProjectOverviewHint";
+import { cn } from "@/lib/utils";
 import { po } from "./overview/poStyles";
 import { ProjectTasksTab } from "./ProjectTasksTab";
 import { ProjectWorkPlanTab } from "./ProjectWorkPlanTab";
@@ -51,12 +53,12 @@ import { ProjectProblemsTab } from "./ProjectProblemsTab";
 import { ProjectExpensesPanel } from "@/components/projects/ProjectExpensesPanel";
 import { computeProjectPhaseMetrics } from "@/lib/projectPhaseMetrics";
 import { computeProjectHealth } from "@/lib/projectHealth";
-import { buildProjectActivity } from "@/lib/projectActivity";
 import {
   listProjectProblems,
 } from "@/services/projects/projectProblemsReadService";
 import { isOpenProblem } from "@/services/projects/projectProblemsService";
-import { cn } from "@/lib/utils";
+import { PlanningNotifyDialog } from "@/components/planning/PlanningScheduleFeedback";
+import { useI18n } from "@/i18n/I18nContext";
 
 function parseTab(raw: string | null): ProjectDashboardTab {
   if (
@@ -115,7 +117,9 @@ export function ProjectDashboard({
   const [activeTimers, setActiveTimers] = useState<Map<string, ActiveTimerState>>(new Map());
   const [openProblemsCount, setOpenProblemsCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [notifyDialogOpen, setNotifyDialogOpen] = useState(false);
   const selectedProblemId = searchParams.get("problemId");
+  const { t } = useI18n();
 
   useEffect(() => {
     const parsed = parseTab(searchParams.get("tab"));
@@ -232,25 +236,38 @@ export function ProjectDashboard({
     });
   }, [project, tasks, phaseMetrics, members, timeEntries, documents, activeTimers, health, phases]);
 
+  const overdueTasksCount = useMemo(() => {
+    const today = todayYmd();
+    return tasks
+      .filter((t) => t.isActive !== false && (t.status ?? "OPEN").toUpperCase() !== "DONE")
+      .filter((t) => {
+        const d = t.plannedStart?.slice(0, 10) || t.dueDate?.slice(0, 10);
+        return !!d && d < today;
+      }).length;
+  }, [tasks]);
+
+  const openTasksCount = useMemo(
+    () =>
+      tasks.filter(
+        (t) => t.isActive !== false && (t.status ?? "OPEN").toUpperCase() !== "DONE"
+      ).length,
+    [tasks]
+  );
+
   const badges = useMemo<Partial<Record<ProjectDashboardTab, TabBadge>>>(() => {
-    const active = tasks.filter((x) => x.isActive !== false);
-    const openUnassigned = active.filter(
-      (x) => x.status !== "DONE" && taskMissingAssignee(x)
-    ).length;
-    const activityCount = buildProjectActivity({
-      project,
-      tasks,
-      timeEntries,
-      documents,
-    }).length;
     return {
-      tasks: { count: active.length },
-      workplan: { count: openUnassigned, warn: openUnassigned > 0 },
-      problems: { count: openProblemsCount, warn: openProblemsCount > 0 },
-      documents: { count: documents.length },
-      activity: { count: activityCount },
+      tasks: overdueTasksCount > 0 ? { count: overdueTasksCount } : undefined,
+      documents: documents.length > 0 ? { count: documents.length } : undefined,
     };
-  }, [project, tasks, timeEntries, documents, openProblemsCount]);
+  }, [documents.length, overdueTasksCount]);
+
+  const handlePhaseOpen = (phaseId: string) => {
+    setActiveTab("tasks");
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", "tasks");
+    params.set("phaseId", phaseId);
+    router.replace(`/app/projects/${project.id}?${params.toString()}`, { scroll: false });
+  };
 
   const handleTabChange = (tab: ProjectDashboardTab) => {
     if (!isProjectDashboardTabVisible(tab, modules)) return;
@@ -275,10 +292,10 @@ export function ProjectDashboard({
   };
 
   const showExpenses = searchParams.get("tab") === "expenses";
-  const showOverviewCommand = activeTab === "overview" && overviewVm && !overviewVm.project.isDraft;
+  const showTodayFocus = overviewVm && !overviewVm.project.isDraft;
 
   return (
-    <div className={cn("project-command flex flex-col gap-4", po.page)}>
+    <div className={cn("project-command flex flex-col gap-6", po.page)}>
       {toastMessage ? (
         <div className="rounded-lg border border-[var(--po-card-border)] bg-[var(--po-card-muted)] px-4 py-2 text-sm text-[var(--po-text-primary)]">
           {toastMessage}
@@ -293,48 +310,50 @@ export function ProjectDashboard({
           health={health}
           phaseMetrics={phaseMetrics}
           crewCount={members.length}
-          investedMinutes={investedMinutes}
+          openTasksCount={openTasksCount}
+          overdueTasksCount={overdueTasksCount}
           onProjectUpdated={onProjectUpdated}
           onActionToast={handleActionToast}
           onNavigate={handleTabChange}
         />
       </div>
 
-      {showOverviewCommand ? (
-        <ProjectOverviewNextActionStrip
+      {showTodayFocus ? (
+        <ProjectOverviewTodayFocus
           vm={overviewVm}
           onNavigate={handleTabChange}
-          className="order-2 lg:hidden"
+          onNotifyTeam={() => setNotifyDialogOpen(true)}
+          className="order-2"
         />
       ) : null}
 
       {phaseMetrics.phases.length > 0 ? (
-        <div className="order-3 lg:order-2">
+        <div className="order-3">
           <ProjectPhaseWorkflow
             metrics={phaseMetrics}
             phaseStatuses={overviewVm?.phases}
+            phaseDetails={overviewVm?.phases.map((p) => ({
+              id: p.id,
+              overdueCount: p.overdueCount,
+            }))}
             waitingForQuote={isBlockedByUnsentQuote(project)}
+            onPhaseClick={handlePhaseOpen}
           />
         </div>
       ) : null}
 
-      <div className="order-4 lg:order-3">
-        <ProjectDetailTabs
-          activeTab={activeTab}
-          onTabChange={handleTabChange}
-          badges={badges}
-        />
+      <div className="order-4 flex items-end gap-2">
+        <div className="min-w-0 flex-1">
+          <ProjectDetailTabs
+            activeTab={activeTab}
+            onTabChange={handleTabChange}
+            badges={badges}
+          />
+        </div>
+        <ProjectCockpitHelpButton className="mb-1.5 shrink-0" />
       </div>
 
-      {showOverviewCommand ? (
-        <ProjectOverviewNextActionStrip
-          vm={overviewVm}
-          onNavigate={handleTabChange}
-          className="order-5 hidden lg:block"
-        />
-      ) : null}
-
-      <div className="order-6 lg:order-5">
+      <div className="order-5">
         {loading && activeTab !== "overview" && activeTab !== "problems" ? (
           <div className="py-12 text-center text-sm text-[var(--po-text-muted)]">…</div>
         ) : showExpenses ? (
@@ -353,7 +372,6 @@ export function ProjectDashboard({
             health={health}
             onProjectUpdated={onProjectUpdated}
             onNavigate={handleTabChange}
-            hideNextActionStrip
           />
         ) : activeTab === "tasks" ? (
           <ProjectTasksTab
@@ -397,6 +415,14 @@ export function ProjectDashboard({
           />
         ) : null}
       </div>
+
+      <PlanningNotifyDialog
+        open={notifyDialogOpen}
+        onOpenChange={setNotifyDialogOpen}
+        taskTitle={overviewVm?.todayFocus.criticalTask?.title}
+        onConfirm={() => handleActionToast("planning.notify.placeholder")}
+        t={t}
+      />
     </div>
   );
 }

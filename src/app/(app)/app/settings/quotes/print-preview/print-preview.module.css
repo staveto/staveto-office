@@ -1,17 +1,43 @@
 @page {
   size: A4;
-  margin: 12mm;
+  margin: 14mm 12mm;
 }
 
 .printRoot {
   min-height: 100vh;
-  background: #ffffff;
+  background: #e8edf3;
+}
+
+.instructionBanner {
+  max-width: 210mm;
+  margin: 0 auto;
+  padding: 0.75rem 1rem 0;
+}
+
+.instructionBannerInner {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.85rem 1rem;
+  border-radius: 0.625rem;
+  border: 1px solid #f59e0b;
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  color: #78350f;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  box-shadow: 0 1px 3px rgba(120, 53, 15, 0.08);
+}
+
+.instructionBannerIcon {
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  color: #d97706;
 }
 
 .toolbar {
   max-width: 210mm;
   margin: 0 auto;
-  padding: 1rem 1rem 0.75rem;
+  padding: 0.75rem 1rem;
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
@@ -33,22 +59,41 @@
   padding: 0 1rem 2rem;
 }
 
-@media print {
-  .noPrint {
-    display: none !important;
-  }
+.loadingWrap {
+  display: flex;
+  justify-content: center;
+  padding: 6rem 1rem;
+}
 
+@media print {
   html,
   body {
-    background: white !important;
+    background: #ffffff !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 
   .printRoot {
-    background: white !important;
+    min-height: auto;
+    background: #ffffff !important;
   }
 
   .documentWrap {
     padding: 0;
+    margin: 0;
     max-width: none;
+  }
+
+  .documentWrap :global(*) {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .documentWrap :global([class*="sheet"]) {
+    box-shadow: none !important;
+    max-width: none !important;
+    min-height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 }

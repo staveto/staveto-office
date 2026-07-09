@@ -1,6 +1,5 @@
 "use client";
 
-import { AlertTriangle } from "lucide-react";
 import type { ProjectDashboardTab } from "@/lib/projectDashboard";
 import { getVisibleProjectDashboardTabs } from "@/lib/projectDashboard";
 import { useEnabledModules } from "@/context/EnabledModulesContext";
@@ -29,7 +28,7 @@ export function ProjectDetailTabs({
 
   return (
     <div
-      className="flex gap-0.5 overflow-x-auto border-b border-[var(--po-card-border)]"
+      className="flex gap-1 overflow-x-auto border-b border-[var(--po-card-border)]/50"
       role="tablist"
       aria-label={t("projects.dashboard.tabs.label")}
     >
@@ -37,6 +36,7 @@ export function ProjectDetailTabs({
         const badge = badges?.[tab];
         const isActive = activeTab === tab;
         const showCount = typeof badge?.count === "number" && badge.count > 0;
+        const isOverdueBadge = tab === "tasks" && showCount;
         return (
           <button
             key={tab}
@@ -45,23 +45,20 @@ export function ProjectDetailTabs({
             aria-selected={isActive}
             onClick={() => onTabChange(tab)}
             className={cn(
-              "group relative inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-t-lg border-b-2 px-3.5 py-2.5 text-sm font-medium transition-colors sm:min-h-10",
+              "relative inline-flex min-h-10 shrink-0 items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors",
               isActive
-                ? "border-[var(--po-primary)] bg-[var(--po-card-muted)] text-[var(--po-text-primary)]"
-                : "border-transparent text-[var(--po-text-muted)] hover:border-[var(--po-card-border)] hover:bg-[var(--po-card-muted)]/60 hover:text-[var(--po-text-primary)]"
+                ? "border-[var(--po-primary)] font-medium text-[var(--po-text-primary)]"
+                : "border-transparent text-[var(--po-text-muted)] hover:text-[var(--po-text-primary)]"
             )}
           >
             {t(`projects.dashboard.tab.${tab}`)}
-            {badge?.warn ? (
-              <AlertTriangle className="size-3.5 text-amber-500 dark:text-amber-400" aria-hidden />
-            ) : null}
             {showCount ? (
               <span
                 className={cn(
-                  "inline-flex min-w-[18px] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-bold tabular-nums",
-                  isActive
-                    ? "bg-[var(--po-primary)] text-white"
-                    : "bg-[var(--po-card-muted)] text-[var(--po-text-secondary)] group-hover:bg-[var(--po-primary)]/15"
+                  "text-xs tabular-nums",
+                  isOverdueBadge
+                    ? "font-semibold text-red-600 dark:text-red-400"
+                    : "text-[var(--po-text-muted)]"
                 )}
               >
                 {badge.count}

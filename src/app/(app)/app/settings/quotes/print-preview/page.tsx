@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Printer } from "lucide-react";
+import { ArrowLeft, Info, Loader2, Printer } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { QuoteTemplatePreview } from "@/components/documents/QuoteTemplatePreview";
 import { useAuth } from "@/context/AuthContext";
@@ -61,7 +61,7 @@ export default function QuoteSettingsPrintPreviewPage() {
   if (!orgId) {
     return (
       <div className={printStyles.printRoot}>
-        <div className="max-w-lg mx-auto text-center py-24 px-4">
+        <div className="screen-only no-print max-w-lg mx-auto text-center py-24 px-4">
           <p className="text-muted-foreground mb-4">{t("settings.quoteTemplate.companyOnly")}</p>
           <Link href="/app/settings/quotes" className={buttonVariants()}>
             {t("settings.quoteTemplate.printPreviewBack")}
@@ -73,7 +73,14 @@ export default function QuoteSettingsPrintPreviewPage() {
 
   return (
     <div className={printStyles.printRoot}>
-      <div className={`${printStyles.toolbar} ${printStyles.noPrint}`}>
+      <div className={`screen-only no-print ${printStyles.instructionBanner}`} role="note">
+        <div className={printStyles.instructionBannerInner}>
+          <Info className={printStyles.instructionBannerIcon} size={20} aria-hidden />
+          <p className="m-0">{t("settings.quoteTemplate.printPreviewBanner")}</p>
+        </div>
+      </div>
+
+      <div className={`screen-only no-print ${printStyles.toolbar}`}>
         <Link
           href="/app/settings/quotes"
           className={buttonVariants({ variant: "ghost", size: "sm" })}
@@ -94,7 +101,7 @@ export default function QuoteSettingsPrintPreviewPage() {
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-24">
+        <div className={`screen-only no-print ${printStyles.loadingWrap}`}>
           <Loader2 className="size-8 animate-spin text-muted-foreground" />
         </div>
       ) : (

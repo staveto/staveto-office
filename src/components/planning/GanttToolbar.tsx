@@ -59,6 +59,8 @@ type Props = {
   onToggleChartExpanded?: () => void;
   resourcesOpen?: boolean;
   onToggleResources?: () => void;
+  variant?: "full";
+  hideProjectFilter?: boolean;
   t: (key: string) => string;
 };
 
@@ -87,6 +89,7 @@ export function GanttToolbar({
   onToggleChartExpanded,
   resourcesOpen = false,
   onToggleResources,
+  hideProjectFilter = false,
   t,
 }: Props) {
   return (
@@ -243,6 +246,7 @@ export function GanttToolbar({
       </div>
 
       <div className={styles.filtersRow}>
+        {!hideProjectFilter ? (
         <label className={styles.filterGroup}>
           <span className={styles.filterLabel}>{t("gantt.filter.project")}</span>
           <Select
@@ -269,6 +273,7 @@ export function GanttToolbar({
             </SelectContent>
           </Select>
         </label>
+        ) : null}
         <label className={styles.filterGroup}>
           <span className={styles.filterLabel}>{t("gantt.filter.worker")}</span>
           <Select

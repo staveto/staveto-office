@@ -1,8 +1,11 @@
 .ganttShell {
   --gantt-navy: #1d376a;
   --gantt-orange: #e06737;
-  --gantt-label-width: 280px;
-  --gantt-row-h: 36px;
+  --gantt-label-width: 320px;
+  --gantt-row-h: 40px;
+  --gantt-row-h-project: 52px;
+  --gantt-row-h-phase: 44px;
+  --gantt-row-h-task: 38px;
   --gantt-surface: #ffffff;
   --gantt-surface-alt: #f8fafc;
   --gantt-surface-muted: #f1f5f9;
@@ -91,20 +94,52 @@
   font-size: 0.8125rem;
 }
 
+.gridRowProject {
+  min-height: var(--gantt-row-h-project);
+  background: linear-gradient(90deg, rgb(29 55 106 / 6%), transparent 48%);
+  border-bottom: 1px solid var(--gantt-border);
+}
+
+.gridRowPhase {
+  min-height: var(--gantt-row-h-phase);
+  background: rgb(241 245 249 / 55%);
+}
+
+.gridRowTask {
+  min-height: var(--gantt-row-h-task);
+}
+
 .rowLabelProject {
-  font-weight: 700;
+  font-weight: 800;
+  font-size: 0.9rem;
   color: var(--gantt-text-primary);
+  border-left: 4px solid var(--gantt-navy);
+  padding-left: 0.65rem;
+  gap: 0.35rem;
 }
 
 .rowLabelPhase {
-  padding-left: 1.25rem;
-  font-weight: 600;
+  padding-left: 1.35rem;
+  font-weight: 700;
+  font-size: 0.8125rem;
   color: var(--gantt-text-secondary);
+  border-left: 3px solid rgb(224 103 55 / 55%);
+  margin-left: 0.5rem;
 }
 
 .rowLabelTask {
-  padding-left: 2rem;
+  padding-left: 2.25rem;
+  font-size: 0.8rem;
   color: var(--gantt-text-body);
+  cursor: pointer;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.1rem;
+}
+
+.rowLabelTask:hover {
+  color: var(--gantt-navy);
 }
 
 .rowTimeline {
@@ -312,7 +347,7 @@
 .bar {
   position: absolute;
   top: 6px;
-  height: 24px;
+  height: 28px;
   border-radius: 7px;
   min-width: 10px;
   cursor: grab;
@@ -330,6 +365,11 @@
   transition: box-shadow 0.15s ease, transform 0.12s ease, filter 0.12s ease;
 }
 
+.barCompact {
+  justify-content: center;
+  gap: 0;
+}
+
 .bar:hover {
   box-shadow: 0 4px 12px rgb(15 23 42 / 24%), inset 0 1px 0 rgb(255 255 255 / 26%);
   filter: brightness(1.04);
@@ -338,6 +378,8 @@
 }
 
 .barTask {
+  top: 5px;
+  height: 28px;
   border-radius: 999px;
 }
 
@@ -402,6 +444,16 @@
   opacity: 0.92;
 }
 
+.barCompactDot {
+  position: relative;
+  z-index: 1;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  margin: 0 auto;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 70%);
+}
+
 .barLabel {
   position: relative;
   z-index: 1;
@@ -443,17 +495,18 @@
 }
 
 .barProject {
-  top: 5px;
-  height: 26px;
+  top: 8px;
+  height: 34px;
   border-radius: 8px;
   background: linear-gradient(180deg, #234785, var(--gantt-navy));
 }
 
 .barPhase {
-  top: 8px;
-  height: 20px;
-  opacity: 0.92;
-  border-radius: 5px;
+  top: 9px;
+  height: 26px;
+  opacity: 0.95;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 18%);
 }
 
 .milestone {
@@ -646,6 +699,27 @@
 
 .resizeHandleEnd {
   right: -3px;
+}
+
+.resizeHandleVisible {
+  background: rgb(255 255 255 / 40%);
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 55%);
+  opacity: 0.65;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+
+.bar:hover .resizeHandleVisible,
+.barResizing .resizeHandleVisible,
+.barSelected .resizeHandleVisible {
+  opacity: 1;
+  background: rgb(255 255 255 / 90%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 85%);
+}
+
+.barSelected {
+  box-shadow: 0 0 0 2px rgb(224 103 55 / 55%), 0 4px 14px rgb(15 23 42 / 22%);
+  z-index: 8;
 }
 
 .unscheduledPanel {
@@ -1345,4 +1419,853 @@
 
 :global(.dark) .ganttShell .ganttExpanded {
   background: var(--background, #0f1419);
+}
+
+/* Planning command center */
+.planningViewTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0.15rem;
+  border-radius: 12px;
+  background: var(--gantt-surface-muted);
+  border: 1px solid var(--gantt-border-subtle);
+  width: fit-content;
+  max-width: 100%;
+}
+
+.planningViewTab {
+  border: none;
+  border-radius: 9px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--gantt-text-muted);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.planningViewTab:hover {
+  color: var(--gantt-text-primary);
+  background: rgb(255 255 255 / 65%);
+}
+
+.planningViewTabActive {
+  color: var(--gantt-navy);
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 10%);
+}
+
+.overviewSection,
+.projectBeltSection,
+.capacitySection {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.overviewHeading {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--gantt-text-primary);
+  letter-spacing: -0.01em;
+}
+
+.overviewGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 0.65rem;
+}
+
+.overviewCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.75rem 0.8rem;
+  border-radius: 12px;
+  border: 1px solid var(--gantt-border-subtle);
+  background: var(--gantt-surface);
+  box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
+}
+
+.overviewCard[data-tone="warn"] {
+  border-color: rgb(245 158 11 / 35%);
+  background: rgb(255 251 235 / 80%);
+}
+
+.overviewCard[data-tone="danger"] {
+  border-color: rgb(239 68 68 / 30%);
+  background: rgb(254 242 242 / 75%);
+}
+
+.overviewCard[data-tone="muted"] {
+  opacity: 0.88;
+}
+
+.overviewCardIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 10px;
+  background: var(--gantt-surface-muted);
+  color: var(--gantt-navy);
+  flex-shrink: 0;
+}
+
+.overviewCardValue {
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--gantt-text-primary);
+}
+
+.overviewCardLabel {
+  margin-top: 0.15rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--gantt-text-muted);
+  line-height: 1.25;
+}
+
+.projectBeltHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.projectBeltSubtitle {
+  font-size: 0.8125rem;
+  color: var(--gantt-text-muted);
+  margin-top: 0.15rem;
+}
+
+.projectBeltShowAll {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  border: none;
+  background: transparent;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--gantt-orange);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.projectBeltScroll {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.35rem;
+  scroll-snap-type: x proximity;
+}
+
+.projectCard {
+  flex: 0 0 min(280px, 82vw);
+  scroll-snap-align: start;
+  text-align: left;
+  border-radius: 14px;
+  border: 1px solid var(--gantt-border-subtle);
+  background: var(--gantt-surface);
+  padding: 0.85rem 0.9rem;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 6%);
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+}
+
+.projectCard:hover {
+  border-color: rgb(29 55 106 / 28%);
+  box-shadow: 0 6px 16px rgb(15 23 42 / 10%);
+  transform: translateY(-1px);
+}
+
+.projectCardSelected {
+  border-color: var(--gantt-navy);
+  box-shadow: 0 0 0 2px rgb(29 55 106 / 18%), 0 6px 16px rgb(15 23 42 / 10%);
+}
+
+.projectCardTop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.projectCardTitle {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: var(--gantt-text-primary);
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.projectCardRisk {
+  flex-shrink: 0;
+  font-size: 0.625rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+}
+
+.projectCardRiskOk {
+  background: rgb(220 252 231);
+  color: #166534;
+}
+
+.projectCardRiskWarn {
+  background: rgb(254 243 199);
+  color: #92400e;
+}
+
+.projectCardRiskDelayed {
+  background: rgb(254 226 226);
+  color: #991b1b;
+}
+
+.projectCardRiskBlocked {
+  background: rgb(241 245 249);
+  color: #334155;
+}
+
+.projectCardPhase {
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--gantt-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.projectCardProgress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.55rem;
+}
+
+.projectCardProgressTrack {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--gantt-surface-muted);
+  overflow: hidden;
+}
+
+.projectCardProgressFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--gantt-navy), #3b5f9a);
+}
+
+.projectCardProgressLabel {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--gantt-text-muted);
+}
+
+.projectCardStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--gantt-text-body);
+}
+
+.projectCardStats > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.projectCardStatWarn {
+  color: #b45309;
+}
+
+.projectCardAvatars {
+  display: flex;
+  align-items: center;
+  margin-top: 0.55rem;
+}
+
+.projectCardAvatar {
+  width: 1.65rem;
+  height: 1.65rem;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.625rem;
+  font-weight: 800;
+  color: #fff;
+  background: var(--gantt-navy);
+  border: 2px solid #fff;
+  margin-left: -0.35rem;
+}
+
+.projectCardAvatar:first-child {
+  margin-left: 0;
+}
+
+.projectCardAvatarMore {
+  margin-left: 0.35rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--gantt-text-muted);
+}
+
+.projectCardMuted {
+  margin-top: 0.55rem;
+  font-size: 0.75rem;
+  color: var(--gantt-text-subtle);
+}
+
+.projectCardNext {
+  margin-top: 0.45rem;
+  font-size: 0.72rem;
+  color: var(--gantt-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.capacityHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.capacityConflictBanner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: 10px;
+  border: 1px dashed rgb(245 158 11 / 45%);
+  background: rgb(255 251 235 / 65%);
+  font-size: 0.8125rem;
+  color: var(--gantt-text-body);
+}
+
+.capacityGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.85rem;
+}
+
+.capacityPanel {
+  border-radius: 12px;
+  border: 1px solid var(--gantt-border-subtle);
+  background: var(--gantt-surface);
+  padding: 0.85rem;
+}
+
+.capacityPanelTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.875rem;
+  font-weight: 800;
+  color: var(--gantt-text-primary);
+  margin-bottom: 0.65rem;
+}
+
+.capacityList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.capacityRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  background: var(--gantt-surface-muted);
+}
+
+.capacityRowName {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--gantt-text-primary);
+}
+
+.capacityRowMeta {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--gantt-text-muted);
+  text-align: right;
+}
+
+.emptyHint {
+  font-size: 0.875rem;
+  color: var(--gantt-text-muted);
+  padding: 0.5rem 0;
+}
+
+.planningEmptyPanel {
+  border-radius: 14px;
+  border: 1px dashed var(--gantt-border);
+  background: var(--gantt-surface-alt);
+  padding: 2rem 1.25rem;
+  text-align: center;
+}
+
+.planningEmptyTitle {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--gantt-text-primary);
+}
+
+.planningEmptyDesc {
+  margin-top: 0.35rem;
+  font-size: 0.875rem;
+  color: var(--gantt-text-muted);
+}
+
+.drawerBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10040;
+  border: none;
+  background: rgb(15 23 42 / 42%);
+  cursor: pointer;
+}
+
+.taskDrawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 10050;
+  width: min(420px, 100vw);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--gantt-surface);
+  border-left: 1px solid var(--gantt-border);
+  box-shadow: -8px 0 32px rgb(15 23 42 / 18%);
+}
+
+.taskDrawerHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 1rem 1rem 0.75rem;
+  border-bottom: 1px solid var(--gantt-border-subtle);
+}
+
+.taskDrawerEyebrow {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--gantt-text-muted);
+}
+
+.taskDrawerTitle {
+  font-size: 1.125rem;
+  font-weight: 800;
+  color: var(--gantt-text-primary);
+  line-height: 1.25;
+}
+
+.taskDrawerClose {
+  border: none;
+  background: transparent;
+  color: var(--gantt-text-muted);
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 8px;
+}
+
+.taskDrawerBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+}
+
+.taskDrawerMeta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.taskDrawerMeta dt {
+  font-weight: 600;
+  color: var(--gantt-text-muted);
+  margin-bottom: 0.15rem;
+}
+
+.taskDrawerMeta dd {
+  font-weight: 700;
+  color: var(--gantt-text-primary);
+}
+
+.taskDrawerSection {
+  margin-top: 1.25rem;
+}
+
+.taskDrawerSectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.875rem;
+  font-weight: 800;
+  color: var(--gantt-text-primary);
+  margin-bottom: 0.45rem;
+}
+
+.taskDrawerPlaceholder {
+  font-size: 0.8125rem;
+  color: var(--gantt-text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.taskDrawerActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0.85rem 1rem;
+  border-top: 1px solid var(--gantt-border-subtle);
+  background: var(--gantt-surface-alt);
+}
+
+.scheduleToast {
+  position: fixed;
+  bottom: 1.25rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10060;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  max-width: min(560px, calc(100vw - 2rem));
+  padding: 0.85rem 1rem;
+  border-radius: 14px;
+  border: 1px solid var(--gantt-border);
+  background: var(--gantt-surface);
+  box-shadow: 0 12px 40px rgb(15 23 42 / 18%);
+}
+
+.scheduleToastTitle {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #166534;
+}
+
+.scheduleToastTask {
+  font-size: 0.875rem;
+  font-weight: 800;
+  color: var(--gantt-text-primary);
+}
+
+.scheduleToastRange {
+  font-size: 0.8125rem;
+  color: var(--gantt-text-muted);
+}
+
+.scheduleToastActions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.scheduleToastClose {
+  border: none;
+  background: transparent;
+  color: var(--gantt-text-muted);
+  cursor: pointer;
+  padding: 0.25rem;
+}
+
+:global(.dark) .planningViewTabActive {
+  background: #1e293b;
+  color: #f8fafc;
+}
+
+:global(.dark) .gridRowProject {
+  background: linear-gradient(90deg, rgb(59 130 246 / 8%), transparent 48%);
+}
+
+:global(.dark) .gridRowPhase {
+  background: rgb(15 23 42 / 35%);
+}
+
+/* Phase 2 — action cards & visual project board */
+.actionCardsSection {
+  margin-bottom: 0.25rem;
+}
+
+.actionCardsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+
+.actionCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  padding: 1rem 1.05rem;
+  border-radius: 14px;
+  border: 1px solid var(--gantt-border-subtle);
+  background: var(--gantt-surface);
+  text-align: left;
+  cursor: default;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 5%);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+button.actionCard {
+  cursor: pointer;
+}
+
+button.actionCard:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgb(15 23 42 / 10%);
+}
+
+.actionCardTone_default .actionCardIcon {
+  background: rgb(29 55 106 / 10%);
+  color: var(--gantt-navy);
+}
+
+.actionCardTone_warn .actionCardIcon {
+  background: rgb(254 243 199);
+  color: #b45309;
+}
+
+.actionCardTone_danger .actionCardIcon {
+  background: rgb(254 226 226);
+  color: #b91c1c;
+}
+
+.actionCardTone_action .actionCardIcon {
+  background: rgb(255 237 228);
+  color: var(--gantt-orange);
+}
+
+.actionCardIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 11px;
+}
+
+.actionCardValue {
+  font-size: 1.75rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--gantt-text-primary);
+}
+
+.actionCardLabel {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--gantt-text-muted);
+  line-height: 1.25;
+}
+
+.capacityCompact {
+  border-radius: 14px;
+  border: 1px solid var(--gantt-border-subtle);
+  background: var(--gantt-surface-alt);
+  padding: 1rem 1.1rem;
+}
+
+.capacityCompactGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.65rem;
+}
+
+.capacityCompactItem {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+  background: var(--gantt-surface);
+}
+
+.capacityCompactValue {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--gantt-text-primary);
+  line-height: 1.1;
+}
+
+.capacityCompactLabel {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--gantt-text-muted);
+}
+
+.projectCardVisual {
+  flex: 0 0 min(320px, 88vw);
+  scroll-snap-align: start;
+  border-radius: 16px;
+  border: 1px solid var(--gantt-border-subtle);
+  background: var(--gantt-surface);
+  padding: 1rem 1.05rem;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 7%);
+}
+
+.projectCardDateRange {
+  margin-top: 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--gantt-text-muted);
+}
+
+.projectCardPhaseMuted {
+  margin-top: 0.25rem;
+  font-size: 0.72rem;
+  color: var(--gantt-text-subtle);
+}
+
+.projectCardActions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.85rem;
+}
+
+.ganttBreadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8125rem;
+}
+
+.ganttBreadcrumbLink {
+  color: var(--gantt-orange);
+  font-weight: 600;
+}
+
+.ganttBreadcrumbLink:hover {
+  text-decoration: underline;
+}
+
+.ganttBreadcrumbSep {
+  color: var(--gantt-text-subtle);
+}
+
+.ganttBreadcrumbCurrent {
+  font-weight: 700;
+  color: var(--gantt-text-primary);
+}
+
+.ganttBreadcrumbMuted {
+  color: var(--gantt-text-muted);
+}
+
+.rowLabelMeta {
+  margin-left: auto;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--gantt-text-muted);
+}
+
+.rowTaskIcons {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+  color: var(--gantt-text-muted);
+}
+
+.rowLabelTaskSelected {
+  background: rgb(29 55 106 / 6%);
+  box-shadow: inset 3px 0 0 var(--gantt-orange);
+}
+
+.rowTaskCalendarBtn {
+  flex-shrink: 0;
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--gantt-text-muted);
+  padding: 0.15rem;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.rowLabelTask:hover .rowTaskCalendarBtn,
+.rowLabelTaskSelected .rowTaskCalendarBtn {
+  opacity: 1;
+}
+
+.rowTaskCalendarBtn:hover {
+  color: var(--gantt-orange);
+  background: rgb(255 243 236);
+}
+
+.rowPhaseEditBtn {
+  margin-left: auto;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--gantt-text-muted);
+  padding: 0.2rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.rowPhaseEditBtn:hover {
+  color: var(--gantt-orange);
+  background: rgb(255 243 236);
+}
+
+.taskContextMenu {
+  position: fixed;
+  z-index: 120;
+  min-width: 200px;
+  border-radius: 10px;
+  border: 1px solid var(--gantt-border-strong);
+  background: #fff;
+  box-shadow: 0 10px 30px rgb(15 23 42 / 18%);
+  padding: 0.35rem;
+}
+
+.taskContextMenuItem {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font-size: 13px;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--gantt-text);
+}
+
+.taskContextMenuItem:hover {
+  background: rgb(29 55 106 / 6%);
+  color: var(--gantt-navy);
 }

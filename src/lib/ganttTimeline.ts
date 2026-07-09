@@ -63,6 +63,7 @@ export type GanttTaskNode = {
   endYmd?: string;
   isUnscheduled: boolean;
   canResize: boolean;
+  isMilestone: boolean;
   barStatus: GanttBarStatus;
 };
 
@@ -251,30 +252,152 @@ export function daysDelta(fromYmd: string, toYmd: string): number {
   return Math.round((b.getTime() - a.getTime()) / 86400000);
 }
 
+/** True only for explicit/future milestone tasks — not every one-day task. */
+export function isRealMilestone(
+  task: Pick<TaskDoc, "title"> & { milestone?: boolean | null }
+): boolean {
+  if (task.milestone === true) return true;
+  const title = (task.title ?? "").trim().toLowerCase();
+  if (!title) return false;
+  const patterns = [
+    /\bmilestone\b/,
+    /\bmilník\b/,
+    /\bmilnik\b/,
+    /\bmeilenstein\b/,
+    /^ms[:\s]/,
+    /^mil[:\s]/,
+    /🔶/,
+    /◆/,
+  ];
+  return patterns.some((p) => p.test(title));
+}
+
 export function getTaskDateRange(task: TaskDoc): {
   startYmd?: string;
   endYmd?: string;
   isUnscheduled: boolean;
   canResize: boolean;
+  isMilestone: boolean;
 } {
+  const milestone = isRealMilestone(task);
   const start = task.plannedStart?.slice(0, 10);
   const end = task.plannedEnd?.slice(0, 10) || task.dueDate?.slice(0, 10);
   const single = getTaskPlanDate(task);
 
-  if (start && end && /^\d{4}-\d{2}-\d{2}$/.test(start) && /^\d{4}-\d{2}-\d{2}$/.test(end)) {
-    const s = start <= end ? start : end;
-    const e = start <= end ? end : start;
+  if (start && /^\d{4}-\d{2}-\d{2}$/.test(start)) {
+    const resolvedEnd =
+      end && /^\d{4}-\d{2}-\d{2}$/.test(end) ? end : start;
+    const s = start <= resolvedEnd ? start : resolvedEnd;
+    const e = start <= resolvedEnd ? resolvedEnd : start;
     return {
       startYmd: s,
       endYmd: e,
       isUnscheduled: false,
-      canResize: s !== e,
+      canResize: !milestone,
+      isMilestone: milestone,
     };
   }
   if (single) {
-    return { startYmd: single, endYmd: single, isUnscheduled: false, canResize: false };
+    return {
+      startYmd: single,
+      endYmd: single,
+      isUnscheduled: false,
+      canResize: !milestone,
+      isMilestone: milestone,
+    };
   }
-  return { isUnscheduled: true, canResize: false };
+  return { isUnscheduled: true, canResize: false, isMilestone: false };
+}
+
+export function computeTaskResizePatch(
+  task: TaskDoc,
+  edge: "start" | "end",
+  newDateYmd: string
+): { plannedStart: string; plannedEnd: string | null; dueDate: string } {
+  const range = getTaskDateRange(task);
+  if (range.isUnscheduled || !range.startYmd) {
+    throw new Error("Task has no schedule");
+  }
+  if (range.isMilestone) {
+    throw new Error("Milestone cannot be resized");
+  }
+
+  const currentStart = range.startYmd;
+  const currentEnd = range.endYmd ?? currentStart;
+
+  let newStart = currentStart;
+  let newEnd = currentEnd;
+
+  if (edge === "start") {
+    newStart = newDateYmd;
+    if (newStart > newEnd) newEnd = newStart;
+  } else {
+    newEnd = newDateYmd;
+    if (newEnd < newStart) newStart = newEnd;
+  }
+
+  return {
+    plannedStart: newStart,
+    plannedEnd: newStart === newEnd ? null : newEnd,
+    dueDate: newEnd,
+  };
+}
+
+export function previewTaskResizeRange(
+  startYmd: string,
+  endYmd: string,
+  edge: "start" | "end",
+  deltaDays: number
+): { startYmd: string; endYmd: string } {
+  const base = edge === "start" ? startYmd : endYmd;
+  const next = toIsoDateLocal(addDays(parseIsoDateLocal(base), deltaDays));
+  if (edge === "start") {
+    let ns = next;
+    let ne = endYmd;
+    if (ns > ne) ne = ns;
+    return { startYmd: ns, endYmd: ne };
+  }
+  let ne = next;
+  let ns = startYmd;
+  if (ne < ns) ns = ne;
+  return { startYmd: ns, endYmd: ne };
+}
+
+export function computeTaskShiftPatch(
+  task: TaskDoc,
+  days: number
+): { plannedStart: string; plannedEnd: string | null; dueDate: string } {
+  const range = getTaskDateRange(task);
+  if (range.isUnscheduled || !range.startYmd) {
+    throw new Error("Task has no schedule");
+  }
+  const currentStart = range.startYmd;
+  const currentEnd = range.endYmd ?? currentStart;
+  const newStart = toIsoDateLocal(addDays(parseIsoDateLocal(currentStart), days));
+  const newEnd = toIsoDateLocal(addDays(parseIsoDateLocal(currentEnd), days));
+  return {
+    plannedStart: newStart,
+    plannedEnd: newStart === newEnd ? null : newEnd,
+    dueDate: newEnd,
+  };
+}
+
+export function computeTaskExtendPatch(
+  task: TaskDoc,
+  extraDays: number
+): { plannedStart: string; plannedEnd: string | null; dueDate: string } {
+  const range = getTaskDateRange(task);
+  if (range.isUnscheduled || !range.startYmd) {
+    throw new Error("Task has no schedule");
+  }
+  if (range.isMilestone) {
+    throw new Error("Milestone cannot be extended");
+  }
+  const currentEnd = range.endYmd ?? range.startYmd;
+  const newEnd = toIsoDateLocal(
+    addDays(parseIsoDateLocal(currentEnd), Math.max(1, extraDays))
+  );
+  return computeTaskResizePatch(task, "end", newEnd);
 }
 
 export function getGanttBarStatus(task: TaskDoc, todayYmd: string): GanttBarStatus {
@@ -326,6 +449,7 @@ function taskToNode(task: TaskDoc, todayYmd: string): GanttTaskNode {
     endYmd: range.endYmd,
     isUnscheduled: range.isUnscheduled,
     canResize: range.canResize,
+    isMilestone: range.isMilestone,
     barStatus: getGanttBarStatus(task, todayYmd),
   };
 }
