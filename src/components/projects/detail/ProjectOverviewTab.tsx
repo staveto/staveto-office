@@ -13,6 +13,7 @@ import type { ProjectPhaseRecord } from "@/services/projects/taskPlanningTypes";
 import { buildPhaseLabelMap } from "@/lib/taskPlanningDisplay";
 import { buildProjectOverviewViewModel } from "@/lib/projectOverviewViewModel";
 import { ProjectNextActions } from "./ProjectNextActions";
+import { ProjectTodayFocusCard } from "./overview/ProjectTodayFocusCard";
 import { ProjectActivePhaseWorkBoard } from "./overview/ProjectActivePhaseWorkBoard";
 import { ProjectHealthCard } from "./overview/ProjectHealthCard";
 import { ProjectTeamCard } from "./overview/ProjectTeamCard";
