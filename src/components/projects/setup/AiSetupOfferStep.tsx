@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -25,6 +26,12 @@ type Props = {
   savedQuoteId?: string | null;
   exportingPdf?: boolean;
   currency?: string;
+  clarityErrors?: string[];
+  clarityWarnings?: string[];
+  quoteReady?: boolean;
+  quotePackageSections?: { title: string; lineCount: number }[];
+  /** Internal purchase list — not shown on customer PDF. */
+  purchaseListSlot?: ReactNode;
 };
 
 function patchContact(
@@ -51,6 +58,11 @@ export function AiSetupOfferStep({
   savedQuoteId,
   exportingPdf,
   currency = "EUR",
+  clarityErrors = [],
+  clarityWarnings = [],
+  quoteReady = true,
+  quotePackageSections = [],
+  purchaseListSlot,
 }: Props) {
   const { t } = useI18n();
   const customer =
@@ -58,6 +70,9 @@ export function AiSetupOfferStep({
     project.customerName?.trim() ||
     t("projects.aiSetup.noCustomer");
   const contact = documentMeta.contactPerson ?? {};
+  const customerMaterials = materials.filter(
+    (m) => m.included && m.name.trim() && m.customerVisible !== false
+  );
 
   return (
     <div className="space-y-5">
@@ -65,6 +80,47 @@ export function AiSetupOfferStep({
         <h3 className="text-lg font-bold text-[#0F2A4D]">{t("projects.aiSetup.offer.title")}</h3>
         <p className="mt-1 text-sm text-[#475569]">{t("projects.aiSetup.offer.lead")}</p>
       </div>
+
+      {!quoteReady || clarityErrors.length > 0 ? (
+        <div className="rounded-xl border-2 border-amber-400 bg-amber-50 px-4 py-3 space-y-2" role="alert">
+          <p className="text-sm font-bold text-amber-950">
+            {t("projects.aiSetup.offer.notReady")}
+          </p>
+          <ul className="text-sm text-amber-900 space-y-1 list-disc pl-5">
+            {clarityErrors.map((e) => (
+              <li key={e}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {clarityWarnings.length > 0 ? (
+        <ul className="text-xs text-[#64748B] space-y-1 list-disc pl-5">
+          {clarityWarnings.map((w) => (
+            <li key={w}>{w}</li>
+          ))}
+        </ul>
+      ) : null}
+
+      {purchaseListSlot}
+
+      {quotePackageSections.length > 0 ? (
+        <div className="rounded-xl border border-[#CBD5E1] bg-[#F8FAFC] px-4 py-3">
+          <p className="text-xs font-bold uppercase tracking-wide text-[#64748B] mb-2">
+            {t("projects.aiSetup.offer.packagePreview")}
+          </p>
+          <ul className="text-sm text-[#334155] space-y-1">
+            {quotePackageSections.map((s) => (
+              <li key={s.title} className="flex justify-between gap-2">
+                <span>{s.title}</span>
+                <span className="tabular-nums text-[#64748B]">{s.lineCount}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-[#64748B] mt-2 leading-relaxed">
+            {t("projects.aiSetup.offer.packageHint")}
+          </p>
+        </div>
+      ) : null}
 
       <div className="rounded-2xl border-2 border-[#CBD5E1] bg-white p-5 sm:p-6 space-y-5">
         <span className="inline-block rounded-full bg-[#FFF3EC] text-[#E95F2A] text-xs font-bold px-3 py-1">
@@ -86,10 +142,13 @@ export function AiSetupOfferStep({
           <h4 className="text-xs font-bold uppercase text-[#64748B]">
             {t("quotes.print.scopeOfWork")}
           </h4>
+          <p className="text-xs text-[#64748B] leading-relaxed">
+            {t("projects.aiSetup.offer.scopeHint")}
+          </p>
           <Textarea
             value={documentMeta.scopeOfWork ?? ""}
             onChange={(e) => onDocumentMetaChange({ ...documentMeta, scopeOfWork: e.target.value })}
-            rows={5}
+            rows={6}
             placeholder={t("projects.aiSetup.quote.scopePlaceholder")}
             className="text-[15px]"
           />
@@ -100,12 +159,13 @@ export function AiSetupOfferStep({
             {t("projects.aiSetup.quote.materials")}
           </h4>
           <ul className="text-sm space-y-1.5">
-            {materials
-              .filter((m) => m.included && m.name.trim() && m.customerVisible !== false)
-              .map((m) => (
+            {customerMaterials.slice(0, 12).map((m) => (
                 <li key={m.id} className="flex justify-between gap-3">
                   <span className="text-[#334155]">
                     {m.name} · {m.qty} {setupUnitLabel(m.unit, t)}
+                    {!(m.price > 0) ? (
+                      <span className="text-amber-700"> · {t("projects.aiSetup.material.priceMissingShort")}</span>
+                    ) : null}
                   </span>
                   {m.price > 0 ? (
                     <span className="tabular-nums font-medium shrink-0">
@@ -115,6 +175,11 @@ export function AiSetupOfferStep({
                 </li>
               ))}
           </ul>
+          {customerMaterials.length > 12 ? (
+            <p className="text-xs text-[#64748B] mt-2">
+              {t("projects.aiSetup.offer.packageHint")}
+            </p>
+          ) : null}
           <p className="text-sm font-semibold text-[#0F2A4D] mt-2 tabular-nums flex justify-between">
             <span>{t("projects.aiSetup.summary.material")}</span>
             <span>{formatMoney(totals.materialCost, currency)}</span>

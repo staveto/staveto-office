@@ -54,6 +54,20 @@ import {
   generateWizardAiPlan,
   isWizardAiGenerationEnabled,
 } from "@/services/ai/aiWizardGenerationService";
+import {
+  convertEstimatorSessionToProject,
+  generateEstimateDraft,
+  generateEstimatorFacts,
+  generateQuoteDraftFromEstimate,
+  isAiEstimatorFlowEnabled,
+} from "@/services/ai/aiEstimatorService";
+import { enrichAiPlanWithEstimatorFacts } from "@/lib/ai/enrichPlanWithEstimatorFacts";
+import { foldLegendIntoEstimatorFacts } from "@/lib/ai/foldLegendIntoEstimatorFacts";
+import type {
+  AiEstimateLine,
+  AiEstimatorFacts,
+  AiQuoteDraft,
+} from "@/types/aiEstimator";
 import { createAiUploadSessionId, type UploadedAiDraftFile } from "@/services/ai/aiDraftFiles";
 import { enrichProjectAfterAiConfirm } from "@/services/ai/aiProjectPostConfirmService";
 import { importAiWizardAttachmentsToProject } from "@/services/projects/projectAiAttachmentsService";
@@ -175,6 +189,12 @@ export function NewJobForm() {
   const [aiConfirming, setAiConfirming] = useState(false);
   const [aiRegenerating, setAiRegenerating] = useState(false);
   const [aiRefiningKey, setAiRefiningKey] = useState<string | null>(null);
+  const [estimatorSessionId, setEstimatorSessionId] = useState<string | null>(null);
+  const [estimatorFacts, setEstimatorFacts] = useState<AiEstimatorFacts | null>(null);
+  const [estimateLines, setEstimateLines] = useState<AiEstimateLine[]>([]);
+  const [quoteDraft, setQuoteDraft] = useState<AiQuoteDraft | null>(null);
+  const [estimatorBusy, setEstimatorBusy] = useState(false);
+  const [estimatorFallbackReason, setEstimatorFallbackReason] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -477,7 +497,18 @@ export function NewJobForm() {
     setAiGenerateWarnings(result.warnings ?? []);
     setAiGenerateError(null);
     setAiGenerateErrorDetail(null);
-    setAiDraft(aiPlanToLocalDraft(result.plan, undefined));
+    setEstimatorSessionId(result.estimatorSessionId ?? null);
+    setEstimatorFallbackReason(result.estimatorFallbackReason ?? null);
+    setEstimateLines([]);
+    setQuoteDraft(null);
+    const facts = result.estimatorFacts
+      ? foldLegendIntoEstimatorFacts(result.estimatorFacts)
+      : null;
+    setEstimatorFacts(facts);
+    const plan = facts
+      ? enrichAiPlanWithEstimatorFacts(result.plan, facts)
+      : result.plan;
+    setAiDraft(aiPlanToLocalDraft(plan, undefined));
     setAiReviewMode("draft");
   };
 
@@ -593,16 +624,50 @@ export function NewJobForm() {
   };
 
   const handleAttachmentQuickAction = async (action: AttachmentQuickAction) => {
-    if (!aiDraft || !user?.id || !activeWorkspace || !aiOfficeDraftId || aiDraftSource !== "office") {
+    if (!aiDraft || !user?.id || !activeWorkspace) {
+      return;
+    }
+    const canClassic = aiOfficeDraftId && aiDraftSource === "office";
+    const canEstimator = isAiEstimatorFlowEnabled();
+    if (!canClassic && !(canEstimator && action === "materials_from_attachments")) {
       return;
     }
     setAiRegenerating(true);
     setAiGenerateError(null);
     try {
+      // Prefer re-running document intelligence when estimator flow is enabled.
+      if (
+        action === "materials_from_attachments" &&
+        isAiEstimatorFlowEnabled() &&
+        activeWorkspace
+      ) {
+        try {
+          const factsRes = await generateEstimatorFacts({
+            workspace: activeWorkspace,
+            userId: user.id,
+            jobType: workType || "other",
+            description: [aiProjectName, aiBrief, aiExtraContext].filter(Boolean).join("\n\n"),
+            location: location.trim() || undefined,
+            language: localeToDraftLanguage(locale),
+            attachedFileIds: aiUploadedFiles.map((f) => f.id),
+            documentStoragePaths: aiUploadedFiles.map((f) => f.storagePath),
+          });
+          setEstimatorSessionId(factsRes.sessionId);
+          const facts = foldLegendIntoEstimatorFacts(factsRes.facts);
+          setEstimatorFacts(facts);
+          const basePlan = localDraftToAiProjectPlan(aiDraft);
+          const enriched = enrichAiPlanWithEstimatorFacts(basePlan, facts);
+          setAiDraft(aiPlanToLocalDraft(enriched, undefined));
+          return;
+        } catch {
+          /* fall through to classic update */
+        }
+      }
+
       const res = await updateProjectDraftWithAI({
         workspace: activeWorkspace,
         userId: user.id,
-        draftId: aiOfficeDraftId,
+        draftId: aiOfficeDraftId!,
         userMessage: t(`projects.new.ai.workspace.quickActionPrompt.${action}`),
         language: localeToDraftLanguage(locale),
       });
@@ -617,6 +682,105 @@ export function NewJobForm() {
       setAiGenerateFailure(err);
     } finally {
       setAiRegenerating(false);
+    }
+  };
+
+  const handleBuildEstimate = async () => {
+    if (!user?.id || !activeWorkspace || !estimatorSessionId) return;
+    setEstimatorBusy(true);
+    try {
+      const res = await generateEstimateDraft({
+        workspace: activeWorkspace,
+        userId: user.id,
+        sessionId: estimatorSessionId,
+      });
+      setEstimateLines(res.lines);
+    } catch (err) {
+      setAiGenerateFailure(err);
+    } finally {
+      setEstimatorBusy(false);
+    }
+  };
+
+  const handleBuildQuote = async () => {
+    if (!user?.id || !activeWorkspace || !estimatorSessionId) return;
+    setEstimatorBusy(true);
+    try {
+      if (estimateLines.length === 0) {
+        const est = await generateEstimateDraft({
+          workspace: activeWorkspace,
+          userId: user.id,
+          sessionId: estimatorSessionId,
+        });
+        setEstimateLines(est.lines);
+      }
+      const res = await generateQuoteDraftFromEstimate({
+        workspace: activeWorkspace,
+        userId: user.id,
+        sessionId: estimatorSessionId,
+        title: aiProjectName.trim() || undefined,
+      });
+      setQuoteDraft(res.quoteDraft);
+    } catch (err) {
+      setAiGenerateFailure(err);
+    } finally {
+      setEstimatorBusy(false);
+    }
+  };
+
+  const handleCreateQuoteProject = async () => {
+    if (!user?.id || !activeWorkspace || !estimatorSessionId) return;
+    setAiConfirming(true);
+    setAiGenerateError(null);
+    try {
+      if (!quoteDraft) {
+        const resQuote = await generateQuoteDraftFromEstimate({
+          workspace: activeWorkspace,
+          userId: user.id,
+          sessionId: estimatorSessionId,
+          title: aiProjectName.trim() || undefined,
+        });
+        setQuoteDraft(resQuote.quoteDraft);
+      }
+      const customer = await resolveCustomerFields();
+      const res = await convertEstimatorSessionToProject({
+        workspace: activeWorkspace,
+        userId: user.id,
+        sessionId: estimatorSessionId,
+        createQuoteDocument: true,
+        projectTitle: aiProjectName.trim() || undefined,
+        customerId: customer.customerId,
+        customerName: customer.customerName,
+        customerCompanyName: customer.customerCompanyName,
+        customerContactPersonName: customer.customerContactPersonName,
+        customerEmail: customer.customerEmail,
+        customerPhone: customer.customerPhone,
+        addressText: location.trim() || undefined,
+      });
+      router.push(`/app/projects/${res.projectId}?setup=ai`);
+
+      if (aiUploadedFiles.length > 0) {
+        void (async () => {
+          try {
+            const freshProject = await getProject(res.projectId);
+            if (!freshProject) return;
+            await importAiWizardAttachmentsToProject({
+              projectId: res.projectId,
+              workspace: activeWorkspace,
+              userId: user.id,
+              project: freshProject,
+            });
+          } catch (err) {
+            if (process.env.NODE_ENV === "development") {
+              console.warn("[staveto quote convert] background attachment import", err);
+            }
+          }
+        })();
+      }
+    } catch (err) {
+      setAiGenerateFailure(err);
+    } finally {
+      setAiConfirming(false);
     }
   };
 
@@ -727,9 +891,13 @@ export function NewJobForm() {
           addressText: location.trim() || undefined,
           materialSuggestions: plan.materialSuggestions,
           uploadedFiles: aiUploadedFiles,
+          estimatorSessionId: estimatorSessionId ?? undefined,
         },
         {
-          skipMaterialSuggestions: aiDraftSource === "office",
+          // Always write client materials when estimator produced a richer takeoff.
+          skipMaterialSuggestions:
+            aiDraftSource === "office" &&
+            !(estimatorSessionId && (plan.materialSuggestions?.length ?? 0) >= 5),
           skipAttachmentImport: false,
         }
       );
@@ -1574,6 +1742,8 @@ export function NewJobForm() {
                   projectBrief={aiBrief}
                   extraContext={aiExtraContext}
                   location={location}
+                  jobType={workType ?? undefined}
+                  locale={locale}
                   onProjectNameChange={(v) => {
                     setAiProjectName(v);
                     clearFieldError("aiProjectName");
@@ -1601,6 +1771,8 @@ export function NewJobForm() {
                   generatingWithAttachments={aiUploadedFiles.length > 0}
                   generatingStartedAt={aiGenerateStartedAt}
                   attachmentFileNames={aiUploadedFiles.map((f) => f.fileName)}
+                  attachmentFiles={aiUploadedFiles}
+                  onDraftMaterialsSync={(next) => setAiDraft(next)}
                   confirming={aiConfirming}
                   regenerating={aiRegenerating}
                   refiningKey={aiRefiningKey}
@@ -1637,9 +1809,24 @@ export function NewJobForm() {
                   onAttachmentQuickAction={
                     aiDraftSource === "office" && aiOfficeDraftId
                       ? handleAttachmentQuickAction
-                      : undefined
+                      : isAiEstimatorFlowEnabled()
+                        ? handleAttachmentQuickAction
+                        : undefined
                   }
-                  attachmentQuickActionsDisabled={aiDraftSource !== "office" || !aiOfficeDraftId}
+                  attachmentQuickActionsDisabled={aiRegenerating || estimatorBusy}
+                  estimatorSessionId={estimatorSessionId}
+                  estimatorFacts={estimatorFacts}
+                  estimateLines={estimateLines}
+                  quoteDraft={quoteDraft}
+                  estimatorBusy={estimatorBusy}
+                  estimatorFallbackReason={estimatorFallbackReason}
+                  onBuildEstimate={
+                    estimatorSessionId ? () => handleBuildEstimate() : undefined
+                  }
+                  onBuildQuote={estimatorSessionId ? () => handleBuildQuote() : undefined}
+                  onCreateQuoteProject={
+                    estimatorSessionId ? () => handleCreateQuoteProject() : undefined
+                  }
                   onContinueManual={handleContinueManual}
                   onConfirm={
                     aiReviewMode === "draft" && aiDraftSource

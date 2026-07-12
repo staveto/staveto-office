@@ -121,16 +121,26 @@ export function prepareGeminiDraftForValidation(value: unknown): unknown {
 
   if (draft.projectFacts && typeof draft.projectFacts === "object") {
     const facts = { ...(draft.projectFacts as Record<string, unknown>) };
-    if (facts.totalKnownAreaM2 !== undefined) {
-      facts.totalKnownAreaM2 = coerceLocalizedQuantity(facts.totalKnownAreaM2);
-    }
     if (Array.isArray(facts.rooms)) {
       facts.rooms = facts.rooms.map((room) => {
         if (!room || typeof room !== "object") return room;
         const row = { ...(room as Record<string, unknown>) };
-        if (row.areaM2 !== undefined) row.areaM2 = coerceLocalizedQuantity(row.areaM2);
+        if (row.areaM2 === null || row.areaM2 === undefined || row.areaM2 === "") {
+          delete row.areaM2;
+        } else {
+          const coerced = coerceLocalizedQuantity(row.areaM2);
+          if (coerced == null) delete row.areaM2;
+          else row.areaM2 = coerced;
+        }
         return row;
       });
+    }
+    if (facts.totalKnownAreaM2 === null || facts.totalKnownAreaM2 === undefined || facts.totalKnownAreaM2 === "") {
+      delete facts.totalKnownAreaM2;
+    } else {
+      const coerced = coerceLocalizedQuantity(facts.totalKnownAreaM2);
+      if (coerced == null) delete facts.totalKnownAreaM2;
+      else facts.totalKnownAreaM2 = coerced;
     }
     draft.projectFacts = facts;
   }

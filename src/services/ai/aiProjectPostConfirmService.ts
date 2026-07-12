@@ -40,6 +40,7 @@ export type AiProjectPostConfirmInput = {
   addressText?: string;
   materialSuggestions?: AiMaterialSuggestion[];
   uploadedFiles?: UploadedAiDraftFile[];
+  estimatorSessionId?: string;
 };
 
 export type AiProjectPostConfirmOptions = {
@@ -98,6 +99,9 @@ export async function enrichProjectAfterAiConfirm(
   const mergedFileIds = [...new Set([...existingFileIds, ...attachedFileIds, ...pathIds])];
   if (mergedFileIds.length > 0) patch.attachedFileIds = mergedFileIds;
   if (input.aiDraftId?.trim()) patch.aiDraftId = input.aiDraftId.trim();
+  if (input.estimatorSessionId?.trim()) {
+    patch.aiEstimatorSessionId = input.estimatorSessionId.trim();
+  }
 
   if (engine.jobWorkflowKind) patch.jobWorkflowKind = engine.jobWorkflowKind;
   if (input.customerId?.trim()) patch.customerId = input.customerId.trim();

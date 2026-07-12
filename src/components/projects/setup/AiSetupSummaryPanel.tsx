@@ -2,15 +2,22 @@
 
 import { useI18n } from "@/i18n/I18nContext";
 import { formatMoney } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type { AiSetupCalculation, AiSetupTotals } from "./aiSetupTypes";
 
 type Props = {
   totals: AiSetupTotals;
   calculation: AiSetupCalculation;
   currency?: string;
+  preliminary?: boolean;
 };
 
-export function AiSetupSummaryPanel({ totals, calculation, currency = "EUR" }: Props) {
+export function AiSetupSummaryPanel({
+  totals,
+  calculation,
+  currency = "EUR",
+  preliminary,
+}: Props) {
   const { t } = useI18n();
 
   return (
@@ -19,7 +26,15 @@ export function AiSetupSummaryPanel({ totals, calculation, currency = "EUR" }: P
         <h3 className="font-bold text-base">{t("projects.aiSetup.summary.title")}</h3>
       </div>
       <div className="px-5 py-4 space-y-3 text-sm">
-        <Row label={t("projects.aiSetup.summary.material")} value={formatMoney(totals.materialCost, currency)} />
+        <Row
+          label={t("projects.aiSetup.summary.material")}
+          value={
+            totals.materialCost <= 0
+              ? t("projects.aiSetup.material.priceMissingShort")
+              : formatMoney(totals.materialCost, currency)
+          }
+          muted={totals.materialCost <= 0}
+        />
         <Row label={t("projects.aiSetup.summary.work")} value={formatMoney(totals.workCost, currency)} />
         <Row label={t("projects.aiSetup.summary.other")} value={formatMoney(totals.otherCosts, currency)} />
         <Row
@@ -42,6 +57,11 @@ export function AiSetupSummaryPanel({ totals, calculation, currency = "EUR" }: P
               {t("projects.aiSetup.price.manualTotalActive")}
             </p>
           ) : null}
+          {preliminary || totals.materialCost <= 0 ? (
+            <p className="text-xs font-semibold text-amber-700">
+              {t("projects.aiSetup.summary.preliminary")}
+            </p>
+          ) : null}
         </div>
       </div>
       <div className="px-5 py-3 bg-[#F6F8FB] border-t border-[#E2E8F0] text-xs text-[#64748B] space-y-1">
@@ -52,11 +72,26 @@ export function AiSetupSummaryPanel({ totals, calculation, currency = "EUR" }: P
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({
+  label,
+  value,
+  muted,
+}: {
+  label: string;
+  value: string;
+  muted?: boolean;
+}) {
   return (
     <div className="flex justify-between gap-3">
       <span className="text-[#64748B]">{label}</span>
-      <span className="font-semibold text-[#0F2A4D] tabular-nums">{value}</span>
+      <span
+        className={cn(
+          "font-semibold tabular-nums",
+          muted ? "text-amber-700" : "text-[#0F2A4D]"
+        )}
+      >
+        {value}
+      </span>
     </div>
   );
 }

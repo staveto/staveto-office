@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertCircle, Loader2, Sparkles } from "lucide-react";
+import { useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nContext";
 import type { AiProjectDraftLocal } from "@/lib/aiProjectDraftLocal";
@@ -12,6 +13,17 @@ import {
   AiDraftReviewWorkspace,
   type AttachmentQuickAction,
 } from "./AiDraftReviewWorkspace";
+import { AiEstimatorReviewPanel } from "./AiEstimatorReviewPanel";
+import { AiEstimatorFlowStatusBanner } from "./AiEstimatorFlowStatusBanner";
+import type {
+  AiEstimateLine,
+  AiEstimatorFacts,
+  AiQuoteDraft,
+} from "@/types/aiEstimator";
+import { isAiEstimatorFlowEnabled } from "@/lib/ai/aiEstimatorFeature";
+import { foldLegendIntoEstimatorFacts } from "@/lib/ai/foldLegendIntoEstimatorFacts";
+import { syncDraftMaterialsFromEstimatorFacts } from "@/lib/ai/enrichPlanWithEstimatorFacts";
+import type { UploadedAiDraftFile } from "@/services/ai/aiDraftFiles";
 
 export type AiDraftReviewMode = "placeholder" | "draft" | "generating";
 
@@ -43,9 +55,20 @@ type Props = {
   generatingWithAttachments?: boolean;
   generatingStartedAt?: number | null;
   attachmentFileNames?: string[];
+  attachmentFiles?: UploadedAiDraftFile[];
   generateErrorDetail?: string | null;
   onAttachmentQuickAction?: (action: AttachmentQuickAction) => Promise<void>;
   attachmentQuickActionsDisabled?: boolean;
+  estimatorSessionId?: string | null;
+  estimatorFacts?: AiEstimatorFacts | null;
+  estimateLines?: AiEstimateLine[];
+  quoteDraft?: AiQuoteDraft | null;
+  estimatorBusy?: boolean;
+  onBuildEstimate?: () => Promise<void>;
+  onBuildQuote?: () => Promise<void>;
+  onCreateQuoteProject?: () => Promise<void>;
+  estimatorFallbackReason?: string | null;
+  onDraftMaterialsSync?: (draft: AiProjectDraftLocal) => void;
 };
 
 export function AiDraftReviewPanel({
@@ -72,12 +95,44 @@ export function AiDraftReviewPanel({
   generatingWithAttachments = false,
   generatingStartedAt = null,
   attachmentFileNames = [],
+  attachmentFiles = [],
   generateErrorDetail = null,
   onAttachmentQuickAction,
   attachmentQuickActionsDisabled = false,
+  estimatorSessionId = null,
+  estimatorFacts = null,
+  estimateLines = [],
+  quoteDraft = null,
+  estimatorBusy = false,
+  onBuildEstimate,
+  onBuildQuote,
+  onCreateQuoteProject,
+  estimatorFallbackReason = null,
+  onDraftMaterialsSync,
 }: Props) {
   const { t } = useI18n();
   const canGenerate = isWizardAiGenerationEnabled();
+  const displayFacts = useMemo(
+    () => (estimatorFacts ? foldLegendIntoEstimatorFacts(estimatorFacts) : null),
+    [estimatorFacts]
+  );
+  const showEstimator =
+    isAiEstimatorFlowEnabled() && !!estimatorSessionId && !!displayFacts;
+
+  const workspaceDraft = useMemo(() => {
+    if (!draft || !displayFacts) return draft;
+    return syncDraftMaterialsFromEstimatorFacts(draft, displayFacts);
+  }, [draft, displayFacts]);
+
+  useEffect(() => {
+    if (!draft || !displayFacts || !onDraftMaterialsSync) return;
+    const synced = syncDraftMaterialsFromEstimatorFacts(draft, displayFacts);
+    const before = draft.materialSuggestions?.length ?? 0;
+    const after = synced.materialSuggestions?.length ?? 0;
+    if (after > before) onDraftMaterialsSync(synced);
+    // Only re-sync when estimator facts change — not when draft materials update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
+  }, [displayFacts, onDraftMaterialsSync]);
 
   if (mode === "generating") {
     return (
@@ -165,25 +220,84 @@ export function AiDraftReviewPanel({
   }
 
   return (
-    <AiDraftReviewWorkspace
-      draft={draft}
-      confirming={confirming}
-      regenerating={regenerating}
-      refiningKey={refiningKey}
-      generateWarnings={generateWarnings}
-      onProjectTitleChange={(title) => onProjectTitleChange?.(title)}
-      onPhaseChange={onPhaseChange}
-      onPhaseRemove={onPhaseRemove}
-      onTaskChange={onTaskChange}
-      onTaskRemove={onTaskRemove}
-      onMaterialToggle={(materialId, selected) => onMaterialToggle?.(materialId, selected)}
-      onRefine={onRefine ?? (async () => {})}
-      onRegenerate={onRegenerate}
-      onAttachmentQuickAction={onAttachmentQuickAction}
-      attachmentQuickActionsDisabled={attachmentQuickActionsDisabled}
-      onContinueManual={onContinueManual}
-      onConfirm={onConfirm}
-      confirmError={confirmError}
-    />
+    <div className="space-y-5">
+      {isAiEstimatorFlowEnabled() ? (
+        <AiEstimatorFlowStatusBanner
+          fallbackReason={estimatorFallbackReason}
+          estimatorActive={showEstimator}
+        />
+      ) : null}
+      {showEstimator && displayFacts && estimatorSessionId ? (
+        <>
+          <AiEstimatorReviewPanel
+            facts={displayFacts}
+            sessionId={estimatorSessionId}
+            estimateLines={estimateLines}
+            quoteDraft={quoteDraft}
+            busy={estimatorBusy || regenerating || confirming}
+            onBuildEstimate={onBuildEstimate}
+            onBuildQuote={onBuildQuote}
+            onCreateQuoteProject={onCreateQuoteProject}
+            onCreateProjectOnly={onConfirm}
+            attachmentFileNames={attachmentFileNames}
+            attachmentFiles={attachmentFiles}
+          />
+          <details className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3">
+            <summary className="cursor-pointer text-sm font-medium text-foreground hover:text-[var(--po-primary,#e06737)]">
+              {t("projects.aiEstimator.cockpit.showExecutionDraft")}
+            </summary>
+            <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
+              {t("projects.aiEstimator.cockpit.executionDraftHint")}
+            </p>
+            <div className="mt-4">
+              <AiDraftReviewWorkspace
+                draft={workspaceDraft ?? draft!}
+                confirming={confirming}
+                regenerating={regenerating}
+                refiningKey={refiningKey}
+                generateWarnings={generateWarnings}
+                onProjectTitleChange={(title) => onProjectTitleChange?.(title)}
+                onPhaseChange={onPhaseChange}
+                onPhaseRemove={onPhaseRemove}
+                onTaskChange={onTaskChange}
+                onTaskRemove={onTaskRemove}
+                onMaterialToggle={(materialId, selected) =>
+                  onMaterialToggle?.(materialId, selected)
+                }
+                onRefine={onRefine ?? (async () => {})}
+                onRegenerate={onRegenerate}
+                onAttachmentQuickAction={onAttachmentQuickAction}
+                attachmentQuickActionsDisabled={attachmentQuickActionsDisabled}
+                onContinueManual={onContinueManual}
+                onConfirm={onConfirm}
+                confirmError={confirmError}
+                compactNotices
+              />
+            </div>
+          </details>
+        </>
+      ) : (
+        <AiDraftReviewWorkspace
+          draft={draft}
+          confirming={confirming}
+          regenerating={regenerating}
+          refiningKey={refiningKey}
+          generateWarnings={generateWarnings}
+          onProjectTitleChange={(title) => onProjectTitleChange?.(title)}
+          onPhaseChange={onPhaseChange}
+          onPhaseRemove={onPhaseRemove}
+          onTaskChange={onTaskChange}
+          onTaskRemove={onTaskRemove}
+          onMaterialToggle={(materialId, selected) => onMaterialToggle?.(materialId, selected)}
+          onRefine={onRefine ?? (async () => {})}
+          onRegenerate={onRegenerate}
+          onAttachmentQuickAction={onAttachmentQuickAction}
+          attachmentQuickActionsDisabled={attachmentQuickActionsDisabled}
+          onContinueManual={onContinueManual}
+          onConfirm={onConfirm}
+          confirmError={confirmError}
+        />
+      )}
+    </div>
   );
 }

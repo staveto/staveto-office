@@ -230,7 +230,7 @@ export async function collectDraftFilesForGeneration(params: {
   };
 }
 
-const MAX_INLINE_ATTACHMENT_BYTES = 7 * 1024 * 1024;
+const MAX_INLINE_ATTACHMENT_BYTES = 18 * 1024 * 1024;
 const VISION_MAX_EDGE_PX = 1600;
 
 export function isVisualAttachmentMime(mime: string): boolean {

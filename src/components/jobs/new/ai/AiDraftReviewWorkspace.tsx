@@ -5,6 +5,7 @@ import { Loader2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nContext";
 import type { AiProjectDraftLocal } from "@/lib/aiProjectDraftLocal";
+import { cn } from "@/lib/utils";
 import { njNavPrimary, njNavSecondary, nj } from "../newJobFormStyles";
 import { AiDraftAssistantPanel } from "./AiDraftAssistantPanel";
 import { AiDraftEditNodeDialog, type AiDraftEditTarget } from "./AiDraftEditNodeDialog";
@@ -40,6 +41,8 @@ type Props = {
   onContinueManual: () => void;
   onConfirm?: () => void;
   confirmError?: string | null;
+  /** When true, hide duplicate "nothing saved" banners (estimator sticky bar shows them). */
+  compactNotices?: boolean;
 };
 
 export function AiDraftReviewWorkspace({
@@ -61,6 +64,7 @@ export function AiDraftReviewWorkspace({
   onContinueManual,
   onConfirm,
   confirmError = null,
+  compactNotices = false,
 }: Props) {
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState<AiReviewTab>("tasks");
@@ -214,21 +218,18 @@ export function AiDraftReviewWorkspace({
 
   return (
     <div className="space-y-4" data-testid="ai-review-workspace">
-      <div
-        className={nj.infoBox}
-        role="status"
-      >
-        {t("projects.new.ai.safetyNotice")}
-      </div>
+      {!compactNotices ? (
+        <div className={nj.infoBox} role="status">
+          {t("projects.new.ai.review.unsavedNotice")}
+        </div>
+      ) : null}
 
       <div
-        className={nj.infoBox}
-        role="status"
+        className={cn(
+          "grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] lg:items-start",
+          !compactNotices && "lg:items-stretch lg:min-h-[480px]"
+        )}
       >
-        {t("projects.new.ai.review.unsavedNotice")}
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] lg:items-stretch lg:min-h-[480px]">
         <AiDraftPlanPanel
           draft={draft}
           activeTab={activeTab}
@@ -244,6 +245,7 @@ export function AiDraftReviewWorkspace({
           onEditTask={openEditTask}
           refiningKey={refiningKey}
           generateWarnings={generateWarnings}
+          flatScroll={compactNotices}
         />
 
         <AiDraftAssistantPanel
@@ -252,6 +254,7 @@ export function AiDraftReviewWorkspace({
           disabled={busy}
           onRefine={handleRefine}
           onEditManually={handleEditManually}
+          flatScroll={compactNotices}
         />
       </div>
 

@@ -21,6 +21,8 @@ export type AiSetupMaterialRow = {
   customerVisible?: boolean;
   sourceNote?: string;
   confidence?: "low" | "medium" | "high";
+  /** Display group for estimator clarity (socket / switch / lighting / …). */
+  group?: string;
 };
 
 export type AiSetupWorkEstimate = {

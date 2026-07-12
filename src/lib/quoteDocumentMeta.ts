@@ -12,13 +12,14 @@ import {
   resolveAiSetupCalculation,
   resolveSetupMaterialRows,
   workEstimateFromQuoteItems,
-  type AiSetupTotals,
 } from "@/components/projects/setup/aiSetupHelpers";
+import type { AiSetupTotals } from "@/components/projects/setup/aiSetupTypes";
 import { resolveQuoteCurrency } from "@/lib/workspace/countryConfig";
 import { normalizeQuotePrintCategory } from "@/lib/quotePrint";
 import type { MaterialSuggestionDoc } from "@/services/materials/types";
 import { buildProjectQuoteDisplayLines } from "./projectQuoteDraft";
 import { isCustomerVisibleItemName } from "./quoteCustomerItems";
+import { sanitizeCustomerScopeOfWork } from "./quoteCustomerScope";
 
 export type QuoteContactPerson = {
   name?: string;
@@ -81,7 +82,13 @@ export function parseQuoteDocumentMeta(notes?: string | null): QuoteDocumentMeta
   if (!notes?.trim()) return {};
   try {
     const parsed = JSON.parse(notes) as QuoteDraftNotesPayload;
-    return parsed.quoteDocumentMeta ?? {};
+    const meta = { ...(parsed.quoteDocumentMeta ?? {}) };
+    if (meta.scopeOfWork) {
+      const cleaned = sanitizeCustomerScopeOfWork(meta.scopeOfWork);
+      if (cleaned) meta.scopeOfWork = cleaned;
+      else delete meta.scopeOfWork;
+    }
+    return meta;
   } catch {
     return {};
   }
@@ -125,7 +132,7 @@ export function buildScopeOfWorkText(
   docMeta: QuoteDocumentMeta,
   t: (key: string) => string
 ): string {
-  const saved = docMeta.scopeOfWork?.trim();
+  const saved = sanitizeCustomerScopeOfWork(docMeta.scopeOfWork);
   if (saved) return saved;
 
   const fromTasks = uniqueTaskScopeLines(tasks);
@@ -133,7 +140,7 @@ export function buildScopeOfWorkText(
     return fromTasks.map((line) => `✓ ${line}`).join("\n");
   }
 
-  const excerpt = project.customerRequest?.trim();
+  const excerpt = sanitizeCustomerScopeOfWork(project.customerRequest);
   if (excerpt) {
     const short =
       excerpt.length > 420 ? `${excerpt.slice(0, 417).trim()}…` : excerpt;
@@ -281,7 +288,7 @@ export function buildQuotePrintContextFromQuote(params: {
   return {
     scopeOfWork: project
       ? buildScopeOfWorkText(project, [], docMeta, t)
-      : docMeta.scopeOfWork?.trim() || "",
+      : sanitizeCustomerScopeOfWork(docMeta.scopeOfWork) || "",
     conditions: buildConditionsText(docMeta, t),
     executionPeriod: docMeta.executionPeriod?.trim() || undefined,
     paymentTerms: docMeta.paymentTerms?.trim() || undefined,

@@ -80,6 +80,22 @@ export function AiSetupWorkStep({ work, onChange, onContinue, saving, currency =
           />
         </div>
 
+        <div className="rounded-xl border border-[#CBD5E1] bg-[#F8FAFC] px-4 py-3 space-y-2">
+          <p className="text-xs font-bold uppercase tracking-wide text-[#64748B]">
+            {t("projects.aiSetup.work.checklistTitle")}
+          </p>
+          <ul className="text-sm text-[#334155] space-y-1 list-disc pl-5">
+            <li>{t("projects.aiSetup.work.check.chasing")}</li>
+            <li>{t("projects.aiSetup.work.check.cabling")}</li>
+            <li>{t("projects.aiSetup.work.check.board")}</li>
+            <li>{t("projects.aiSetup.work.check.points")}</li>
+            <li>{t("projects.aiSetup.work.check.testing")}</li>
+          </ul>
+          <p className="text-xs text-[#64748B] leading-relaxed">
+            {t("projects.aiSetup.work.checklistHint")}
+          </p>
+        </div>
+
         <div className="rounded-xl bg-[#F6F8FB] px-4 py-3 flex justify-between items-center">
           <span className="text-sm font-semibold text-[#64748B]">{t("projects.aiSetup.work.subtotal")}</span>
           <span className="text-lg font-bold text-[#0F2A4D] tabular-nums">

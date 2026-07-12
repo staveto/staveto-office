@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +15,10 @@ type Props = {
   onContinue: () => void;
   saving?: boolean;
   currency?: string;
+  /** Product sourcing panel (feature-flagged by parent). */
+  productSourcingSlot?: ReactNode;
+  pricingBlocked?: boolean;
+  pricingBlockReasons?: string[];
 };
 
 export function AiSetupPriceStep({
@@ -23,6 +28,9 @@ export function AiSetupPriceStep({
   onContinue,
   saving,
   currency = "EUR",
+  productSourcingSlot,
+  pricingBlocked,
+  pricingBlockReasons = [],
 }: Props) {
   const { t } = useI18n();
   const set = (patch: Partial<AiSetupCalculation>) => onChange({ ...calculation, ...patch });
@@ -34,6 +42,20 @@ export function AiSetupPriceStep({
         <p className="mt-1 text-sm text-[#475569] leading-relaxed">{t("projects.aiSetup.price.lead")}</p>
       </div>
 
+      {productSourcingSlot}
+
+      {pricingBlocked && pricingBlockReasons.length > 0 ? (
+        <div className="rounded-xl border-2 border-amber-400 bg-amber-50 px-4 py-3 space-y-2" role="status">
+          <p className="text-sm font-bold text-amber-950">{t("products.sourcing.notReady")}</p>
+          <ul className="text-sm text-amber-900 list-disc pl-5 space-y-1">
+            {pricingBlockReasons.slice(0, 8).map((r) => (
+              <li key={r}>{r}</li>
+            ))}
+          </ul>
+          <p className="text-xs text-amber-800">{t("products.sourcing.notReadyHint")}</p>
+        </div>
+      ) : null}
+
       <div className="rounded-2xl border-2 border-[#CBD5E1] bg-white p-5 sm:p-6 space-y-4 max-w-lg">
         <PriceField
           label={t("projects.aiSetup.summary.material")}
@@ -42,6 +64,11 @@ export function AiSetupPriceStep({
           onOverride={(v) => set({ materialTotalOverride: v })}
           currency={currency}
         />
+        {totals.materialCost <= 0 ? (
+          <p className="text-xs font-semibold text-amber-700">
+            {t("projects.aiSetup.material.priceMissingShort")} — {t("products.sourcing.zeroGuard")}
+          </p>
+        ) : null}
         <PriceField
           label={t("projects.aiSetup.summary.work")}
           computed={totals.workCost}

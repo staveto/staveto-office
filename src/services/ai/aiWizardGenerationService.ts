@@ -34,6 +34,14 @@ import {
   type CallableErrorKind,
 } from "./projectDraftService";
 import {
+  generateEstimatorFacts,
+  isAiEstimatorFlowEnabled,
+  isEstimatorCallableUnavailable,
+} from "./aiEstimatorService";
+import { enrichAiPlanWithEstimatorFacts } from "@/lib/ai/enrichPlanWithEstimatorFacts";
+import { logAiEstimatorDebug } from "@/lib/ai/aiEstimatorFeature";
+import type { AiEstimatorFacts } from "@/types/aiEstimator";
+import {
   createProjectFromAiPlan,
   generateProjectStructure,
 } from "./mobileAiProjectService";
@@ -60,6 +68,7 @@ export type AiWizardGenerateInput = {
   attachedFileIds?: string[];
   documentStoragePaths?: string[];
   uploadedFiles?: UploadedAiDraftFile[];
+  countryCode?: string | null;
 };
 
 export type AiWizardGenerateResult = {
@@ -68,6 +77,9 @@ export type AiWizardGenerateResult = {
   officeDraftId?: string;
   warnings?: string[];
   attachmentProcessing?: AttachmentProcessing;
+  estimatorSessionId?: string;
+  estimatorFacts?: AiEstimatorFacts;
+  estimatorFallbackReason?: string;
 };
 
 export function isWizardAiGenerationEnabled(): boolean {
@@ -266,8 +278,94 @@ export async function generateWizardAiPlan(
     throw new Error("AI_GENERATION_DISABLED");
   }
 
+  let estimatorSessionId: string | undefined;
+  let estimatorFacts: AiEstimatorFacts | undefined;
+  let estimatorFallbackReason: string | undefined;
+
+  if (isAiEstimatorFlowEnabled()) {
+    logAiEstimatorDebug("wizard_estimator_enabled", { attempt: true });
+    try {
+      const brief = buildAiProjectBriefForGenerate(input.projectTitle, input.projectBrief);
+      const contextBlock = appendContactToAiProjectDetails(
+        buildUnifiedAiProjectDetails({
+          archetype: input.workType,
+          extraContext: input.extraContext,
+          location: input.location,
+        }),
+        {
+          contactMode: input.contactMode,
+          selectedCustomer: input.selectedCustomer,
+          newContactName: input.newContactName,
+          newContactType: input.newContactType,
+          newContactEmail: input.newContactEmail,
+          newContactPhone: input.newContactPhone,
+          newContactAddress: input.newContactAddress,
+        }
+      );
+      const description = [brief, contextBlock].filter(Boolean).join("\n\n");
+      const factsRes = await generateEstimatorFacts({
+        workspace: input.workspace,
+        userId: input.userId,
+        jobType: input.workType,
+        description,
+        location: input.location?.trim() || undefined,
+        language: localeToDraftLanguage(input.locale),
+        attachedFileIds: resolveOfficeAttachedFileIds(input),
+        documentStoragePaths: input.documentStoragePaths?.length
+          ? input.documentStoragePaths
+          : undefined,
+        customerName:
+          input.selectedCustomer?.name?.trim() ||
+          input.newContactName.trim() ||
+          undefined,
+        countryCode: input.countryCode,
+      });
+      estimatorSessionId = factsRes.sessionId;
+      estimatorFacts = factsRes.facts;
+      logAiEstimatorDebug("wizard_facts_ok", {
+        sessionId: estimatorSessionId,
+        extracted: estimatorFacts.extractedItems.length,
+        rooms: estimatorFacts.rooms.length,
+        diagnostics: factsRes.diagnostics,
+      });
+      if (process.env.NODE_ENV === "development") {
+        console.info("[ai-estimator] AI Estimator Flow active", {
+          sessionId: estimatorSessionId,
+          extracted: estimatorFacts.extractedItems.length,
+        });
+      }
+    } catch (err) {
+      estimatorFallbackReason = isEstimatorCallableUnavailable(err)
+        ? "estimator_not_deployed"
+        : extractCallableErrorMessage(err) || "estimator_failed";
+      logAiEstimatorDebug("wizard_facts_fallback", {
+        reason: estimatorFallbackReason,
+      });
+      if (process.env.NODE_ENV === "development") {
+        console.warn(
+          `[ai-estimator] Classic AI fallback used because: ${estimatorFallbackReason}`
+        );
+      }
+    }
+  }
+
   try {
-    return await generateViaOffice(input);
+    const office = await generateViaOffice(input);
+    const plan =
+      estimatorFacts ? enrichAiPlanWithEstimatorFacts(office.plan, estimatorFacts) : office.plan;
+    return {
+      ...office,
+      plan,
+      estimatorSessionId,
+      estimatorFacts,
+      estimatorFallbackReason,
+      warnings: [
+        ...(office.warnings ?? []),
+        ...(estimatorFallbackReason
+          ? [`Estimator unavailable (${estimatorFallbackReason}); using classic draft.`]
+          : []),
+      ],
+    };
   } catch (err) {
     if (isCallableUnavailable(err)) {
       if (process.env.NODE_ENV === "development") {
@@ -275,7 +373,16 @@ export async function generateWizardAiPlan(
           message: extractCallableErrorMessage(err),
         });
       }
-      return generateViaMobile(input);
+      const mobile = await generateViaMobile(input);
+      return {
+        ...mobile,
+        plan: estimatorFacts
+          ? enrichAiPlanWithEstimatorFacts(mobile.plan, estimatorFacts)
+          : mobile.plan,
+        estimatorSessionId,
+        estimatorFacts,
+        estimatorFallbackReason: estimatorFallbackReason ?? "office_unavailable",
+      };
     }
     throw err;
   }

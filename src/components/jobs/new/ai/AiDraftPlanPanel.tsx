@@ -43,6 +43,8 @@ type Props = {
   onEditTask: (phaseId: string, taskId: string) => void;
   refiningKey?: string | null;
   generateWarnings?: string[];
+  /** When true, grow with page scroll instead of nested overflow panes. */
+  flatScroll?: boolean;
 };
 
 const TAB_KEYS: AiReviewTab[] = ["overview", "tasks", "materials", "findings"];
@@ -62,6 +64,7 @@ export function AiDraftPlanPanel({
   onEditTask,
   refiningKey,
   generateWarnings = [],
+  flatScroll = false,
 }: Props) {
   const { t } = useI18n();
   const phaseCount = draft.phases.length;
@@ -105,8 +108,14 @@ export function AiDraftPlanPanel({
   );
 
   return (
-    <div className={cn(nj.workspaceShell, "bg-white dark:bg-[#1E293B]")} data-testid="ai-plan-panel">
-      <div className={nj.workspaceMutedHeader}>
+    <div
+      className={cn(
+        nj.workspaceShell,
+        "bg-white dark:bg-[#1E293B]",
+        flatScroll && "min-h-0 !overflow-visible"
+      )}
+      data-testid="ai-plan-panel"
+    >      <div className={nj.workspaceMutedHeader}>
         <p className="text-sm font-bold text-[#0F2A4D] dark:text-[#F8FAFC]">
           {t("projects.new.ai.workspace.structureSummary", {
             phaseCount: String(phaseCount),
@@ -153,8 +162,12 @@ export function AiDraftPlanPanel({
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-[280px]">
-        {activeTab === "overview" ? (
+      <div
+        className={cn(
+          "p-4 space-y-4",
+          flatScroll ? "min-h-0" : "flex-1 overflow-y-auto min-h-[280px]"
+        )}
+      >        {activeTab === "overview" ? (
           <>
             <div className="space-y-2">
               <label htmlFor="ai-workspace-project-title" className={nj.label}>

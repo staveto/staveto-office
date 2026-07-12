@@ -8,8 +8,16 @@ import {
   handleImportProjectDraftAttachments,
   handleUpdateProjectDraftWithAI,
 } from "./handlers";
+import {
+  handleConvertEstimatorSessionToProject,
+  handleGenerateEstimateDraft,
+  handleGenerateEstimatorFacts,
+  handleGenerateQuoteDraftFromEstimate,
+  handleSyncEstimatorMaterialsToProject,
+} from "./estimator/estimatorHandlers";
 import { handleCreateBusinessOrg } from "./businessOrg";
 import { handleAskManagerAgent } from "./managerAgent";
+import { handleImproveProjectBrief } from "./aiBrief/improveBrief";
 import { handleGlobalSearch } from "./search/globalSearch";
 import { gmailBuildAuthUrl, gmailDisconnect, gmailOAuthCallback } from "./gmail";
 import { isGeminiOverloadedError, isGeminiQuotaError } from "./gemini";
@@ -85,6 +93,67 @@ export const generateProjectDraft = onCall(
   }
 );
 
+/** AI Estimator / Angebotsagent — additive; clients fall back to generateProjectDraft if unavailable. */
+export const generateEstimatorFacts = onCall(
+  { ...aiDraftCallableOptions, secrets: ["GEMINI_API_KEY"] },
+  async (request) => {
+    try {
+      return await handleGenerateEstimatorFacts(request.auth?.uid, request.data);
+    } catch (e) {
+      mapError(e);
+    }
+  }
+);
+
+export const generateEstimateDraft = onCall(
+  { ...aiDraftCallableOptions, secrets: ["GEMINI_API_KEY"] },
+  async (request) => {
+    try {
+      return await handleGenerateEstimateDraft(request.auth?.uid, request.data);
+    } catch (e) {
+      mapError(e);
+    }
+  }
+);
+
+export const generateQuoteDraftFromEstimate = onCall(
+  { ...aiDraftCallableOptions, secrets: ["GEMINI_API_KEY"] },
+  async (request) => {
+    try {
+      return await handleGenerateQuoteDraftFromEstimate(request.auth?.uid, request.data);
+    } catch (e) {
+      mapError(e);
+    }
+  }
+);
+
+export const convertEstimatorSessionToProject = onCall(
+  { ...callableOptions, timeoutSeconds: 120, memory: "512MiB" as const },
+  async (request) => {
+    try {
+      return await handleConvertEstimatorSessionToProject(request.auth?.uid, request.data);
+    } catch (e) {
+      mapError(e);
+    }
+  }
+);
+
+export const syncEstimatorMaterialsToProject = onCall(
+  {
+    ...callableOptions,
+    timeoutSeconds: 300,
+    memory: "1GiB" as const,
+    secrets: ["GEMINI_API_KEY"],
+  },
+  async (request) => {
+    try {
+      return await handleSyncEstimatorMaterialsToProject(request.auth?.uid, request.data);
+    } catch (e) {
+      mapError(e);
+    }
+  }
+);
+
 export const updateProjectDraftWithAI = onCall(
   { ...aiDraftCallableOptions, secrets: ["GEMINI_API_KEY"] },
   async (request) => {
@@ -134,6 +203,17 @@ export const askManagerAgent = onCall(
   async (request) => {
     try {
       return await handleAskManagerAgent(request.auth?.uid, request.data);
+    } catch (e) {
+      mapError(e);
+    }
+  }
+);
+
+export const improveProjectBrief = onCall(
+  { ...aiDraftCallableOptions, secrets: ["GEMINI_API_KEY"], timeoutSeconds: 120 },
+  async (request) => {
+    try {
+      return await handleImproveProjectBrief(request.auth?.uid, request.data);
     } catch (e) {
       mapError(e);
     }

@@ -104,18 +104,61 @@ export function newLocalId(): string {
   return `local_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** Group key for clear estimator material list. */
+export function inferMaterialGroup(name: string, categoryHint?: string | null): string {
+  const cat = (categoryHint ?? "").toLowerCase();
+  if (cat === "socket" || cat === "switch" || cat === "lighting" || cat === "led_strip") {
+    return cat === "led_strip" ? "lighting" : cat;
+  }
+  if (cat === "cable" || cat === "distribution_board" || cat === "installation_material") {
+    return cat === "installation_material" ? "install" : cat;
+  }
+  if (cat === "labor" || cat === "travel") return "labor";
+  const n = name.toLowerCase();
+  if (/zásuv|zasuv|socket|schuko/.test(n)) return "socket";
+  if (/vypína|vypina|prepína|switch|stmieva/.test(n)) return "switch";
+  if (/led|sviet|osvet|pás|pas|liš|podsviet|visiace|nástenn|stropn/.test(n)) return "lighting";
+  if (/kábel|kabel|cyky|nym|cable|kabeláž/.test(n)) return "cable";
+  if (/rozvád|rozvad|krabica/.test(n)) return "install";
+  if (/dráž|draz|montáž|montaz|zapojen|skúšk|skusk/.test(n)) return "labor";
+  return "other";
+}
+
+export function materialGroupLabelKey(group: string): string {
+  const map: Record<string, string> = {
+    socket: "projects.aiSetup.material.group.socket",
+    switch: "projects.aiSetup.material.group.switch",
+    lighting: "projects.aiSetup.material.group.lighting",
+    cable: "projects.aiSetup.material.group.cable",
+    install: "projects.aiSetup.material.group.install",
+    labor: "projects.aiSetup.material.group.labor",
+    other: "projects.aiSetup.material.group.other",
+  };
+  return map[group] ?? map.other!;
+}
+
 export function materialRowsFromSuggestions(suggestions: MaterialSuggestionDoc[]): AiSetupMaterialRow[] {
   return suggestions.map((s) => ({
     id: newLocalId(),
     suggestionId: s.id,
     name: s.name,
-    qty: s.suggestedQuantity && s.suggestedQuantity > 0 ? s.suggestedQuantity : 1,
+    qty:
+      s.suggestedQuantity && s.suggestedQuantity > 0
+        ? s.suggestedQuantity
+        : /quantityMissing|počet ešte nie|nie je spočítan/i.test(
+              `${s.sourceNote ?? ""} ${s.description ?? ""}`
+            )
+          ? 0
+          : s.suggestedQuantity === 0
+            ? 0
+            : 1,
     unit: normalizeSetupUnit(s.unit),
     price: s.estimatedUnitPrice ?? 0,
     included: s.status !== "rejected",
     customerVisible: isCustomerVisibleItemName(s.name),
     sourceNote: s.sourceNote?.trim() || s.description?.trim() || undefined,
     confidence: s.confidence,
+    group: inferMaterialGroup(s.name, s.category),
   }));
 }
 
@@ -131,11 +174,13 @@ export function materialRowsFromProjectMaterials(materials: ProjectMaterialDoc[]
   return materials.map((m) => ({
     id: newLocalId(),
     name: m.name,
-    qty: m.quantity > 0 ? m.quantity : 1,
+    qty: m.quantity > 0 ? m.quantity : 0,
     unit: normalizeSetupUnit(m.unit),
     price: m.unitPrice ?? 0,
     included: true,
     customerVisible: isCustomerVisibleItemName(m.name),
+    sourceNote: m.notes?.trim() || undefined,
+    group: inferMaterialGroup(m.name),
   }));
 }
 
@@ -189,9 +234,13 @@ export function resolveSetupMaterialRows(
   suggestions: MaterialSuggestionDoc[],
   projectMaterials: ProjectMaterialDoc[]
 ): AiSetupMaterialRow[] {
-  const fromQuote = materialRowsFromQuoteItems(quoteItems);
-  const fromSuggestions = materialRowsFromSuggestions(suggestions);
-  const fromProject = materialRowsFromProjectMaterials(projectMaterials);
+  const fromQuote = materialRowsFromQuoteItems(quoteItems).filter((r) => r.name.trim());
+  const fromSuggestions = materialRowsFromSuggestions(suggestions).filter((r) =>
+    r.name.trim()
+  );
+  const fromProject = materialRowsFromProjectMaterials(projectMaterials).filter((r) =>
+    r.name.trim()
+  );
   const aiSource =
     fromProject.length >= fromSuggestions.length ? fromProject : fromSuggestions;
 
@@ -221,6 +270,7 @@ function mergeQuoteRowsWithAiHints(
       suggestionId: row.suggestionId ?? ai.suggestionId,
       sourceNote: row.sourceNote?.trim() || ai.sourceNote,
       confidence: row.confidence ?? ai.confidence,
+      group: row.group ?? ai.group,
     };
   });
 
@@ -236,7 +286,7 @@ export function materialRowsFromQuoteItems(items: QuoteDraftItemDoc[]): AiSetupM
       id: i.id,
       quoteItemId: i.id,
       name: i.name,
-      qty: i.qty,
+      qty: i.qty > 0 ? i.qty : 0,
       unit: normalizeSetupUnit(i.unit),
       price: i.unitPrice,
       included: true,
@@ -246,6 +296,8 @@ export function materialRowsFromQuoteItems(items: QuoteDraftItemDoc[]): AiSetupM
           : i.customerVisible === true
             ? true
             : isCustomerVisibleItemName(i.name),
+      sourceNote: i.note?.trim() || undefined,
+      group: inferMaterialGroup(i.name),
     }));
 }
 

@@ -83,9 +83,10 @@ Material rules:
 
 List each material once only. Do not repeat the same item across materials[] and offerPreparation.suggestedLineItems.
 Avoid umbrella duplicates (e.g. do not list both "Elektrokabel" and "Elektromaterial").
-Up to 20 material suggestions.
+Up to 60 material suggestions for technical documents (prefer row-level detail over generic categories).
+Prefer not merging distinct LED strip / lighting rows across rooms.
 
-Up to 8 phases and 10 tasks per phase.
+Up to 12 phases and 12 tasks per phase when the scope is complex.
 Prefer short task titles and brief descriptions with estimatedDuration when inferrable.
 
 Set source.creationMethod to "ai" and source.attachedFileIds to the IDs provided in context if any.

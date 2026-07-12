@@ -146,8 +146,8 @@ export function sanitizeAiProjectPlanFromModel(data: unknown): unknown {
   return obj;
 }
 
-const MAX_AI_PHASES = 8;
-const MAX_AI_TASKS_PER_PHASE = 10;
+const MAX_AI_PHASES = 12;
+const MAX_AI_TASKS_PER_PHASE = 12;
 
 /** Keep office draft review within mobile-aligned phase/task limits. */
 export function rebalanceAiPhasesForReview(phases: AiPhase[]): AiPhase[] {

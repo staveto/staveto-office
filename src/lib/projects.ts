@@ -124,6 +124,8 @@ export type ProjectDoc = {
   aiWizardAttachmentPaths?: string[];
   /** Office AI draft id (workspaces/.../projectDrafts) for attachment recovery. */
   aiDraftId?: string;
+  /** Estimator session used when creating this project (materials repair). */
+  aiEstimatorSessionId?: string;
   /** Mobile: crew assigned to job (read-only on web). */
   assignedMemberIds?: string[];
   /** Mobile project cover — Storage URL (projects/{id}/cover/…). */
@@ -233,6 +235,10 @@ export function toProjectDoc(id: string, data: Record<string, unknown>): Project
     aiDraftId: typeof data.aiDraftId === "string" && data.aiDraftId.length > 0
       ? data.aiDraftId
       : undefined,
+    aiEstimatorSessionId:
+      typeof data.aiEstimatorSessionId === "string" && data.aiEstimatorSessionId.length > 0
+        ? data.aiEstimatorSessionId
+        : undefined,
     assignedMemberIds: [
       ...(Array.isArray(data.assignedMemberIds)
         ? (data.assignedMemberIds as string[]).filter((id) => typeof id === "string" && id.length > 0)
@@ -264,15 +270,30 @@ function toQuoteDraftItemDoc(
   const category = data.category === "work" ? "work" : "material";
   const customerVisible =
     typeof data.customerVisible === "boolean" ? data.customerVisible : undefined;
+  const name =
+    (typeof data.name === "string" && data.name.trim()
+      ? data.name
+      : typeof data.title === "string"
+        ? data.title
+        : "") || "";
+  const qty =
+    typeof data.qty === "number" && Number.isFinite(data.qty)
+      ? data.qty
+      : typeof data.quantity === "number" && Number.isFinite(data.quantity)
+        ? data.quantity
+        : 1;
   return {
     id,
     projectId,
     category,
-    name: (data.name as string) ?? "",
-    qty: typeof data.qty === "number" ? data.qty : 1,
+    name,
+    qty,
     unit: (data.unit as string) || "ks",
     unitPrice: typeof data.unitPrice === "number" ? data.unitPrice : 0,
-    note: (data.note as string) || undefined,
+    note:
+      (typeof data.note === "string" && data.note) ||
+      (typeof data.description === "string" && data.description) ||
+      undefined,
     customerVisible,
     createdAt: toStr(data.createdAt),
     updatedAt: toStr(data.updatedAt),

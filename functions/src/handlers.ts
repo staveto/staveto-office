@@ -28,6 +28,7 @@ import {
 } from "./draftAttachmentMerge";
 import { buildGeneratePrompt, buildUpdatePrompt, generateDraftWithGemini, summarizeAttachmentsWithGemini, type GeminiInlineAttachment } from "./gemini";
 import { sanitizeDraftMaterials } from "./materialDedup";
+import { sanitizeForFirestore } from "./utils/firestoreSanitizer";
 import { enrichDraftMaterialSuggestions } from "./materialQuantityFromFacts";
 import { z } from "zod";
 
@@ -69,6 +70,11 @@ if (!admin.apps.length) {
 }
 
 const db = admin.firestore();
+try {
+  db.settings({ ignoreUndefinedProperties: true });
+} catch {
+  // settings() may throw if already configured by another module
+}
 const bucket = admin.storage().bucket();
 
 /** Callable clients may send `null` for omitted fields; normalize before validation. */
@@ -370,28 +376,30 @@ export async function handleGenerateProjectDraft(
     at: Timestamp.now(),
   };
 
-  await draftRef.set({
-    draft,
-    attachmentSummaries: attachmentSummaries.length ? attachmentSummaries : null,
-    attachmentProcessing,
-    attachmentStoragePaths: input.documentStoragePaths ?? [],
-    workspaceId: access.storageKey,
-    orgId: access.orgId ?? null,
-    ownerId: access.isPersonal ? input.userId : null,
-    createdBy: input.userId,
-    jobType: input.jobType,
-    contactMode: input.contactMode,
-    contactId: input.contactId ?? null,
-    newContact: input.newContact ?? null,
-    inputDescription: input.description,
-    location: input.location ?? null,
-    language: input.language,
-    status: "draft",
-    version: 1,
-    chatHistory: [chatMessage],
-    createdAt: FieldValue.serverTimestamp(),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+  await draftRef.set(
+    sanitizeForFirestore({
+      draft,
+      attachmentSummaries: attachmentSummaries.length ? attachmentSummaries : null,
+      attachmentProcessing,
+      attachmentStoragePaths: input.documentStoragePaths ?? [],
+      workspaceId: access.storageKey,
+      orgId: access.orgId ?? null,
+      ownerId: access.isPersonal ? input.userId : null,
+      createdBy: input.userId,
+      jobType: input.jobType,
+      contactMode: input.contactMode,
+      contactId: input.contactId ?? null,
+      newContact: input.newContact ?? null,
+      inputDescription: input.description,
+      location: input.location ?? null,
+      language: input.language,
+      status: "draft",
+      version: 1,
+      chatHistory: [chatMessage],
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    })
+  );
 
   return {
     draftId: draftRef.id,
@@ -453,12 +461,14 @@ export async function handleUpdateProjectDraftWithAI(
     at: Timestamp.now(),
   };
 
-  await draftRef.update({
-    draft,
-    version,
-    chatHistory: FieldValue.arrayUnion(userMsg, assistantMsg),
-    updatedAt: FieldValue.serverTimestamp(),
-  });
+  await draftRef.update(
+    sanitizeForFirestore({
+      draft,
+      version,
+      chatHistory: FieldValue.arrayUnion(userMsg, assistantMsg),
+      updatedAt: FieldValue.serverTimestamp(),
+    })
+  );
 
   return { draft, version };
 }

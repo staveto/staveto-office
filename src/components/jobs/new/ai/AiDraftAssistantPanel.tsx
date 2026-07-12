@@ -23,6 +23,8 @@ type Props = {
   disabled?: boolean;
   onRefine: (changeRequest: string) => Promise<void>;
   onEditManually: () => void;
+  /** When true, grow with page scroll instead of nested overflow panes. */
+  flatScroll?: boolean;
 };
 
 export function AiDraftAssistantPanel({
@@ -31,6 +33,7 @@ export function AiDraftAssistantPanel({
   disabled,
   onRefine,
   onEditManually,
+  flatScroll = false,
 }: Props) {
   const { t } = useI18n();
   const [changeRequest, setChangeRequest] = useState("");
@@ -80,7 +83,10 @@ export function AiDraftAssistantPanel({
         : null;
 
   return (
-    <aside className={cn(nj.workspaceShell)} data-testid="ai-assistant-panel">
+    <aside
+      className={cn(nj.workspaceShell, flatScroll && "min-h-0 !overflow-visible")}
+      data-testid="ai-assistant-panel"
+    >
       <div className={nj.workspaceHeader}>
         <div className="flex items-center gap-2">
           <Sparkles className="size-4 text-[#E95F2A] shrink-0" aria-hidden />
@@ -93,7 +99,7 @@ export function AiDraftAssistantPanel({
         </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className={cn("p-4 space-y-4", !flatScroll && "flex-1 overflow-y-auto")}>
         {!selection ? (
           <div className={nj.workspaceEmpty}>
             <p className="text-sm text-[#64748B] dark:text-[#94A3B8] leading-relaxed">

@@ -14,28 +14,45 @@ export function enrichDraftWithAttachmentFindings(
 
   const mergedQuestions = mergeAttachmentMissingQuestions(summaries);
   const rooms = summaries.flatMap((s) =>
-    s.roomsAndAreas.map((r) => ({
-      name: r.roomName,
-      areaM2: r.areaM2,
-    }))
+    s.roomsAndAreas.map((r) => {
+      const room: { name: string; areaM2?: number } = { name: r.roomName };
+      if (typeof r.areaM2 === "number" && Number.isFinite(r.areaM2)) {
+        room.areaM2 = r.areaM2;
+      }
+      return room;
+    })
   );
   const dimensions = summaries.flatMap((s) =>
     s.dimensions.map((d) => ({ label: d.label, value: d.value }))
   );
-  const totalKnownAreaM2 = rooms.reduce((sum, r) => sum + (r.areaM2 ?? 0), 0) || undefined;
+  const areaSum = rooms.reduce((sum, r) => sum + (r.areaM2 ?? 0), 0);
+  const totalKnownAreaM2 = areaSum > 0 ? areaSum : undefined;
 
   const materialSuggestions = [
     ...(draft.materialSuggestions ?? []),
     ...summaries.flatMap((s) =>
-      s.detectedMaterials.map((m) => ({
-        name: m.name,
-        category: m.category ?? "general",
-        quantity: m.quantity,
-        unit: m.unit,
-        confidence: m.confidence,
-        source: "attachment" as const,
-        sourceNote: m.sourceNote,
-      }))
+      s.detectedMaterials.map((m) => {
+        const row: {
+          name: string;
+          category: string;
+          quantity?: number;
+          unit?: string;
+          confidence: typeof m.confidence;
+          source: "attachment";
+          sourceNote?: string;
+        } = {
+          name: m.name,
+          category: m.category ?? "general",
+          confidence: m.confidence,
+          source: "attachment",
+        };
+        if (typeof m.quantity === "number" && Number.isFinite(m.quantity)) {
+          row.quantity = m.quantity;
+        }
+        if (m.unit) row.unit = m.unit;
+        if (m.sourceNote) row.sourceNote = m.sourceNote;
+        return row;
+      })
     ),
   ];
 
@@ -43,15 +60,24 @@ export function enrichDraftWithAttachmentFindings(
     ...new Set([...(draft.clarificationQuestions ?? []), ...mergedQuestions]),
   ];
 
+  const projectFacts: NonNullable<ProjectDraftPayload["projectFacts"]> = {
+    ...(draft.projectFacts ?? {}),
+  };
+  const knownArea = draft.projectFacts?.totalKnownAreaM2 ?? totalKnownAreaM2;
+  if (typeof knownArea === "number" && Number.isFinite(knownArea)) {
+    projectFacts.totalKnownAreaM2 = knownArea;
+  } else {
+    delete projectFacts.totalKnownAreaM2;
+  }
+  projectFacts.rooms = draft.projectFacts?.rooms?.length ? draft.projectFacts.rooms : rooms;
+  projectFacts.dimensions = draft.projectFacts?.dimensions?.length
+    ? draft.projectFacts.dimensions
+    : dimensions;
+
   return {
     ...draft,
     attachmentFindings: summaries,
-    projectFacts: {
-      ...(draft.projectFacts ?? {}),
-      totalKnownAreaM2: draft.projectFacts?.totalKnownAreaM2 ?? totalKnownAreaM2,
-      rooms: draft.projectFacts?.rooms?.length ? draft.projectFacts.rooms : rooms,
-      dimensions: draft.projectFacts?.dimensions?.length ? draft.projectFacts.dimensions : dimensions,
-    },
+    projectFacts,
     materialSuggestions: materialSuggestions.length ? materialSuggestions : draft.materialSuggestions,
     missingQuestions: mergedQuestions.length ? mergedQuestions : draft.missingQuestions,
     clarificationQuestions,

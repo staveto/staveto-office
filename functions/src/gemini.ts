@@ -188,7 +188,7 @@ export async function summarizeAttachmentsWithGemini(
         model: modelName,
         generationConfig: {
           responseMimeType: "application/json",
-          maxOutputTokens: 3072,
+          maxOutputTokens: 6144,
           temperature: 0.1,
         },
       });

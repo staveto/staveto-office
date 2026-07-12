@@ -19,6 +19,7 @@ export default defineConfig({
       "src/lib/projectOverviewViewModel.test.ts",
       "src/services/planning/ganttPlanningService.test.ts",
       "src/lib/ai/**/*.test.ts",
+      "src/lib/products/**/*.test.ts",
     ],
   },
   resolve: {

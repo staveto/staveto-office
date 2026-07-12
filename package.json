@@ -59,6 +59,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "firebase-tools": "^15.18.0",
+    "pdf-lib": "^1.17.1",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^3.2.4"

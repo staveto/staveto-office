@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nContext";
 import type { ProjectDoc } from "@/lib/projects";
+import { parseQuoteDocumentMeta } from "@/lib/quoteDocumentMeta";
+import { sanitizeCustomerScopeOfWork } from "@/lib/quoteCustomerScope";
 import { getProjectWorkType, workTypeLabelKey } from "@/lib/workTypes";
 
 type Props = {
@@ -13,6 +15,24 @@ type Props = {
   materialCount: number;
   onContinue: () => void;
 };
+
+function overviewSummaryText(project: ProjectDoc): string {
+  const fromRequest = project.customerRequest?.trim();
+  if (fromRequest) return fromRequest;
+
+  const scope = sanitizeCustomerScopeOfWork(
+    parseQuoteDocumentMeta(project.quoteDraftNotes)?.scopeOfWork
+  );
+  if (scope) return scope;
+
+  if (!project.quoteDraftNotes?.trim()) return "";
+  try {
+    const parsed = JSON.parse(project.quoteDraftNotes) as { plainNotes?: string };
+    return parsed.plainNotes?.trim() || "";
+  } catch {
+    return "";
+  }
+}
 
 export function AiSetupOverviewStep({
   project,
@@ -28,6 +48,8 @@ export function AiSetupOverviewStep({
     project.customerName?.trim() ||
     t("projects.aiSetup.noCustomer");
   const contactPerson = project.customerContactPersonName?.trim();
+  const address = project.addressText?.trim();
+  const summary = overviewSummaryText(project);
 
   return (
     <div className="space-y-6">
@@ -43,6 +65,9 @@ export function AiSetupOverviewStep({
           {contactPerson ? (
             <Item label={t("projects.aiSetup.field.contactPerson")} value={contactPerson} />
           ) : null}
+          {address ? (
+            <Item label={t("projects.aiSetup.field.address")} value={address} />
+          ) : null}
           {workType ? (
             <Item label={t("projects.aiSetup.field.workType")} value={t(workTypeLabelKey(workType))} />
           ) : null}
@@ -50,12 +75,12 @@ export function AiSetupOverviewStep({
           <Item label={t("projects.aiSetup.field.tasks")} value={String(taskCount)} />
           <Item label={t("projects.aiSetup.field.materials")} value={String(materialCount)} />
         </dl>
-        {project.customerRequest?.trim() ? (
+        {summary ? (
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-[#64748B] mb-1">
               {t("projects.aiSetup.field.summary")}
             </p>
-            <p className="text-sm text-[#334155] leading-relaxed">{project.customerRequest.trim()}</p>
+            <p className="text-sm text-[#334155] leading-relaxed whitespace-pre-wrap">{summary}</p>
           </div>
         ) : null}
         <p className="text-sm text-[#64748B] leading-relaxed border-l-4 border-[#E95F2A]/40 pl-3">
