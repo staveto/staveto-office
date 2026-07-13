@@ -33,6 +33,11 @@ firebase-debug.log
 
 # local test artifacts
 /test-results/
+/.commit-staging/
+# real customer drawing data — local validation fixture only
+/fixtures/ai-estimator/session-facts.json
+/fixtures/ai-estimator/*.pdf
+/reports/ai-estimator/
 
 # env files (can opt-in for committing if needed)
 .env*

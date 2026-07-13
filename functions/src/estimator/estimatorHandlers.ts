@@ -14,6 +14,7 @@ import {
   loadVisualAttachment,
 } from "../files";
 import { extractFactsFromAttachment, extractFactsFromTextOnly, generateEstimateLinesFromFacts, generateQuoteDraftFromFacts } from "./estimatorGemini";
+import { buildEstimatorKnowledgeContext } from "./knowledgeContext";
 import { mergeEstimatorFactsStrict } from "./estimatorMerge";
 import { splitPdfIntoPages } from "./pdfPageSplit";
 import { draftLanguageSchema } from "../draftSchema";
@@ -120,6 +121,20 @@ export async function handleGenerateEstimatorFacts(
   });
 
   const sessionId = db.collection("_").doc().id;
+
+  // Structured knowledge context (symbol aliases, assemblies, labor hints) —
+  // compact, country/trade scoped, built once per session. Never the whole DB.
+  let knowledgeContext = "";
+  try {
+    knowledgeContext = await buildEstimatorKnowledgeContext({
+      countryCode: profile.countryCode,
+      trade: "electrical",
+      orgId: input.companyId ?? undefined,
+    });
+  } catch {
+    knowledgeContext = "";
+  }
+
   const parts: EstimatorFactsPayload[] = [];
   let visionUsed = false;
   let textOnlyUsed = false;
@@ -197,6 +212,7 @@ export async function handleGenerateEstimatorFacts(
                 },
                 sessionId,
                 enableSymbolReading: input.enableSymbolReading !== false,
+                knowledgeContext,
               });
               parts.push(part);
             } catch (e) {
@@ -228,6 +244,7 @@ export async function handleGenerateEstimatorFacts(
         },
         sessionId,
         enableSymbolReading: input.enableSymbolReading !== false,
+        knowledgeContext,
       });
       parts.push(part);
     } catch (e) {

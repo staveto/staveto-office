@@ -61,13 +61,25 @@ function itemKey(room: string | undefined, title: string, qty: unknown, unit: un
 }
 
 function occurrenceToItem(s: SymbolOccurrencePayload): ExtractedItemPayload {
+  const visuallyCounted =
+    s.quantitySource === "drawing_detection" ||
+    typeof s.detectedOccurrenceCount === "number";
   return {
     id: `item_${s.id}`,
     category: SYMBOL_TO_CATEGORY[s.normalizedType] ?? "other",
     roomName: s.roomName,
     title: s.title,
+    symbolCode: s.visibleLabel?.trim() || undefined,
     quantity: s.quantity,
     unit: s.unit,
+    quantitySource: s.quantitySource ?? (visuallyCounted ? "drawing_detection" : undefined),
+    detectedOccurrenceCount: visuallyCounted
+      ? (typeof s.detectedOccurrenceCount === "number"
+          ? s.detectedOccurrenceCount
+          : (s.quantity ?? null))
+      : undefined,
+    pageNumber: s.page,
+    bbox: s.bbox,
     origin: s.origin === "missing" ? "missing" : "from_document",
     evidence: s.evidence,
     confidence: s.confidence,
@@ -89,6 +101,7 @@ function legendEntryToItem(l: LegendEntryPayload): ExtractedItemPayload {
     id: `legend_item_${l.id}`,
     category: SYMBOL_TO_CATEGORY[l.normalizedType] ?? "other",
     title,
+    symbolCode: l.symbolLabel?.trim() || undefined,
     description: [
       "Z legendy výkresu — počet výskytov vo výkrese ešte nie je spočítaný.",
       labelNote,
@@ -134,6 +147,8 @@ function aggregateOccurrencesToItems(
     ...item,
     quantity: qty,
     computedQuantity: qty,
+    detectedOccurrenceCount:
+      item.quantitySource === "drawing_detection" ? qty : item.detectedOccurrenceCount,
     needsReview: item.needsReview || qty <= 0,
   }));
 }
@@ -322,6 +337,28 @@ export function convertTechnicalDrawingFactsToEstimatorItems(
 
   const rooms = mergeRoomsFromItems(facts.rooms ?? [], foldedItems);
 
+  // Backfill symbolCode onto takeoff rows from legend labels / occurrence marks
+  // so the review table can show the drawing code instead of "—".
+  const codeByTitle = new Map<string, string>();
+  for (const l of normalizedLegend) {
+    const code = l.symbolLabel?.trim();
+    if (code) codeByTitle.set(l.symbolDescription.trim().toLowerCase(), code);
+  }
+  for (const s of cleanOccurrences) {
+    const code = s.visibleLabel?.trim();
+    if (code) codeByTitle.set(s.title.trim().toLowerCase(), code);
+  }
+  for (let i = 0; i < foldedItems.length; i++) {
+    const row = foldedItems[i]!;
+    if (row.symbolCode) continue;
+    const direct = codeByTitle.get(row.title.trim().toLowerCase());
+    const embedded = extractMarkCodeFromTitle(row.title);
+    const code = direct ?? embedded;
+    if (code) foldedItems[i] = { ...row, symbolCode: code };
+  }
+
+  const symbolCounting = buildSymbolCountingSummary(cleanOccurrences);
+
   return {
     ...facts,
     rooms,
@@ -332,7 +369,56 @@ export function convertTechnicalDrawingFactsToEstimatorItems(
     symbolOccurrences: cleanOccurrences,
     unknownSymbols: allUnknown,
     companyFocus,
+    symbolCounting,
     warnings: [...new Set(warnings)],
+  };
+}
+
+/** Trailing/embedded mark number in plan callouts, e.g. "LED pás 13" → "13". */
+function extractMarkCodeFromTitle(title: string): string | undefined {
+  const m = title.trim().match(/(?:^|\s)(\d{1,3})$/);
+  return m ? m[1] : undefined;
+}
+
+/**
+ * Honest drawing-count summary: only occurrences the model marked as visually
+ * counted (quantitySource=drawing_detection or explicit detectedOccurrenceCount)
+ * become detections. Schedule/legend-derived numbers stay out — no fake counts.
+ */
+function buildSymbolCountingSummary(
+  occurrences: SymbolOccurrencePayload[]
+): NonNullable<EstimatorFactsPayload["symbolCounting"]> {
+  const detections = occurrences
+    .filter(
+      (s) =>
+        s.quantitySource === "drawing_detection" ||
+        typeof s.detectedOccurrenceCount === "number"
+    )
+    .map((s) => ({
+      symbolCode: s.visibleLabel?.trim() || s.title,
+      label: s.title,
+      roomName: s.roomName,
+      detectedOccurrenceCount:
+        typeof s.detectedOccurrenceCount === "number"
+          ? s.detectedOccurrenceCount
+          : (typeof s.quantity === "number" ? s.quantity : null),
+      confidence: s.confidence,
+      bbox: s.bbox,
+      source: "drawing_detection" as const,
+      needsReview: s.needsReview,
+      reviewReason: s.reviewReason,
+      pageNumber: s.page,
+    }));
+  const hasReal = detections.some((d) => typeof d.detectedOccurrenceCount === "number");
+  return {
+    status: hasReal
+      ? (detections.length >= occurrences.length ? "available" : "partial")
+      : "unavailable",
+    drawingDetectionAvailable: hasReal,
+    detections,
+    note: hasReal
+      ? undefined
+      : "Vizuálne spočítanie značiek z výkresu zatiaľ nebolo potvrdené — množstvá pochádzajú z legendy/výkazu.",
   };
 }
 

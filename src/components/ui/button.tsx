@@ -1,5 +1,6 @@
 "use client"
 
+import * as React from "react"
 import { Button as ButtonPrimitive } from "@base-ui/react/button"
 import { cva, type VariantProps } from "class-variance-authority"
 
@@ -47,8 +48,22 @@ function Button({
   variant = "default",
   size = "default",
   type,
+  asChild = false,
   ...props
-}: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+}: ButtonPrimitive.Props &
+  VariantProps<typeof buttonVariants> & {
+    /** Render the single child element (e.g. a Link) with button styling. */
+    asChild?: boolean
+  }) {
+  if (asChild) {
+    const child = React.Children.only(props.children) as React.ReactElement<{
+      className?: string
+    }>
+    return React.cloneElement(child, {
+      className: cn(buttonVariants({ variant, size, className }), child.props.className),
+    })
+  }
+
   if (type === "submit") {
     return (
       <button

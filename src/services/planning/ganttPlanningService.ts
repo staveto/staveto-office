@@ -117,7 +117,9 @@ export function mergeTaskSchedulePatch(task: TaskDoc, patch: TaskSchedulePatch):
     ...(patch.plannedStart !== undefined
       ? { plannedStart: patch.plannedStart ?? undefined }
       : {}),
-    ...(patch.plannedEnd !== undefined ? { plannedEnd: patch.plannedEnd } : {}),
+    ...(patch.plannedEnd !== undefined
+      ? { plannedEnd: patch.plannedEnd ?? undefined }
+      : {}),
     ...(patch.dueDate !== undefined ? { dueDate: patch.dueDate ?? undefined } : {}),
   };
 }

@@ -35,7 +35,7 @@ function PhotoThumb({
     if (!photo.storagePath) return;
     let cancelled = false;
 
-    void resolveProjectDocumentUrl(photo)
+    void resolveProjectDocumentUrl({ projectId: "", storagePath: photo.storagePath })
       .then((resolved) => {
         if (!cancelled) setUrl(resolved);
       })

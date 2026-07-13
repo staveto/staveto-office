@@ -108,6 +108,23 @@ export const extractedItemSchema = z.object({
   unit: aiUnitSchema.optional(),
   multiplier: z.number().optional(),
   computedQuantity: z.number().optional(),
+  symbolCode: z.string().optional(),
+  quantityFromSchedule: z.number().nullable().optional(),
+  detectedOccurrenceCount: z.number().nullable().optional(),
+  quantitySource: z
+    .enum(["legend", "schedule", "drawing_detection", "manual", "ai_estimate", "unknown"])
+    .optional(),
+  pageNumber: z.number().optional(),
+  bbox: z
+    .object({
+      page: z.number(),
+      x: z.number(),
+      y: z.number(),
+      width: z.number(),
+      height: z.number(),
+      coordinateSpace: z.enum(["normalized", "pixels"]).optional(),
+    })
+    .optional(),
   origin: aiOriginSchema,
   evidence: z.array(evidenceSchema).default([]),
   confidence: aiConfidenceSchema.default("medium"),
@@ -190,12 +207,61 @@ export const symbolOccurrenceSchema = z.object({
   quantity: z.number().optional(),
   unit: aiUnitSchema.optional(),
   visibleLabel: z.string().optional(),
+  quantitySource: z
+    .enum(["legend", "schedule", "drawing_detection", "manual", "ai_estimate", "unknown"])
+    .optional(),
+  detectedOccurrenceCount: z.number().nullable().optional(),
+  bbox: z
+    .object({
+      page: z.number(),
+      x: z.number(),
+      y: z.number(),
+      width: z.number(),
+      height: z.number(),
+      coordinateSpace: z.enum(["normalized", "pixels"]).optional(),
+    })
+    .optional(),
   origin: aiOriginSchema.default("from_document"),
   evidence: z.array(evidenceSchema).default([]),
   confidence: aiConfidenceSchema.default("medium"),
   needsReview: z.boolean().default(false),
   reviewReason: z.string().optional(),
 });
+
+export const symbolCountingSummarySchema = z
+  .object({
+    status: z.enum(["unavailable", "partial", "available"]).default("unavailable"),
+    drawingDetectionAvailable: z.boolean().default(false),
+    detections: z
+      .array(
+        z.object({
+          symbolCode: z.string(),
+          label: z.string().optional(),
+          roomName: z.string().optional(),
+          detectedOccurrenceCount: z.number().nullable(),
+          confidence: aiConfidenceSchema.default("low"),
+          bbox: z
+            .object({
+              page: z.number(),
+              x: z.number(),
+              y: z.number(),
+              width: z.number(),
+              height: z.number(),
+              coordinateSpace: z.enum(["normalized", "pixels"]).optional(),
+            })
+            .optional(),
+          source: z
+            .enum(["legend", "schedule", "drawing_detection", "manual", "ai_estimate", "unknown"])
+            .default("unknown"),
+          needsReview: z.boolean().default(true),
+          reviewReason: z.string().optional(),
+          pageNumber: z.number().optional(),
+        })
+      )
+      .default([]),
+    note: z.string().optional(),
+  })
+  .optional();
 
 export const companyFocusSchema = z.object({
   id: z.string(),
@@ -250,6 +316,7 @@ export const estimatorFactsSchema = z.object({
   legendEntries: z.array(legendEntrySchema).default([]),
   symbolOccurrences: z.array(symbolOccurrenceSchema).default([]),
   unknownSymbols: z.array(symbolOccurrenceSchema).default([]),
+  symbolCounting: symbolCountingSummarySchema,
   companyFocus: z.array(companyFocusSchema).default([]),
 });
 

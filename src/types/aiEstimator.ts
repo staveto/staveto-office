@@ -3,6 +3,8 @@
  * Additive layer — does not replace ProjectDraftPayload.
  */
 
+import type { VisualSymbolDetection } from "./visualSymbols";
+
 export type AiEvidenceInputType =
   | "pdf"
   | "image"
@@ -61,6 +63,27 @@ export type AiQuantityUnit =
   | "pausal"
   | "unknown";
 
+/**
+ * Where a quantity came from. Never label legend/schedule parsing as drawing_detection.
+ */
+export type QuantitySource =
+  | "legend"
+  | "schedule"
+  | "drawing_detection"
+  | "manual"
+  | "ai_estimate"
+  | "unknown";
+
+/** Bounding box on a page image (0–1 normalized or pixel coords — UI treats as opaque). */
+export type AiSymbolBBox = {
+  page: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  coordinateSpace?: "normalized" | "pixels";
+};
+
 export type AiExtractedRoom = {
   id: string;
   name: string;
@@ -83,6 +106,18 @@ export type AiExtractedItem = {
   unit?: AiQuantityUnit;
   multiplier?: number;
   computedQuantity?: number;
+  /** Legend / schedule symbol code if known (e.g. EL.zásuvka). */
+  symbolCode?: string;
+  /** Quantity taken from a schedule/table in the drawing (if any). */
+  quantityFromSchedule?: number | null;
+  /**
+   * Visual symbol occurrences counted on the plan.
+   * null = detection not available / not run — never invent a number.
+   */
+  detectedOccurrenceCount?: number | null;
+  quantitySource?: QuantitySource;
+  pageNumber?: number;
+  bbox?: AiSymbolBBox;
   origin: AiOrigin;
   evidence: AiEvidenceSource[];
   confidence: AiConfidence;
@@ -172,12 +207,42 @@ export type AiSymbolOccurrence = {
   quantity?: number;
   unit?: AiQuantityUnit;
   visibleLabel?: string;
+  /** Same honesty rules as takeoff rows — drawing_detection only when visually counted. */
+  quantitySource?: QuantitySource;
+  detectedOccurrenceCount?: number | null;
+  bbox?: AiSymbolBBox;
   origin: AiOrigin;
   evidence: AiEvidenceSource[];
   confidence: AiConfidence;
   needsReview: boolean;
   reviewReason?: string;
 };
+
+/** Result of visual symbol counting on a page (pipeline may be placeholder). */
+export type AiSymbolOccurrenceDetection = {
+  symbolCode: string;
+  label?: string;
+  roomName?: string;
+  detectedOccurrenceCount: number | null;
+  confidence: AiConfidence;
+  bbox?: AiSymbolBBox;
+  source: QuantitySource;
+  needsReview: boolean;
+  reviewReason?: string;
+  pageNumber?: number;
+};
+
+export type AiSymbolCountingStatus = "unavailable" | "partial" | "available";
+
+export type AiSymbolCountingSummary = {
+  status: AiSymbolCountingStatus;
+  /** True only when a real visual detector produced at least one non-null count. */
+  drawingDetectionAvailable: boolean;
+  detections: AiSymbolOccurrenceDetection[];
+  note?: string;
+};
+
+export type QuoteReadinessState = "ready" | "partially_ready" | "needs_review";
 
 export type AiCompanyFocusType =
   | "quote_line"
@@ -215,6 +280,10 @@ export type AiEstimatorFacts = {
   legendEntries?: AiLegendEntry[];
   symbolOccurrences?: AiSymbolOccurrence[];
   unknownSymbols?: AiSymbolOccurrence[];
+  /** Visual counting pipeline result — absent/unavailable until real detection ships. */
+  symbolCounting?: AiSymbolCountingSummary;
+  /** Pixel-level visual symbol detections (feature-flagged visual counter). */
+  visualDetections?: VisualSymbolDetection[];
   companyFocus?: AiCompanyFocusItem[];
   diagnostics?: AiEstimatorDiagnostics;
 };

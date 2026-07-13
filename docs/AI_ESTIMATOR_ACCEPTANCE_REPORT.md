@@ -75,7 +75,22 @@ Until the file is present + Gemini path runs, sockets/switches detection on *thi
 - Work step UI is still hours×rate; package labor lines guide structure but are not yet the sole pricing engine on PDF.
 - Saved quote upsert may still sync many material lines — customer print filter + package preview reduce exposure; full PDF sectioned template is next step.
 
-## Product sourcing (2026-07-13)
+## Symbol → Assembly → Product (2026-07-13)
+
+Feature flags: `NEXT_PUBLIC_ENABLE_AI_ESTIMATOR_FLOW=1` + `NEXT_PUBLIC_ENABLE_AI_SYMBOL_LIBRARY=1` (+ product sourcing for prices).  
+Doc: [`docs/AI_SYMBOL_TO_PRODUCT_ARCHITECTURE.md`](./AI_SYMBOL_TO_PRODUCT_ARCHITECTURE.md)
+
+| Area | Status |
+|------|--------|
+| Symbol source priority + resolver | **Shipped** |
+| Starter SK/EU text aliases (no official glyphs) | **Shipped** |
+| Licensed pack slots (IEC/STN) | **Architecture only** — not connected |
+| Assembly templates + mapSymbolsToAssemblies | **Shipped** |
+| ProductSearchIntent from assemblies | **Shipped** |
+| UI „Značka → položka → produkt“ | **Shipped** (Počty symbolov tab) |
+| Live licensed symbol drawings | **Not in repo** (by design) |
+
+### Product sourcing (2026-07-13)
 
 Feature flag: `NEXT_PUBLIC_ENABLE_PRODUCT_SOURCING=1`  
 Doc: [`docs/AI_PRODUCT_SOURCING.md`](./AI_PRODUCT_SOURCING.md)

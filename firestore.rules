@@ -643,6 +643,33 @@ service cloud.firestore {
         allow read, write: if false;
       }
 
+      // ── Estimator knowledge backend (additive) ──
+      // Solo namespace compat: orgId may equal the user's uid (no org doc).
+      match /estimatorSettings/{docId} {
+        allow read: if isOrgMemberActive(orgId) || orgId == request.auth.uid;
+        allow write: if canManageOrganization(orgId) || orgId == request.auth.uid;
+      }
+
+      match /customSymbolMappings/{mappingId} {
+        allow read: if isOrgMemberActive(orgId) || orgId == request.auth.uid;
+        allow create: if isSignedIn()
+          && (isOrgMemberActive(orgId) || orgId == request.auth.uid)
+          && request.resource.data.orgId == orgId
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.source == 'user_confirmed';
+        allow update, delete: if canManageOrganization(orgId) || orgId == request.auth.uid;
+      }
+
+      match /pricebooks/{pricebookId} {
+        allow read: if isOrgMemberActive(orgId) || orgId == request.auth.uid;
+        allow write: if canManageOrganization(orgId) || orgId == request.auth.uid;
+
+        match /{rest=**} {
+          allow read: if isOrgMemberActive(orgId) || orgId == request.auth.uid;
+          allow write: if canManageOrganization(orgId) || orgId == request.auth.uid;
+        }
+      }
+
       match /emailInquiries/{inquiryId} {
         allow read: if isOrgMemberActive(orgId);
         allow create, update: if canManageOrganization(orgId);
@@ -867,6 +894,54 @@ service cloud.firestore {
     match /billingEvents/{eventId} {
       allow read: if isSignedIn() && resource.data.get('firebaseUID', null) == request.auth.uid;
       allow write: if false;
+    }
+
+    // ── Estimator knowledge backend: shared reference data (admin/CF-seeded, client read-only) ──
+    match /knowledgePacks/{packId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /symbolLibrary/{symbolId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /assemblyTemplates/{templateId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /laborRules/{ruleId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /supplierCatalogs/{supplierId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+
+      match /products/{productId} {
+        allow read: if isSignedIn();
+        allow write: if false;
+      }
+    }
+
+    // Estimator session outputs — orgId is a real org or the user's solo uid namespace.
+    match /estimatorSessions/{sessionId} {
+      allow read: if isSignedIn() && (
+        resource.data.orgId == request.auth.uid
+        || (resource.data.orgId != null && isOrgMemberActive(resource.data.orgId))
+      );
+      allow create: if isSignedIn() && (
+        request.resource.data.orgId == request.auth.uid
+        || (request.resource.data.orgId != null && isOrgMemberActive(request.resource.data.orgId))
+      );
+      allow update: if isSignedIn() && (
+        resource.data.orgId == request.auth.uid
+        || (resource.data.orgId != null && isOrgMemberActive(resource.data.orgId))
+      );
+      allow delete: if false;
     }
 
     // Mobile compat: catalog templates (read-only reference data).

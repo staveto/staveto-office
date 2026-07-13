@@ -10,6 +10,9 @@ type Props = {
   calculation: AiSetupCalculation;
   currency?: string;
   preliminary?: boolean;
+  /** Rows without a unit price — shows an actionable "Doplniť ceny" link. */
+  priceMissingCount?: number;
+  onFillPrices?: () => void;
 };
 
 export function AiSetupSummaryPanel({
@@ -17,6 +20,8 @@ export function AiSetupSummaryPanel({
   calculation,
   currency = "EUR",
   preliminary,
+  priceMissingCount = 0,
+  onFillPrices,
 }: Props) {
   const { t } = useI18n();
 
@@ -61,6 +66,16 @@ export function AiSetupSummaryPanel({
             <p className="text-xs font-semibold text-amber-700">
               {t("projects.aiSetup.summary.preliminary")}
             </p>
+          ) : null}
+          {priceMissingCount > 0 && onFillPrices ? (
+            <button
+              type="button"
+              className="text-xs font-semibold text-[#E95F2A] underline underline-offset-2 hover:text-[#D94F1F] text-left"
+              onClick={onFillPrices}
+            >
+              {priceMissingCount} {t("projects.aiSetup.positions.metric.priceMissing")} —{" "}
+              {t("projects.aiSetup.positions.action.fillPrices")}
+            </button>
           ) : null}
         </div>
       </div>

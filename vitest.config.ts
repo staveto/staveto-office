@@ -20,6 +20,7 @@ export default defineConfig({
       "src/services/planning/ganttPlanningService.test.ts",
       "src/lib/ai/**/*.test.ts",
       "src/lib/products/**/*.test.ts",
+      "src/services/estimatorKnowledge/**/*.test.ts",
     ],
   },
   resolve: {

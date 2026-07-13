@@ -29,13 +29,20 @@ function resolveLegendType(
 ): AiSymbolType {
   if (modelType && modelType !== "unknown") return modelType;
   const hay = `${description ?? ""} ${label ?? ""}`;
-  if (/\bzásuvk|\bzasuvk|\bsocket|\bschuko|\bdvojzásuv|\bel\.?\s*2?\s*zásuv/i.test(hay)) {
+  if (
+    /\bzásuvk|\bzasuvk|\bsocket|\bschuko|\bdvojzásuv|\bel\.?\s*2?\s*zásuv|\bvývod\s*zo\s*zeme|\bvyvod\s*zo\s*zeme|\bpodlahov[áa]\s*zásuv|\bvarn[úu]\s*dosk|\bmyčk|\bmycka|\bchladničk|\bchladnick|\bmikrovlnk|\bdigestor|\bindukčn|\bindukcn|\bprac\.?\s*dosky/i.test(
+      hay
+    )
+  ) {
     return "socket";
   }
   if (/\bvypínač|\bvypinac|\bprepínač|\bswitch\b|\bstmieva/i.test(hay)) return "switch";
   if (/\brozvádzač|\brozvadzac|\bdistribution/i.test(hay)) return "distribution_board";
   if (/\bkábel|\bkabel|\bcyky|\bnym|\bcable/i.test(hay)) return "cable_route";
   if (/\bled\s*pás|\bled\s*pas|\bled\s*strip/i.test(hay)) return "led_strip";
+  if (/\bzapusten[éeáa]?\s*osvetlen|\blištov[ýy]\s*syst[ée]m/i.test(hay)) {
+    return "lighting_profile";
+  }
   if (/\bnábyt|\bpodsvieten/i.test(hay)) return "furniture_light";
   if (/\bvisiace|\bpendant/i.test(hay)) return "pendant_light";
   if (/\bnástenn|\bwall\s*light/i.test(hay)) return "wall_light";
@@ -70,6 +77,7 @@ function legendEntryToItem(l: AiLegendEntry): AiExtractedItem {
     id: `legend_item_${l.id}`,
     category: SYMBOL_TO_CATEGORY[normalizedType] ?? "other",
     title,
+    symbolCode: l.symbolLabel?.trim() || undefined,
     description: [
       "Z legendy výkresu — počet výskytov vo výkrese ešte nie je spočítaný.",
       labelNote,
@@ -115,11 +123,51 @@ function coveredTypesFromFacts(facts: AiEstimatorFacts): Set<string> {
   return covered;
 }
 
+/** Trailing mark number in plan callouts, e.g. "LED pás 13" → "13". */
+function extractMarkCodeFromTitle(title: string): string | undefined {
+  const m = title.trim().match(/(?:^|\s)(\d{1,3})$/);
+  return m ? m[1] : undefined;
+}
+
+/**
+ * Fill missing symbolCode on takeoff rows from legend labels, occurrence marks
+ * or a trailing number in the title, so the "Značka" column is not empty for
+ * sessions created before symbolCode was extracted server-side.
+ */
+function backfillSymbolCodes(facts: AiEstimatorFacts): AiEstimatorFacts {
+  const codeByTitle = new Map<string, string>();
+  for (const l of facts.legendEntries ?? []) {
+    const code = l.symbolLabel?.trim();
+    if (code) codeByTitle.set(l.symbolDescription.trim().toLowerCase(), code);
+  }
+  for (const s of facts.symbolOccurrences ?? []) {
+    const code = s.visibleLabel?.trim();
+    if (code) codeByTitle.set(s.title.trim().toLowerCase(), code);
+  }
+
+  let changed = false;
+  const patch = (items: AiExtractedItem[]): AiExtractedItem[] =>
+    items.map((item) => {
+      if (item.symbolCode) return item;
+      const code =
+        codeByTitle.get(item.title.trim().toLowerCase()) ??
+        extractMarkCodeFromTitle(item.title);
+      if (!code) return item;
+      changed = true;
+      return { ...item, symbolCode: code };
+    });
+
+  const extractedItems = patch(facts.extractedItems);
+  const inferredItems = patch(facts.inferredItems);
+  return changed ? { ...facts, extractedItems, inferredItems } : facts;
+}
+
 /**
  * Client-side mirror of server legend promotion so review UI still shows
  * missing legend mark types (zásuvky/vypínače) even when lighting was counted.
  */
-export function foldLegendIntoEstimatorFacts(facts: AiEstimatorFacts): AiEstimatorFacts {
+export function foldLegendIntoEstimatorFacts(rawFacts: AiEstimatorFacts): AiEstimatorFacts {
+  const facts = backfillSymbolCodes(rawFacts);
   const legendEntries = facts.legendEntries ?? [];
   if (legendEntries.length === 0) return facts;
 

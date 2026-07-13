@@ -1,0 +1,94 @@
+{
+  "pack": {
+    "id": "sk_electrical_labor_v1",
+    "trade": "electrical",
+    "countryCodes": ["SK", "CZ"],
+    "type": "starter_aliases",
+    "sourceName": "Staveto starter SK electrical labor rules",
+    "licenseStatus": "internal_sample",
+    "version": "1.0.0",
+    "active": true
+  },
+  "laborRules": [
+    {
+      "id": "labor_socket_sk",
+      "trade": "electrical",
+      "countryCodes": ["SK", "CZ"],
+      "category": "socket",
+      "formula": "qty * minutes / 60",
+      "defaultMinutesPerUnit": 30,
+      "difficultyFactors": { "plasterboard": 0.8, "brick_wall": 1.2, "concrete": 1.6, "retrofit": 1.4 },
+      "active": true
+    },
+    {
+      "id": "labor_switch_sk",
+      "trade": "electrical",
+      "countryCodes": ["SK", "CZ"],
+      "category": "switch",
+      "formula": "qty * minutes / 60",
+      "defaultMinutesPerUnit": 30,
+      "difficultyFactors": { "plasterboard": 0.8, "brick_wall": 1.2, "concrete": 1.6, "multiway": 1.3 },
+      "active": true
+    },
+    {
+      "id": "labor_light_output_sk",
+      "trade": "electrical",
+      "countryCodes": ["SK", "CZ"],
+      "category": "light_output",
+      "formula": "qty * minutes / 60",
+      "defaultMinutesPerUnit": 30,
+      "difficultyFactors": { "high_ceiling": 1.4, "suspended_ceiling": 1.2 },
+      "active": true
+    },
+    {
+      "id": "labor_led_strip_sk",
+      "trade": "electrical",
+      "countryCodes": ["SK", "CZ"],
+      "category": "led_strip",
+      "formula": "meters * minutes / 60",
+      "defaultMinutesPerUnit": 21,
+      "difficultyFactors": { "sdk_niche": 1.2, "profile_cutting": 1.15, "smart_control": 1.3 },
+      "active": true
+    },
+    {
+      "id": "labor_cable_route_sk",
+      "trade": "electrical",
+      "countryCodes": ["SK", "CZ"],
+      "category": "cable_route",
+      "formula": "meters * minutes / 60",
+      "defaultMinutesPerUnit": 6,
+      "difficultyFactors": { "chasing_brick": 1.5, "chasing_concrete": 2.0, "cable_tray": 0.8 },
+      "active": true
+    },
+    {
+      "id": "labor_installation_box_sk",
+      "trade": "electrical",
+      "countryCodes": ["SK", "CZ"],
+      "category": "installation_box",
+      "formula": "qty * minutes / 60",
+      "defaultMinutesPerUnit": 15,
+      "difficultyFactors": { "plasterboard": 0.7, "brick_wall": 1.2, "concrete": 1.8 },
+      "active": true
+    },
+    {
+      "id": "labor_distribution_board_sk",
+      "trade": "electrical",
+      "countryCodes": ["SK", "CZ"],
+      "category": "distribution_board",
+      "formula": "qty * minutes / 60",
+      "defaultMinutesPerUnit": 120,
+      "difficultyFactors": { "per_module": 1.0, "three_phase": 1.3 },
+      "active": true
+    },
+    {
+      "id": "labor_testing_revision_sk",
+      "trade": "electrical",
+      "countryCodes": ["SK", "CZ"],
+      "category": "testing_revision",
+      "formula": "qty * minutes / 60",
+      "defaultMinutesPerUnit": 150,
+      "difficultyFactors": { "with_revision_report": 1.5 },
+      "active": true
+    }
+  ]
+}

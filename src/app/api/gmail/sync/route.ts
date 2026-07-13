@@ -40,20 +40,57 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await syncGmailInbox(orgId, auth.uid);
-    return NextResponse.json({ ok: true, ...result });
+    return NextResponse.json({ ok: true, connected: true, ...result });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "SYNC_FAILED";
+    // Expected states — quiet 200 so clients can stop auto-polling without terminal spam.
     if (msg === "GMAIL_NOT_CONNECTED") {
-      return NextResponse.json({ errorCode: "GMAIL_NOT_CONNECTED" }, { status: 400 });
+      return NextResponse.json({
+        ok: true,
+        connected: false,
+        reason: "gmail_not_connected",
+        synced: 0,
+        newInquiries: 0,
+        threadsFound: 0,
+        failed: 0,
+        filteredOut: 0,
+      });
     }
     if (msg === "TOKEN_REFRESH_FAILED") {
-      return NextResponse.json({ errorCode: "TOKEN_REFRESH_FAILED" }, { status: 401 });
+      return NextResponse.json({
+        ok: true,
+        connected: false,
+        reason: "TOKEN_REFRESH_FAILED",
+        synced: 0,
+        newInquiries: 0,
+        threadsFound: 0,
+        failed: 0,
+        filteredOut: 0,
+      });
     }
     if (msg === "GMAIL_NOT_CONFIGURED") {
-      return NextResponse.json({ errorCode: "GMAIL_NOT_CONFIGURED" }, { status: 503 });
+      return NextResponse.json({
+        ok: true,
+        connected: false,
+        reason: "gmail_not_configured",
+        synced: 0,
+        newInquiries: 0,
+        threadsFound: 0,
+        failed: 0,
+        filteredOut: 0,
+      });
     }
     if (msg === "ADMIN_NOT_CONFIGURED") {
-      return NextResponse.json({ errorCode: "GMAIL_ADMIN_NOT_CONFIGURED" }, { status: 503 });
+      return NextResponse.json({
+        ok: true,
+        connected: false,
+        reason: "gmail_admin_not_configured",
+        synced: 0,
+        newInquiries: 0,
+        threadsFound: 0,
+        failed: 0,
+        filteredOut: 0,
+      });
     }
     console.error("[gmail/sync]", e);
     return NextResponse.json({ errorCode: "SYNC_FAILED", message: msg }, { status: 502 });

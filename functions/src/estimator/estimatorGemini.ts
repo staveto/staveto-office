@@ -168,6 +168,8 @@ export async function extractFactsFromAttachment(params: {
   attachment: EstimatorAttachment;
   sessionId: string;
   enableSymbolReading?: boolean;
+  /** Compact knowledge-backend context (symbols/assemblies/labor) — see knowledgeContext.ts. */
+  knowledgeContext?: string;
 }): Promise<EstimatorFactsPayload> {
   const lang = languageLabel(params.language);
   const kind = guessDocKind(
@@ -214,8 +216,13 @@ export async function extractFactsFromAttachment(params: {
       ? `\n\nExtracted text layer (use for tables/legends; still verify against the visual):\n${params.attachment.extractedText.slice(0, 12000)}`
       : "";
 
+  const knowledge =
+    kind === "electrical" && params.knowledgeContext?.trim()
+      ? `\n\nSTRUCTURED KNOWLEDGE CONTEXT (project legend still wins over everything below):\n${params.knowledgeContext.trim()}`
+      : "";
+
   const text = await generateJsonText({
-    prompt: prompt + layer,
+    prompt: prompt + knowledge + layer,
     system: ESTIMATOR_SYSTEM,
     attachments: [params.attachment],
     maxOutputTokens: 32768,

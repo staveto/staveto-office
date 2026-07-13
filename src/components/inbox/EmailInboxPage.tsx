@@ -17,7 +17,7 @@ import {
   startGmailOAuth,
   notifyGmailOAuthPopupResult,
 } from "@/services/email/gmailIntegrationService";
-import { autoSyncGmailInbox, GMAIL_INBOX_ACTIVE_SYNC_INTERVAL_MS } from "@/services/email/gmailAutoSync";
+import { autoSyncGmailInbox, clearGmailAutoSyncDisable, GMAIL_INBOX_ACTIVE_SYNC_INTERVAL_MS } from "@/services/email/gmailAutoSync";
 import { loadAppCenterSettings } from "@/services/organizations/appCenterSettings";
 import { GmailConnectCard } from "@/components/inbox/GmailConnectCard";
 import { resolveGmailError } from "@/lib/gmail/errors";
@@ -83,6 +83,12 @@ export function EmailInboxPage() {
       setLoading(false);
       return;
     }
+    if (!gmailConnected) {
+      setRows([]);
+      setTotalCount(0);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -100,7 +106,7 @@ export function EmailInboxPage() {
     } finally {
       setLoading(false);
     }
-  }, [orgId, t, user, authLoading, showAll]);
+  }, [orgId, t, showAll, gmailConnected]);
 
   useEffect(() => {
     if (authLoading || !user) return;
@@ -136,6 +142,15 @@ export function EmailInboxPage() {
           await loadInquiries();
           return;
         }
+        if (result.connected === false) {
+          setGmailConnected(false);
+          setRows([]);
+          setTotalCount(0);
+          if (!options?.quiet) {
+            setError(t("inbox.error.notConnected"));
+          }
+          return;
+        }
         if (!options?.quiet) {
           if (result.threadsFound === 0) {
             setSuccess(t("inbox.syncSuccessEmpty"));
@@ -169,6 +184,7 @@ export function EmailInboxPage() {
 
   useEffect(() => {
     if (!gmailConnected || !orgId || authLoading || !user) return;
+    clearGmailAutoSyncDisable(orgId);
     void handleSync({ force: gmailStatus === "connected", quiet: gmailStatus !== "connected" });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- run when connection becomes available
   }, [gmailConnected, orgId, authLoading, user, gmailStatus]);

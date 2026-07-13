@@ -19,7 +19,12 @@ import { AiSetupWorkStep } from "./AiSetupWorkStep";
 import { AiSetupPriceStep } from "./AiSetupPriceStep";
 import { AiSetupOfferStep } from "./AiSetupOfferStep";
 import { syncEstimatorMaterialsToProject } from "@/services/ai/aiEstimatorService";
-import { isAiEstimatorFlowEnabled } from "@/lib/ai/aiEstimatorFeature";
+import {
+  isAiEstimatorFlowEnabled,
+  isAiEvidencePdfViewerEnabled,
+} from "@/lib/ai/aiEstimatorFeature";
+import { useEstimatorPositions } from "./useEstimatorPositions";
+import type { MaterialSubTab } from "./AiSetupMaterialStep";
 import {
   applyProjectFactsToMaterialRows,
   computeAiSetupTotals,
@@ -115,6 +120,8 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
   const currency = workspaceCtx.activeCurrency || "EUR";
   const countryCode = workspaceCtx.activeCountryCode;
   const [activeStep, setActiveStep] = useState<AiSetupStepId>("overview");
+  const [materialSubTab, setMaterialSubTab] = useState<MaterialSubTab>("summary");
+  const materialSubTabDefaultedRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -326,6 +333,44 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
     [takeoffRows, projectFacts]
   );
   const qualityBlocked = qualityGateBlocksFixedQuote(qualityFindings);
+
+  // Evidence-linked takeoff positions (interactive PDF review).
+  const evidenceEnabled = isAiEvidencePdfViewerEnabled();
+  const handleMaterialPriceApplied = useCallback((materialRowId: string, unitPrice: number) => {
+    if (!(unitPrice > 0)) return;
+    setMaterials((prev) =>
+      prev.map((m) => (m.id === materialRowId ? { ...m, price: unitPrice } : m))
+    );
+  }, []);
+  const estimatorPositions = useEstimatorPositions({
+    project,
+    workspace: activeWorkspace ?? null,
+    userId,
+    materials,
+    currency,
+    enabled: evidenceEnabled,
+    onMaterialPriceApplied: handleMaterialPriceApplied,
+  });
+
+  const missingPriceCount = useMemo(
+    () =>
+      materials.filter((m) => m.included && m.name.trim() && !(m.price > 0)).length,
+    [materials]
+  );
+
+  // Default sub-tab: "Na kontrolu" when prices/review blockers exist, else "Súhrn".
+  useEffect(() => {
+    if (loading || materialSubTabDefaultedRef.current) return;
+    materialSubTabDefaultedRef.current = true;
+    if (missingPriceCount > 0 || qualityBlocked) {
+      setMaterialSubTab("review");
+    }
+  }, [loading, missingPriceCount, qualityBlocked]);
+
+  const openMaterialPrices = useCallback(() => {
+    setActiveStep("material");
+    setMaterialSubTab("prices");
+  }, []);
 
   const quotePackage = useMemo(
     () =>
@@ -799,6 +844,10 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
               onProjectFactsChange={handleProjectFactsChange}
               onApplyFactsToMaterials={applyFactsToMaterials}
               applyingFacts={applyingFacts}
+              evidence={evidenceEnabled ? estimatorPositions : undefined}
+              currency={currency}
+              subTab={materialSubTab}
+              onSubTabChange={setMaterialSubTab}
             />
           ) : null}
           {activeStep === "work" ? (
@@ -884,6 +933,8 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
           calculation={calculation}
           currency={currency}
           preliminary={!clarity.ok || totals.materialCost <= 0}
+          priceMissingCount={missingPriceCount}
+          onFillPrices={openMaterialPrices}
         />
       </div>
     </div>

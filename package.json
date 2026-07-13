@@ -11,6 +11,11 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:install": "playwright install chromium",
     "diagnostics:workspace": "node scripts/run-workspace-diagnostics.mjs",
+    "seed:knowledge": "node scripts/seed-knowledge-rest.mjs",
+    "fetch:estimator-session": "node scripts/fetch-estimator-session.mjs",
+    "test:ai-estimator-electrical-pdf": "node scripts/run-electrical-pdf-analysis.mjs && vitest run src/lib/ai/electricalPdfReport.acceptance.test.ts",
+    "test:ai-estimator-visual-symbols": "vitest run src/lib/ai/visualSymbolCounter.acceptance.test.ts",
+    "seed:knowledge:admin": "node scripts/seed-estimator-knowledge.mjs",
     "test:workspace": "vitest run",
     "firebase": "firebase",
     "firebase:login": "firebase login --reauth",
@@ -40,6 +45,7 @@
     "lucide-react": "^0.577.0",
     "next": "16.1.6",
     "next-themes": "^0.4.6",
+    "pdfjs-dist": "^5.6.205",
     "qrcode.react": "^4.2.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -50,6 +56,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@napi-rs/canvas": "^1.0.2",
     "@playwright/test": "^1.60.0",
     "@tailwindcss/postcss": "^4",
     "@types/leaflet": "^1.9.21",

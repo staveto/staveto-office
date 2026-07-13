@@ -13,20 +13,58 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nContext";
-import { isAiEstimatorDebugEnabled } from "@/lib/ai/aiEstimatorFeature";
+import {
+  isAiEstimatorDebugEnabled,
+  isAiVisualSymbolCounterEnabled,
+} from "@/lib/ai/aiEstimatorFeature";
 import { openAiDraftAttachment } from "@/lib/ai/aiDraftAttachmentPreview";
+import { AiEstimatorSymbolAssemblySection } from "./AiEstimatorSymbolAssemblySection";
 import { foldLegendIntoEstimatorFacts } from "@/lib/ai/foldLegendIntoEstimatorFacts";
+import {
+  applyManualQuantityOverride,
+  buildSymbolCountComparisonRows,
+  getSymbolCountingSummary,
+  resolveQuantitySource,
+  resolveQuoteReadiness,
+  type SymbolCountRowStatus,
+} from "@/lib/ai/quantitySource";
+import { createUnavailableSymbolCounting } from "@/lib/ai/symbolOccurrenceService";
+import {
+  buildEstimatorExtractionQualityReport,
+  formatExtractionSummarySk,
+} from "@/lib/ai/estimatorExtractionQuality";
 import { cn } from "@/lib/utils";
 import type { UploadedAiDraftFile } from "@/services/ai/aiDraftFiles";
 import type {
   AiEstimateLine,
   AiEstimatorFacts,
   AiExtractedItem,
+  AiQuantityUnit,
   AiQuoteDraft,
+  QuantitySource,
 } from "@/types/aiEstimator";
+import type { VisualNormalizedPoint } from "@/types/visualSymbols";
 import { njNavPrimary, njNavSecondary } from "../newJobFormStyles";
 
-type CockpitTab = "review" | "breakdown" | "symbols" | "offer" | "details";
+type CockpitTab =
+  | "review"
+  | "breakdown"
+  | "counts"
+  | "symbols"
+  | "visual"
+  | "offer"
+  | "details";
+
+type VisualReviewAction = "confirmed" | "ignored" | null;
+
+const visualPointLabel: Record<VisualNormalizedPoint, string> = {
+  switch_point: "Vypínač",
+  socket_point: "Zásuvka",
+  double_socket_point: "Dvojzásuvka",
+  light_output: "Svetelný vývod",
+  led_strip_point: "LED prvok",
+  unknown: "Neznáma značka",
+};
 
 type BreakdownFilter =
   | "all"
@@ -90,6 +128,42 @@ function riskLevelLabel(c: string, t: (k: string) => string): string {
   return t("projects.aiEstimator.riskLevel.medium");
 }
 
+function quantitySourceBadgeKey(source: QuantitySource): string {
+  switch (source) {
+    case "schedule":
+      return "projects.aiEstimator.qtySource.schedule";
+    case "drawing_detection":
+      return "projects.aiEstimator.qtySource.drawing";
+    case "manual":
+      return "projects.aiEstimator.qtySource.manual";
+    case "legend":
+      return "projects.aiEstimator.qtySource.legend";
+    case "ai_estimate":
+      return "projects.aiEstimator.qtySource.estimate";
+    default:
+      return "projects.aiEstimator.qtySource.unknown";
+  }
+}
+
+function countRowStatusLabel(status: SymbolCountRowStatus, t: (k: string) => string): string {
+  switch (status) {
+    case "ok":
+      return t("projects.aiEstimator.countStatus.ok");
+    case "needs_confirm":
+      return t("projects.aiEstimator.countStatus.needsConfirm");
+    case "missing_on_drawing":
+      return t("projects.aiEstimator.countStatus.missingOnDrawing");
+    case "missing_in_legend":
+      return t("projects.aiEstimator.countStatus.missingInLegend");
+    case "unknown_symbol":
+      return t("projects.aiEstimator.countStatus.unknownSymbol");
+    case "unmeasured_length":
+      return t("projects.aiEstimator.countStatus.unmeasuredLength");
+    default:
+      return status;
+  }
+}
+
 function matchesFilter(item: AiExtractedItem, filter: BreakdownFilter): boolean {
   if (filter === "all") return true;
   if (filter === "review") return item.needsReview || item.confidence === "low";
@@ -128,10 +202,16 @@ export function AiEstimatorReviewPanel({
 }: Props) {
   const { t } = useI18n();
   const debug = isAiEstimatorDebugEnabled();
-  const displayFacts = useMemo(() => foldLegendIntoEstimatorFacts(facts), [facts]);
-  const [tab, setTab] = useState<CockpitTab>(() =>
-    (facts.legendEntries?.length ?? 0) > 0 ? "symbols" : "review"
-  );
+  const displayFacts = useMemo(() => {
+    const folded = foldLegendIntoEstimatorFacts(facts);
+    if (folded.symbolCounting) return folded;
+    return {
+      ...folded,
+      symbolCounting: createUnavailableSymbolCounting(folded.legendEntries ?? []),
+    };
+  }, [facts]);
+  // Estimator-ready review: "Na kontrolu" is always the entry screen.
+  const [tab, setTab] = useState<CockpitTab>("review");
   const [breakdownFilter, setBreakdownFilter] = useState<BreakdownFilter>("all");
   const [search, setSearch] = useState("");
   const [expandedRooms, setExpandedRooms] = useState<Set<string>>(() => new Set());
@@ -142,6 +222,16 @@ export function AiEstimatorReviewPanel({
   const [showMoreReview, setShowMoreReview] = useState(false);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [manualOverrides, setManualOverrides] = useState<
+    Record<string, Partial<AiExtractedItem>>
+  >({});
+  const [editingCountId, setEditingCountId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<{
+    quantity: string;
+    roomName: string;
+    unit: string;
+    included: boolean;
+  }>({ quantity: "", roomName: "", unit: "ks", included: true });
 
   const previewFiles = attachmentFiles.length
     ? attachmentFiles
@@ -154,13 +244,15 @@ export function AiEstimatorReviewPanel({
         storagePath: "",
       }));
 
-  const rows = useMemo(
-    () =>
-      [...displayFacts.extractedItems, ...displayFacts.inferredItems].filter(
-        (i) => i.included !== false
-      ),
-    [displayFacts]
-  );
+  const rows = useMemo(() => {
+    const all = [...displayFacts.extractedItems, ...displayFacts.inferredItems];
+    return all
+      .map((i) => {
+        const o = manualOverrides[i.id];
+        return o ? applyManualQuantityOverride(i, o) : i;
+      })
+      .filter((i) => i.included !== false);
+  }, [displayFacts, manualOverrides]);
 
   const reviewItems = useMemo(
     () => rows.filter((i) => i.needsReview || i.confidence === "low" || i.origin === "assumption"),
@@ -193,6 +285,32 @@ export function AiEstimatorReviewPanel({
     [unknownSymbols, symbolOccurrences]
   );
 
+  const symbolCounting = useMemo(
+    () => getSymbolCountingSummary(displayFacts),
+    [displayFacts]
+  );
+
+  // Visual symbol counter (feature-flagged): heuristic pixel-level detections.
+  const visualCounterEnabled = isAiVisualSymbolCounterEnabled();
+  const visualDetections = useMemo(
+    () => (visualCounterEnabled ? (displayFacts.visualDetections ?? []) : []),
+    [visualCounterEnabled, displayFacts.visualDetections]
+  );
+  const [visualActions, setVisualActions] = useState<Record<string, VisualReviewAction>>({});
+  const [visualTypeOverrides, setVisualTypeOverrides] = useState<
+    Record<string, VisualNormalizedPoint>
+  >({});
+
+  const quality = useMemo(
+    () => buildEstimatorExtractionQualityReport({ facts: displayFacts }),
+    [displayFacts]
+  );
+
+  const comparisonRows = useMemo(
+    () => buildSymbolCountComparisonRows(displayFacts, manualOverrides),
+    [displayFacts, manualOverrides]
+  );
+
   const priceRisk =
     displayFacts.confidence === "low" || criticalQs.length > 0
       ? "high"
@@ -201,11 +319,37 @@ export function AiEstimatorReviewPanel({
         : "low";
 
   const blockerCount = criticalQs.length + unclearSymbols.length;
-  const readyForQuote = criticalQs.length === 0;
+  const readiness = useMemo(
+    () =>
+      resolveQuoteReadiness({
+        facts: displayFacts,
+        criticalQuestionCount: criticalQs.length,
+        comparisonRows,
+      }),
+    [displayFacts, criticalQs.length, comparisonRows]
+  );
+  const readyForQuote = readiness.state === "ready";
+  const partiallyReady = readiness.state === "partially_ready";
 
-  const recommendation = readyForQuote
-    ? t("projects.aiEstimator.cockpit.ready")
-    : t("projects.aiEstimator.cockpit.recommendation", { count: String(criticalQs.length) });
+  const recommendation =
+    readiness.state === "ready"
+      ? t("projects.aiEstimator.cockpit.ready")
+      : readiness.state === "partially_ready"
+        ? readiness.warning || t("projects.aiEstimator.cockpit.partiallyReady")
+        : criticalQs.length > 0
+          ? t("projects.aiEstimator.cockpit.recommendation", {
+              count: String(criticalQs.length),
+            })
+          : readiness.warning || t("projects.aiEstimator.cockpit.needsReviewReady");
+
+  const drawingCountDisplay = symbolCounting.drawingDetectionAvailable
+    ? String(
+        comparisonRows.reduce(
+          (sum, r) => sum + (typeof r.detectedOccurrenceCount === "number" ? r.detectedOccurrenceCount : 0),
+          0
+        )
+      )
+    : t("projects.aiEstimator.cockpit.drawingCountUnavailable");
 
   const roomsGrouped = useMemo(() => {
     const map = new Map<string, AiExtractedItem[]>();
@@ -255,7 +399,11 @@ export function AiEstimatorReviewPanel({
   const tabs: { id: CockpitTab; label: string }[] = [
     { id: "review", label: t("projects.aiEstimator.tab.review") },
     { id: "breakdown", label: t("projects.aiEstimator.tab.breakdown") },
+    { id: "counts", label: t("projects.aiEstimator.tab.counts") },
     { id: "symbols", label: t("projects.aiEstimator.tab.symbolsShort") },
+    ...(visualCounterEnabled && visualDetections.length > 0
+      ? [{ id: "visual" as const, label: t("projects.aiEstimator.tab.visual") }]
+      : []),
     { id: "offer", label: t("projects.aiEstimator.tab.offer") },
     { id: "details", label: t("projects.aiEstimator.tab.details") },
   ];
@@ -269,9 +417,29 @@ export function AiEstimatorReviewPanel({
     });
   };
 
-  const stickyStatus = readyForQuote
-    ? t("projects.aiEstimator.cockpit.statusReady")
-    : t("projects.aiEstimator.cockpit.statusBlocked", { count: String(criticalQs.length) });
+  const stickyStatus =
+    readiness.state === "ready"
+      ? t("projects.aiEstimator.cockpit.statusReady")
+      : readiness.state === "partially_ready"
+        ? t("projects.aiEstimator.cockpit.statusPartial")
+        : t("projects.aiEstimator.cockpit.statusBlocked", {
+            count: String(Math.max(criticalQs.length, 1)),
+          });
+
+  const saveManualEdit = (itemId: string) => {
+    const qty = Number(editDraft.quantity);
+    setManualOverrides((prev) => ({
+      ...prev,
+      [itemId]: {
+        quantity: Number.isFinite(qty) ? qty : undefined,
+        roomName: editDraft.roomName || undefined,
+        unit: (editDraft.unit as AiQuantityUnit) || "ks",
+        included: editDraft.included,
+        quantitySource: "manual",
+      },
+    }));
+    setEditingCountId(null);
+  };
 
   const reviewCardsLimit = showMoreReview ? 40 : 8;
 
@@ -345,24 +513,25 @@ export function AiEstimatorReviewPanel({
         </p>
       ) : null}
 
-      {/* Summary strip */}
+      {/* Summary strip — honest counters */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
         <SummaryCard
-          label={t("projects.aiEstimator.cockpit.rooms")}
-          value={String(displayFacts.rooms.length)}
+          label={t("projects.aiEstimator.cockpit.legendMarks")}
+          value={String(legendEntries.length)}
         />
         <SummaryCard
-          label={t("projects.aiEstimator.cockpit.items")}
+          label={t("projects.aiEstimator.cockpit.scheduleItems")}
           value={String(rows.length)}
         />
         <SummaryCard
-          label={t("projects.aiEstimator.cockpit.symbols")}
-          value={String(legendEntries.length || symbolOccurrences.length)}
+          label={t("projects.aiEstimator.cockpit.drawingCounted")}
+          value={drawingCountDisplay}
+          emphasize={!symbolCounting.drawingDetectionAvailable}
         />
         <SummaryCard
           label={t("projects.aiEstimator.cockpit.needsReview")}
-          value={String(criticalQs.length + reviewItems.length)}
-          emphasize={criticalQs.length > 0}
+          value={String(criticalQs.length + reviewItems.length + unclearSymbols.length)}
+          emphasize={criticalQs.length > 0 || unclearSymbols.length > 0}
         />
         <SummaryCard
           label={t("projects.aiEstimator.cockpit.priceRisk")}
@@ -371,12 +540,18 @@ export function AiEstimatorReviewPanel({
         />
       </div>
 
+      <p className="text-sm text-muted-foreground" data-testid="ai-extraction-summary">
+        {formatExtractionSummarySk(quality.report, rows.length)}
+      </p>
+
       <div
         className={cn(
           "rounded-lg border px-3 py-2 text-sm",
           readyForQuote
             ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100"
-            : "border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100"
+            : partiallyReady
+              ? "border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100"
+              : "border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100"
         )}
         role="status"
       >
@@ -404,7 +579,23 @@ export function AiEstimatorReviewPanel({
 
       {tab === "review" ? (
         <div className="space-y-5 text-sm">
-          {blockerCount === 0 && reviewItems.length === 0 ? (
+          {quality.criticalWarnings.length > 0 ? (
+            <ReviewSection title={t("projects.aiEstimator.cockpit.blocksPrice")}>
+              {quality.criticalWarnings.map((w) => (
+                <ReviewCard
+                  key={w}
+                  title={w}
+                  detail={t("projects.aiEstimator.quality.checkDrawingHint")}
+                  badge={t("projects.aiEstimator.badge.blocksPrice")}
+                  badgeTone="danger"
+                />
+              ))}
+            </ReviewSection>
+          ) : null}
+
+          {blockerCount === 0 &&
+          reviewItems.length === 0 &&
+          quality.criticalWarnings.length === 0 ? (
             <div className="flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-3">
               <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
               <p>{t("projects.aiEstimator.cockpit.noIssues")}</p>
@@ -601,7 +792,9 @@ export function AiEstimatorReviewPanel({
                   </button>
                   {open ? (
                     <ul className="border-t border-[var(--border)] divide-y divide-[var(--border)]/60">
-                      {items.map((item) => (
+                      {items.map((item) => {
+                        const qtySource = resolveQuantitySource(item);
+                        return (
                         <li
                           key={item.id}
                           className={cn(
@@ -611,19 +804,32 @@ export function AiEstimatorReviewPanel({
                         >
                           <div className="min-w-0">
                             <div className="font-medium">{item.title}</div>
-                            <div className="mt-0.5 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground">
-                              <span>{originLabel(item.origin, t)}</span>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                              <span
+                                className={cn(
+                                  "rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                                  qtySource === "drawing_detection" &&
+                                    "bg-emerald-500/15 text-emerald-800 dark:text-emerald-200",
+                                  qtySource === "schedule" &&
+                                    "bg-sky-500/15 text-sky-800 dark:text-sky-200",
+                                  qtySource === "manual" &&
+                                    "bg-violet-500/15 text-violet-800 dark:text-violet-200",
+                                  (qtySource === "ai_estimate" || qtySource === "legend") &&
+                                    "bg-amber-500/15 text-amber-800 dark:text-amber-200",
+                                  qtySource === "unknown" &&
+                                    "bg-slate-500/15 text-slate-700 dark:text-slate-300"
+                                )}
+                              >
+                                {t(quantitySourceBadgeKey(qtySource))}
+                              </span>
+                              {item.needsReview ? (
+                                <span className="text-amber-700 dark:text-amber-300">
+                                  {item.reviewReason ||
+                                    t("projects.aiEstimator.badge.needsCheck")}
+                                </span>
+                              ) : null}
                               <span>·</span>
                               <span>{confidenceLabel(item.confidence, t)}</span>
-                              {item.needsReview ? (
-                                <>
-                                  <span>·</span>
-                                  <span className="text-amber-700 dark:text-amber-300">
-                                    {item.reviewReason ||
-                                      t("projects.aiEstimator.badge.needsCheck")}
-                                  </span>
-                                </>
-                              ) : null}
                             </div>
                           </div>
                           <div className="tabular-nums text-sm font-medium">
@@ -631,7 +837,8 @@ export function AiEstimatorReviewPanel({
                             {item.unit && item.unit !== "unknown" ? item.unit : ""}
                           </div>
                         </li>
-                      ))}
+                        );
+                      })}
                     </ul>
                   ) : null}
                 </div>
@@ -641,33 +848,219 @@ export function AiEstimatorReviewPanel({
         </div>
       ) : null}
 
+      {tab === "counts" ? (
+        <div className="space-y-3 text-sm">
+          <p className="text-muted-foreground">
+            {t("projects.aiEstimator.counts.lead")}
+          </p>
+          {!symbolCounting.drawingDetectionAvailable ? (
+            <div
+              className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-950 dark:text-amber-100"
+              role="status"
+            >
+              {t("projects.aiEstimator.cockpit.drawingCountUnavailableHint")}
+            </div>
+          ) : null}
+
+          <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
+            <table className="min-w-full text-left text-xs sm:text-sm">
+              <thead className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-2 py-1.5">{t("projects.aiEstimator.col.room")}</th>
+                  <th className="px-2 py-1.5">{t("projects.aiEstimator.counts.symbol")}</th>
+                  <th className="px-2 py-1.5">{t("projects.aiEstimator.counts.label")}</th>
+                  <th className="px-2 py-1.5">{t("projects.aiEstimator.col.unit")}</th>
+                  <th className="px-2 py-1.5">{t("projects.aiEstimator.counts.fromSchedule")}</th>
+                  <th className="px-2 py-1.5">{t("projects.aiEstimator.counts.fromDrawing")}</th>
+                  <th className="px-2 py-1.5">{t("projects.aiEstimator.counts.diff")}</th>
+                  <th className="px-2 py-1.5">{t("projects.aiEstimator.col.source")}</th>
+                  <th className="px-2 py-1.5">{t("projects.aiEstimator.col.confidence")}</th>
+                  <th className="px-2 py-1.5">{t("projects.aiEstimator.counts.status")}</th>
+                  <th className="px-2 py-1.5">{t("projects.aiEstimator.counts.actions")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparisonRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="px-3 py-6 text-center text-muted-foreground">
+                      {t("projects.aiEstimator.emptyBreakdown")}
+                    </td>
+                  </tr>
+                ) : null}
+                {comparisonRows.map((row) => (
+                  <tr
+                    key={row.id}
+                    className={cn(
+                      "border-t border-[var(--border)]/60",
+                      row.needsReview && "bg-amber-500/5"
+                    )}
+                  >
+                    <td className="px-2 py-1.5">{row.roomName}</td>
+                    <td className="px-2 py-1.5 font-medium">{row.symbolCode}</td>
+                    <td className="px-2 py-1.5">{row.label}</td>
+                    <td className="px-2 py-1.5">{row.unit}</td>
+                    <td className="px-2 py-1.5 tabular-nums">
+                      {row.quantityFromSchedule ?? "—"}
+                    </td>
+                    <td className="px-2 py-1.5 tabular-nums">
+                      {symbolCounting.drawingDetectionAvailable
+                        ? (row.detectedOccurrenceCount ?? "—")
+                        : "—"}
+                    </td>
+                    <td className="px-2 py-1.5 tabular-nums">
+                      {row.difference == null ? "—" : row.difference}
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <span className="rounded-full bg-[var(--muted)] px-1.5 py-0.5 text-[10px] font-semibold uppercase">
+                        {t(quantitySourceBadgeKey(row.quantitySource))}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1.5">{confidenceLabel(row.confidence, t)}</td>
+                    <td className="px-2 py-1.5">
+                      <span
+                        className={cn(
+                          "text-[11px] font-medium",
+                          row.status === "ok"
+                            ? "text-emerald-700 dark:text-emerald-300"
+                            : "text-amber-800 dark:text-amber-200"
+                        )}
+                      >
+                        {countRowStatusLabel(row.status, t)}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <div className="flex flex-wrap gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-[11px]"
+                          disabled={!row.hasBbox}
+                          title={
+                            row.hasBbox
+                              ? t("projects.aiEstimator.counts.showOnDrawing")
+                              : t("projects.aiEstimator.counts.showOnDrawingDisabled")
+                          }
+                        >
+                          {t("projects.aiEstimator.counts.showOnDrawing")}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-[11px]"
+                          onClick={() => {
+                            setEditingCountId(row.id);
+                            setEditDraft({
+                              quantity: String(row.quantityFromSchedule ?? ""),
+                              roomName: row.roomName === "—" ? "" : row.roomName,
+                              unit: row.unit === "—" ? "ks" : row.unit,
+                              included: row.included,
+                            });
+                          }}
+                        >
+                          {t("projects.aiEstimator.counts.confirmManual")}
+                        </Button>
+                      </div>
+                      {editingCountId === row.id ? (
+                        <div className="mt-2 space-y-1.5 rounded-md border border-[var(--border)] bg-[var(--card)] p-2">
+                          <label className="block text-[11px] text-muted-foreground">
+                            {t("projects.aiEstimator.col.qty")}
+                            <input
+                              type="number"
+                              className="mt-0.5 w-full rounded border border-[var(--border)] bg-transparent px-2 py-1"
+                              value={editDraft.quantity}
+                              onChange={(e) =>
+                                setEditDraft((d) => ({ ...d, quantity: e.target.value }))
+                              }
+                            />
+                          </label>
+                          <label className="block text-[11px] text-muted-foreground">
+                            {t("projects.aiEstimator.col.room")}
+                            <input
+                              type="text"
+                              className="mt-0.5 w-full rounded border border-[var(--border)] bg-transparent px-2 py-1"
+                              value={editDraft.roomName}
+                              onChange={(e) =>
+                                setEditDraft((d) => ({ ...d, roomName: e.target.value }))
+                              }
+                            />
+                          </label>
+                          <label className="flex items-center gap-2 text-[11px]">
+                            <input
+                              type="checkbox"
+                              checked={editDraft.included}
+                              onChange={(e) =>
+                                setEditDraft((d) => ({ ...d, included: e.target.checked }))
+                              }
+                            />
+                            {t("projects.aiEstimator.counts.includeInQuote")}
+                          </label>
+                          <div className="flex gap-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              className={cn(njNavPrimary(), "h-7 text-[11px]")}
+                              onClick={() => saveManualEdit(row.id)}
+                            >
+                              {t("projects.aiEstimator.counts.saveManual")}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 text-[11px]"
+                              onClick={() => setEditingCountId(null)}
+                            >
+                              {t("projects.aiEstimator.cockpit.showLess")}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <AiEstimatorSymbolAssemblySection facts={displayFacts} />
+        </div>
+      ) : null}
+
       {tab === "symbols" ? (
         <div className="space-y-4 text-sm">
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <SummaryCard
-              label={t("projects.aiEstimator.symbols.legend")}
+              label={t("projects.aiEstimator.cockpit.legendMarks")}
               value={String(legendEntries.length)}
             />
             <SummaryCard
-              label={t("projects.aiEstimator.symbols.found")}
-              value={String(symbolOccurrences.length)}
+              label={t("projects.aiEstimator.cockpit.scheduleItems")}
+              value={String(rows.length)}
+            />
+            <SummaryCard
+              label={t("projects.aiEstimator.cockpit.drawingCounted")}
+              value={drawingCountDisplay}
+              emphasize={!symbolCounting.drawingDetectionAvailable}
             />
             <SummaryCard
               label={t("projects.aiEstimator.symbols.unclear")}
               value={String(unclearSymbols.length)}
               emphasize={unclearSymbols.length > 0}
             />
-            <SummaryCard
-              label={t("projects.aiEstimator.symbols.source")}
-              value={
-                legendEntries.length > 0
-                  ? t("projects.aiEstimator.symbols.sourceLegend")
-                  : t("projects.aiEstimator.symbols.sourceAi")
-              }
-            />
           </div>
 
-          {legendEntries.length > 0 && symbolOccurrences.length === 0 ? (
+          {!symbolCounting.drawingDetectionAvailable ? (
+            <div
+              className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-950 dark:text-amber-100"
+              role="status"
+            >
+              {t("projects.aiEstimator.symbols.legendOnlyHint", {
+                count: String(legendEntries.length || rows.length),
+              })}
+            </div>
+          ) : legendEntries.length > 0 && symbolOccurrences.length === 0 ? (
             <div
               className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-amber-950 dark:text-amber-100"
               role="status"
@@ -799,6 +1192,108 @@ export function AiEstimatorReviewPanel({
         </div>
       ) : null}
 
+      {tab === "visual" ? (
+        <div className="space-y-3 text-sm">
+          <p className="text-muted-foreground">
+            {t("projects.aiEstimator.visual.lead")}
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {visualDetections.slice(0, 60).map((d) => {
+              const action = visualActions[d.id] ?? null;
+              const point = visualTypeOverrides[d.id] ?? d.normalizedPoint;
+              return (
+                <div
+                  key={d.id}
+                  className={cn(
+                    "rounded-lg border px-3 py-2.5",
+                    action === "ignored"
+                      ? "border-[var(--border)]/50 opacity-50"
+                      : action === "confirmed"
+                        ? "border-emerald-500/40 bg-emerald-500/5"
+                        : "border-amber-500/40 bg-amber-500/5"
+                  )}
+                >
+                  {/* Crop preview is not rendered yet — bbox reference shown instead. */}
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-medium">
+                      {visualPointLabel[point] ?? point}
+                    </p>
+                    <span className="shrink-0 rounded bg-[var(--muted)] px-1.5 py-0.5 text-[10px] font-semibold uppercase">
+                      {confidenceLabel(d.confidence, t)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {[
+                      d.roomName || t("projects.aiEstimator.visual.noRoom"),
+                      `s. ${d.page}`,
+                      `bbox ${Math.round(d.bbox.x)}×${Math.round(d.bbox.y)} (${Math.round(d.bbox.width)}×${Math.round(d.bbox.height)} px)`,
+                      `skóre ${d.matchScore.toFixed(2)}`,
+                    ].join(" · ")}
+                  </p>
+                  {d.reviewReason && action !== "confirmed" ? (
+                    <p className="mt-1 text-xs text-amber-800 dark:text-amber-200">
+                      {d.reviewReason}
+                    </p>
+                  ) : null}
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={action === "confirmed" ? "default" : "outline"}
+                      className="h-7 px-2 text-[11px]"
+                      onClick={() =>
+                        setVisualActions((prev) => ({
+                          ...prev,
+                          [d.id]: prev[d.id] === "confirmed" ? null : "confirmed",
+                        }))
+                      }
+                    >
+                      {t("projects.aiEstimator.visual.confirm")}
+                    </Button>
+                    <select
+                      aria-label={t("projects.aiEstimator.visual.changeType")}
+                      className="h-7 rounded border border-[var(--border)] bg-transparent px-1.5 text-[11px]"
+                      value={point}
+                      onChange={(e) =>
+                        setVisualTypeOverrides((prev) => ({
+                          ...prev,
+                          [d.id]: e.target.value as VisualNormalizedPoint,
+                        }))
+                      }
+                    >
+                      {(Object.keys(visualPointLabel) as VisualNormalizedPoint[]).map(
+                        (p) => (
+                          <option key={p} value={p}>
+                            {visualPointLabel[p]}
+                          </option>
+                        )
+                      )}
+                    </select>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-[11px] text-muted-foreground"
+                      onClick={() =>
+                        setVisualActions((prev) => ({
+                          ...prev,
+                          [d.id]: prev[d.id] === "ignored" ? null : "ignored",
+                        }))
+                      }
+                    >
+                      {t("projects.aiEstimator.visual.ignore")}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {t("projects.aiEstimator.visual.cropsPending")}
+          </p>
+        </div>
+      ) : null}
+
       {tab === "offer" ? (
         <div className="space-y-4 text-sm">
           <div
@@ -811,10 +1306,17 @@ export function AiEstimatorReviewPanel({
           >
             {readyForQuote
               ? t("projects.aiEstimator.cockpit.offerReady")
-              : t("projects.aiEstimator.cockpit.offerBlocked", {
-                  count: String(criticalQs.length),
-                })}
+              : partiallyReady
+                ? readiness.warning || t("projects.aiEstimator.cockpit.partiallyReady")
+                : t("projects.aiEstimator.cockpit.offerBlocked", {
+                    count: String(Math.max(criticalQs.length, 1)),
+                  })}
           </div>
+          {readiness.warning && !readyForQuote ? (
+            <p className="text-xs text-amber-800 dark:text-amber-200" role="status">
+              {t("projects.aiEstimator.counts.quoteWarning")}
+            </p>
+          ) : null}
 
           {quoteDraft ? (
             <>
@@ -1019,6 +1521,7 @@ function SummaryCard({
   value: string;
   emphasize?: boolean;
 }) {
+  const long = value.length > 8;
   return (
     <div
       className={cn(
@@ -1029,7 +1532,14 @@ function SummaryCard({
       )}
     >
       <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className="mt-0.5 text-lg font-semibold tabular-nums leading-tight">{value}</p>
+      <p
+        className={cn(
+          "mt-0.5 font-semibold leading-tight",
+          long ? "text-xs sm:text-sm" : "text-lg tabular-nums"
+        )}
+      >
+        {value}
+      </p>
     </div>
   );
 }

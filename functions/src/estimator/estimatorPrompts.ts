@@ -77,10 +77,17 @@ PROCESS (legend-first, do not count random shapes first):
 2. If a legend / key / legenda / vysvetlivky / značky is visible, extract EVERY legend row into legendEntries:
    - symbolLabel (the mark/code if visible), symbolDescription (meaning), unit, quantity if written, notes.
    - normalizedType (see enum below); if you cannot map safely, use "unknown" and needsReview=true.
+2b. NUMBERED MARKS: many SK/CZ installation plans print small INDEX NUMBERS (1, 2, 13, 14, 18, 20 …) directly next to each symbol on the plan. These numbers reference a numbered legend / výkaz row. They are DRAWING CODES, never quantities.
+   - Capture the number as symbolLabel on the legend row and as visibleLabel on every occurrence.
+   - The same number repeated at several positions = several occurrences of the SAME mark. Count the positions.
+   - Color coding is common (e.g. red = sockets/power, green = light outputs/switches, blue/cyan = dimensions or LED). Use color as a hint, and the legend as truth.
+2c. TEXT CALLOUTS: symbols are often labelled by short text next to them ("Zásuvky v nábytku", "Vývod zo zeme", "Podsvietenie vitrína v-1850mm", "LED pás 13"). Read EVERY such callout; the text is the meaning, a trailing number is the mark code, "v-XXXXmm" is mounting height (put into description, never into quantity).
 3. Build a symbol dictionary from the legend (THIS drawing wins over any general knowledge).
 4. Search the FULL plan (not only the legend) for those symbols and record symbolOccurrences.
    - Prefer ONE aggregated row per symbol type per room with quantity = counted pieces.
    - Example: 12 identical ceiling lights in "Kuchyňa" → one occurrence with quantity 12 (not 12 rows of 1).
+   - Always fill visibleLabel with the mark number/code seen on the plan when present.
+   - Honest counting source: when YOU visually counted the marks on the plan, set quantity, detectedOccurrenceCount = counted number and quantitySource="drawing_detection". When the number was read from a printed table/výkaz/legend quantity column, set quantitySource="schedule" and leave detectedOccurrenceCount null. Never fake a visual count.
 5. Connect each occurrence to a room when room names are visible (roomName). Fill rooms[] with every labeled room + areaM2 if written.
 6. Count occurrences only when reasonably visible. Never invent exact quantities.
    - If you cannot count a mark type, omit quantity and set needsReview=true (do NOT put the legend code in parentheses as if it were a count).
@@ -91,14 +98,19 @@ PROCESS (legend-first, do not count random shapes first):
 11. Fill companyFocus: what the company must DO with each fact (quote_line, material_purchase, labor_planning, site_verification, customer_question, risk, execution_task).
 
 CRITICAL: symbolLabel in the legend (e.g. "29", "V1") is a DRAWING CODE, not a piece count. Put counts only in quantity / computedQuantity fields.
+CRITICAL: every extractedItem that corresponds to a numbered/coded mark MUST carry that code in symbolCode (same value as the occurrence visibleLabel / legend symbolLabel). Do not leave symbolCode empty when the mark has a visible number or code.
 
 CRITICAL — COMPLETE TAKEOFF (do not stop at lighting):
 Slovak / Czech marking-plan terms you MUST hunt for on BOTH legend and plan:
-- Zásuvky: zásuvka, 2zásuvka, dvojpólová zásuvka, El.zásuvka, datová zásuvka, Schuko → normalizedType=socket
+- Zásuvky: zásuvka, 2zásuvka, dvojpólová zásuvka, El.zásuvka, datová zásuvka, Schuko, "zásuvky v nábytku", "zásuvky z prac.dosky", "El.3zásuvky vedľa seba", "zásuvka pod sebou" → normalizedType=socket
+- Podlahové / zemné vývody: "vývod zo zeme", "podlahová zásuvka", "zemná krabica" → socket (note floor outlet in title/description)
 - Vypínače: vypínač, prepínač, schodišťový, stmievač, tlačidlo → normalizedType=switch
-- Osvetlenie: visiace/stropné/nástenné svietidlo, LED pás, lišta, podsvietenie → lighting / led_strip / …
+- Osvetlenie: visiace/stropné/nástenné svietidlo, LED pás, lišta, "zapustené osvetlenie", "lištový systém", podsvietenie → lighting / led_strip / lighting_profile
+- Nábytkové podsvietenie: "podsvietenie skriniek", "podsvietenie vitrína", "podsvietenie príborník", "podsvietenie nábytku" → furniture_light
+- Spotrebičové vývody: "vývod pre varnú dosku", "myčka", "chladnička", "mikrovlnka", "El.rúra", "digestor", "indukčná doska", "5 žilový kábel", "380-415V" → socket or other, keep the appliance name in the title, mark needsReview when circuit spec matters
 - Rozvádzač / rozvodnica / RH / RE → distribution_board
 - Káble / trasy: CYKY, NYM, kábel, trasa, vodič — put TYPE in title when written (e.g. "CYKY 3×2,5"); length only if dimensioned on plan → cable_route
+- Mounting heights "v-350mm", "v-560mm", "v-1850mm" belong in description, NEVER in quantity.
 If the legend lists sockets/switches, they MUST appear in legendEntries AND you must attempt counts in symbolOccurrences (or needsReview without inventing counts).
 A lighting-only takeoff when the legend also shows zásuvky/vypínače is a FAILURE — add those rows.
 
@@ -129,10 +141,10 @@ Return JSON only:
   "inputSummary": string,
   "drawingRegions": [{ "id": string, "page": number, "label"?: string, "regionType": "legend"|"floor_plan"|"room"|"title_block"|"table"|"unknown", "confidence": "high"|"medium"|"low" }],
   "legendEntries": [{ "id": string, "trade": "electrical", "symbolLabel"?: string, "symbolDescription": string, "normalizedType": string, "unit"?: "ks"|"m"|"m2"|"bod"|"set"|"unknown", "defaultQuoteCategory": "material"|"labor"|"material_and_labor"|"review_only", "evidence": [{ "fileName": string, "page"?: number, "inputType": "pdf" }], "confidence": "high"|"medium"|"low", "needsReview": boolean }],
-  "symbolOccurrences": [{ "id": string, "legendEntryId"?: string, "page": number, "roomName"?: string, "normalizedType": string, "title": string, "quantity"?: number, "unit"?: "ks"|"m"|"m2"|"bod"|"set"|"unknown", "visibleLabel"?: string, "origin": "from_document", "evidence": [{ "fileName": string, "page"?: number, "inputType": "pdf" }], "confidence": "high"|"medium"|"low", "needsReview": boolean, "reviewReason"?: string }],
+  "symbolOccurrences": [{ "id": string, "legendEntryId"?: string, "page": number, "roomName"?: string, "normalizedType": string, "title": string, "quantity"?: number, "unit"?: "ks"|"m"|"m2"|"bod"|"set"|"unknown", "visibleLabel"?: string, "quantitySource"?: "drawing_detection"|"schedule"|"legend"|"unknown", "detectedOccurrenceCount"?: number|null, "origin": "from_document", "evidence": [{ "fileName": string, "page"?: number, "inputType": "pdf" }], "confidence": "high"|"medium"|"low", "needsReview": boolean, "reviewReason"?: string }],
   "unknownSymbols": [same shape as symbolOccurrences with normalizedType "unknown"],
   "rooms": [{ "id": string, "name": string, "areaM2"?: number, "evidence": [{ "fileName": string, "page"?: number, "inputType": "pdf" }], "confidence": "high"|"medium"|"low", "needsReview": boolean }],
-  "extractedItems": [{ "id": string, "category": "lighting"|"socket"|"switch"|"cable"|"led_strip"|"distribution_board"|"installation_material"|"labor"|"travel"|"other", "roomName"?: string, "title": string, "quantity"?: number, "unit"?: string, "multiplier"?: number, "computedQuantity"?: number, "origin": "from_document", "evidence": [{ "fileName": string, "page"?: number, "inputType": "pdf" }], "confidence": "high"|"medium"|"low", "needsReview": boolean, "reviewReason"?: string }],
+  "extractedItems": [{ "id": string, "category": "lighting"|"socket"|"switch"|"cable"|"led_strip"|"distribution_board"|"installation_material"|"labor"|"travel"|"other", "roomName"?: string, "title": string, "symbolCode"?: string, "quantity"?: number, "unit"?: string, "multiplier"?: number, "computedQuantity"?: number, "quantitySource"?: "drawing_detection"|"schedule"|"legend"|"unknown", "detectedOccurrenceCount"?: number|null, "origin": "from_document", "evidence": [{ "fileName": string, "page"?: number, "inputType": "pdf" }], "confidence": "high"|"medium"|"low", "needsReview": boolean, "reviewReason"?: string }],
   "inferredItems": [same shape with origin "inferred"|"assumption"],
   "companyFocus": [{ "id": string, "title": string, "description": string, "focusType": "quote_line"|"material_purchase"|"labor_planning"|"site_verification"|"customer_question"|"risk"|"execution_task", "importance": "critical"|"important"|"nice_to_have", "relatedRoomId"?: string }],
   "missingQuestions": [{ "id": string, "question": string, "reason": string, "importance": "critical"|"important"|"nice_to_have", "blocksFixedQuote": boolean }],

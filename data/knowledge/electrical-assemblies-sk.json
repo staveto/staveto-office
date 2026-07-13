@@ -1,0 +1,188 @@
+{
+  "pack": {
+    "id": "sk_electrical_assemblies_v1",
+    "trade": "electrical",
+    "countryCodes": ["SK", "CZ"],
+    "type": "starter_aliases",
+    "sourceName": "Staveto starter SK electrical assemblies",
+    "licenseStatus": "internal_sample",
+    "version": "1.0.0",
+    "active": true
+  },
+  "assemblies": [
+    {
+      "id": "socket_point_standard",
+      "trade": "electrical",
+      "countryCodes": ["SK", "CZ"],
+      "normalizedPoint": "socket_point",
+      "title": "Zásuvkový bod (štandard)",
+      "quoteGroup": "sockets_switches",
+      "defaultUnit": "ks",
+      "materialComponents": [
+        { "category": "socket", "title": "Zásuvka 230V", "quantityFormula": "qty", "unit": "ks", "productRequired": true, "priceRequired": true },
+        { "category": "other", "title": "Rámik / kryt", "quantityFormula": "qty", "unit": "ks", "productRequired": true, "priceRequired": true },
+        { "category": "installation_box", "title": "Inštalačná krabica", "quantityFormula": "qty", "unit": "ks", "productRequired": true, "priceRequired": true },
+        { "category": "cable", "title": "Kabeláž k zásuvke (placeholder)", "quantityFormula": "needs_measure", "unit": "m", "productRequired": true, "priceRequired": false, "requiredSpecs": ["cable_type", "length_m"] },
+        { "category": "terminal", "title": "Svorky / spojovací materiál", "quantityFormula": "qty * 2", "unit": "ks", "productRequired": false, "priceRequired": false },
+        { "category": "mounting_material", "title": "Montážny materiál", "quantityFormula": "qty", "unit": "set", "productRequired": false, "priceRequired": false }
+      ],
+      "laborComponents": [
+        { "title": "Montáž a zapojenie zásuvky", "timeFormula": "qty * 0.5", "unit": "h", "defaultMinutesPerUnit": 30 }
+      ],
+      "requiredQuestions": ["Sú sekanie drážok a murárske výpomoci v rozsahu?"],
+      "assumptions": ["Štandardná výška osadenia, pokiaľ výkres neurčuje inak."],
+      "riskFlags": ["cable_length_not_measured"],
+      "active": true
+    },
+    {
+      "id": "switch_point_standard",
+      "trade": "electrical",
+      "countryCodes": ["SK", "CZ"],
+      "normalizedPoint": "switch_point",
+      "title": "Vypínačový bod (štandard)",
+      "quoteGroup": "sockets_switches",
+      "defaultUnit": "ks",
+      "materialComponents": [
+        { "category": "switch", "title": "Vypínač / spínač", "quantityFormula": "qty", "unit": "ks", "productRequired": true, "priceRequired": true },
+        { "category": "other", "title": "Rámik / kryt", "quantityFormula": "qty", "unit": "ks", "productRequired": true, "priceRequired": true },
+        { "category": "installation_box", "title": "Inštalačná krabica", "quantityFormula": "qty", "unit": "ks", "productRequired": true, "priceRequired": true },
+        { "category": "cable", "title": "Ovládacie vedenie (placeholder)", "quantityFormula": "needs_measure", "unit": "m", "productRequired": true, "priceRequired": false, "requiredSpecs": ["cable_type", "length_m"] }
+      ],
+      "laborComponents": [
+        { "title": "Montáž a zapojenie vypínača", "timeFormula": "qty * 0.5", "unit": "h", "defaultMinutesPerUnit": 30 }
+      ],
+      "requiredQuestions": ["Typ spínača (jednopólový / sériový / striedavý / tlačidlo)?"],
+      "assumptions": [],
+      "riskFlags": ["cable_length_not_measured"],
+      "active": true
+    },
+    {
+      "id": "light_output_standard",
+      "trade": "electrical",
+      "countryCodes": ["SK", "CZ"],
+      "normalizedPoint": "light_output",
+      "title": "Svetelný vývod (štandard)",
+      "quoteGroup": "lighting",
+      "defaultUnit": "ks",
+      "materialComponents": [
+        { "category": "installation_box", "title": "Krabica / prípojné miesto", "quantityFormula": "qty", "unit": "ks", "productRequired": true, "priceRequired": true },
+        { "category": "terminal", "title": "Svorky / ukončenie kábla", "quantityFormula": "qty", "unit": "ks", "productRequired": false, "priceRequired": false },
+        { "category": "mounting_material", "title": "Montážny materiál", "quantityFormula": "qty", "unit": "set", "productRequired": false, "priceRequired": false }
+      ],
+      "laborComponents": [
+        { "title": "Príprava a zapojenie svetelného vývodu", "timeFormula": "qty * 0.5", "unit": "h", "defaultMinutesPerUnit": 30 }
+      ],
+      "requiredQuestions": ["Svietidlo dodáva zákazník alebo firma?"],
+      "assumptions": ["Vývod bez svietidla, pokiaľ nie je uvedené inak."],
+      "riskFlags": [],
+      "active": true
+    },
+    {
+      "id": "led_strip_system",
+      "trade": "electrical",
+      "countryCodes": ["SK", "CZ"],
+      "normalizedPoint": "led_strip_point",
+      "title": "LED systém (pás + profil + zdroj)",
+      "quoteGroup": "led_systems",
+      "defaultUnit": "m",
+      "materialComponents": [
+        { "category": "led_strip", "title": "LED pás", "quantityFormula": "qty * 1.08", "unit": "m", "productRequired": true, "priceRequired": true, "requiredSpecs": ["voltage", "w_per_m", "cct", "ip_rating"] },
+        { "category": "led_profile", "title": "LED profil + difúzor", "quantityFormula": "qty * 1.08", "unit": "m", "productRequired": true, "priceRequired": true },
+        { "category": "led_driver", "title": "LED zdroj / driver", "quantityFormula": "needs_spec", "unit": "ks", "productRequired": true, "priceRequired": true, "requiredSpecs": ["voltage", "w_per_m", "control_type"] },
+        { "category": "other", "title": "Konektory / spojky", "quantityFormula": "max(2, ceil(qty / 5))", "unit": "ks", "productRequired": false, "priceRequired": false },
+        { "category": "cable", "title": "Napájacie vedenie (placeholder)", "quantityFormula": "needs_measure", "unit": "m", "productRequired": true, "priceRequired": false, "requiredSpecs": ["cable_type", "length_m"] }
+      ],
+      "laborComponents": [
+        { "title": "Montáž LED systému", "timeFormula": "qty * 0.35", "unit": "h", "defaultMinutesPerUnit": 21 }
+      ],
+      "requiredQuestions": [
+        "Napätie LED pásu (12/24V)?",
+        "Výkon W/m?",
+        "Teplota chromatickosti (CCT)?",
+        "IP krytie?",
+        "Typ riadenia (spínané / stmievateľné / smart)?"
+      ],
+      "assumptions": ["Rezerva 8 % na prerezy."],
+      "riskFlags": ["missing_led_specs"],
+      "active": true
+    },
+    {
+      "id": "installation_box_standard",
+      "trade": "electrical",
+      "countryCodes": ["SK", "CZ"],
+      "normalizedPoint": "installation_box",
+      "title": "Inštalačná krabica (štandard)",
+      "quoteGroup": "installation_material",
+      "defaultUnit": "ks",
+      "materialComponents": [
+        { "category": "installation_box", "title": "Inštalačná / podomietková krabica", "quantityFormula": "qty", "unit": "ks", "productRequired": true, "priceRequired": true }
+      ],
+      "laborComponents": [
+        { "title": "Osadenie krabice", "timeFormula": "qty * 0.25", "unit": "h", "defaultMinutesPerUnit": 15 }
+      ],
+      "requiredQuestions": ["Typ steny (murivo / SDK / betón)?"],
+      "assumptions": [],
+      "riskFlags": [],
+      "active": true
+    },
+    {
+      "id": "cable_route_placeholder",
+      "trade": "electrical",
+      "countryCodes": ["SK", "CZ"],
+      "normalizedPoint": "cable_route",
+      "title": "Kabeláž / trasa (treba zamerať)",
+      "quoteGroup": "cabling",
+      "defaultUnit": "m",
+      "materialComponents": [
+        { "category": "cable", "title": "Kábel podľa typu", "quantityFormula": "needs_measure", "unit": "m", "productRequired": true, "priceRequired": false, "requiredSpecs": ["cable_type", "length_m"] },
+        { "category": "conduit", "title": "Chránička / rúra (ak treba)", "quantityFormula": "needs_measure", "unit": "m", "productRequired": false, "priceRequired": false }
+      ],
+      "laborComponents": [
+        { "title": "Pokládka kábla", "timeFormula": "needs_measure", "unit": "h" }
+      ],
+      "requiredQuestions": ["Typ a dĺžka kábla po zameraní?"],
+      "assumptions": ["Dĺžky sa nevymýšľajú z počtu zásuviek."],
+      "riskFlags": ["cable_length_not_measured"],
+      "active": true
+    },
+    {
+      "id": "distribution_board_basic",
+      "trade": "electrical",
+      "countryCodes": ["SK", "CZ"],
+      "normalizedPoint": "distribution_board",
+      "title": "Rozvádzač (základ)",
+      "quoteGroup": "distribution_board",
+      "defaultUnit": "ks",
+      "materialComponents": [
+        { "category": "distribution_board", "title": "Rozvádzač / skriňa", "quantityFormula": "qty", "unit": "ks", "productRequired": true, "priceRequired": true, "requiredSpecs": ["module_count"] },
+        { "category": "breaker", "title": "Ističe / RCD (placeholder)", "quantityFormula": "needs_spec", "unit": "ks", "productRequired": true, "priceRequired": true, "requiredSpecs": ["circuit_list"] },
+        { "category": "other", "title": "Štítky / popisovače", "quantityFormula": "1", "unit": "set", "productRequired": false, "priceRequired": false }
+      ],
+      "laborComponents": [
+        { "title": "Zapojenie rozvádzača", "timeFormula": "needs_spec", "unit": "h", "defaultMinutesPerUnit": 120 }
+      ],
+      "requiredQuestions": ["Počet modulov / ističov?", "Je rozvádzač súčasťou rozsahu?"],
+      "assumptions": ["Bez detailnej špecifikácie len orientačne."],
+      "riskFlags": ["db_underspecified"],
+      "active": true
+    },
+    {
+      "id": "testing_revision",
+      "trade": "electrical",
+      "countryCodes": ["SK", "CZ"],
+      "normalizedPoint": "unknown",
+      "title": "Skúšky a odovzdanie",
+      "quoteGroup": "testing_revision",
+      "defaultUnit": "set",
+      "materialComponents": [],
+      "laborComponents": [
+        { "title": "Merania / skúšky", "timeFormula": "1", "unit": "h", "defaultMinutesPerUnit": 120 },
+        { "title": "Protokol / odovzdanie", "timeFormula": "0.5", "unit": "h", "defaultMinutesPerUnit": 30 }
+      ],
+      "requiredQuestions": ["Je v rozsahu aj revízia?"],
+      "assumptions": [],
+      "riskFlags": [],
+      "active": true
+    }
+  ]
+}

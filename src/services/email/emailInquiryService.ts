@@ -3,6 +3,18 @@ import type { EmailInquiry, EmailInquiryMessage } from "@/lib/emailInquiryTypes"
 
 export const EMAIL_INBOX_CHANGED_EVENT = "staveto:email-inbox-changed";
 
+/** Soft failures that should stop polling / auto-sync (not real outages). */
+export const GMAIL_SOFT_UNAVAILABLE_CODES = new Set([
+  "GMAIL_NOT_CONNECTED",
+  "gmail_not_connected",
+  "GMAIL_ADMIN_NOT_CONFIGURED",
+  "gmail_admin_not_configured",
+  "GMAIL_NOT_CONFIGURED",
+  "gmail_not_configured",
+  "ADMIN_UNAVAILABLE",
+  "TOKEN_REFRESH_FAILED",
+]);
+
 export function notifyEmailInboxChanged(): void {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event(EMAIL_INBOX_CHANGED_EVENT));
@@ -19,23 +31,57 @@ async function authHeaders(): Promise<HeadersInit> {
   };
 }
 
+export type FetchEmailInquiriesResult = {
+  inquiries: EmailInquiry[];
+  connected: boolean;
+  reason?: string;
+};
+
 /** Server-backed list (works when Firestore client rules block direct reads). */
 export async function fetchEmailInquiries(
   orgId: string,
   opts?: { showAll?: boolean }
 ): Promise<EmailInquiry[]> {
+  const result = await fetchEmailInquiriesDetailed(orgId, opts);
+  return result.inquiries;
+}
+
+export async function fetchEmailInquiriesDetailed(
+  orgId: string,
+  opts?: { showAll?: boolean }
+): Promise<FetchEmailInquiriesResult> {
   const headers = await authHeaders();
   const allParam = opts?.showAll ? "&all=1" : "";
   const res = await fetch(
     `/api/gmail/inquiries?orgId=${encodeURIComponent(orgId)}${allParam}`,
     { headers }
   );
-  if (!res.ok) {
-    const data = (await res.json().catch(() => ({}))) as { errorCode?: string };
-    throw new Error(data.errorCode || "LOAD_FAILED");
+
+  const data = (await res.json().catch(() => ({}))) as {
+    inquiries?: EmailInquiry[];
+    connected?: boolean;
+    reason?: string;
+    errorCode?: string;
+  };
+
+  if (res.ok) {
+    return {
+      inquiries: data.inquiries ?? [],
+      connected: data.connected !== false,
+      reason: data.reason,
+    };
   }
-  const data = (await res.json()) as { inquiries?: EmailInquiry[] };
-  return data.inquiries ?? [];
+
+  const code = data.errorCode || data.reason || "LOAD_FAILED";
+  if (GMAIL_SOFT_UNAVAILABLE_CODES.has(code) || res.status === 503) {
+    return {
+      inquiries: [],
+      connected: false,
+      reason: code,
+    };
+  }
+
+  throw new Error(code);
 }
 
 export async function fetchEmailInquiryDetail(
@@ -57,17 +103,39 @@ export async function fetchEmailInquiryDetail(
   return { inquiry: data.inquiry, messages: data.messages ?? [] };
 }
 
+export type SubscribeEmailInquiriesOptions = {
+  /** When false, fetch once and do not poll. Default true. */
+  poll?: boolean;
+  pollIntervalMs?: number;
+};
+
 export function subscribeEmailInquiries(
   orgId: string,
   onData: (rows: EmailInquiry[]) => void,
-  onError?: (e: Error) => void
+  onError?: (e: Error) => void,
+  options?: SubscribeEmailInquiriesOptions
 ): () => void {
   let cancelled = false;
+  let timer: number | undefined;
+  let pollingEnabled = options?.poll !== false;
+  const intervalMs = options?.pollIntervalMs ?? 30_000;
+
+  const clearPoll = () => {
+    if (timer != null && typeof window !== "undefined") {
+      window.clearInterval(timer);
+      timer = undefined;
+    }
+  };
 
   const refresh = async () => {
     try {
-      const rows = await fetchEmailInquiries(orgId);
-      if (!cancelled) onData(rows);
+      const result = await fetchEmailInquiriesDetailed(orgId);
+      if (cancelled) return;
+      onData(result.inquiries);
+      if (!result.connected || (result.reason && GMAIL_SOFT_UNAVAILABLE_CODES.has(result.reason))) {
+        pollingEnabled = false;
+        clearPoll();
+      }
     } catch (e) {
       if (!cancelled) onError?.(e instanceof Error ? e : new Error(String(e)));
     }
@@ -79,10 +147,20 @@ export function subscribeEmailInquiries(
       cancelled = true;
     };
   }
-  const timer = window.setInterval(() => void refresh(), 30_000);
+
+  if (pollingEnabled) {
+    timer = window.setInterval(() => {
+      if (!pollingEnabled) {
+        clearPoll();
+        return;
+      }
+      void refresh();
+    }, intervalMs);
+  }
+
   return () => {
     cancelled = true;
-    window.clearInterval(timer);
+    clearPoll();
   };
 }
 

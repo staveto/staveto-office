@@ -12,6 +12,7 @@ export type TakeoffSource =
   | "ocr_text"
   | "inferred"
   | "assumption"
+  | "visual_detection"
   | "company_template"
   | "user";
 

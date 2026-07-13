@@ -46,6 +46,8 @@ export function buildGanttBarTooltipData(input: {
   statusLabel?: string;
   equipmentCount?: number;
   equipmentLabel?: (count: number) => string;
+  /** Explicit meta line (e.g. task counts) — wins over equipment meta. */
+  meta?: string;
 }): GanttBarTooltipData {
   const dateRange = input.formatRange?.(input.startYmd, input.endYmd ?? input.startYmd);
   const days =
@@ -59,8 +61,8 @@ export function buildGanttBarTooltipData(input: {
         : formatGanttDurationLabel(input.startYmd, input.endYmd, input.daysShortLabel)
       : undefined;
 
-  let meta: string | undefined;
-  if (input.equipmentCount != null && input.equipmentCount > 0) {
+  let meta: string | undefined = input.meta;
+  if (meta == null && input.equipmentCount != null && input.equipmentCount > 0) {
     meta = input.equipmentLabel
       ? input.equipmentLabel(input.equipmentCount)
       : `${input.equipmentCount}`;

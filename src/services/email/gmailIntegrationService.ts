@@ -236,6 +236,8 @@ export async function syncGmailInbox(orgId: string): Promise<{
   threadsFound: number;
   failed: number;
   filteredOut: number;
+  connected?: boolean;
+  reason?: string;
 }> {
   const headers = await authHeaders();
   const res = await fetch("/api/gmail/sync", {
@@ -243,17 +245,50 @@ export async function syncGmailInbox(orgId: string): Promise<{
     headers,
     body: JSON.stringify({ orgId }),
   });
-  if (!res.ok) {
-    const data = (await res.json()) as { errorCode?: string };
-    throw new Error(data.errorCode || "SYNC_FAILED");
+  const data = (await res.json().catch(() => ({}))) as {
+    synced?: number;
+    newInquiries?: number;
+    threadsFound?: number;
+    failed?: number;
+    filteredOut?: number;
+    connected?: boolean;
+    reason?: string;
+    errorCode?: string;
+    ok?: boolean;
+  };
+
+  if (res.ok) {
+    return {
+      synced: data.synced ?? 0,
+      newInquiries: data.newInquiries ?? 0,
+      threadsFound: data.threadsFound ?? 0,
+      failed: data.failed ?? 0,
+      filteredOut: data.filteredOut ?? 0,
+      connected: data.connected,
+      reason: data.reason,
+    };
   }
-  return res.json() as Promise<{
-    synced: number;
-    newInquiries: number;
-    threadsFound: number;
-    failed: number;
-    filteredOut: number;
-  }>;
+
+  const code = data.errorCode || data.reason || "SYNC_FAILED";
+  // Soft “not connected / not configured” — surface as result, not throw spam
+  if (
+    code === "GMAIL_NOT_CONNECTED" ||
+    code === "GMAIL_NOT_CONFIGURED" ||
+    code === "GMAIL_ADMIN_NOT_CONFIGURED" ||
+    code === "TOKEN_REFRESH_FAILED"
+  ) {
+    return {
+      synced: 0,
+      newInquiries: 0,
+      threadsFound: 0,
+      failed: 0,
+      filteredOut: 0,
+      connected: false,
+      reason: code,
+    };
+  }
+
+  throw new Error(code);
 }
 
 async function disconnectGmailViaCloudFunction(orgId: string): Promise<void> {

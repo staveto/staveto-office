@@ -311,7 +311,7 @@ describe("gemini draft validation", () => {
 });
 
 describe("office plan review limits", () => {
-  it("rebalances more than 10 tasks in one phase", () => {
+  it("rebalances phases that exceed the per-phase task limit", () => {
     const plan = officeDraftToAiProjectPlan(
       {
         ...baseDraft,
@@ -327,6 +327,7 @@ describe("office plan review limits", () => {
     );
     const rebalanced = rebalanceAiPhasesForReview(plan.phases);
     expect(rebalanced.length).toBeGreaterThan(1);
-    expect(rebalanced.every((phase) => phase.tasks.length <= 10)).toBe(true);
+    // Current mobile-aligned limit is 12 tasks per phase (see aiProjectSchema.ts).
+    expect(rebalanced.every((phase) => phase.tasks.length <= 12)).toBe(true);
   });
 });
