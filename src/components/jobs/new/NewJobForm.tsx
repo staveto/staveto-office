@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Search,
   Building2,
@@ -23,6 +23,15 @@ import { useAuth } from "@/context/AuthContext";
 import { useEnabledWorkTypes } from "@/context/EnabledWorkTypesContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { createDraftJob, copyProjectConcept } from "@/services/projects";
+import {
+  ensureDraftProjectForVisualTakeoff,
+  buildVisualTakeoffHref,
+  setProjectVisualTakeoffStatus,
+} from "@/services/takeoff/ensureDraftForVisualTakeoff";
+import {
+  loadVisualTakeoffResume,
+  saveVisualTakeoffResume,
+} from "@/lib/takeoff/visualTakeoffResume";
 import { listProjectsForWorkspace, getProject, type ProjectDoc } from "@/lib/projects";
 import { filterCopySourceProjects } from "@/lib/copyProjectSources";
 import { createCustomer, listCustomersForWorkspace } from "@/lib/customers";
@@ -133,10 +142,12 @@ function RequiredMark() {
 
 export function NewJobForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { t, locale } = useI18n();
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
   const { visibleWorkTypes, loading: workTypesLoading } = useEnabledWorkTypes();
+  const resumeAppliedRef = useRef(false);
 
   const [step, setStep] = useState<WizardStep>("type");
   const [workType, setWorkType] = useState<WorkType | null>(null);
@@ -195,6 +206,8 @@ export function NewJobForm() {
   const [quoteDraft, setQuoteDraft] = useState<AiQuoteDraft | null>(null);
   const [estimatorBusy, setEstimatorBusy] = useState(false);
   const [estimatorFallbackReason, setEstimatorFallbackReason] = useState<string | null>(null);
+  const [visualTakeoffProjectId, setVisualTakeoffProjectId] = useState<string | null>(null);
+  const [visualTakeoffBusy, setVisualTakeoffBusy] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -221,6 +234,43 @@ export function NewJobForm() {
     if (workTypesLoading || workType || visibleWorkTypes.length !== 1) return;
     setWorkType(visibleWorkTypes[0]!);
   }, [workTypesLoading, workType, visibleWorkTypes]);
+
+  // Restore AI review after returning from Plan Takeoff Workbench.
+  useEffect(() => {
+    if (resumeAppliedRef.current) return;
+    if (searchParams.get("resume") !== "takeoff") return;
+    const payload = loadVisualTakeoffResume();
+    const projectIdFromQuery = searchParams.get("projectId");
+    if (!payload) return;
+    if (projectIdFromQuery && payload.projectId !== projectIdFromQuery) return;
+
+    resumeAppliedRef.current = true;
+    setCreationMethod("ai");
+    setWorkType(payload.workType);
+    setAiProjectName(payload.aiProjectName);
+    setAiBrief(payload.aiBrief);
+    setLocation(payload.location);
+    setEstimatorSessionId(payload.estimatorSessionId);
+    setEstimatorFacts(payload.estimatorFacts);
+    setEstimateLines(payload.estimateLines ?? []);
+    setQuoteDraft(payload.quoteDraft);
+    setAiDraft(payload.aiDraft);
+    setAiDraftSource(payload.aiDraftSource);
+    setAiOfficeDraftId(payload.aiOfficeDraftId);
+    setAiUploadedFiles(payload.aiUploadedFiles ?? []);
+    setVisualTakeoffProjectId(payload.projectId);
+    setAiReviewMode(
+      payload.estimatorFacts ||
+        (payload.estimateLines?.length ?? 0) > 0 ||
+        payload.quoteDraft ||
+        payload.aiDraft
+        ? "draft"
+        : "placeholder"
+    );
+    setStep("ai-review");
+    // Keep session payload (next takeoff launch overwrites it). Do not
+    // router.replace here — remount would drop the restored React state.
+  }, [searchParams]);
 
   useEffect(() => {
     if (!user?.id || !activeWorkspace) return;
@@ -781,6 +831,68 @@ export function NewJobForm() {
       setAiGenerateFailure(err);
     } finally {
       setAiConfirming(false);
+    }
+  };
+
+  const handleStartVisualTakeoff = async () => {
+    if (!user?.id || !activeWorkspace || !workType) return;
+    setVisualTakeoffBusy(true);
+    setAiGenerateError(null);
+    try {
+      const customer = await resolveCustomerFields();
+      const result = await ensureDraftProjectForVisualTakeoff({
+        workspace: activeWorkspace,
+        userId: user.id,
+        workType,
+        projectName: aiProjectName.trim() || name.trim() || "AI zákazka",
+        addressText: location.trim() || undefined,
+        customerId: customer.customerId,
+        customerName: customer.customerName,
+        customerCompanyName: customer.customerCompanyName,
+        customerContactPersonName: customer.customerContactPersonName,
+        customerEmail: customer.customerEmail,
+        customerPhone: customer.customerPhone,
+        uploadedFiles: aiUploadedFiles,
+        estimatorSessionId,
+        aiDraftId: aiOfficeDraftId,
+        existingProjectId: visualTakeoffProjectId,
+      });
+      setVisualTakeoffProjectId(result.projectId);
+      saveVisualTakeoffResume({
+        projectId: result.projectId,
+        workType,
+        aiProjectName,
+        aiBrief,
+        location,
+        estimatorSessionId,
+        estimatorFacts,
+        estimateLines,
+        quoteDraft,
+        aiDraft,
+        aiDraftSource,
+        aiOfficeDraftId,
+        aiUploadedFiles,
+      });
+      router.push(
+        buildVisualTakeoffHref({
+          projectId: result.projectId,
+          documentId: result.documentId,
+          returnTo: "new-project-proposal",
+          mode: "quote-precheck",
+        })
+      );
+    } catch (err) {
+      setAiGenerateFailure(err);
+      setVisualTakeoffBusy(false);
+    }
+  };
+
+  const handleSkipVisualTakeoff = async () => {
+    if (!visualTakeoffProjectId) return;
+    try {
+      await setProjectVisualTakeoffStatus(visualTakeoffProjectId, "skipped_manual");
+    } catch {
+      // Local skip still unlocks the quote CTA in the review panel.
     }
   };
 
@@ -1827,6 +1939,18 @@ export function NewJobForm() {
                   onCreateQuoteProject={
                     estimatorSessionId ? () => handleCreateQuoteProject() : undefined
                   }
+                  linkedProjectId={visualTakeoffProjectId}
+                  visualTakeoffBusy={visualTakeoffBusy}
+                  onStartVisualTakeoff={
+                    aiUploadedFiles.some(
+                      (f) =>
+                        (f.mimeType ?? "").toLowerCase() === "application/pdf" ||
+                        f.fileName.toLowerCase().endsWith(".pdf")
+                    )
+                      ? () => handleStartVisualTakeoff()
+                      : undefined
+                  }
+                  onSkipVisualTakeoff={() => handleSkipVisualTakeoff()}
                   onContinueManual={handleContinueManual}
                   onConfirm={
                     aiReviewMode === "draft" && aiDraftSource

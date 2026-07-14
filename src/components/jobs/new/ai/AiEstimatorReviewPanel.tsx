@@ -9,6 +9,7 @@ import {
   ExternalLink,
   FileText,
   Loader2,
+  Ruler,
   Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,13 @@ import {
   buildEstimatorExtractionQualityReport,
   formatExtractionSummarySk,
 } from "@/lib/ai/estimatorExtractionQuality";
+import {
+  buildDrawingTakeoffSummary,
+  isQuoteCreateSecondary,
+  primaryCtaForTakeoff,
+  type DrawingTakeoffSummary,
+} from "@/lib/takeoff/drawingTakeoffSummary";
+import { getDrawingTakeoffSummary } from "@/services/takeoff/drawingTakeoffSummaryService";
 import { cn } from "@/lib/utils";
 import type { UploadedAiDraftFile } from "@/services/ai/aiDraftFiles";
 import type {
@@ -87,6 +95,11 @@ type Props = {
   onCreateProjectOnly?: () => void;
   attachmentFileNames?: string[];
   attachmentFiles?: UploadedAiDraftFile[];
+  /** Draft project created for visual takeoff (same flow). */
+  linkedProjectId?: string | null;
+  visualTakeoffBusy?: boolean;
+  onStartVisualTakeoff?: () => Promise<void> | void;
+  onSkipVisualTakeoff?: () => Promise<void> | void;
 };
 
 const symbolTypeLabel: Record<string, string> = {
@@ -199,6 +212,10 @@ export function AiEstimatorReviewPanel({
   onCreateProjectOnly,
   attachmentFileNames = [],
   attachmentFiles = [],
+  linkedProjectId = null,
+  visualTakeoffBusy = false,
+  onStartVisualTakeoff,
+  onSkipVisualTakeoff,
 }: Props) {
   const { t } = useI18n();
   const debug = isAiEstimatorDebugEnabled();
@@ -232,6 +249,8 @@ export function AiEstimatorReviewPanel({
     unit: string;
     included: boolean;
   }>({ quantity: "", roomName: "", unit: "ks", included: true });
+  const [takeoffSummary, setTakeoffSummary] = useState<DrawingTakeoffSummary | null>(null);
+  const [takeoffSkippedLocal, setTakeoffSkippedLocal] = useState(false);
 
   const previewFiles = attachmentFiles.length
     ? attachmentFiles
@@ -243,6 +262,43 @@ export function AiEstimatorReviewPanel({
           : "application/octet-stream",
         storagePath: "",
       }));
+
+  const hasPdfAttachments = previewFiles.some(
+    (f) =>
+      (f.mimeType ?? "").toLowerCase() === "application/pdf" ||
+      f.fileName.toLowerCase().endsWith(".pdf")
+  );
+
+  useEffect(() => {
+    if (!linkedProjectId) return;
+    let cancelled = false;
+    getDrawingTakeoffSummary(linkedProjectId)
+      .then((summary) => {
+        if (!cancelled) setTakeoffSummary(summary);
+      })
+      .catch(() => {
+        if (!cancelled) setTakeoffSummary(buildDrawingTakeoffSummary([]));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [linkedProjectId]);
+
+  const resolvedTakeoffSummary = useMemo(() => {
+    const base =
+      takeoffSummary ??
+      buildDrawingTakeoffSummary([], { skippedManual: takeoffSkippedLocal });
+    if (takeoffSkippedLocal) {
+      return { ...base, takeoffStatus: "skipped_manual" as const };
+    }
+    return base;
+  }, [takeoffSummary, takeoffSkippedLocal]);
+
+  const primaryTakeoffCta = primaryCtaForTakeoff(resolvedTakeoffSummary);
+  const quoteSecondary =
+    hasPdfAttachments &&
+    !takeoffSkippedLocal &&
+    isQuoteCreateSecondary(hasPdfAttachments, resolvedTakeoffSummary);
 
   const rows = useMemo(() => {
     const all = [...displayFacts.extractedItems, ...displayFacts.inferredItems];
@@ -342,14 +398,28 @@ export function AiEstimatorReviewPanel({
             })
           : readiness.warning || t("projects.aiEstimator.cockpit.needsReviewReady");
 
-  const drawingCountDisplay = symbolCounting.drawingDetectionAvailable
-    ? String(
-        comparisonRows.reduce(
-          (sum, r) => sum + (typeof r.detectedOccurrenceCount === "number" ? r.detectedOccurrenceCount : 0),
-          0
-        )
-      )
-    : t("projects.aiEstimator.cockpit.drawingCountUnavailable");
+  const drawingCountDisplay = resolvedTakeoffSummary.hasVisualTakeoff
+    ? String(resolvedTakeoffSummary.countedOnDrawing)
+    : hasPdfAttachments
+      ? t("projects.aiEstimator.cockpit.drawingNotChecked")
+      : t("projects.aiEstimator.cockpit.drawingCountUnavailable");
+
+  const needsReviewDisplay = resolvedTakeoffSummary.hasVisualTakeoff
+    ? String(resolvedTakeoffSummary.needsReviewCount)
+    : String(criticalQs.length + reviewItems.length + unclearSymbols.length);
+
+  const effectivePriceRisk =
+    takeoffSkippedLocal || resolvedTakeoffSummary.takeoffStatus === "skipped_manual"
+      ? priceRisk === "low"
+        ? "medium"
+        : priceRisk
+      : hasPdfAttachments &&
+          (resolvedTakeoffSummary.takeoffStatus === "not_started" ||
+            resolvedTakeoffSummary.takeoffStatus === "needs_review")
+        ? priceRisk === "low"
+          ? "medium"
+          : priceRisk
+        : priceRisk;
 
   const roomsGrouped = useMemo(() => {
     const map = new Map<string, AiExtractedItem[]>();
@@ -464,10 +534,36 @@ export function AiEstimatorReviewPanel({
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          {previewFiles.some((f) => f.storagePath) ? (
+          {hasPdfAttachments && onStartVisualTakeoff ? (
+            <Button
+              type="button"
+              className={njNavPrimary()}
+              disabled={busy || visualTakeoffBusy}
+              data-testid="start-visual-takeoff"
+              onClick={() => {
+                if (primaryTakeoffCta === "continue_quote" && onBuildQuote) {
+                  setTab("offer");
+                  void onBuildQuote();
+                  return;
+                }
+                void onStartVisualTakeoff();
+              }}
+            >
+              {visualTakeoffBusy ? (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              ) : (
+                <Ruler className="mr-2 size-4" />
+              )}
+              {primaryTakeoffCta === "finish_review"
+                ? t("projects.aiEstimator.visualTakeoff.ctaFinish")
+                : primaryTakeoffCta === "continue_quote"
+                  ? t("projects.aiEstimator.visualTakeoff.ctaContinue")
+                  : t("projects.aiEstimator.visualTakeoff.ctaStart")}
+            </Button>
+          ) : previewFiles.some((f) => f.storagePath) ? (
             previewFiles
               .filter((f) => f.storagePath)
-              .slice(0, 3)
+              .slice(0, 1)
               .map((file) => (
                 <Button
                   key={file.id}
@@ -483,9 +579,6 @@ export function AiEstimatorReviewPanel({
                     <FileText className="mr-2 size-4" />
                   )}
                   {t("projects.aiEstimator.cockpit.openPdf")}
-                  {previewFiles.filter((f) => f.storagePath).length > 1
-                    ? `: ${file.fileName}`
-                    : ""}
                   <ExternalLink className="ml-1.5 size-3.5 opacity-70" />
                 </Button>
               ))
@@ -493,9 +586,12 @@ export function AiEstimatorReviewPanel({
           {onBuildQuote ? (
             <Button
               type="button"
-              className={njNavPrimary()}
-              disabled={busy}
+              variant={quoteSecondary ? "outline" : "default"}
+              className={quoteSecondary ? njNavSecondary() : njNavPrimary()}
+              disabled={!!busy || (!!quoteSecondary && !takeoffSkippedLocal)}
+              data-testid="create-quote-from-review"
               onClick={() => {
+                if (quoteSecondary && !takeoffSkippedLocal) return;
                 setTab("offer");
                 void onBuildQuote();
               }}
@@ -513,6 +609,92 @@ export function AiEstimatorReviewPanel({
         </p>
       ) : null}
 
+      {hasPdfAttachments ? (
+        <div
+          className="rounded-xl border border-[#1D376A]/25 bg-[#EFF6FF] px-4 py-3 space-y-2"
+          data-testid="visual-takeoff-block"
+        >
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold text-[#1D376A]">
+                {t("projects.aiEstimator.visualTakeoff.title")}
+              </p>
+              <p className="mt-0.5 text-xs text-[#475569]">
+                {t(`projects.aiEstimator.visualTakeoff.status.${resolvedTakeoffSummary.takeoffStatus}`)}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3 text-xs text-[#334155]">
+              <span>
+                {t("projects.aiEstimator.visualTakeoff.confirmed")}:{" "}
+                <strong>{resolvedTakeoffSummary.confirmedCount + resolvedTakeoffSummary.usedInQuoteCount}</strong>
+              </span>
+              <span>
+                {t("projects.aiEstimator.visualTakeoff.candidates")}:{" "}
+                <strong>{resolvedTakeoffSummary.needsReviewCount}</strong>
+              </span>
+              <span>
+                {t("projects.aiEstimator.visualTakeoff.inQuote")}:{" "}
+                <strong>{resolvedTakeoffSummary.usedInQuoteCount}</strong>
+              </span>
+            </div>
+          </div>
+          <p className="text-xs text-[#475569] leading-relaxed">
+            {t("projects.aiEstimator.visualTakeoff.hintLegend")}
+          </p>
+          <p className="text-xs text-[#475569] leading-relaxed">
+            {t("projects.aiEstimator.visualTakeoff.hintMarks")}
+          </p>
+          <div className="flex flex-wrap gap-2 pt-1">
+            {onStartVisualTakeoff ? (
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 bg-[#1D376A] text-white hover:bg-[#162952]"
+                disabled={busy || visualTakeoffBusy}
+                onClick={() => void onStartVisualTakeoff()}
+              >
+                {visualTakeoffBusy ? (
+                  <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                ) : (
+                  <Ruler className="mr-1.5 size-3.5" />
+                )}
+                {primaryTakeoffCta === "finish_review"
+                  ? t("projects.aiEstimator.visualTakeoff.ctaFinish")
+                  : primaryTakeoffCta === "continue_quote"
+                    ? t("projects.aiEstimator.visualTakeoff.ctaOpenWorkbench")
+                    : t("projects.aiEstimator.visualTakeoff.ctaStart")}
+              </Button>
+            ) : null}
+            {quoteSecondary && onSkipVisualTakeoff ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 border-[#CBD5E1]"
+                disabled={busy || visualTakeoffBusy}
+                data-testid="skip-visual-takeoff"
+                onClick={() => {
+                  setTakeoffSkippedLocal(true);
+                  void onSkipVisualTakeoff();
+                }}
+              >
+                {t("projects.aiEstimator.visualTakeoff.ctaSkipManual")}
+              </Button>
+            ) : null}
+          </div>
+          {quoteSecondary ? (
+            <p className="text-xs text-amber-800">
+              {t("projects.aiEstimator.visualTakeoff.quoteBlockedHint")}
+            </p>
+          ) : null}
+          {takeoffSkippedLocal || resolvedTakeoffSummary.takeoffStatus === "skipped_manual" ? (
+            <p className="text-xs text-[#64748B]">
+              {t("projects.aiEstimator.visualTakeoff.skippedHint")}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* Summary strip — honest counters */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
         <SummaryCard
@@ -526,17 +708,21 @@ export function AiEstimatorReviewPanel({
         <SummaryCard
           label={t("projects.aiEstimator.cockpit.drawingCounted")}
           value={drawingCountDisplay}
-          emphasize={!symbolCounting.drawingDetectionAvailable}
+          emphasize={!resolvedTakeoffSummary.hasVisualTakeoff || resolvedTakeoffSummary.countedOnDrawing === 0}
         />
         <SummaryCard
           label={t("projects.aiEstimator.cockpit.needsReview")}
-          value={String(criticalQs.length + reviewItems.length + unclearSymbols.length)}
-          emphasize={criticalQs.length > 0 || unclearSymbols.length > 0}
+          value={needsReviewDisplay}
+          emphasize={
+            resolvedTakeoffSummary.needsReviewCount > 0 ||
+            criticalQs.length > 0 ||
+            unclearSymbols.length > 0
+          }
         />
         <SummaryCard
           label={t("projects.aiEstimator.cockpit.priceRisk")}
-          value={riskLevelLabel(priceRisk, t)}
-          emphasize={priceRisk !== "low"}
+          value={riskLevelLabel(effectivePriceRisk, t)}
+          emphasize={effectivePriceRisk !== "low"}
         />
       </div>
 

@@ -564,6 +564,8 @@ export function buildPdfOverlayAnnotations(
         positionId: p.id,
         page: anchor.page,
         bbox: anchor.bbox,
+        polygon: anchor.polygon,
+        isManualMark: isManualMarkAnchor(anchor),
         label: p.positionCode,
         colorKey:
           p.reviewStatus === "needs_review" && p.category === "unknown"
@@ -579,12 +581,35 @@ export function buildPdfOverlayAnnotations(
 /** Selection state sync: list row click ↔ PDF annotation highlight. */
 export function applyAnnotationSelection(
   annotations: PdfOverlayAnnotation[],
-  selectedPositionId: string | null
+  selectedPositionId: string | null,
+  selectedAnchorId?: string | null
 ): PdfOverlayAnnotation[] {
-  return annotations.map((a) => ({
-    ...a,
-    selected: selectedPositionId != null && a.positionId === selectedPositionId,
-  }));
+  return annotations.map((a) => {
+    if (selectedAnchorId) {
+      return {
+        ...a,
+        selected: a.evidenceAnchorId === selectedAnchorId,
+      };
+    }
+    return {
+      ...a,
+      selected: selectedPositionId != null && a.positionId === selectedPositionId,
+    };
+  });
+}
+
+/** Quick category change when user classifies a symbol (zásuvka / svetlo / vypínač). */
+export function setPositionCategory(
+  position: EstimatorPosition,
+  category: string
+): EstimatorPosition {
+  if (position.category === category) return position;
+  return { ...position, category, normalizedPoint: category };
+}
+
+/** Manual marks for a position, newest last. */
+export function manualMarksOf(position: EstimatorPosition): EstimatorEvidenceAnchor[] {
+  return position.evidenceAnchors.filter(isManualMarkAnchor);
 }
 
 /** Reverse lookup: clicking an annotation selects the linked position. */
@@ -867,6 +892,191 @@ export function excludePositionFromQuote(
     throw new Error("Excluding a position requires a reason.");
   }
   return { ...position, reviewStatus: "excluded", reviewReason: String(reason) };
+}
+
+// ---------------------------------------------------------------------------
+// Manual plan marking ("aby som na nič nezabudol")
+// ---------------------------------------------------------------------------
+
+const MANUAL_MARK_PREFIX = "mark_";
+
+function newManualMarkId(): string {
+  return `${MANUAL_MARK_PREFIX}${Date.now().toString(36)}_${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+}
+
+export function isManualMarkAnchor(anchor: EstimatorEvidenceAnchor): boolean {
+  return anchor.sourceType === "manual" && anchor.id.startsWith(MANUAL_MARK_PREFIX);
+}
+
+export function manualMarkCount(position: EstimatorPosition): number {
+  return position.evidenceAnchors.filter(isManualMarkAnchor).length;
+}
+
+/**
+ * How many marks a position needs to count as "fully marked".
+ * Piece counts (ks) expect one mark per piece; other units just need one locate.
+ */
+export function positionMarkTarget(position: EstimatorPosition): number {
+  if (position.unit === "ks" && position.quantity > 0) {
+    return Math.round(position.quantity);
+  }
+  return 1;
+}
+
+/** A position counts as "marked in the plan" once every expected piece is marked. */
+export function isPositionMarked(position: EstimatorPosition): boolean {
+  return manualMarkCount(position) >= positionMarkTarget(position);
+}
+
+/**
+ * Add a manual mark (user clicked or traced a shape in the plan) as an
+ * evidence anchor. Shows up as a PDF overlay annotation and persists.
+ */
+export function addManualMarkToPosition(
+  position: EstimatorPosition,
+  mark: {
+    page: number;
+    bbox: EstimatorPositionBBox;
+    fileName: string;
+    polygon?: Array<{ x: number; y: number }>;
+  }
+): EstimatorPosition {
+  const anchor: EstimatorEvidenceAnchor = {
+    id: newManualMarkId(),
+    fileName: mark.fileName,
+    page: mark.page > 0 ? mark.page : 1,
+    sourceType: "manual",
+    sourceText: "Ručné označenie v pláne",
+    bbox: {
+      x: clamp01(mark.bbox.x),
+      y: clamp01(mark.bbox.y),
+      width: clamp01(mark.bbox.width),
+      height: clamp01(mark.bbox.height),
+    },
+    polygon: mark.polygon?.map((p) => ({ x: clamp01(p.x), y: clamp01(p.y) })),
+    confidence: "high",
+    needsReview: false,
+  };
+  return {
+    ...position,
+    evidenceAnchors: [...position.evidenceAnchors, anchor],
+  };
+}
+
+/** Rename what the article/position is (user overrides AI/legend naming). */
+export function renamePositionLabel(
+  position: EstimatorPosition,
+  label: string
+): EstimatorPosition {
+  const next = label.trim();
+  if (!next || next === position.label) return position;
+  return { ...position, label: next };
+}
+
+/** Use the number of placed marks as the piece count ("počet kusov podľa značiek"). */
+export function applyMarkCountAsQuantity(
+  position: EstimatorPosition
+): EstimatorPosition {
+  const count = manualMarkCount(position);
+  if (count <= 0 || count === position.quantity) return position;
+  return {
+    ...position,
+    quantity: count,
+    unit: position.unit === "unknown" ? "ks" : position.unit,
+    quantitySource: "manual",
+    totalPrice:
+      position.unitPrice != null && position.unitPrice > 0
+        ? Number((position.unitPrice * count).toFixed(2))
+        : position.totalPrice,
+  };
+}
+
+/** Remove one manual mark (specific anchor, or the last one when id omitted). */
+export function removeManualMarkFromPosition(
+  position: EstimatorPosition,
+  anchorId?: string
+): EstimatorPosition {
+  const marks = position.evidenceAnchors.filter(isManualMarkAnchor);
+  if (marks.length === 0) return position;
+  const removeId = anchorId ?? marks[marks.length - 1]!.id;
+  return {
+    ...position,
+    evidenceAnchors: position.evidenceAnchors.filter((a) => a.id !== removeId),
+  };
+}
+
+export type MarkingProgress = {
+  total: number;
+  marked: number;
+  unmarked: number;
+  /** Position ids still waiting for a mark, in list order. */
+  unmarkedIds: string[];
+  /** Total number of manual marks placed across all positions. */
+  markCount: number;
+};
+
+/** Progress over active (non-ignored/excluded) positions. */
+export function summarizeMarkingProgress(
+  positions: EstimatorPosition[]
+): MarkingProgress {
+  const active = positions.filter(
+    (p) => p.reviewStatus !== "ignored" && p.reviewStatus !== "excluded"
+  );
+  const unmarkedIds = active.filter((p) => !isPositionMarked(p)).map((p) => p.id);
+  return {
+    total: active.length,
+    marked: active.length - unmarkedIds.length,
+    unmarked: unmarkedIds.length,
+    unmarkedIds,
+    markCount: active.reduce((s, p) => s + manualMarkCount(p), 0),
+  };
+}
+
+export type ArticleCountRow = {
+  positionId: string;
+  positionCode: string;
+  label: string;
+  quantity: number;
+  unit: string;
+  markCount: number;
+};
+
+/** Final result of the marking workflow: article list with piece counts. */
+export function summarizeArticleCounts(
+  positions: EstimatorPosition[]
+): ArticleCountRow[] {
+  return positions
+    .filter((p) => p.reviewStatus !== "ignored" && p.reviewStatus !== "excluded")
+    .map((p) => ({
+      positionId: p.id,
+      positionCode: p.positionCode,
+      label: p.label,
+      quantity: p.quantity,
+      unit: p.unit === "unknown" ? "ks" : p.unit,
+      markCount: manualMarkCount(p),
+    }));
+}
+
+/** Next unmarked position after the currently selected one (wraps around). */
+export function nextUnmarkedPositionId(
+  positions: EstimatorPosition[],
+  selectedPositionId: string | null
+): string | null {
+  const { unmarkedIds } = summarizeMarkingProgress(positions);
+  if (unmarkedIds.length === 0) return null;
+  if (!selectedPositionId) return unmarkedIds[0]!;
+  const active = positions.filter(
+    (p) => p.reviewStatus !== "ignored" && p.reviewStatus !== "excluded"
+  );
+  const startIndex = active.findIndex((p) => p.id === selectedPositionId);
+  if (startIndex === -1) return unmarkedIds[0]!;
+  for (let step = 1; step <= active.length; step += 1) {
+    const candidate = active[(startIndex + step) % active.length]!;
+    if (!isPositionMarked(candidate)) return candidate.id;
+  }
+  return unmarkedIds[0]!;
 }
 
 // ---------------------------------------------------------------------------

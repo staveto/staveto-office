@@ -16,6 +16,11 @@ const caPath = path.join(here, "..", "certs", "win-ca-bundle.pem");
 const env = { ...process.env };
 if (!env.NODE_EXTRA_CA_CERTS && existsSync(caPath)) {
   env.NODE_EXTRA_CA_CERTS = caPath;
+  // Turbopack fetches (next/font) don't honor NODE_EXTRA_CA_CERTS; use the
+  // OS certificate store so Google Fonts work behind the intercepting VPN too.
+  if (!env.NEXT_TURBOPACK_EXPERIMENTAL_USE_SYSTEM_TLS_CERTS) {
+    env.NEXT_TURBOPACK_EXPERIMENTAL_USE_SYSTEM_TLS_CERTS = "1";
+  }
 }
 
 const args = process.argv.slice(2);

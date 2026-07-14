@@ -9,8 +9,22 @@
  */
 
 import { useMemo, useState } from "react";
-import { ClipboardList, Euro, FileSearch, Plus, Trash2 } from "lucide-react";
+import {
+  ClipboardList,
+  Euro,
+  FileSearch,
+  Maximize2,
+  Plus,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -24,9 +38,16 @@ import { cn } from "@/lib/utils";
 import type { MaterialUnit } from "@/services/materials/types";
 import { EstimatorLinkedTakeoffTable } from "@/components/ai-estimator/EstimatorLinkedTakeoffTable";
 import { EstimatorPdfEvidenceViewer } from "@/components/ai-estimator/EstimatorPdfEvidenceViewer";
+import { EstimatorMarkingChecklist } from "@/components/ai-estimator/EstimatorMarkingChecklist";
 import {
   EstimatorPriceDrawer,
 } from "@/components/ai-estimator/EstimatorPriceDrawer";
+import {
+  isManualMarkAnchor,
+  nextUnmarkedPositionId,
+} from "@/lib/ai/estimatorPositions";
+import { captureMarkCrop } from "@/lib/ai/markCropCapture";
+import { identifyDrawingSymbol } from "@/services/ai/identifySymbolService";
 import type { EstimatorPosition } from "@/types/estimatorPositions";
 import {
   AI_SETUP_MATERIAL_UNITS,
@@ -118,6 +139,8 @@ export function AiSetupMaterialStep({
   const { t } = useI18n();
   const [showEditRows, setShowEditRows] = useState(false);
   const [pricePosition, setPricePosition] = useState<EstimatorPosition | null>(null);
+  const [markMode, setMarkMode] = useState(false);
+  const [pdfFullscreen, setPdfFullscreen] = useState(false);
 
   const update = (id: string, patch: Partial<AiSetupMaterialRow>) => {
     onMaterialsChange(
@@ -598,36 +621,59 @@ export function AiSetupMaterialStep({
 
       {/* --------------------------- Pozície v PDF ------------------------- */}
       {subTab === "pdf" && evidence ? (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(280px,2fr)]">
-          <EstimatorPdfEvidenceViewer
-            fileUrl={evidence.fileUrl}
-            fileName={evidence.fileName}
-            annotations={evidence.annotations}
-            selectedPositionId={evidence.selectedPositionId}
-            onAnnotationClick={(positionId) => evidence.setSelectedPositionId(positionId)}
-            heightClassName="h-[560px]"
-          />
-          <div className="min-w-0 space-y-3">
-            {evidence.selectedPositionId ? (
-              <SelectedPositionCard
-                position={
-                  evidence.positions.find((p) => p.id === evidence.selectedPositionId) ?? null
-                }
+        <div className="space-y-3">
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9 border-[#CBD5E1]"
+              onClick={() => setPdfFullscreen(true)}
+            >
+              <Maximize2 className="size-4 mr-1.5" />
+              {t("projects.aiSetup.marking.fullscreen")}
+            </Button>
+          </div>
+          {!pdfFullscreen ? (
+            <PdfMarkingWorkspace
+              evidence={evidence}
+              markMode={markMode}
+              onMarkModeChange={setMarkMode}
+              onAddPrice={openPriceDrawer}
+              viewerHeightClassName="h-[560px]"
+              checklistMaxHeightClassName="max-h-[640px]"
+            />
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Fullscreen marking dialog */}
+      {evidence ? (
+        <Dialog open={pdfFullscreen} onOpenChange={setPdfFullscreen}>
+          <DialogContent
+            className="fixed inset-2 top-2 left-2 h-[calc(100vh-1rem)] w-[calc(100vw-1rem)] max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden p-3 sm:max-w-none"
+          >
+            <DialogTitle className="mb-2 pr-10 text-base font-bold text-[#0F2A4D]">
+              {t("projects.aiSetup.marking.title")}
+              {evidence.fileName ? (
+                <span className="ml-2 text-xs font-normal text-[#64748B]">
+                  {evidence.fileName}
+                </span>
+              ) : null}
+            </DialogTitle>
+            <div className="h-[calc(100vh-4.5rem)] overflow-hidden">
+              <PdfMarkingWorkspace
+                evidence={evidence}
+                markMode={markMode}
+                onMarkModeChange={setMarkMode}
                 onAddPrice={openPriceDrawer}
-                onConfirm={evidence.confirm}
-              />
-            ) : null}
-            <div className="max-h-[560px] overflow-y-auto">
-              <EstimatorLinkedTakeoffTable
-                positions={evidence.positions}
-                currency={currency}
-                selectedPositionId={evidence.selectedPositionId}
-                onSelectPosition={evidence.setSelectedPositionId}
-                compact
+                viewerHeightClassName="h-[calc(100vh-10.5rem)]"
+                checklistMaxHeightClassName="max-h-[calc(100vh-6rem)]"
+                fullscreen
               />
             </div>
-          </div>
-        </div>
+          </DialogContent>
+        </Dialog>
       ) : null}
 
       {/* ---------------------------- Na kontrolu -------------------------- */}
@@ -681,6 +727,213 @@ export function AiSetupMaterialStep({
       >
         {saving ? t("common.loading") : t("projects.aiSetup.cta.toWork")}
       </Button>
+    </div>
+  );
+}
+
+/**
+ * Interactive PDF + marking checklist. Rendered inline in the "Pozície v PDF"
+ * sub-tab and reused inside the fullscreen dialog (plan left, checklist right).
+ */
+function PdfMarkingWorkspace({
+  evidence,
+  markMode,
+  onMarkModeChange,
+  onAddPrice,
+  viewerHeightClassName,
+  checklistMaxHeightClassName,
+  fullscreen = false,
+}: {
+  evidence: NonNullable<Props["evidence"]>;
+  markMode: boolean;
+  onMarkModeChange: (on: boolean) => void;
+  onAddPrice: (position: EstimatorPosition) => void;
+  viewerHeightClassName: string;
+  checklistMaxHeightClassName: string;
+  fullscreen?: boolean;
+}) {
+  const { t } = useI18n();
+  const [identifyingId, setIdentifyingId] = useState<string | null>(null);
+  const [aiSuggestion, setAiSuggestion] = useState<{
+    positionId: string;
+    name: string;
+    confidence: "high" | "medium" | "low";
+    reason?: string;
+  } | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  const handleIdentify = async (positionId: string) => {
+    const pos = evidence.positions.find((p) => p.id === positionId);
+    const mark = pos
+      ? [...pos.evidenceAnchors].reverse().find((a) => isManualMarkAnchor(a) && a.bbox)
+      : undefined;
+    if (!pos || !mark?.bbox || !evidence.fileUrl) return;
+    setIdentifyingId(positionId);
+    setAiSuggestion(null);
+    setAiError(null);
+    try {
+      const crop = await captureMarkCrop({
+        fileUrl: evidence.fileUrl,
+        page: mark.page,
+        bbox: mark.bbox,
+      });
+      const res = await identifyDrawingSymbol({
+        imageBase64: crop.base64,
+        currentLabel: pos.label,
+      });
+      setAiSuggestion({
+        positionId,
+        name: res.name,
+        confidence: res.confidence,
+        reason: res.reason,
+      });
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIdentifyingId(null);
+    }
+  };
+
+  return (
+    <div
+      className={cn(
+        "grid gap-4",
+        fullscreen
+          ? "h-full grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px]"
+          : "xl:grid-cols-[minmax(0,3fr)_minmax(280px,2fr)]"
+      )}
+    >
+      <div className="min-w-0 space-y-2">
+        {markMode ? (
+          <p className="rounded-lg border border-[#E95F2A]/40 bg-[#FFF8F5] px-3 py-2 text-xs font-medium text-[#B4441B]">
+            {evidence.selectedPositionId
+              ? t("projects.aiSetup.marking.viewerHintSelected")
+              : t("projects.aiSetup.marking.viewerHintPick")}
+          </p>
+        ) : null}
+        <EstimatorPdfEvidenceViewer
+          fileUrl={evidence.fileUrl}
+          fileName={evidence.fileName}
+          annotations={evidence.annotations}
+          selectedPositionId={evidence.selectedPositionId}
+          selectedAnchorId={evidence.selectedAnchorId}
+          onAnnotationClick={(positionId) => evidence.setSelectedPositionId(positionId)}
+          onAnchorClick={(anchorId) => evidence.setSelectedAnchorId(anchorId)}
+          markMode={markMode && !!evidence.selectedPositionId}
+          onMarkPlaced={(page, bbox, polygon) => {
+            if (evidence.selectedPositionId) {
+              evidence.addManualMark(evidence.selectedPositionId, page, bbox, polygon);
+            }
+          }}
+          onMarkDeleted={(positionId, anchorId) => {
+            evidence.removeManualMark(positionId, anchorId);
+            if (evidence.selectedAnchorId === anchorId) {
+              evidence.setSelectedAnchorId(null);
+            }
+          }}
+          heightClassName={viewerHeightClassName}
+        />
+      </div>
+      <div className={cn("flex min-w-0 flex-col gap-3", fullscreen && "h-full min-h-0 overflow-hidden")}>
+        {evidence.selectedPositionId && !markMode ? (
+          <SelectedPositionCard
+            position={
+              evidence.positions.find((p) => p.id === evidence.selectedPositionId) ?? null
+            }
+            onAddPrice={onAddPrice}
+            onConfirm={evidence.confirm}
+          />
+        ) : null}
+
+        {aiSuggestion ? (
+          <div className="rounded-xl border border-[#1D376A]/30 bg-[#F6F8FB] p-3 text-sm space-y-2">
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-semibold text-[#0F2A4D]">
+                <Sparkles className="mr-1 inline size-4 text-[#E95F2A]" />
+                {t("projects.aiSetup.marking.aiSuggestionTitle")}
+              </p>
+              <button
+                type="button"
+                className="text-[#94A3B8] hover:text-[#0F2A4D]"
+                onClick={() => setAiSuggestion(null)}
+                aria-label={t("flyover.close")}
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+            <p className="text-[#0F2A4D]">
+              {aiSuggestion.name}{" "}
+              <span
+                className={cn(
+                  "ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold",
+                  aiSuggestion.confidence === "high"
+                    ? "bg-emerald-100 text-emerald-800"
+                    : aiSuggestion.confidence === "medium"
+                      ? "bg-amber-100 text-amber-800"
+                      : "bg-slate-200 text-slate-700"
+                )}
+              >
+                {t(`projects.aiSetup.marking.aiConfidence.${aiSuggestion.confidence}`)}
+              </span>
+            </p>
+            {aiSuggestion.reason ? (
+              <p className="text-xs text-[#64748B]">{aiSuggestion.reason}</p>
+            ) : null}
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 bg-[#1D376A] text-white hover:bg-[#162952]"
+              onClick={() => {
+                evidence.renameLabel(aiSuggestion.positionId, aiSuggestion.name);
+                setAiSuggestion(null);
+              }}
+            >
+              {t("projects.aiSetup.marking.aiApplyName")}
+            </Button>
+          </div>
+        ) : null}
+        {aiError ? (
+          <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            {t("projects.aiSetup.marking.aiError")}{" "}
+            <span className="font-mono text-[10px]">{aiError}</span>
+          </p>
+        ) : null}
+
+        <div className={cn("min-h-0 flex-1", checklistMaxHeightClassName)}>
+          <EstimatorMarkingChecklist
+            positions={evidence.positions}
+            progress={evidence.markingProgress}
+            selectedPositionId={evidence.selectedPositionId}
+            selectedAnchorId={evidence.selectedAnchorId}
+            onSelect={evidence.setSelectedPositionId}
+            onSelectAnchor={evidence.setSelectedAnchorId}
+            markMode={markMode}
+            onMarkModeChange={onMarkModeChange}
+            onNextUnmarked={() => {
+              const next = nextUnmarkedPositionId(
+                evidence.positions,
+                evidence.selectedPositionId
+              );
+              if (next) {
+                evidence.setSelectedPositionId(next);
+                onMarkModeChange(true);
+              }
+            }}
+            onRemoveLastMark={(positionId) => evidence.removeManualMark(positionId)}
+            onRemoveMark={(positionId, anchorId) => {
+              evidence.removeManualMark(positionId, anchorId);
+              if (evidence.selectedAnchorId === anchorId) {
+                evidence.setSelectedAnchorId(null);
+              }
+            }}
+            onRename={(positionId, label) => evidence.renameLabel(positionId, label)}
+            onUseMarkCount={(positionId) => evidence.useMarkCountAsQuantity(positionId)}
+            onSetCategory={(positionId, category) => evidence.setCategory(positionId, category)}
+            onIdentify={(positionId) => void handleIdentify(positionId)}
+            identifyingPositionId={identifyingId}
+          />
+        </div>
+      </div>
     </div>
   );
 }

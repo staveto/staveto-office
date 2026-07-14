@@ -43,19 +43,23 @@ export async function resolveProjectDocumentUrl(
   const storagePath = doc.storagePath?.trim();
   if (!storagePath) return null;
 
+  // Prefer signed URL for AI-draft / user paths — client getDownloadURL often lacks rules access.
   if (doc.projectId && needsServerSignedUrl(storagePath)) {
     const signed = await fetchSignedProjectDocumentUrl(doc.projectId, storagePath);
     if (signed) return signed;
   }
 
   const storage = getStorageInstance();
-  if (!storage) return null;
-  try {
-    return await getDownloadURL(ref(storage, storagePath));
-  } catch {
-    if (doc.projectId) {
-      return fetchSignedProjectDocumentUrl(doc.projectId, storagePath);
+  if (storage) {
+    try {
+      return await getDownloadURL(ref(storage, storagePath));
+    } catch {
+      // Fall through to signed URL.
     }
-    return null;
   }
+
+  if (doc.projectId) {
+    return fetchSignedProjectDocumentUrl(doc.projectId, storagePath);
+  }
+  return null;
 }

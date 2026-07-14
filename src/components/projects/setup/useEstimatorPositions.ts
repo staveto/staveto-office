@@ -14,9 +14,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ProjectDoc } from "@/lib/projects";
 import type { ActiveWorkspace } from "@/types/workspace";
 import {
+  addManualMarkToPosition,
   applyAnnotationSelection,
   applyCatalogPriceToPosition,
   applyManualPriceToPosition,
+  applyMarkCountAsQuantity,
   applyPriceToSimilarPositions,
   buildPdfOverlayAnnotations,
   buildPositionsFromMaterialRows,
@@ -26,8 +28,13 @@ import {
   linkPositionsToMaterialRows,
   markPositionCustomerSupplied,
   positionsBlockFixedQuote,
+  removeManualMarkFromPosition,
+  renamePositionLabel,
+  setPositionCategory,
   summarizeEstimatorPositions,
+  summarizeMarkingProgress,
 } from "@/lib/ai/estimatorPositions";
+import type { EstimatorPositionBBox } from "@/types/estimatorPositions";
 import type { EstimatorPosition } from "@/types/estimatorPositions";
 import {
   loadEstimatorPositionsSnapshot,
@@ -49,6 +56,12 @@ type UserOverride = Partial<
     | "currency"
     | "productRef"
     | "evidenceAnchors"
+    | "label"
+    | "quantity"
+    | "unit"
+    | "quantitySource"
+    | "category"
+    | "normalizedPoint"
   >
 >;
 
@@ -68,6 +81,7 @@ export function useEstimatorPositions(input: {
   const currency = input.currency ?? "EUR";
   const [positions, setPositions] = useState<EstimatorPosition[]>([]);
   const [selectedPositionId, setSelectedPositionId] = useState<string | null>(null);
+  const [selectedAnchorId, setSelectedAnchorId] = useState<string | null>(null);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
@@ -195,7 +209,18 @@ export function useEstimatorPositions(input: {
       currency: next.currency,
       productRef: next.productRef,
       evidenceAnchors: next.evidenceAnchors,
+      label: next.label,
+      quantity: next.quantity,
+      unit: next.unit,
+      quantitySource: next.quantitySource,
+      category: next.category,
+      normalizedPoint: next.normalizedPoint,
     });
+  }, []);
+
+  const selectPosition = useCallback((id: string | null) => {
+    setSelectedPositionId(id);
+    setSelectedAnchorId(null);
   }, []);
 
   const replacePosition = useCallback(
@@ -279,29 +304,127 @@ export function useEstimatorPositions(input: {
     [replacePosition]
   );
 
+  // ---- Manual plan marking (checklist "aby som na nič nezabudol") ----------
+
+  const addManualMark = useCallback(
+    (
+      positionId: string,
+      page: number,
+      bbox: EstimatorPositionBBox,
+      polygon?: Array<{ x: number; y: number }>
+    ) => {
+      setPositions((prev) =>
+        prev.map((p) => {
+          if (p.id !== positionId) return p;
+          const next = addManualMarkToPosition(p, {
+            page,
+            bbox,
+            polygon,
+            fileName: fileName ?? "podklad.pdf",
+          });
+          recordOverride(next);
+          return next;
+        })
+      );
+    },
+    [fileName, recordOverride]
+  );
+
+  const removeManualMark = useCallback(
+    (positionId: string, anchorId?: string) => {
+      setPositions((prev) =>
+        prev.map((p) => {
+          if (p.id !== positionId) return p;
+          const next = removeManualMarkFromPosition(p, anchorId);
+          recordOverride(next);
+          return next;
+        })
+      );
+    },
+    [recordOverride]
+  );
+
+  /** User rewrites what the article is ("prepísať artikel"). */
+  const renameLabel = useCallback(
+    (positionId: string, label: string) => {
+      setPositions((prev) =>
+        prev.map((p) => {
+          if (p.id !== positionId) return p;
+          const next = renamePositionLabel(p, label);
+          if (next !== p) recordOverride(next);
+          return next;
+        })
+      );
+    },
+    [recordOverride]
+  );
+
+  /** Set quantity from the number of placed marks. */
+  const useMarkCountAsQuantity = useCallback(
+    (positionId: string) => {
+      setPositions((prev) =>
+        prev.map((p) => {
+          if (p.id !== positionId) return p;
+          const next = applyMarkCountAsQuantity(p);
+          if (next !== p) recordOverride(next);
+          return next;
+        })
+      );
+    },
+    [recordOverride]
+  );
+
+  const setCategory = useCallback(
+    (positionId: string, category: string) => {
+      setPositions((prev) =>
+        prev.map((p) => {
+          if (p.id !== positionId) return p;
+          const next = setPositionCategory(p, category);
+          if (next !== p) recordOverride(next);
+          return next;
+        })
+      );
+    },
+    [recordOverride]
+  );
+
   const annotations = useMemo(
-    () => applyAnnotationSelection(buildPdfOverlayAnnotations(positions), selectedPositionId),
-    [positions, selectedPositionId]
+    () =>
+      applyAnnotationSelection(
+        buildPdfOverlayAnnotations(positions),
+        selectedPositionId,
+        selectedAnchorId
+      ),
+    [positions, selectedPositionId, selectedAnchorId]
   );
 
   const summary = useMemo(() => summarizeEstimatorPositions(positions), [positions]);
   const quoteSafety = useMemo(() => positionsBlockFixedQuote(positions), [positions]);
+  const markingProgress = useMemo(() => summarizeMarkingProgress(positions), [positions]);
 
   return {
     positions,
     annotations,
     summary,
     quoteSafety,
+    markingProgress,
     loading,
     fileUrl,
     fileName,
     selectedPositionId,
-    setSelectedPositionId,
+    setSelectedPositionId: selectPosition,
+    selectedAnchorId,
+    setSelectedAnchorId,
     confirm,
     ignore,
     exclude,
     applyManualPrice,
     applyCatalogPrice,
     customerSupplied,
+    addManualMark,
+    removeManualMark,
+    renameLabel,
+    useMarkCountAsQuantity,
+    setCategory,
   };
 }

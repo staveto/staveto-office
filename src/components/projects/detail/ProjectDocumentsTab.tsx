@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   FileText,
   FileType,
@@ -9,6 +10,7 @@ import {
   Loader2,
   Paperclip,
   RefreshCw,
+  Ruler,
   Upload,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -375,6 +377,15 @@ export function ProjectDocumentsTab({
                           </div>
                           <Eye className="size-4 shrink-0 text-[var(--po-text-muted)]" aria-hidden />
                         </button>
+                        {(doc.mimeType ?? "").toLowerCase() === "application/pdf" ? (
+                          <Link
+                            href={`/app/projects/${project.id}/takeoff?doc=${doc.id}`}
+                            className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-[var(--po-primary)] hover:underline"
+                          >
+                            <Ruler className="size-3.5" aria-hidden />
+                            {t("takeoff.openFromDocuments")}
+                          </Link>
+                        ) : null}
                       </li>
                     ))}
                   </ul>

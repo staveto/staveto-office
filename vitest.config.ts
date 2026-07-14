@@ -21,6 +21,8 @@ export default defineConfig({
       "src/lib/ai/**/*.test.ts",
       "src/lib/products/**/*.test.ts",
       "src/services/estimatorKnowledge/**/*.test.ts",
+      "src/lib/takeoff/**/*.test.ts",
+      "src/services/takeoff/**/*.test.ts",
     ],
   },
   resolve: {

@@ -126,6 +126,16 @@ export type ProjectDoc = {
   aiDraftId?: string;
   /** Estimator session used when creating this project (materials repair). */
   aiEstimatorSessionId?: string;
+  /**
+   * Visual takeoff / Plan Takeoff Workbench status for proposal review.
+   * Computed from drawingOccurrences when absent, except for explicit skipped_manual.
+   */
+  visualTakeoffStatus?:
+    | "not_started"
+    | "in_progress"
+    | "needs_review"
+    | "verified"
+    | "skipped_manual";
   /** Mobile: crew assigned to job (read-only on web). */
   assignedMemberIds?: string[];
   /** Mobile project cover — Storage URL (projects/{id}/cover/…). */
@@ -238,6 +248,14 @@ export function toProjectDoc(id: string, data: Record<string, unknown>): Project
     aiEstimatorSessionId:
       typeof data.aiEstimatorSessionId === "string" && data.aiEstimatorSessionId.length > 0
         ? data.aiEstimatorSessionId
+        : undefined,
+    visualTakeoffStatus:
+      data.visualTakeoffStatus === "not_started" ||
+      data.visualTakeoffStatus === "in_progress" ||
+      data.visualTakeoffStatus === "needs_review" ||
+      data.visualTakeoffStatus === "verified" ||
+      data.visualTakeoffStatus === "skipped_manual"
+        ? data.visualTakeoffStatus
         : undefined,
     assignedMemberIds: [
       ...(Array.isArray(data.assignedMemberIds)

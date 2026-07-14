@@ -69,6 +69,10 @@ type Props = {
   onCreateQuoteProject?: () => Promise<void>;
   estimatorFallbackReason?: string | null;
   onDraftMaterialsSync?: (draft: AiProjectDraftLocal) => void;
+  linkedProjectId?: string | null;
+  visualTakeoffBusy?: boolean;
+  onStartVisualTakeoff?: () => Promise<void> | void;
+  onSkipVisualTakeoff?: () => Promise<void> | void;
 };
 
 export function AiDraftReviewPanel({
@@ -109,6 +113,10 @@ export function AiDraftReviewPanel({
   onCreateQuoteProject,
   estimatorFallbackReason = null,
   onDraftMaterialsSync,
+  linkedProjectId = null,
+  visualTakeoffBusy = false,
+  onStartVisualTakeoff,
+  onSkipVisualTakeoff,
 }: Props) {
   const { t } = useI18n();
   const canGenerate = isWizardAiGenerationEnabled();
@@ -241,6 +249,10 @@ export function AiDraftReviewPanel({
             onCreateProjectOnly={onConfirm}
             attachmentFileNames={attachmentFileNames}
             attachmentFiles={attachmentFiles}
+            linkedProjectId={linkedProjectId}
+            visualTakeoffBusy={visualTakeoffBusy}
+            onStartVisualTakeoff={onStartVisualTakeoff}
+            onSkipVisualTakeoff={onSkipVisualTakeoff}
           />
           <details className="rounded-xl border border-[var(--border)] bg-[var(--card)] px-4 py-3">
             <summary className="cursor-pointer text-sm font-medium text-foreground hover:text-[var(--po-primary,#e06737)]">

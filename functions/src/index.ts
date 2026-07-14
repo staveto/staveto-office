@@ -15,6 +15,7 @@ import {
   handleGenerateQuoteDraftFromEstimate,
   handleSyncEstimatorMaterialsToProject,
 } from "./estimator/estimatorHandlers";
+import { handleIdentifyDrawingSymbol } from "./estimator/identifySymbol";
 import { handleCreateBusinessOrg } from "./businessOrg";
 import { handleAskManagerAgent } from "./managerAgent";
 import { handleImproveProjectBrief } from "./aiBrief/improveBrief";
@@ -214,6 +215,18 @@ export const improveProjectBrief = onCall(
   async (request) => {
     try {
       return await handleImproveProjectBrief(request.auth?.uid, request.data);
+    } catch (e) {
+      mapError(e);
+    }
+  }
+);
+
+/** AI identification of a single marked symbol (small image crop). */
+export const identifyDrawingSymbol = onCall(
+  { ...callableOptions, secrets: ["GEMINI_API_KEY"], timeoutSeconds: 60, memory: "512MiB" as const },
+  async (request) => {
+    try {
+      return await handleIdentifyDrawingSymbol(request.auth?.uid, request.data);
     } catch (e) {
       mapError(e);
     }

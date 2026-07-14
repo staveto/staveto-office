@@ -36,6 +36,8 @@ export type EstimatorEvidenceAnchor = {
   sourceText?: string;
   /** Normalized page coordinates (0..1). Absent when the source has no position. */
   bbox?: EstimatorPositionBBox;
+  /** Freehand shape (normalized 0..1 points) for user-drawn marks. */
+  polygon?: Array<{ x: number; y: number }>;
   cropId?: string;
   confidence: "high" | "medium" | "low";
   needsReview: boolean;
@@ -132,6 +134,10 @@ export type PdfOverlayAnnotation = {
   page: number;
   /** Normalized page coordinates (0..1). */
   bbox: EstimatorPositionBBox;
+  /** Freehand shape (normalized 0..1) — rendered instead of the bbox frame. */
+  polygon?: Array<{ x: number; y: number }>;
+  /** True for user-placed marks (deletable in the marking workflow). */
+  isManualMark?: boolean;
   /** Position code shown on the PDF, e.g. E-001. */
   label: string;
   colorKey: PdfOverlayColorKey;
