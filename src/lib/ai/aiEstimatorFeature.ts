@@ -4,7 +4,11 @@
  */
 
 export function isAiEstimatorFlowEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_ENABLE_AI_ESTIMATOR_FLOW === "1";
+  const flag = process.env.NEXT_PUBLIC_ENABLE_AI_ESTIMATOR_FLOW;
+  if (flag === "1") return true;
+  if (flag === "0") return false;
+  // Production builds (e.g. Vercel) should ship the estimator unless explicitly disabled.
+  return process.env.NODE_ENV === "production";
 }
 
 /**
