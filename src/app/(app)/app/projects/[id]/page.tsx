@@ -127,7 +127,11 @@ export default function ProjectDetailPage() {
     );
   }
 
-  const showAiSetup = setupAi && isDraftJob(project) && !!user?.id;
+  const hasAiEstimatorSession = Boolean(project.aiEstimatorSessionId?.trim());
+  const showAiSetup =
+    setupAi &&
+    !!user?.id &&
+    (isDraftJob(project) || hasAiEstimatorSession);
 
   if (showAiSetup) {
     return (

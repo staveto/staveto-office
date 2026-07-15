@@ -1,14 +1,31 @@
 /**
  * Feature flags for the AI Estimator / quote-first flow.
  * When disabled, the existing generateProjectDraft path is used unchanged.
+ *
+ * Production (app.staveto.com) ships AI features ON so users always see the
+ * latest estimator UI. Dev/local can opt out via NEXT_PUBLIC_ENABLE_* = 0.
+ * Emergency kill switch: NEXT_PUBLIC_FORCE_DISABLE_AI_FEATURES=1
  */
 
-export function isAiEstimatorFlowEnabled(): boolean {
-  const flag = process.env.NEXT_PUBLIC_ENABLE_AI_ESTIMATOR_FLOW;
-  if (flag === "1") return true;
-  if (flag === "0") return false;
-  // Production builds (e.g. Vercel) should ship the estimator unless explicitly disabled.
+function isProductionBuild(): boolean {
   return process.env.NODE_ENV === "production";
+}
+
+function isEmergencyAiKillSwitch(): boolean {
+  return process.env.NEXT_PUBLIC_FORCE_DISABLE_AI_FEATURES === "1";
+}
+
+/** True when flag is explicitly enabled, or production default applies. */
+function isFeatureEnabled(flag: string | undefined, productionDefault = true): boolean {
+  const value = flag?.trim();
+  if (value === "1") return true;
+  if (value === "0") return !isProductionBuild() ? false : productionDefault;
+  return isProductionBuild() ? productionDefault : false;
+}
+
+export function isAiEstimatorFlowEnabled(): boolean {
+  if (isEmergencyAiKillSwitch()) return false;
+  return isFeatureEnabled(process.env.NEXT_PUBLIC_ENABLE_AI_ESTIMATOR_FLOW, true);
 }
 
 /**
@@ -24,10 +41,13 @@ export function isAiSymbolReadingEnabled(): boolean {
 
 /**
  * Visual symbol counter for electrical drawings (pixel-level detection of
- * graphical symbols without OCR text, e.g. switches). Default OFF.
+ * graphical symbols without OCR text, e.g. switches).
  */
 export function isAiVisualSymbolCounterEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_ENABLE_AI_VISUAL_SYMBOL_COUNTER === "1";
+  return (
+    isAiEstimatorFlowEnabled() &&
+    isFeatureEnabled(process.env.NEXT_PUBLIC_ENABLE_AI_VISUAL_SYMBOL_COUNTER, true)
+  );
 }
 
 /**

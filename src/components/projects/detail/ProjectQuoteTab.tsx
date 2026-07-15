@@ -57,6 +57,7 @@ export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabP
     [project, quoteItems, tasks, suggestions]
   );
   const isSales = isDraftJob(project);
+  const hasAiSession = Boolean(project.aiEstimatorSessionId?.trim());
   const setupHref = `/app/projects/${project.id}?setup=ai`;
   const printHref = `/app/projects/${project.id}/print?from=quote`;
   const money = (amount: number | null) => formatMoney(amount ?? 0, activeCurrency);
@@ -98,7 +99,7 @@ export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabP
                 <Printer className="size-4 mr-1.5" />
                 {t("projects.dashboard.quote.viewPdf")}
               </Link>
-              {isSales ? (
+              {isSales || hasAiSession ? (
                 <Link href={setupHref} className={buttonVariants({ variant: "outline", size: "sm" })}>
                   <Pencil className="size-4 mr-1.5" />
                   {t("projects.dashboard.action.openQuote")}
