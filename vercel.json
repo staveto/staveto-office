@@ -1,4 +1,7 @@
 {
   "buildCommand": "next build",
-  "installCommand": "npm ci"
+  "installCommand": "npm ci",
+  "env": {
+    "NEXT_PUBLIC_ENABLE_AI_ESTIMATOR_FLOW": "1"
+  }
 }
