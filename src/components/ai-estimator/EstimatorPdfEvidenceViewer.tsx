@@ -16,16 +16,47 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ExternalLink,
+  Eye,
+  EyeOff,
   Minus,
   Plus,
   ChevronLeft,
   ChevronRight,
   RotateCw,
   X,
+  ZoomIn,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nContext";
 import { cn } from "@/lib/utils";
+import { isAiEstimatorDebugEnabled, logAiEstimatorDebug } from "@/lib/ai/aiEstimatorFeature";
+import {
+  buildPdfDisplayMarkers,
+  DEFAULT_MARKER_RADIUS_PX,
+  MIN_SYMBOL_OUTLINE_PX,
+  markerCenterFromAnnotation,
+  shouldRenderTechnicalBbox,
+} from "@/lib/ai/pdfDisplayMarkers";
+import {
+  cssToCanvasPixels,
+  type OverlayCoordinateContext,
+} from "@/lib/ai/pdfOverlayCoordinates";
+import { classifyPlanClick } from "@/lib/ai/planBoundary";
+import {
+  extractSymbolOutlinePolygon,
+  pixelBboxFromNormalized,
+  buildTintedSymbolMask,
+  hexToRgb,
+} from "@/lib/ai/symbolShapeOutline";
+import {
+  estimatorCategoryToPickHint,
+  listNearbySymbolCandidates,
+  pickOptionsForContext,
+  pickSymbolFromClick,
+  type NearbySymbolCandidate,
+} from "@/lib/ai/pickSymbolFromClick";
+import { SymbolDetailLoupe } from "@/components/ai-estimator/SymbolDetailLoupe";
+import { tightenSymbolBboxFromCrop } from "@/lib/ai/tightenSymbolBbox";
 import type {
   EstimatorPositionBBox,
   PdfOverlayAnnotation,
@@ -50,17 +81,18 @@ type PdfPage = {
   }) => { promise: Promise<void>; cancel: () => void };
 };
 
+/** Fluorescent / high-vis tints — must pop on dense B&W construction plans. */
 const LAYER_STYLE: Record<
   PdfOverlayColorKey,
   { border: string; bg: string; chip: string }
 > = {
-  socket: { border: "#16A34A", bg: "rgba(22,163,74,0.12)", chip: "#16A34A" },
-  switch: { border: "#DC2626", bg: "rgba(220,38,38,0.12)", chip: "#DC2626" },
-  lighting: { border: "#EA580C", bg: "rgba(234,88,12,0.12)", chip: "#EA580C" },
-  led: { border: "#0891B2", bg: "rgba(8,145,178,0.12)", chip: "#0891B2" },
-  cabling: { border: "#2563EB", bg: "rgba(37,99,235,0.12)", chip: "#2563EB" },
-  unknown: { border: "#64748B", bg: "rgba(100,116,139,0.12)", chip: "#64748B" },
-  warning: { border: "#D97706", bg: "rgba(217,119,6,0.16)", chip: "#D97706" },
+  socket: { border: "#39FF14", bg: "rgba(57,255,20,0.18)", chip: "#39FF14" },
+  switch: { border: "#FF1744", bg: "rgba(255,23,68,0.18)", chip: "#FF1744" },
+  lighting: { border: "#FF00AA", bg: "rgba(255,0,170,0.18)", chip: "#FF00AA" },
+  led: { border: "#00F0FF", bg: "rgba(0,240,255,0.18)", chip: "#00F0FF" },
+  cabling: { border: "#4D7CFF", bg: "rgba(77,124,255,0.18)", chip: "#4D7CFF" },
+  unknown: { border: "#E040FB", bg: "rgba(224,64,251,0.18)", chip: "#E040FB" },
+  warning: { border: "#FFEA00", bg: "rgba(255,234,0,0.22)", chip: "#FFEA00" },
 };
 
 const LAYER_ORDER: PdfOverlayColorKey[] = [
@@ -137,53 +169,134 @@ function bboxOfPoints(points: Pt[]): EstimatorPositionBBox {
   return { x: minX, y: minY, width: Math.max(0, maxX - minX), height: Math.max(0, maxY - minY) };
 }
 
+/** Default highlight box when user clicks without dragging (fraction of page). */
+const DEFAULT_MARK_FRAC = 0.014;
+/** Minimum drag (px) before we treat pointer-up as a rectangle, not a click. */
+const DRAG_THRESHOLD_PX = 8;
+/** Pick center must stay this close to the click (normalized), else fall back to click. */
+const PICK_MAX_CENTER_DIST = 0.025;
+
+/** Displayed (canvas) bbox → stored (unrotated) bbox. */
+function unrotateBBox(b: EstimatorPositionBBox, r: number): EstimatorPositionBBox {
+  const corners = [
+    unrotatePoint({ x: b.x, y: b.y }, r),
+    unrotatePoint({ x: b.x + b.width, y: b.y }, r),
+    unrotatePoint({ x: b.x + b.width, y: b.y + b.height }, r),
+    unrotatePoint({ x: b.x, y: b.y + b.height }, r),
+  ];
+  return bboxOfPoints(corners);
+}
+
+/** Small mark box centered on a stored normalized click. */
+function clickFallbackBbox(stored: Pt, frac = DEFAULT_MARK_FRAC): EstimatorPositionBBox {
+  const half = frac / 2;
+  return {
+    x: Math.max(0, Math.min(1 - frac, stored.x - half)),
+    y: Math.max(0, Math.min(1 - frac, stored.y - half)),
+    width: frac,
+    height: frac,
+  };
+}
+
+type MarkingToolMode = "click_symbol" | "draw_box";
+
+export type MarkPlacedMeta = {
+  rawSelectionBbox: EstimatorPositionBBox;
+  tightSymbolBbox?: EstimatorPositionBBox;
+  outsidePlan?: boolean;
+  needsReview?: boolean;
+  markStatus?:
+    | "confirmed"
+    | "outside_plan"
+    | "needs_review"
+    | "inside_plan"
+    | "boundary_uncertain"
+    | "in_legend_or_table";
+  cropId?: string;
+  /** Dominant symbol color from click picking — feeds draft type suggestions. */
+  colorHint?: "red" | "orange" | "green" | "dark" | "black" | "unknown";
+  confidence?: "high" | "medium" | "low";
+  /** Normalized outline of the symbol ink (stored page space). */
+  polygon?: Array<{ x: number; y: number }>;
+};
+
+/** Temporary marker for an unclassified symbol draft (PDF-first flow). */
+export type PdfDraftMarker = {
+  page: number;
+  center: { x: number; y: number };
+  /** Normalized box outlining the clicked symbol. */
+  bbox?: EstimatorPositionBBox;
+  /** Normalized outline of symbol ink. */
+  polygon?: Array<{ x: number; y: number }>;
+};
+
 type Props = {
   fileUrl: string | null;
   fileName?: string;
   annotations: PdfOverlayAnnotation[];
   selectedPositionId?: string | null;
-  onAnnotationClick?: (positionId: string | null, annotationId: string) => void;
+  /** Extra positions kept fully bright (Ctrl+click in checklist). */
+  highlightedPositionIds?: string[];
   /**
-   * Marking mode: clicking the plan places a point mark, dragging traces a
-   * freehand shape. Used by the marking checklist.
+   * When true (default), all marks stay bright for overview.
+   * When false, only selected/highlighted positions stay bright.
    */
+  showAllMarks?: boolean;
+  onShowAllMarksChange?: (on: boolean) => void;
+  onAnnotationClick?: (positionId: string | null, annotationId: string) => void;
   markMode?: boolean;
+  markingToolMode?: MarkingToolMode;
+  onMarkingToolModeChange?: (mode: MarkingToolMode) => void;
+  categoryHint?: string;
+  normalizedPoint?: string;
   onMarkPlaced?: (
     page: number,
     bbox: EstimatorPositionBBox,
-    polygon?: Pt[]
+    polygon?: Pt[],
+    meta?: MarkPlacedMeta
   ) => void;
-  /** Delete a manual mark (× button on marks of the selected position). */
+  draftMarker?: PdfDraftMarker | null;
+  onPickFailed?: () => void;
+  onOutsidePlanMark?: () => void;
   onMarkDeleted?: (positionId: string, anchorId: string) => void;
-  /** Pinpoint one mark (click in checklist). */
   selectedAnchorId?: string | null;
   onAnchorClick?: (anchorId: string) => void;
-  /** Compact height for embedding under other panels. */
   heightClassName?: string;
 };
-
-/** Default highlight box when user clicks without dragging (fraction of page). */
-const DEFAULT_MARK_FRAC = 0.028;
-/** Minimum drag (px) before we treat pointer-up as a rectangle, not a click. */
-const DRAG_THRESHOLD_PX = 8;
 
 export function EstimatorPdfEvidenceViewer({
   fileUrl,
   fileName,
   annotations,
   selectedPositionId,
+  highlightedPositionIds = [],
+  showAllMarks = true,
+  onShowAllMarksChange,
   onAnnotationClick,
   markMode = false,
+  markingToolMode = "click_symbol",
+  onMarkingToolModeChange,
+  categoryHint,
+  normalizedPoint,
   onMarkPlaced,
+  draftMarker,
+  onPickFailed,
+  onOutsidePlanMark,
   onMarkDeleted,
   selectedAnchorId,
   onAnchorClick,
   heightClassName = "h-[520px]",
 }: Props) {
   const { t } = useI18n();
+  const debugEnabled = isAiEstimatorDebugEnabled();
+  const [showTechnicalBoxes, setShowTechnicalBoxes] = useState(false);
+  const showDebugBoxes = shouldRenderTechnicalBbox(debugEnabled && showTechnicalBoxes);
   const [doc, setDoc] = useState<PdfDocument | null>(null);
   const [page, setPage] = useState(1);
+  /** Immediate UI zoom (CSS preview). */
   const [zoom, setZoom] = useState(1);
+  /** Debounced zoom used for expensive pdf.js rasterization. */
+  const [renderZoom, setRenderZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [loadError, setLoadError] = useState(false);
   const [loadErrorDetail, setLoadErrorDetail] = useState<string | null>(null);
@@ -194,14 +307,46 @@ export function EstimatorPdfEvidenceViewer({
   const [drawRect, setDrawRect] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(
     null
   );
+  /** Live tinted ink copies of marked symbols (shape, not frame). */
+  const [shapeOverlays, setShapeOverlays] = useState<
+    Array<{
+      id: string;
+      left: number;
+      top: number;
+      width: number;
+      height: number;
+      dataUrl: string;
+      opacity: number;
+      glowColor: string;
+      selected: boolean;
+    }>
+  >([]);
+  const [loupe, setLoupe] = useState<{
+    imageData: ImageData;
+    centerCanvasPx: { x: number; y: number };
+    candidates: NearbySymbolCandidate[];
+  } | null>(null);
+  /** Next click always opens the detail loupe (user requested precise pick). */
+  const forceLoupeNextRef = useRef(false);
+  /** Prevent double-commit from rapid double-click. */
+  const markCooldownUntilRef = useRef(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
   const baseScaleRef = useRef(1);
+  const dprRef = useRef(1);
   const drawingRef = useRef(false);
   const rectStartRef = useRef<Pt | null>(null);
   const drawRectRef = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+
+  // Debounce expensive PDF re-raster while zooming (CSS scales immediately).
+  useEffect(() => {
+    const timer = window.setTimeout(() => setRenderZoom(zoom), 60);
+    return () => window.clearTimeout(timer);
+  }, [zoom]);
+
+  const liveScale = zoom / Math.max(0.01, renderZoom);
 
   // Load the document.
   useEffect(() => {
@@ -235,7 +380,7 @@ export function EstimatorPdfEvidenceViewer({
     };
   }, [fileUrl]);
 
-  // Render the current page.
+  // Render the current page (debounced zoom). Keep previous pixels until swap.
   const renderPage = useCallback(async () => {
     if (!doc || !canvasRef.current || !scrollRef.current) return;
     renderTaskRef.current?.cancel();
@@ -247,30 +392,51 @@ export function EstimatorPdfEvidenceViewer({
       const probe = pdfPage.getViewport({ scale: 1, rotation: totalRotation });
       const fit = containerWidth > 100 ? containerWidth / probe.width : 1;
       baseScaleRef.current = fit;
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const viewport = pdfPage.getViewport({
-        scale: fit * zoom * dpr,
+      // Cap DPR at high zoom — full retina × 4× is too heavy for interactive marking.
+      const dprCap = renderZoom >= 2.5 ? 1.5 : renderZoom >= 1.75 ? 1.75 : 2;
+      const dpr = Math.min(window.devicePixelRatio || 1, dprCap);
+      dprRef.current = dpr;
+      let scale = fit * renderZoom * dpr;
+      let viewport = pdfPage.getViewport({
+        scale,
         rotation: totalRotation,
       });
+      // Hard pixel budget so zoom never freezes the tab.
+      const MAX_EDGE = 5600;
+      const maxEdge = Math.max(viewport.width, viewport.height);
+      if (maxEdge > MAX_EDGE) {
+        scale *= MAX_EDGE / maxEdge;
+        viewport = pdfPage.getViewport({ scale, rotation: totalRotation });
+      }
+
+      // Offscreen render → swap (avoids blank canvas flash).
+      const offscreen = document.createElement("canvas");
+      offscreen.width = Math.floor(viewport.width);
+      offscreen.height = Math.floor(viewport.height);
+      const offCtx = offscreen.getContext("2d");
+      if (!offCtx) return;
+      const task = pdfPage.render({ canvasContext: offCtx, viewport });
+      renderTaskRef.current = task;
+      await task.promise;
+
       const canvas = canvasRef.current;
+      if (!canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      canvas.width = Math.floor(viewport.width);
-      canvas.height = Math.floor(viewport.height);
+      canvas.width = offscreen.width;
+      canvas.height = offscreen.height;
+      ctx.drawImage(offscreen, 0, 0);
       const cssWidth = Math.floor(viewport.width / dpr);
       const cssHeight = Math.floor(viewport.height / dpr);
       canvas.style.width = `${cssWidth}px`;
       canvas.style.height = `${cssHeight}px`;
       setCanvasSize({ width: cssWidth, height: cssHeight });
-      const task = pdfPage.render({ canvasContext: ctx, viewport });
-      renderTaskRef.current = task;
-      await task.promise;
     } catch {
       // Cancelled render or transient failure — the next render pass recovers.
     } finally {
       setRendering(false);
     }
-  }, [doc, page, zoom, rotation]);
+  }, [doc, page, renderZoom, rotation]);
 
   useEffect(() => {
     void renderPage();
@@ -284,27 +450,186 @@ export function EstimatorPdfEvidenceViewer({
     [annotations, page, hiddenLayers]
   );
 
+  const pageMarkers = useMemo(
+    () =>
+      buildPdfDisplayMarkers(pageAnnotations, {
+        page,
+        defaultRadiusPx: DEFAULT_MARKER_RADIUS_PX,
+        selectedRadiusPx: DEFAULT_MARKER_RADIUS_PX + 2,
+      }),
+    [pageAnnotations, page]
+  );
+
+  // Copy real symbol ink from the rendered PDF — tinted overlay, never a frame.
+  useEffect(() => {
+    // Rebuild after raster settles; during CSS zoom preview keep previous overlays scaled.
+    if (rendering || canvasSize.width <= 0) return;
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx || canvas.width === 0) {
+      setShapeOverlays([]);
+      return;
+    }
+    let cancelled = false;
+    try {
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const scaleX = canvasSize.width / canvas.width;
+      const scaleY = canvasSize.height / canvas.height;
+      const next: typeof shapeOverlays = [];
+
+      for (const m of pageMarkers) {
+        const box = m.displayBbox ?? m.tightSymbolBbox;
+        if (!box) continue;
+        const shown = rotateBBox(box, rotation);
+        // Tiny pad only — dense plans must not pull neighbour ink into the mask.
+        const pad = 0.0015;
+        const expanded = {
+          x: Math.max(0, shown.x - pad),
+          y: Math.max(0, shown.y - pad),
+          width: Math.min(1 - Math.max(0, shown.x - pad), shown.width + pad * 2),
+          height: Math.min(1 - Math.max(0, shown.y - pad), shown.height + pad * 2),
+        };
+        const isSelectedPos = m.positionId === selectedPositionId;
+        const isHighlighted =
+          Boolean(m.positionId) && highlightedPositionIds.includes(m.positionId!);
+        const isSelectedAnchor = selectedAnchorId
+          ? m.evidenceAnchorId === selectedAnchorId
+          : m.selected;
+        const selected = isSelectedAnchor || isSelectedPos || isHighlighted;
+        const focusActive =
+          !showAllMarks &&
+          (Boolean(selectedPositionId) ||
+            Boolean(selectedAnchorId) ||
+            highlightedPositionIds.length > 0);
+        const dimmed =
+          focusActive &&
+          !isSelectedPos &&
+          !isHighlighted &&
+          !(selectedAnchorId && isSelectedAnchor);
+        const glowColor = LAYER_STYLE[m.colorKey].border;
+        const tint = hexToRgb(glowColor);
+        const mask = buildTintedSymbolMask(
+          imageData,
+          pixelBboxFromNormalized(expanded, canvas.width, canvas.height),
+          canvas.width,
+          canvas.height,
+          tint,
+          { padPx: 2, alpha: selected ? 255 : 230 }
+        );
+        if (!mask) {
+          // No ink found — tiny center pin (never a rectangle frame).
+          const cx = (shown.x + shown.width / 2) * canvasSize.width;
+          const cy = (shown.y + shown.height / 2) * canvasSize.height;
+          const pin = 7;
+          const pinCanvas = document.createElement("canvas");
+          pinCanvas.width = pin * 2;
+          pinCanvas.height = pin * 2;
+          const pctx = pinCanvas.getContext("2d");
+          if (pctx) {
+            pctx.beginPath();
+            pctx.arc(pin, pin, pin - 1, 0, Math.PI * 2);
+            pctx.fillStyle = glowColor;
+            pctx.globalAlpha = 0.95;
+            pctx.fill();
+            pctx.lineWidth = 2;
+            pctx.strokeStyle = "#fff";
+            pctx.stroke();
+            next.push({
+              id: m.id,
+              left: cx - pin,
+              top: cy - pin,
+              width: pin * 2,
+              height: pin * 2,
+              dataUrl: pinCanvas.toDataURL("image/png"),
+              opacity: dimmed ? 0.3 : 1,
+              glowColor,
+              selected,
+            });
+          }
+          continue;
+        }
+        next.push({
+          id: m.id,
+          left: mask.canvasX * scaleX,
+          top: mask.canvasY * scaleY,
+          width: mask.width * scaleX,
+          height: mask.height * scaleY,
+          dataUrl: mask.dataUrl,
+          opacity: dimmed ? 0.3 : 1,
+          glowColor,
+          selected,
+        });
+      }
+
+      if (draftMarker && draftMarker.page === page && draftMarker.bbox) {
+        const shown = rotateBBox(draftMarker.bbox, rotation);
+        const draftGlow = "#FFEA00";
+        const mask = buildTintedSymbolMask(
+          imageData,
+          pixelBboxFromNormalized(shown, canvas.width, canvas.height),
+          canvas.width,
+          canvas.height,
+          hexToRgb(draftGlow),
+          { padPx: 5, alpha: 255 }
+        );
+        if (mask) {
+          next.push({
+            id: "draft_shape",
+            left: mask.canvasX * scaleX,
+            top: mask.canvasY * scaleY,
+            width: mask.width * scaleX,
+            height: mask.height * scaleY,
+            dataUrl: mask.dataUrl,
+            opacity: 1,
+            glowColor: draftGlow,
+            selected: true,
+          });
+        }
+      }
+
+      if (!cancelled) setShapeOverlays(next);
+    } catch {
+      if (!cancelled) setShapeOverlays([]);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    pageMarkers,
+    draftMarker,
+    page,
+    canvasSize,
+    rotation,
+    rendering,
+    selectedPositionId,
+    selectedAnchorId,
+    highlightedPositionIds,
+    showAllMarks,
+  ]);
+
   const layersInUse = useMemo(() => {
     const used = new Set(annotations.map((a) => a.colorKey));
     return LAYER_ORDER.filter((l) => used.has(l));
   }, [annotations]);
 
-  // When a position or anchor is selected — jump to it on the plan.
+  // When a position or anchor is selected — jump to page + scroll to marker center.
   useEffect(() => {
-    const targetId = selectedAnchorId
-      ? `ann_${selectedAnchorId}`
+    const targetAnn = selectedAnchorId
+      ? annotations.find((a) => a.evidenceAnchorId === selectedAnchorId && a.bbox)
       : selectedPositionId
-        ? annotations.find((a) => a.positionId === selectedPositionId && a.bbox)?.id
-        : null;
-    if (!targetId) return;
-    const target = annotations.find((a) => a.id === targetId && a.bbox);
-    if (!target) return;
-    if (target.page !== page) setPage(target.page);
+        ? annotations.find((a) => a.positionId === selectedPositionId && a.bbox)
+        : undefined;
+    if (!targetAnn?.bbox) return;
+    if (targetAnn.page !== page) {
+      setPage(targetAnn.page);
+      return;
+    }
     const container = scrollRef.current;
     if (!container || canvasSize.width === 0) return;
-    const shown = rotateBBox(target.bbox, rotation);
-    const cx = (shown.x + shown.width / 2) * canvasSize.width;
-    const cy = (shown.y + shown.height / 2) * canvasSize.height;
+    const center = markerCenterFromAnnotation(targetAnn);
+    const shown = rotatePoint(center, rotation);
+    const cx = shown.x * canvasSize.width;
+    const cy = shown.y * canvasSize.height;
     container.scrollTo({
       left: Math.max(0, cx - container.clientWidth / 2),
       top: Math.max(0, cy - container.clientHeight / 2),
@@ -315,16 +640,259 @@ export function EstimatorPdfEvidenceViewer({
   const layerLabel = (key: PdfOverlayColorKey) =>
     t(`projects.aiSetup.pdf.layer.${key}`);
 
-  // ---- Rectangle lasso marking (drag around symbol → highlighted shape) ----
+  // ---- Marking: click-to-symbol + rectangle fallback ----
+
+  const coordinateContext = useCallback((): OverlayCoordinateContext | null => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    // Prefer live DOM sizes — canvasSize state can lag one frame behind render.
+    const cssWidth = canvas.clientWidth || canvasSize.width;
+    const cssHeight = canvas.clientHeight || canvasSize.height;
+    if (cssWidth <= 0 || cssHeight <= 0) return null;
+    return {
+      cssWidth,
+      cssHeight,
+      canvasWidth: canvas.width || cssWidth,
+      canvasHeight: canvas.height || cssHeight,
+      devicePixelRatio: dprRef.current,
+      zoom,
+      scrollLeft: scrollRef.current?.scrollLeft ?? 0,
+      scrollTop: scrollRef.current?.scrollTop ?? 0,
+    };
+  }, [canvasSize, zoom]);
 
   const overlayPointFromEvent = (e: React.PointerEvent): Pt | null => {
     const el = overlayRef.current;
-    if (!el || canvasSize.width === 0) return null;
+    const ctx = coordinateContext();
+    if (!el || !ctx) return null;
     const rect = el.getBoundingClientRect();
-    const px = e.clientX - rect.left;
-    const py = e.clientY - rect.top;
-    if (px < 0 || py < 0 || px > canvasSize.width || py > canvasSize.height) return null;
-    return { x: px, y: py };
+    // Normalize by visible rect so CSS zoom preview (liveScale) stays click-accurate.
+    const cssX =
+      ((e.clientX - rect.left) / Math.max(1, rect.width)) * (canvasSize.width || ctx.cssWidth);
+    const cssY =
+      ((e.clientY - rect.top) / Math.max(1, rect.height)) * (canvasSize.height || ctx.cssHeight);
+    const pt = {
+      css: { x: cssX, y: cssY },
+      canvas: cssToCanvasPixels(cssX, cssY, ctx),
+      displayedNormalized: {
+        x: cssX / Math.max(1, canvasSize.width || ctx.cssWidth),
+        y: cssY / Math.max(1, canvasSize.height || ctx.cssHeight),
+      },
+    };
+    if (debugEnabled) {
+      logAiEstimatorDebug("mark_click_coords", {
+        clientX: e.clientX,
+        clientY: e.clientY,
+        scrollLeft: ctx.scrollLeft,
+        scrollTop: ctx.scrollTop,
+        zoom,
+        liveScale,
+        cssWidth: ctx.cssWidth,
+        cssHeight: ctx.cssHeight,
+        canvasWidth: ctx.canvasWidth,
+        canvasHeight: ctx.canvasHeight,
+        devicePixelRatio: ctx.devicePixelRatio,
+        cssX: pt.css.x,
+        cssY: pt.css.y,
+        canvasX: pt.canvas.x,
+        canvasY: pt.canvas.y,
+        normX: pt.displayedNormalized.x,
+        normY: pt.displayedNormalized.y,
+        markMode,
+        markingToolMode,
+        selectedPositionId,
+      });
+    }
+    return pt.css;
+  };
+
+  const placeMarkFromClick = (cssX: number, cssY: number) => {
+    if (!onMarkPlaced) return;
+    if (Date.now() < markCooldownUntilRef.current) return;
+    markCooldownUntilRef.current = Date.now() + 450;
+    const ctx = coordinateContext();
+    const canvas = canvasRef.current;
+    const canvasCtx = canvas?.getContext("2d");
+    if (!ctx || !canvas || !canvasCtx || canvas.width === 0) {
+      onPickFailed?.();
+      return;
+    }
+
+    const canvasPt = cssToCanvasPixels(cssX, cssY, ctx);
+    const displayedNorm = {
+      x: canvasPt.x / ctx.canvasWidth,
+      y: canvasPt.y / ctx.canvasHeight,
+    };
+    const storedNorm = unrotatePoint(displayedNorm, rotation);
+    const clickBox = clickFallbackBbox(storedNorm);
+    const boundary = classifyPlanClick(storedNorm);
+
+    if (boundary.excludeFromTakeoff) {
+      onOutsidePlanMark?.();
+      onMarkPlaced(page, clickBox, undefined, {
+        rawSelectionBbox: clickBox,
+        outsidePlan: true,
+        needsReview: true,
+        markStatus: "outside_plan",
+      });
+      return;
+    }
+
+    let imageData: ImageData | null = null;
+    try {
+      imageData = canvasCtx.getImageData(0, 0, canvas.width, canvas.height);
+    } catch {
+      imageData = null;
+    }
+
+    const pickHint = estimatorCategoryToPickHint(categoryHint ?? "unknown");
+    const pickOpts = pickOptionsForContext(pickHint, normalizedPoint);
+    const forceLoupe = forceLoupeNextRef.current;
+    forceLoupeNextRef.current = false;
+
+    if (imageData) {
+      const candidates = listNearbySymbolCandidates({
+        imageData,
+        clickCanvasPx: canvasPt,
+        pageWidth: canvas.width,
+        pageHeight: canvas.height,
+        categoryHint: pickHint,
+        normalizedPoint,
+        options: pickOpts,
+      });
+      // Dense detail → interactive loupe so the user picks the exact mark.
+      if (forceLoupe || candidates.length >= 2) {
+        setLoupe({
+          imageData,
+          centerCanvasPx: canvasPt,
+          candidates,
+        });
+        return;
+      }
+    }
+
+    commitMarkAtCanvasPoint(canvasPt, imageData, boundary);
+  };
+
+  const commitMarkAtCanvasPoint = (
+    canvasPt: { x: number; y: number },
+    imageData: ImageData | null,
+    boundary = classifyPlanClick(
+      unrotatePoint(
+        {
+          x: canvasPt.x / (canvasRef.current?.width || 1),
+          y: canvasPt.y / (canvasRef.current?.height || 1),
+        },
+        rotation
+      )
+    )
+  ) => {
+    if (!onMarkPlaced) return;
+    const canvas = canvasRef.current;
+    if (!canvas || canvas.width === 0) return;
+
+    const displayedNorm = {
+      x: canvasPt.x / canvas.width,
+      y: canvasPt.y / canvas.height,
+    };
+    const storedNorm = unrotatePoint(displayedNorm, rotation);
+    const clickBox = clickFallbackBbox(storedNorm);
+
+    let tightStored: EstimatorPositionBBox | undefined;
+    let colorHint: MarkPlacedMeta["colorHint"];
+    let confidence: MarkPlacedMeta["confidence"] = "low";
+    let needsReview = true;
+    let outlineDisplayed: Array<{ x: number; y: number }> | undefined;
+
+    if (imageData) {
+      const pickHint = estimatorCategoryToPickHint(categoryHint ?? "unknown");
+      const pickOpts = pickOptionsForContext(pickHint, normalizedPoint);
+      const picked = pickSymbolFromClick({
+        imageData,
+        clickCanvasPx: canvasPt,
+        pageWidth: canvas.width,
+        pageHeight: canvas.height,
+        categoryHint: pickHint,
+        normalizedPoint,
+        options: pickOpts,
+      });
+
+      if (picked.found && picked.tightSymbolBbox) {
+        const candidate = unrotateBBox(picked.tightSymbolBbox, rotation);
+        const cx = candidate.x + candidate.width / 2;
+        const cy = candidate.y + candidate.height / 2;
+        const dist = Math.hypot(cx - storedNorm.x, cy - storedNorm.y);
+        if (dist <= PICK_MAX_CENTER_DIST) {
+          tightStored = candidate;
+          colorHint = picked.colorHint;
+          confidence = picked.confidence;
+          needsReview = picked.needsReview || boundary.needsReview;
+          outlineDisplayed = picked.outlinePolygon;
+        }
+      }
+      if (!tightStored) {
+        colorHint = picked?.colorHint;
+        confidence = picked?.confidence ?? "low";
+      }
+    }
+
+    const bbox = tightStored ?? clickBox;
+    if (!outlineDisplayed && imageData) {
+      const displayBox = rotateBBox(bbox, rotation);
+      outlineDisplayed =
+        extractSymbolOutlinePolygon(
+          imageData,
+          pixelBboxFromNormalized(displayBox, canvas.width, canvas.height),
+          canvas.width,
+          canvas.height
+        ) ?? undefined;
+    }
+    const outlineStored = outlineDisplayed?.map((p) => unrotatePoint(p, rotation));
+    const markStatus =
+      boundary.status === "in_legend_or_table"
+        ? "in_legend_or_table"
+        : boundary.status === "boundary_uncertain"
+          ? "boundary_uncertain"
+          : tightStored && !needsReview
+            ? "confirmed"
+            : "needs_review";
+
+    onMarkPlaced(page, bbox, outlineStored, {
+      rawSelectionBbox: clickBox,
+      tightSymbolBbox: tightStored ?? bbox,
+      needsReview: !tightStored || needsReview,
+      markStatus,
+      cropId: `crop_click_${Date.now().toString(36)}`,
+      colorHint,
+      confidence,
+      polygon: outlineStored,
+    });
+  };
+
+  const commitMarkFromCandidate = (candidate: NearbySymbolCandidate) => {
+    if (!onMarkPlaced || !loupe) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const storedBox = unrotateBBox(candidate.bbox, rotation);
+    const outlineDisplayed =
+      extractSymbolOutlinePolygon(
+        loupe.imageData,
+        candidate.pixelBbox,
+        canvas.width,
+        canvas.height
+      ) ?? undefined;
+    const outlineStored = outlineDisplayed?.map((p) => unrotatePoint(p, rotation));
+    onMarkPlaced(page, storedBox, outlineStored, {
+      rawSelectionBbox: storedBox,
+      tightSymbolBbox: storedBox,
+      needsReview: false,
+      markStatus: "confirmed",
+      cropId: `crop_loupe_${Date.now().toString(36)}`,
+      colorHint: candidate.colorHint,
+      confidence: "high",
+      polygon: outlineStored,
+    });
+    setLoupe(null);
   };
 
   const placeMarkFromRect = (x1: number, y1: number, x2: number, y2: number) => {
@@ -337,7 +905,7 @@ export function EstimatorPdfEvidenceViewer({
     let bottom: number;
 
     if (spanX < DRAG_THRESHOLD_PX && spanY < DRAG_THRESHOLD_PX) {
-      // Click without drag → centered default highlight box.
+      // draw_box click without drag → small default box centered on click.
       const cx = x1;
       const cy = y1;
       const hw = (DEFAULT_MARK_FRAC * canvasSize.width) / 2;
@@ -360,12 +928,51 @@ export function EstimatorPdfEvidenceViewer({
       { x: left / canvasSize.width, y: bottom / canvasSize.height },
     ];
     const stored = corners.map((p) => unrotatePoint(p, rotation));
-    onMarkPlaced(page, bboxOfPoints(stored), stored);
+    const rawBbox = bboxOfPoints(stored);
+
+    let meta: MarkPlacedMeta | undefined;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (ctx && canvas && canvas.width > 0) {
+      try {
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const tightened = tightenSymbolBboxFromCrop(imageData, rawBbox, {
+          pageWidth: canvas.width,
+          pageHeight: canvas.height,
+        });
+        meta = {
+          rawSelectionBbox: rawBbox,
+          tightSymbolBbox: tightened.tightBbox ?? undefined,
+          outsidePlan: tightened.outsidePlan,
+          needsReview: tightened.needsReview || !tightened.reliable,
+          markStatus: tightened.outsidePlan
+            ? "outside_plan"
+            : tightened.needsReview
+              ? "needs_review"
+              : "confirmed",
+        };
+        if (tightened.outsidePlan) onOutsidePlanMark?.();
+
+        const evidenceBbox = tightened.tightBbox ?? {
+          x: tightened.center.x - DEFAULT_MARK_FRAC / 4,
+          y: tightened.center.y - DEFAULT_MARK_FRAC / 4,
+          width: DEFAULT_MARK_FRAC / 2,
+          height: DEFAULT_MARK_FRAC / 2,
+        };
+        onMarkPlaced(page, evidenceBbox, stored, meta);
+        return;
+      } catch {
+        /* fall through */
+      }
+    }
+
+    onMarkPlaced(page, rawBbox, stored, { rawSelectionBbox: rawBbox, needsReview: true });
   };
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (!markMode || !onMarkPlaced) return;
-    if ((e.target as HTMLElement).closest("[data-mark-ui]")) return;
+    if ((e.target as HTMLElement).closest("[data-mark-ui], [data-marker-hit]")) return;
     const p = overlayPointFromEvent(e);
     if (!p) return;
     e.preventDefault();
@@ -377,7 +984,7 @@ export function EstimatorPdfEvidenceViewer({
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
-    if (!drawingRef.current || !rectStartRef.current) return;
+    if (!drawingRef.current || !rectStartRef.current || markingToolMode !== "draw_box") return;
     const p = overlayPointFromEvent(e);
     if (!p) return;
     const s = rectStartRef.current;
@@ -393,6 +1000,10 @@ export function EstimatorPdfEvidenceViewer({
     drawRectRef.current = null;
     setDrawRect(null);
     if (!r) return;
+    if (markingToolMode === "click_symbol") {
+      placeMarkFromClick(r.x1, r.y1);
+      return;
+    }
     placeMarkFromRect(r.x1, r.y1, r.x2, r.y2);
   };
 
@@ -401,31 +1012,6 @@ export function EstimatorPdfEvidenceViewer({
       overlayRef.current?.releasePointerCapture(e.pointerId);
       finishDrawing();
     }
-  };
-
-  /** Polygon points for SVG — from stored polygon or bbox corners. */
-  const markPolygonPx = (
-    a: PdfOverlayAnnotation
-  ): string | null => {
-    if (a.polygon && a.polygon.length >= 3) {
-      return a.polygon
-        .map((p) => rotatePoint(p, rotation))
-        .map((p) => `${(p.x * canvasSize.width).toFixed(1)},${(p.y * canvasSize.height).toFixed(1)}`)
-        .join(" ");
-    }
-    if (a.bbox) {
-      const b = rotateBBox(a.bbox, rotation);
-      const pts = [
-        { x: b.x, y: b.y },
-        { x: b.x + b.width, y: b.y },
-        { x: b.x + b.width, y: b.y + b.height },
-        { x: b.x, y: b.y + b.height },
-      ];
-      return pts
-        .map((p) => `${(p.x * canvasSize.width).toFixed(1)},${(p.y * canvasSize.height).toFixed(1)}`)
-        .join(" ");
-    }
-    return null;
   };
 
   if (!fileUrl) {
@@ -487,6 +1073,21 @@ export function EstimatorPdfEvidenceViewer({
             type="button"
             variant="outline"
             size="sm"
+            className={cn(
+              "h-8 gap-1 px-2 border-[#CBD5E1] text-[11px]",
+              showAllMarks && "border-[#1D376A] bg-[#EEF2FF] text-[#1D376A]"
+            )}
+            onClick={() => onShowAllMarksChange?.(!showAllMarks)}
+            title={t("projects.aiSetup.marking.showAllMarksHint")}
+            aria-pressed={showAllMarks}
+          >
+            {showAllMarks ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+            {t("projects.aiSetup.marking.showAllMarks")}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
             className="h-8 w-8 p-0 border-[#CBD5E1]"
             onClick={() => setRotation((r) => normRot(r + 90))}
             aria-label={t("projects.aiSetup.pdf.rotate")}
@@ -524,7 +1125,61 @@ export function EstimatorPdfEvidenceViewer({
             </Button>
           </div>
         ) : null}
+        {markMode && onMarkingToolModeChange ? (
+          <div className="flex items-center gap-1 border-l border-[#E2E8F0] pl-2 ml-1">
+            <button
+              type="button"
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+                markingToolMode === "click_symbol"
+                  ? "border-[#E95F2A] bg-[#E95F2A] text-white"
+                  : "border-[#CBD5E1] bg-white text-[#64748B]"
+              )}
+              onClick={() => onMarkingToolModeChange("click_symbol")}
+            >
+              {t("projects.aiSetup.marking.clickSymbol")}
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+                markingToolMode === "draw_box"
+                  ? "border-[#E95F2A] bg-[#E95F2A] text-white"
+                  : "border-[#CBD5E1] bg-white text-[#64748B]"
+              )}
+              onClick={() => onMarkingToolModeChange("draw_box")}
+            >
+              {t("projects.aiSetup.marking.drawBox")}
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 rounded-full border border-[#1D376A]/40 bg-white px-2 py-0.5 text-[11px] font-semibold text-[#1D376A] hover:bg-[#F6F8FB]"
+              title={t("projects.aiSetup.marking.loupe.toolbarHint")}
+              onClick={() => {
+                forceLoupeNextRef.current = true;
+                onMarkingToolModeChange("click_symbol");
+              }}
+            >
+              <ZoomIn className="size-3" />
+              {t("projects.aiSetup.marking.loupe.toolbar")}
+            </button>
+          </div>
+        ) : null}
         <div className="ml-auto flex flex-wrap items-center gap-1">
+          {debugEnabled ? (
+            <button
+              type="button"
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+                showTechnicalBoxes
+                  ? "border-[#1D376A] bg-[#1D376A] text-white"
+                  : "border-[#CBD5E1] bg-white text-[#64748B]"
+              )}
+              onClick={() => setShowTechnicalBoxes((v) => !v)}
+            >
+              {t("projects.aiSetup.pdf.showTechnicalBoxes")}
+            </button>
+          ) : null}
           {layersInUse.map((key) => {
             const hidden = hiddenLayers.has(key);
             return (
@@ -569,19 +1224,38 @@ export function EstimatorPdfEvidenceViewer({
       <div
         ref={scrollRef}
         className={cn("relative overflow-auto bg-[#EEF2F7] p-2", heightClassName)}
+        onWheel={(e) => {
+          if (!(e.ctrlKey || e.metaKey)) return;
+          e.preventDefault();
+          const delta = e.deltaY > 0 ? -0.15 : 0.15;
+          setZoom((z) => Math.min(4, Math.max(0.5, Number((z + delta).toFixed(2)))));
+        }}
       >
-        {!doc || rendering ? (
+        {!doc ? (
           <div className="absolute inset-x-0 top-3 z-10 text-center text-xs text-[#64748B]" role="status">
             {t("common.loading")}
           </div>
+        ) : rendering ? (
+          <div className="pointer-events-none absolute inset-x-0 top-3 z-10 text-center text-[11px] text-[#64748B]" role="status">
+            {t("projects.aiSetup.pdf.sharpeningZoom")}
+          </div>
         ) : null}
         <div
+          className="relative mx-auto"
+          style={{
+            width: canvasSize.width ? canvasSize.width * liveScale : undefined,
+            height: canvasSize.height ? canvasSize.height * liveScale : undefined,
+          }}
+        >
+        <div
           ref={overlayRef}
-          className={cn("relative mx-auto", markMode && "cursor-crosshair")}
+          className={cn("relative", markMode && markingToolMode === "draw_box" && "cursor-crosshair", markMode && markingToolMode === "click_symbol" && "cursor-pointer")}
           style={{
             width: canvasSize.width || undefined,
             height: canvasSize.height || undefined,
             touchAction: markMode ? "none" : undefined,
+            transform: liveScale !== 1 ? `scale(${liveScale})` : undefined,
+            transformOrigin: "0 0",
           }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
@@ -590,169 +1264,183 @@ export function EstimatorPdfEvidenceViewer({
         >
           <canvas ref={canvasRef} className="block shadow-sm" />
 
-          {/* All manual marks + live rectangle preview (SVG) */}
-          {canvasSize.width > 0 ? (
+          {/* Live drag preview while marking (selection rect only — not persisted overlay) */}
+          {canvasSize.width > 0 && drawRect && markingToolMode === "draw_box" ? (
             <svg
               className="pointer-events-none absolute inset-0 z-10"
               width={canvasSize.width}
               height={canvasSize.height}
               viewBox={`0 0 ${canvasSize.width} ${canvasSize.height}`}
             >
-              {pageAnnotations.map((a) => {
-                if (!a.isManualMark) return null;
-                const pts = markPolygonPx(a);
-                if (!pts) return null;
-                const style = LAYER_STYLE[a.colorKey];
-                const isSelectedPos = a.positionId === selectedPositionId;
-                const isSelectedAnchor = selectedAnchorId
-                  ? a.evidenceAnchorId === selectedAnchorId
-                  : a.selected;
-                const dimmed =
-                  (selectedPositionId && !isSelectedPos) ||
-                  (selectedAnchorId && !isSelectedAnchor);
-                const fill = isSelectedAnchor
-                  ? style.bg.replace("0.12", "0.45")
-                  : isSelectedPos
-                    ? style.bg.replace("0.12", "0.35")
-                    : style.bg.replace("0.12", "0.22");
-                return (
-                  <g
-                    key={a.id}
-                    opacity={dimmed ? 0.2 : 1}
-                    className={cn(!markMode && "pointer-events-auto cursor-pointer")}
-                    onClick={() => {
-                      if (!markMode) {
-                        onAnchorClick?.(a.evidenceAnchorId);
-                        onAnnotationClick?.(a.positionId ?? null, a.id);
-                      }
-                    }}
-                  >
-                    <polygon
-                      points={pts}
-                      fill={fill}
-                      stroke={style.border}
-                      strokeWidth={isSelectedAnchor ? 3.5 : isSelectedPos ? 3 : 2}
-                      strokeLinejoin="round"
-                      style={
-                        isSelectedAnchor
-                          ? { filter: `drop-shadow(0 0 6px ${style.border})` }
-                          : undefined
-                      }
-                    />
-                    {isSelectedPos ? (
-                      <text
-                        x={
-                          a.bbox
-                            ? (rotateBBox(a.bbox, rotation).x +
-                                rotateBBox(a.bbox, rotation).width / 2) *
-                              canvasSize.width
-                            : 0
-                        }
-                        y={
-                          a.bbox
-                            ? rotateBBox(a.bbox, rotation).y * canvasSize.height - 4
-                            : 0
-                        }
-                        textAnchor="middle"
-                        className="pointer-events-none select-none"
-                        fill={style.chip}
-                        fontSize={11}
-                        fontWeight={700}
-                      >
-                        {a.label}
-                      </text>
-                    ) : null}
-                  </g>
-                );
-              })}
-              {drawRect ? (
-                <rect
-                  x={Math.min(drawRect.x1, drawRect.x2)}
-                  y={Math.min(drawRect.y1, drawRect.y2)}
-                  width={Math.abs(drawRect.x2 - drawRect.x1)}
-                  height={Math.abs(drawRect.y2 - drawRect.y1)}
-                  fill="rgba(233,95,42,0.2)"
-                  stroke="#E95F2A"
-                  strokeWidth={2.5}
-                  strokeDasharray="5 3"
-                  rx={2}
-                />
-              ) : null}
+              <rect
+                x={Math.min(drawRect.x1, drawRect.x2)}
+                y={Math.min(drawRect.y1, drawRect.y2)}
+                width={Math.abs(drawRect.x2 - drawRect.x1)}
+                height={Math.abs(drawRect.y2 - drawRect.y1)}
+                fill="rgba(233,95,42,0.12)"
+                stroke="#E95F2A"
+                strokeWidth={2}
+                strokeDasharray="5 3"
+                rx={2}
+              />
             </svg>
           ) : null}
 
-          {pageAnnotations.map((a) => {
-            const style = LAYER_STYLE[a.colorKey];
-            const isSelectedPos = a.positionId === selectedPositionId;
-            const isSelectedAnchor = selectedAnchorId
-              ? a.evidenceAnchorId === selectedAnchorId
-              : a.selected;
-            const shown = rotateBBox(a.bbox, rotation);
-            const left = shown.x * canvasSize.width;
-            const top = shown.y * canvasSize.height;
-            const w = Math.max(10, shown.width * canvasSize.width);
-            const h = Math.max(10, shown.height * canvasSize.height);
+          {/* Debug: technical evidence boxes */}
+          {showDebugBoxes && canvasSize.width > 0
+            ? pageAnnotations.map((a) => {
+                const boxes = [
+                  { bbox: a.rawSelectionBbox, color: "#E95F2A", label: "raw" },
+                  { bbox: a.tightSymbolBbox ?? a.bbox, color: "#1D376A", label: "tight" },
+                ];
+                return boxes.map(({ bbox, color, label }) => {
+                  if (!bbox) return null;
+                  const shown = rotateBBox(bbox, rotation);
+                  const left = shown.x * canvasSize.width;
+                  const top = shown.y * canvasSize.height;
+                  const w = shown.width * canvasSize.width;
+                  const h = shown.height * canvasSize.height;
+                  return (
+                    <div
+                      key={`${a.id}_${label}`}
+                      className="pointer-events-none absolute z-5 border border-dashed text-[9px] font-mono"
+                      style={{
+                        left,
+                        top,
+                        width: w,
+                        height: h,
+                        borderColor: color,
+                        color,
+                      }}
+                    >
+                      {label}
+                    </div>
+                  );
+                });
+              })
+            : null}
 
-            // Manual marks are drawn in the SVG layer above.
-            if (a.isManualMark) {
-              const deleteButton =
-                (isSelectedPos || isSelectedAnchor) && onMarkDeleted && a.positionId ? (
+          {/* Real symbol ink copies — tinted pixels only, never a frame */}
+          {shapeOverlays.map((o) => (
+            <img
+              key={o.id}
+              src={o.dataUrl}
+              alt=""
+              aria-hidden
+              className="pointer-events-none absolute z-10"
+              style={{
+                left: o.left,
+                top: o.top,
+                width: o.width,
+                height: o.height,
+                opacity: o.opacity,
+                imageRendering: "pixelated",
+                // Fluorescent halo so marks stay readable on dense ink.
+                filter: o.selected
+                  ? `drop-shadow(0 0 1px #fff) drop-shadow(0 0 4px ${o.glowColor}) drop-shadow(0 0 10px ${o.glowColor})`
+                  : `drop-shadow(0 0 1px #fff) drop-shadow(0 0 3px ${o.glowColor})`,
+              }}
+              draggable={false}
+            />
+          ))}
+
+          {/* Hit targets + labels for marks */}
+          {pageMarkers.map((m) => {
+            const style = LAYER_STYLE[m.colorKey];
+            const box = m.displayBbox ?? m.tightSymbolBbox;
+            const shownBox = box
+              ? rotateBBox(box, rotation)
+              : (() => {
+                  const c = rotatePoint(m.center, rotation);
+                  const f = DEFAULT_MARK_FRAC / 2;
+                  return {
+                    x: c.x - f,
+                    y: c.y - f,
+                    width: DEFAULT_MARK_FRAC,
+                    height: DEFAULT_MARK_FRAC,
+                  };
+                })();
+            let left = shownBox.x * canvasSize.width;
+            let top = shownBox.y * canvasSize.height;
+            let w = Math.max(MIN_SYMBOL_OUTLINE_PX, shownBox.width * canvasSize.width);
+            let h = Math.max(MIN_SYMBOL_OUTLINE_PX, shownBox.height * canvasSize.height);
+            left -= (w - shownBox.width * canvasSize.width) / 2;
+            top -= (h - shownBox.height * canvasSize.height) / 2;
+            const cx = left + w / 2;
+            const isSelectedPos = m.positionId === selectedPositionId;
+            const isHighlighted =
+              Boolean(m.positionId) && highlightedPositionIds.includes(m.positionId!);
+            const isSelectedAnchor = selectedAnchorId
+              ? m.evidenceAnchorId === selectedAnchorId
+              : m.selected;
+            const selected = isSelectedAnchor || isSelectedPos || isHighlighted;
+            const focusActive =
+              !showAllMarks &&
+              (Boolean(selectedPositionId) ||
+                Boolean(selectedAnchorId) ||
+                highlightedPositionIds.length > 0);
+            const dimmed =
+              focusActive &&
+              !isSelectedPos &&
+              !isHighlighted &&
+              !(selectedAnchorId && isSelectedAnchor);
+            const annId = m.evidenceAnchorId ? `ann_${m.evidenceAnchorId}` : m.id;
+
+            return (
+              <span
+                key={`hit_${m.id}`}
+                className="contents"
+                style={{ opacity: dimmed ? 0.5 : 1 }}
+              >
+                <button
+                  type="button"
+                  data-marker-hit
+                  className={cn(
+                    "absolute z-15 bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F2A4D]",
+                    selected && "z-20"
+                  )}
+                  style={{ left, top, width: w, height: h }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (m.evidenceAnchorId) onAnchorClick?.(m.evidenceAnchorId);
+                    onAnnotationClick?.(m.positionId || null, annId);
+                  }}
+                  title={m.label}
+                  aria-label={`${m.label} — ${layerLabel(m.colorKey)}`}
+                />
+                {selected ? (
+                  <span
+                    className="pointer-events-none absolute z-25 whitespace-nowrap rounded px-1 py-px text-[10px] font-bold text-white shadow"
+                    style={{
+                      left: cx,
+                      top: top - 16,
+                      transform: "translateX(-50%)",
+                      backgroundColor: style.chip,
+                    }}
+                  >
+                    {m.label}
+                  </span>
+                ) : null}
+                {selected && m.isManualMark && onMarkDeleted && m.evidenceAnchorId ? (
                   <button
-                    key={`${a.id}_del`}
                     type="button"
                     data-mark-ui
                     className="absolute z-30 grid size-5 place-items-center rounded-full bg-[#DC2626] text-white shadow hover:bg-[#B91C1C]"
                     style={{ left: left + w - 8, top: top - 8 }}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onMarkDeleted(a.positionId!, a.evidenceAnchorId);
+                      onMarkDeleted(m.positionId, m.evidenceAnchorId!);
                     }}
                     title={t("projects.aiSetup.marking.deleteMark")}
                     aria-label={t("projects.aiSetup.marking.deleteMark")}
                   >
                     <X className="size-3" />
                   </button>
-                ) : null;
-              return deleteButton;
-            }
-
-            const dimmed = selectedPositionId && !isSelectedPos;
-            const selected = isSelectedAnchor || isSelectedPos;
-
-            return (
-              <span key={a.id} className="contents" style={{ opacity: dimmed ? 0.25 : 1 }}>
-                <button
-                  type="button"
-                  className={cn(
-                    "absolute rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F2A4D]",
-                    selected && "z-20",
-                    markMode && "pointer-events-none"
-                  )}
-                  style={{
-                    left,
-                    top,
-                    width: w,
-                    height: h,
-                    border: `2px ${a.needsReview ? "dashed" : "solid"} ${style.border}`,
-                    backgroundColor: selected ? style.bg.replace("0.12", "0.35") : style.bg,
-                    boxShadow: selected ? `0 0 0 4px ${style.border}88` : undefined,
-                  }}
-                  onClick={() => {
-                    onAnnotationClick?.(a.positionId ?? null, a.id);
-                  }}
-                  title={a.label}
-                  aria-label={`${a.label} — ${layerLabel(a.colorKey)}`}
-                >
-                  <span
-                    className="absolute -top-5 left-0 whitespace-nowrap rounded px-1 py-px text-[10px] font-bold text-white"
-                    style={{ backgroundColor: style.chip }}
-                  >
-                    {a.label}
-                  </span>
-                </button>
+                ) : null}
               </span>
             );
           })}
+        </div>
         </div>
       </div>
 
@@ -760,6 +1448,22 @@ export function EstimatorPdfEvidenceViewer({
         <p className="border-t border-[#E2E8F0] bg-amber-50 px-3 py-2 text-xs text-amber-800">
           {t("projects.aiSetup.pdf.noBboxHint")}
         </p>
+      ) : null}
+
+      {loupe ? (
+        <SymbolDetailLoupe
+          imageData={loupe.imageData}
+          pageWidth={loupe.imageData.width}
+          pageHeight={loupe.imageData.height}
+          centerCanvasPx={loupe.centerCanvasPx}
+          candidates={loupe.candidates}
+          onPickCandidate={commitMarkFromCandidate}
+          onPickPoint={(pt) => {
+            commitMarkAtCanvasPoint(pt, loupe.imageData);
+            setLoupe(null);
+          }}
+          onClose={() => setLoupe(null)}
+        />
       ) : null}
     </div>
   );

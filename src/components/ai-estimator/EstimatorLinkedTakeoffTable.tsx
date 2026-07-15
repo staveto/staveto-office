@@ -25,12 +25,18 @@ import { formatMoney } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import {
   filterEstimatorPositions,
+  primarySourceDocumentLabel,
   sortEstimatorPositions,
   POSITION_EXCLUDE_REASONS,
   type PositionQuickFilter,
   type PositionSortKey,
 } from "@/lib/ai/estimatorPositions";
-import type { EstimatorPosition } from "@/types/estimatorPositions";
+import { openConflicts } from "@/lib/ai/mergeEstimatorPositionsFromDocuments";
+import type {
+  EstimatorDocument,
+  EstimatorPosition,
+  EstimatorQuantityConflict,
+} from "@/types/estimatorPositions";
 
 const QUICK_FILTERS: { id: PositionQuickFilter | "all"; labelKey: string }[] = [
   { id: "all", labelKey: "projects.aiSetup.positions.filter.all" },
@@ -38,7 +44,9 @@ const QUICK_FILTERS: { id: PositionQuickFilter | "all"; labelKey: string }[] = [
   { id: "needs_review", labelKey: "projects.aiSetup.positions.filter.needsReview" },
   { id: "no_pdf_position", labelKey: "projects.aiSetup.positions.filter.noPdf" },
   { id: "drawing_only", labelKey: "projects.aiSetup.positions.filter.drawingOnly" },
+  { id: "schedule_only", labelKey: "projects.aiSetup.positions.filter.scheduleOnly" },
   { id: "legend_only", labelKey: "projects.aiSetup.positions.filter.legendOnly" },
+  { id: "conflicts", labelKey: "projects.aiSetup.positions.filter.conflicts" },
   { id: "manual_only", labelKey: "projects.aiSetup.positions.filter.manualOnly" },
 ];
 
@@ -89,6 +97,16 @@ type Props = {
   initialQuickFilter?: PositionQuickFilter | "all";
   /** Hide filter toolbar (compact embedding next to the PDF). */
   compact?: boolean;
+  multiDocEnabled?: boolean;
+  documents?: EstimatorDocument[];
+  activeDocumentId?: string | null;
+  conflicts?: EstimatorQuantityConflict[];
+  /**
+   * Only show positions backed by a plan mark (bbox).
+   * AI estimates without PDF evidence are not accepted as price lines.
+   * Default true. Set false for "Bez pozície v PDF" debugging.
+   */
+  requirePlanMark?: boolean;
 };
 
 export function EstimatorLinkedTakeoffTable({
@@ -102,9 +120,15 @@ export function EstimatorLinkedTakeoffTable({
   onAddPrice,
   initialQuickFilter = "all",
   compact = false,
+  multiDocEnabled = false,
+  documents = [],
+  activeDocumentId = null,
+  conflicts = [],
+  requirePlanMark = true,
 }: Props) {
   const { t } = useI18n();
   const [quick, setQuick] = useState<PositionQuickFilter | "all">(initialQuickFilter);
+  const [documentScope, setDocumentScope] = useState<"all" | "current">("all");
   const [room, setRoom] = useState<string>("all");
   const [category, setCategory] = useState<string>("all");
   const [search, setSearch] = useState("");
@@ -123,15 +147,52 @@ export function EstimatorLinkedTakeoffTable({
     [positions]
   );
 
+  const openConflictIds = useMemo(
+    () => new Set(openConflicts(conflicts).map((c) => c.positionId)),
+    [conflicts]
+  );
+
+  const activeDocument = useMemo(
+    () => documents.find((d) => d.id === activeDocumentId) ?? null,
+    [documents, activeDocumentId]
+  );
+
+  const visibleFilters = useMemo(() => {
+    if (!multiDocEnabled || documents.length <= 1) {
+      return QUICK_FILTERS.filter((f) => f.id !== "conflicts" || openConflictIds.size > 0);
+    }
+    return QUICK_FILTERS;
+  }, [multiDocEnabled, documents.length, openConflictIds.size]);
+
   const rows = useMemo(() => {
     const filtered = filterEstimatorPositions(positions, {
       quick: quick === "all" ? undefined : quick,
       roomName: room === "all" ? undefined : room,
       category: category === "all" ? undefined : category,
       search: search || undefined,
+      requirePlanMark: requirePlanMark && quick !== "no_pdf_position",
+      documentId:
+        multiDocEnabled && documentScope === "current" && activeDocument
+          ? activeDocument.id
+          : undefined,
+      documentFileName: activeDocument?.fileName,
+      documentFileId: activeDocument?.fileId,
+      conflictPositionIds: quick === "conflicts" ? openConflictIds : undefined,
     });
     return sortEstimatorPositions(filtered, sortKey);
-  }, [positions, quick, room, category, search, sortKey]);
+  }, [
+    positions,
+    quick,
+    room,
+    category,
+    search,
+    requirePlanMark,
+    sortKey,
+    multiDocEnabled,
+    documentScope,
+    activeDocument,
+    openConflictIds,
+  ]);
 
   const submitReason = (position: EstimatorPosition, reason: string) => {
     if (!reasonFor) return;
@@ -145,7 +206,7 @@ export function EstimatorLinkedTakeoffTable({
       {!compact ? (
         <div className="space-y-2">
           <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("projects.aiSetup.positions.sort.label")}>
-            {QUICK_FILTERS.map((f) => (
+            {visibleFilters.map((f) => (
               <button
                 key={f.id}
                 type="button"
@@ -159,9 +220,40 @@ export function EstimatorLinkedTakeoffTable({
                 onClick={() => setQuick(f.id)}
               >
                 {t(f.labelKey)}
+                {f.id === "conflicts" && openConflictIds.size > 0
+                  ? ` (${openConflictIds.size})`
+                  : ""}
               </button>
             ))}
           </div>
+          {multiDocEnabled && documents.length > 1 ? (
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                type="button"
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-xs font-semibold",
+                  documentScope === "all"
+                    ? "border-[#1D376A] bg-[#1D376A] text-white"
+                    : "border-[#CBD5E1] bg-white text-[#475569]"
+                )}
+                onClick={() => setDocumentScope("all")}
+              >
+                {t("projects.aiSetup.positions.filter.allDocuments")}
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-xs font-semibold",
+                  documentScope === "current"
+                    ? "border-[#1D376A] bg-[#1D376A] text-white"
+                    : "border-[#CBD5E1] bg-white text-[#475569]"
+                )}
+                onClick={() => setDocumentScope("current")}
+              >
+                {t("projects.aiSetup.positions.filter.currentDocument")}
+              </button>
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2">
             <Input
               value={search}
@@ -226,6 +318,9 @@ export function EstimatorLinkedTakeoffTable({
             <thead>
               <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-left text-[11px] font-bold uppercase tracking-wide text-[#64748B]">
                 <th className="px-3 py-2">{t("projects.aiSetup.positions.col.position")}</th>
+                {multiDocEnabled && documents.length > 1 ? (
+                  <th className="px-3 py-2">{t("projects.aiSetup.positions.col.sourceDocument")}</th>
+                ) : null}
                 <th className="px-3 py-2">{t("projects.aiSetup.positions.col.room")}</th>
                 <th className="px-3 py-2">{t("projects.aiSetup.positions.col.name")}</th>
                 <th className="px-3 py-2 text-right">{t("projects.aiSetup.positions.col.qty")}</th>
@@ -265,6 +360,11 @@ export function EstimatorLinkedTakeoffTable({
                         />
                       ) : null}
                     </td>
+                    {multiDocEnabled && documents.length > 1 ? (
+                      <td className="px-3 py-2 text-xs text-[#475569] max-w-[140px] truncate" title={primarySourceDocumentLabel(p, documents)}>
+                        {primarySourceDocumentLabel(p, documents)}
+                      </td>
+                    ) : null}
                     <td className="px-3 py-2 text-xs text-[#475569] whitespace-nowrap">
                       {p.roomName ?? "—"}
                     </td>

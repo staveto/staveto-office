@@ -24,6 +24,7 @@ import type {
   EstimatorPositionTrade,
   EstimatorPositionUnit,
   EstimatorPriceStatus,
+  EstimatorQuantityConflict,
   EstimatorQuantitySource,
   EstimatorReviewStatus,
   PdfOverlayAnnotation,
@@ -42,6 +43,7 @@ export type {
 
 const ELECTRICAL_CODE_BY_CATEGORY: Record<string, string> = {
   socket: "ZAS",
+  double_socket: "ZAS",
   switch: "VYP",
   lighting: "SV",
   led_strip: "LED",
@@ -86,6 +88,7 @@ export function positionCategoryCode(
 export function overlayColorKeyForCategory(category: string): PdfOverlayColorKey {
   switch (category) {
     case "socket":
+    case "double_socket":
       return "socket";
     case "switch":
       return "switch";
@@ -136,6 +139,38 @@ export function normalizeEvidenceBBox(
 
 function clamp01(v: number): number {
   return Math.max(0, Math.min(1, Number(v.toFixed(5))));
+}
+
+/** Normalized bbox IoU — used to avoid duplicate marks at the same spot. */
+export function estimatorBBoxIoU(
+  a: EstimatorPositionBBox,
+  b: EstimatorPositionBBox
+): number {
+  const ax2 = a.x + a.width;
+  const ay2 = a.y + a.height;
+  const bx2 = b.x + b.width;
+  const by2 = b.y + b.height;
+  const ix = Math.max(0, Math.min(ax2, bx2) - Math.max(a.x, b.x));
+  const iy = Math.max(0, Math.min(ay2, by2) - Math.max(a.y, b.y));
+  const inter = ix * iy;
+  if (inter <= 0) return 0;
+  const union = a.width * a.height + b.width * b.height - inter;
+  return union > 0 ? inter / union : 0;
+}
+
+function boxesNearDuplicate(
+  a: EstimatorPositionBBox,
+  b: EstimatorPositionBBox,
+  iouThreshold = 0.35
+): boolean {
+  if (estimatorBBoxIoU(a, b) >= iouThreshold) return true;
+  const acx = a.x + a.width / 2;
+  const acy = a.y + a.height / 2;
+  const bcx = b.x + b.width / 2;
+  const bcy = b.y + b.height / 2;
+  // Only treat as duplicate when centers almost coincide (same mark).
+  // Adjacent identical symbols (~1% page apart) must stay separate.
+  return Math.hypot(acx - bcx, acy - bcy) < 0.008;
 }
 
 // ---------------------------------------------------------------------------
@@ -517,10 +552,7 @@ export function buildPositionsFromMaterialRows(
       totalPrice: priced && row.qty > 0 ? Number((row.price * row.qty).toFixed(2)) : undefined,
       currency: options.currency ?? "EUR",
       linkedMaterialRowId: row.id,
-      reviewStatus:
-        row.qty <= 0 || row.confidence === "low"
-          ? ("needs_review" as const)
-          : ("confirmed" as const),
+      reviewStatus: "needs_review" as const,
     };
   });
 }
@@ -564,14 +596,23 @@ export function buildPdfOverlayAnnotations(
         positionId: p.id,
         page: anchor.page,
         bbox: anchor.bbox,
+        rawSelectionBbox: anchor.rawSelectionBbox,
+        tightSymbolBbox: anchor.tightSymbolBbox,
+        markStatus: anchor.markStatus,
         polygon: anchor.polygon,
         isManualMark: isManualMarkAnchor(anchor),
         label: p.positionCode,
         colorKey:
-          p.reviewStatus === "needs_review" && p.category === "unknown"
+          anchor.markStatus === "outside_plan"
             ? "warning"
-            : overlayColorKeyForCategory(p.category),
-        needsReview: anchor.needsReview || p.reviewStatus === "needs_review",
+            : p.reviewStatus === "needs_review" && p.category === "unknown"
+              ? "warning"
+              : overlayColorKeyForCategory(p.category),
+        needsReview:
+          anchor.needsReview ||
+          anchor.markStatus === "needs_review" ||
+          anchor.markStatus === "outside_plan" ||
+          p.reviewStatus === "needs_review",
       });
     }
   }
@@ -599,12 +640,37 @@ export function applyAnnotationSelection(
 }
 
 /** Quick category change when user classifies a symbol (zásuvka / svetlo / vypínač). */
+export function categoryToNormalizedPoint(category: string): string {
+  switch (category) {
+    case "socket":
+      return "socket_point";
+    case "double_socket":
+      return "double_socket_point";
+    case "switch":
+      return "switch_point";
+    case "lighting":
+    case "light":
+      return "light_output";
+    case "led_strip":
+    case "led":
+      return "led_strip";
+    case "cable":
+      return "cable_run";
+    default:
+      return category;
+  }
+}
+
 export function setPositionCategory(
   position: EstimatorPosition,
   category: string
 ): EstimatorPosition {
   if (position.category === category) return position;
-  return { ...position, category, normalizedPoint: category };
+  return {
+    ...position,
+    category,
+    normalizedPoint: categoryToNormalizedPoint(category),
+  };
 }
 
 /** Manual marks for a position, newest last. */
@@ -630,7 +696,9 @@ export type PositionQuickFilter =
   | "no_pdf_position"
   | "drawing_only"
   | "legend_only"
-  | "manual_only";
+  | "schedule_only"
+  | "manual_only"
+  | "conflicts";
 
 export type PositionFilters = {
   trade?: EstimatorPositionTrade;
@@ -643,8 +711,24 @@ export type PositionFilters = {
   hasEvidence?: boolean;
   hasBbox?: boolean;
   needsReview?: boolean;
+  /**
+   * When true (default), ignored/excluded positions are hidden from Ceny/Detail.
+   * Set false only for admin/debug views that need to show inactive rows.
+   */
+  includeInactive?: boolean;
+  /**
+   * When true, only positions with a real plan mark (bbox) are shown.
+   * AI estimates without PDF/plan evidence are not accepted as price lines.
+   */
+  requirePlanMark?: boolean;
   quick?: PositionQuickFilter;
   search?: string;
+  /** Multi-document: show only positions with evidence in this document. */
+  documentId?: string;
+  documentFileName?: string;
+  documentFileId?: string;
+  /** Position ids with open quantity conflicts. */
+  conflictPositionIds?: Set<string>;
 };
 
 function positionConfidence(p: EstimatorPosition): "high" | "medium" | "low" {
@@ -659,12 +743,69 @@ function positionHasBbox(p: EstimatorPosition): boolean {
   return p.evidenceAnchors.some((a) => a.bbox != null);
 }
 
+function positionMatchesDocument(
+  p: EstimatorPosition,
+  documentId: string,
+  fileName?: string,
+  fileId?: string
+): boolean {
+  if ((p.sourceDocuments ?? []).includes(documentId)) return true;
+  return p.evidenceAnchors.some(
+    (a) =>
+      a.documentId === documentId ||
+      (fileName && a.fileName === fileName) ||
+      (fileId && a.fileId === fileId)
+  );
+}
+
+/** Primary source document label for table display. */
+export function primarySourceDocumentLabel(
+  p: EstimatorPosition,
+  documents: Array<{ id: string; fileName: string }>
+): string {
+  const docId = p.sourceDocuments?.[0] ?? p.evidenceAnchors[0]?.documentId;
+  if (docId) {
+    const match = documents.find((d) => d.id === docId);
+    if (match) return match.fileName;
+  }
+  const fileName = p.evidenceAnchors[0]?.fileName;
+  return fileName ?? "—";
+}
+
 export function filterEstimatorPositions(
   positions: EstimatorPosition[],
   f: PositionFilters
 ): EstimatorPosition[] {
   const q = f.search?.trim().toLowerCase();
+  const includeInactive = f.includeInactive === true;
+  const requirePlanMark = f.requirePlanMark === true;
   return positions.filter((p) => {
+    if (
+      !includeInactive &&
+      (p.reviewStatus === "ignored" || p.reviewStatus === "excluded")
+    ) {
+      return false;
+    }
+    // "Bez pozície v PDF" is the only quick filter that should list unmarked rows.
+    if (
+      requirePlanMark &&
+      f.quick !== "no_pdf_position" &&
+      !positionHasBbox(p)
+    ) {
+      return false;
+    }
+    if (f.documentId) {
+      if (
+        !positionMatchesDocument(
+          p,
+          f.documentId,
+          f.documentFileName,
+          f.documentFileId
+        )
+      ) {
+        return false;
+      }
+    }
     if (f.trade && p.trade !== f.trade) return false;
     if (f.category && p.category !== f.category) return false;
     if (f.roomName && (p.roomName ?? "").toLowerCase() !== f.roomName.toLowerCase())
@@ -702,6 +843,16 @@ export function filterEstimatorPositions(
         case "legend_only":
           if (!p.evidenceAnchors.every((a) => a.sourceType === "project_legend"))
             return false;
+          break;
+        case "schedule_only":
+          if (
+            p.quantitySource !== "schedule" &&
+            !p.evidenceAnchors.some((a) => a.sourceType === "schedule_table")
+          )
+            return false;
+          break;
+        case "conflicts":
+          if (!f.conflictPositionIds?.has(p.id)) return false;
           break;
         case "manual_only":
           if (
@@ -907,6 +1058,15 @@ function newManualMarkId(): string {
 }
 
 export function isManualMarkAnchor(anchor: EstimatorEvidenceAnchor): boolean {
+  return (
+    (anchor.sourceType === "manual" || anchor.sourceType === "user_confirmed") &&
+    anchor.id.startsWith(MANUAL_MARK_PREFIX) &&
+    anchor.markStatus !== "outside_plan"
+  );
+}
+
+/** All manual marks including outside-plan (for UI warnings). */
+export function isAnyManualMarkAnchor(anchor: EstimatorEvidenceAnchor): boolean {
   return anchor.sourceType === "manual" && anchor.id.startsWith(MANUAL_MARK_PREFIX);
 }
 
@@ -940,28 +1100,206 @@ export function addManualMarkToPosition(
     page: number;
     bbox: EstimatorPositionBBox;
     fileName: string;
+    documentId?: string;
+    fileId?: string;
     polygon?: Array<{ x: number; y: number }>;
+    rawSelectionBbox?: EstimatorPositionBBox;
+    tightSymbolBbox?: EstimatorPositionBBox;
+    markStatus?:
+      | "confirmed"
+      | "outside_plan"
+      | "needs_review"
+      | "inside_plan"
+      | "boundary_uncertain"
+      | "in_legend_or_table";
+    needsReview?: boolean;
+    cropId?: string;
   }
 ): EstimatorPosition {
+  const evidenceBbox = mark.tightSymbolBbox ?? mark.bbox;
+  const status = mark.markStatus ?? (mark.needsReview ? "needs_review" : "confirmed");
   const anchor: EstimatorEvidenceAnchor = {
     id: newManualMarkId(),
+    documentId: mark.documentId,
+    fileId: mark.fileId,
     fileName: mark.fileName,
     page: mark.page > 0 ? mark.page : 1,
     sourceType: "manual",
-    sourceText: "Ručné označenie v pláne",
+    sourceText:
+      status === "outside_plan"
+        ? "Značka mimo pôdorysu"
+        : status === "in_legend_or_table"
+          ? "Značka v legende / tabuľke"
+          : status === "boundary_uncertain"
+            ? "Značka pri hranici pôdorysu"
+            : "Ručné označenie v pláne",
     bbox: {
-      x: clamp01(mark.bbox.x),
-      y: clamp01(mark.bbox.y),
-      width: clamp01(mark.bbox.width),
-      height: clamp01(mark.bbox.height),
+      x: clamp01(evidenceBbox.x),
+      y: clamp01(evidenceBbox.y),
+      width: clamp01(evidenceBbox.width),
+      height: clamp01(evidenceBbox.height),
     },
+    rawSelectionBbox: mark.rawSelectionBbox
+      ? {
+          x: clamp01(mark.rawSelectionBbox.x),
+          y: clamp01(mark.rawSelectionBbox.y),
+          width: clamp01(mark.rawSelectionBbox.width),
+          height: clamp01(mark.rawSelectionBbox.height),
+        }
+      : undefined,
+    tightSymbolBbox: mark.tightSymbolBbox
+      ? {
+          x: clamp01(mark.tightSymbolBbox.x),
+          y: clamp01(mark.tightSymbolBbox.y),
+          width: clamp01(mark.tightSymbolBbox.width),
+          height: clamp01(mark.tightSymbolBbox.height),
+        }
+      : undefined,
+    markStatus: status,
     polygon: mark.polygon?.map((p) => ({ x: clamp01(p.x), y: clamp01(p.y) })),
-    confidence: "high",
-    needsReview: false,
+    cropId: mark.cropId,
+    confidence: status === "outside_plan" ? "low" : "high",
+    needsReview:
+      mark.needsReview ??
+      (status === "needs_review" ||
+        status === "boundary_uncertain" ||
+        status === "in_legend_or_table"),
   };
   return {
     ...position,
     evidenceAnchors: [...position.evidenceAnchors, anchor],
+  };
+}
+
+/** Add similar-symbol candidate marks (needs review, not counted until confirmed). */
+export function addSimilarCandidateMarksToPosition(
+  position: EstimatorPosition,
+  marks: Array<{
+    page: number;
+    bbox: EstimatorPositionBBox;
+    matchScore: number;
+    fileName: string;
+    documentId?: string;
+    fileId?: string;
+  }>
+): EstimatorPosition {
+  if (marks.length === 0) return position;
+  const existing = position.evidenceAnchors.filter((a) => a.bbox);
+  const newAnchors: EstimatorEvidenceAnchor[] = [];
+  for (const m of marks) {
+    const bbox = {
+      x: clamp01(m.bbox.x),
+      y: clamp01(m.bbox.y),
+      width: clamp01(m.bbox.width),
+      height: clamp01(m.bbox.height),
+    };
+    const duplicate = existing.some(
+      (a) =>
+        a.page === m.page &&
+        a.bbox != null &&
+        boxesNearDuplicate(a.bbox, bbox)
+    );
+    if (duplicate) continue;
+    if (
+      newAnchors.some(
+        (a) => a.page === m.page && a.bbox != null && boxesNearDuplicate(a.bbox, bbox)
+      )
+    ) {
+      continue;
+    }
+    newAnchors.push({
+      id: `sim_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+      documentId: m.documentId,
+      fileId: m.fileId,
+      fileName: m.fileName,
+      page: m.page,
+      sourceType: "visual_detection",
+      sourceText: `Podobná značka (${Math.round(m.matchScore * 100)}%)`,
+      bbox,
+      confidence: m.matchScore >= 0.85 ? "medium" : "low",
+      needsReview: true,
+      markStatus: "needs_review",
+    });
+  }
+  if (newAnchors.length === 0) return position;
+  return {
+    ...position,
+    evidenceAnchors: [...position.evidenceAnchors, ...newAnchors],
+  };
+}
+
+/**
+ * Add similar matches and immediately confirm them as counted marks.
+ * Used when the user wants quantity to jump without a review step.
+ */
+export function addAndConfirmSimilarMarksToPosition(
+  position: EstimatorPosition,
+  marks: Array<{
+    page: number;
+    bbox: EstimatorPositionBBox;
+    matchScore: number;
+    fileName: string;
+    documentId?: string;
+    fileId?: string;
+  }>
+): EstimatorPosition {
+  return confirmSimilarCandidateMarks(
+    addSimilarCandidateMarksToPosition(position, marks)
+  );
+}
+
+const SIMILAR_CANDIDATE_PREFIX = "sim_";
+
+/** Unconfirmed similar-symbol candidates (do not count toward quantity). */
+export function similarCandidateAnchors(
+  position: EstimatorPosition
+): EstimatorEvidenceAnchor[] {
+  return position.evidenceAnchors.filter(
+    (a) =>
+      a.id.startsWith(SIMILAR_CANDIDATE_PREFIX) &&
+      a.sourceType === "visual_detection" &&
+      a.needsReview
+  );
+}
+
+/**
+ * User confirmed the similar-symbol candidates: convert them into regular
+ * manual marks (counted by manualMarkCount) and update the quantity.
+ */
+export function confirmSimilarCandidateMarks(
+  position: EstimatorPosition
+): EstimatorPosition {
+  const candidates = similarCandidateAnchors(position);
+  if (candidates.length === 0) return position;
+  const candidateIds = new Set(candidates.map((a) => a.id));
+  const next: EstimatorPosition = {
+    ...position,
+    evidenceAnchors: position.evidenceAnchors.map((a) =>
+      candidateIds.has(a.id)
+        ? {
+            ...a,
+            id: `${MANUAL_MARK_PREFIX}${a.id}`,
+            sourceType: "user_confirmed" as const,
+            needsReview: false,
+            markStatus: "confirmed" as const,
+            confidence: "high" as const,
+          }
+        : a
+    ),
+  };
+  return applyMarkCountAsQuantity(next);
+}
+
+/** User dismissed the similar-symbol candidates: drop them without counting. */
+export function removeSimilarCandidateMarks(
+  position: EstimatorPosition
+): EstimatorPosition {
+  const candidates = similarCandidateAnchors(position);
+  if (candidates.length === 0) return position;
+  const candidateIds = new Set(candidates.map((a) => a.id));
+  return {
+    ...position,
+    evidenceAnchors: position.evidenceAnchors.filter((a) => !candidateIds.has(a.id)),
   };
 }
 
@@ -1098,12 +1436,23 @@ export type PositionsQuoteSafety = {
 };
 
 export function positionsBlockFixedQuote(
-  positions: EstimatorPosition[]
+  positions: EstimatorPosition[],
+  options?: {
+    openConflicts?: EstimatorQuantityConflict[];
+  }
 ): PositionsQuoteSafety {
   const reasons: string[] = [];
   const active = positions.filter(
     (p) => p.reviewStatus !== "ignored" && p.reviewStatus !== "excluded"
   );
+
+  const openConflictCount =
+    options?.openConflicts?.filter((c) => c.status === "open").length ?? 0;
+  if (openConflictCount > 0) {
+    reasons.push(
+      `${openConflictCount} rozdielov medzi dokumentmi čaká na vyriešenie.`
+    );
+  }
 
   const needsReview = active.filter((p) => p.reviewStatus === "needs_review");
   if (needsReview.length > 0) {
@@ -1116,11 +1465,24 @@ export function positionsBlockFixedQuote(
     reasons.push(`${priceMissing.length} pozícií nemá cenu.`);
   }
   const aiCritical = active.filter(
-    (p) => p.quantitySource === "ai_estimate" && CRITICAL_CATEGORIES.has(p.category)
+    (p) =>
+      (p.quantitySource === "ai_estimate" || p.quantitySource === "technical_report") &&
+      CRITICAL_CATEGORIES.has(p.category)
   );
   if (aiCritical.length > 0) {
     reasons.push(
-      `${aiCritical.length} kritických pozícií má len AI odhad množstva — treba overiť.`
+      `${aiCritical.length} kritických pozícií má len AI/technickú správu množstva — treba overiť.`
+    );
+  }
+  const scheduleUnconfirmed = active.filter(
+    (p) =>
+      p.quantitySource === "schedule" &&
+      p.reviewStatus !== "confirmed" &&
+      p.category !== "labor"
+  );
+  if (scheduleUnconfirmed.length > 0) {
+    reasons.push(
+      `${scheduleUnconfirmed.length} položiek z výkazu nie je potvrdených.`
     );
   }
   const noEvidence = active.filter(
@@ -1173,15 +1535,17 @@ export function summarizeEstimatorPositions(
   const active = positions.filter(
     (p) => p.reviewStatus !== "ignored" && p.reviewStatus !== "excluded"
   );
+  const planBacked = active.filter((p) => positionHasBbox(p));
   const annotations = buildPdfOverlayAnnotations(positions);
   return {
-    total: active.length,
-    priceMissing: active.filter((p) => p.priceStatus === "price_missing").length,
+    // Accepted takeoff = plan-backed only (AI without PDF mark is not accepted).
+    total: planBacked.length,
+    priceMissing: planBacked.filter((p) => p.priceStatus === "price_missing").length,
     needsReview: active.filter((p) => p.reviewStatus === "needs_review").length,
-    confirmed: active.filter((p) => p.reviewStatus === "confirmed").length,
-    withBbox: active.filter((p) => positionHasBbox(p)).length,
+    confirmed: planBacked.filter((p) => p.reviewStatus === "confirmed").length,
+    withBbox: planBacked.length,
     withoutBbox: active.filter((p) => !positionHasBbox(p)).length,
-    anchors: active.reduce((s, p) => s + p.evidenceAnchors.length, 0),
+    anchors: planBacked.reduce((s, p) => s + p.evidenceAnchors.length, 0),
     annotations: annotations.length,
   };
 }

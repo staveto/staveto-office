@@ -270,13 +270,28 @@ describe("sorting, summary and customer supplied", () => {
     expect(supplied.unitPrice).toBeUndefined();
   });
 
-  it("summary counts anchors, bboxes and review state", () => {
+  it("summary counts only plan-backed positions as accepted total", () => {
     const positions = buildEstimatorPositionsFromFacts(BASE_FACTS, OPTS);
     const s = summarizeEstimatorPositions(positions);
-    expect(s.total).toBe(positions.length);
-    expect(s.anchors).toBeGreaterThanOrEqual(positions.length);
-    expect(s.withBbox + s.withoutBbox).toBe(s.total);
-    expect(s.priceMissing).toBeGreaterThan(0);
+    expect(s.total).toBe(s.withBbox);
+    expect(s.withBbox + s.withoutBbox).toBe(
+      positions.filter((p) => p.reviewStatus !== "ignored" && p.reviewStatus !== "excluded")
+        .length
+    );
+    expect(s.priceMissing).toBeLessThanOrEqual(s.withBbox);
+  });
+
+  it("filterEstimatorPositions hides ignored and unmarked AI by default flags", () => {
+    const positions = buildEstimatorPositionsFromFacts(BASE_FACTS, OPTS);
+    const visual = positions.find((p) => p.quantitySource === "visual_detection")!;
+    const withIgnored = positions.map((p) =>
+      p.id === visual.id ? ignorePosition(p, "removed_from_pdf") : p
+    );
+    const visible = filterEstimatorPositions(withIgnored, {});
+    expect(visible.some((p) => p.id === visual.id)).toBe(false);
+
+    const planOnly = filterEstimatorPositions(withIgnored, { requirePlanMark: true });
+    expect(planOnly.every((p) => p.evidenceAnchors.some((a) => a.bbox != null))).toBe(true);
   });
 
   it("ignored/excluded positions disappear from annotations", () => {
@@ -287,6 +302,66 @@ describe("sorting, summary and customer supplied", () => {
     );
     const anns = buildPdfOverlayAnnotations(withoutVisual);
     expect(anns.some((a) => a.positionId === visual.id)).toBe(false);
+  });
+});
+
+describe("multi-document quote safety", () => {
+  it("open conflicts block fixed quote", () => {
+    const [p] = buildEstimatorPositionsFromFacts(BASE_FACTS, OPTS);
+    const confirmed = applyManualPriceToPosition(confirmPosition(p), 5, "EUR");
+    const safety = positionsBlockFixedQuote([confirmed], {
+      openConflicts: [
+        {
+          id: "c1",
+          positionId: confirmed.id,
+          label: confirmed.label,
+          category: confirmed.category,
+          drawingQty: 19,
+          scheduleQty: 21,
+          unit: "ks",
+          status: "open",
+        },
+      ],
+    });
+    expect(safety.blocked).toBe(true);
+    expect(safety.reasons.join(" ")).toMatch(/rozdielov medzi dokumentmi/i);
+  });
+
+  it("price_missing still blocks fixed quote", () => {
+    const positions = buildEstimatorPositionsFromFacts(BASE_FACTS, OPTS);
+    const safety = positionsBlockFixedQuote(positions);
+    expect(safety.blocked).toBe(true);
+    expect(safety.reasons.join(" ")).toMatch(/nemá cenu/i);
+  });
+});
+
+describe("multi-document quote safety", () => {
+  it("open conflicts block fixed quote", () => {
+    const [p] = buildEstimatorPositionsFromFacts(BASE_FACTS, OPTS);
+    const confirmed = applyManualPriceToPosition(confirmPosition(p), 5, "EUR");
+    const safety = positionsBlockFixedQuote([confirmed], {
+      openConflicts: [
+        {
+          id: "c1",
+          positionId: confirmed.id,
+          label: confirmed.label,
+          category: confirmed.category,
+          drawingQty: 19,
+          scheduleQty: 21,
+          unit: "ks",
+          status: "open",
+        },
+      ],
+    });
+    expect(safety.blocked).toBe(true);
+    expect(safety.reasons.join(" ")).toMatch(/rozdielov medzi dokumentmi/i);
+  });
+
+  it("price_missing still blocks fixed quote", () => {
+    const positions = buildEstimatorPositionsFromFacts(BASE_FACTS, OPTS);
+    const safety = positionsBlockFixedQuote(positions);
+    expect(safety.blocked).toBe(true);
+    expect(safety.reasons.join(" ")).toMatch(/nemá cenu/i);
   });
 });
 

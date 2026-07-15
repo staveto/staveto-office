@@ -28,7 +28,10 @@ import type {
   ProductCandidate,
 } from "@/lib/products/productSourcingTypes";
 import type {
+  EstimatorDocument,
+  EstimatorEvidenceAnchor,
   EstimatorPosition,
+  EstimatorQuantityConflict,
   PdfOverlayAnnotation,
 } from "@/types/estimatorPositions";
 
@@ -173,6 +176,12 @@ export type EstimatorSessionRecord = {
   }>;
   internalTakeoff?: unknown;
   assemblyItems?: unknown;
+  /** Multi-document session metadata (additive; single-PDF sessions may omit). */
+  documents?: EstimatorDocument[];
+  /** Flat evidence index for cross-document lookup (optional). */
+  evidenceAnchors?: EstimatorEvidenceAnchor[];
+  /** Drawing vs schedule quantity mismatches awaiting user resolution. */
+  conflicts?: EstimatorQuantityConflict[];
   /** Evidence-linked takeoff positions (interactive PDF review). */
   positions?: EstimatorPosition[];
   pdfOverlayAnnotations?: PdfOverlayAnnotation[];

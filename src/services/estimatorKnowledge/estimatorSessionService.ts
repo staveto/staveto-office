@@ -13,7 +13,10 @@ import {
 } from "@/lib/firebase";
 import type { EstimatorSessionRecord } from "@/types/estimatorKnowledge";
 import type {
+  EstimatorDocument,
+  EstimatorEvidenceAnchor,
   EstimatorPosition,
+  EstimatorQuantityConflict,
   PdfOverlayAnnotation,
 } from "@/types/estimatorPositions";
 
@@ -21,6 +24,14 @@ import type {
 export function sanitizeForFirestoreWrite<T>(value: T): T {
   return JSON.parse(JSON.stringify(value ?? null)) as T;
 }
+
+export type EstimatorTakeoffSnapshot = {
+  positions: EstimatorPosition[];
+  pdfOverlayAnnotations: PdfOverlayAnnotation[];
+  documents?: EstimatorDocument[];
+  conflicts?: EstimatorQuantityConflict[];
+  evidenceAnchors?: EstimatorEvidenceAnchor[];
+};
 
 export async function saveEstimatorSessionSnapshot(
   record: Omit<EstimatorSessionRecord, "createdAt" | "updatedAt">
@@ -49,19 +60,27 @@ export async function saveEstimatorPositionsSnapshot(input: {
   projectId?: string;
   positions: EstimatorPosition[];
   pdfOverlayAnnotations: PdfOverlayAnnotation[];
+  documents?: EstimatorDocument[];
+  conflicts?: EstimatorQuantityConflict[];
+  evidenceAnchors?: EstimatorEvidenceAnchor[];
 }): Promise<boolean> {
   const fs = getFirestoreInstance();
   if (!fs || !input.sessionId || !input.orgId) return false;
   try {
+    const payload: Record<string, unknown> = {
+      id: input.sessionId,
+      orgId: input.orgId,
+      projectId: input.projectId,
+      positions: input.positions,
+      pdfOverlayAnnotations: input.pdfOverlayAnnotations,
+    };
+    if (input.documents?.length) payload.documents = input.documents;
+    if (input.conflicts?.length) payload.conflicts = input.conflicts;
+    if (input.evidenceAnchors?.length) payload.evidenceAnchors = input.evidenceAnchors;
+
     await setDoc(
       doc(fs, "estimatorSessions", input.sessionId),
-      sanitizeForFirestoreWrite({
-        id: input.sessionId,
-        orgId: input.orgId,
-        projectId: input.projectId,
-        positions: input.positions,
-        pdfOverlayAnnotations: input.pdfOverlayAnnotations,
-      }),
+      sanitizeForFirestoreWrite(payload),
       { merge: true }
     );
     return true;
@@ -70,10 +89,9 @@ export async function saveEstimatorPositionsSnapshot(input: {
   }
 }
 
-export async function loadEstimatorPositionsSnapshot(sessionId: string): Promise<{
-  positions: EstimatorPosition[];
-  pdfOverlayAnnotations: PdfOverlayAnnotation[];
-} | null> {
+export async function loadEstimatorPositionsSnapshot(
+  sessionId: string
+): Promise<EstimatorTakeoffSnapshot | null> {
   const fs = getFirestoreInstance();
   if (!fs || !sessionId.trim()) return null;
   try {
@@ -84,6 +102,9 @@ export async function loadEstimatorPositionsSnapshot(sessionId: string): Promise
     return {
       positions: data.positions,
       pdfOverlayAnnotations: data.pdfOverlayAnnotations ?? [],
+      documents: data.documents,
+      conflicts: data.conflicts,
+      evidenceAnchors: data.evidenceAnchors,
     };
   } catch {
     return null;

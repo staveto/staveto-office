@@ -1,14 +1,12 @@
 /**
- * "Find similar symbols" — client-side template matching on a PDF page.
+ * "Find similar symbols" — client-side template matching on a PDF.
  *
  * Reuses the existing normalized cross-correlation matcher from
  * visualSymbolCounter. The reference bbox (normalized 0..1) is cropped from
- * an offscreen render of the page and matched across the whole page.
+ * an offscreen render of the page and matched across the page (or all pages).
  *
- * Results are ALWAYS candidates: status needs_review, source
- * similar_symbol_detected — never auto-confirmed. If rendering or matching
- * is unavailable, the caller gets an empty result with a reason and the
- * manual workflow continues to work.
+ * Results are candidates by default; the estimator UI may auto-confirm them
+ * when the user asks to bump quantity immediately.
  */
 
 import {
@@ -37,10 +35,17 @@ export type FindSimilarSymbolsParams = {
   referenceBbox: NormalizedRect;
   /** NCC threshold 0..1 (default 0.78). */
   threshold?: number;
+  /**
+   * When true, scan every page of the PDF with the same reference template.
+   * Default false (single page) for takeoff compatibility.
+   */
+  scanAllPages?: boolean;
 };
 
 export type FindSimilarSymbolsResult = {
   candidates: SimilarSymbolCandidate[];
+  /** Pages that were actually scanned. */
+  pagesScanned?: number;
   /** Set when matching could not run — manual flow must continue. */
   unavailableReason?: "no_dom" | "render_failed" | "reference_too_small";
 };
@@ -100,12 +105,22 @@ export function downscaleRaster(image: RasterImage, factor: number): RasterImage
 // PDF page rendering (browser only)
 // ---------------------------------------------------------------------------
 
-/** Render one PDF page to an RGBA raster at roughly targetWidth px. */
-async function renderPdfPageRaster(
-  fileUrl: string,
-  pageNumber: number,
-  targetWidth = 1400
-): Promise<RasterImage | null> {
+type PdfJsPage = {
+  getViewport: (opts: { scale: number }) => { width: number; height: number };
+  render: (opts: {
+    canvas: HTMLCanvasElement;
+    canvasContext: CanvasRenderingContext2D;
+    viewport: { width: number; height: number };
+  }) => { promise: Promise<void> };
+};
+
+type PdfJsDoc = {
+  numPages: number;
+  getPage: (n: number) => Promise<PdfJsPage>;
+  destroy: () => Promise<void>;
+};
+
+async function loadPdfDocument(fileUrl: string): Promise<PdfJsDoc | null> {
   if (typeof document === "undefined") return null;
   try {
     const pdfjs = await import("pdfjs-dist");
@@ -113,17 +128,20 @@ async function renderPdfPageRaster(
       "@/lib/takeoff/loadPdfJsDocument"
     );
     pdfjs.GlobalWorkerOptions.workerSrc = pdfJsWorkerSrc();
-    const pdf = (await loadPdfJsDocument(pdfjs, fileUrl)) as {
-      getPage: (n: number) => Promise<{
-        getViewport: (opts: { scale: number }) => { width: number; height: number };
-        render: (opts: {
-          canvas: HTMLCanvasElement;
-          canvasContext: CanvasRenderingContext2D;
-          viewport: { width: number; height: number };
-        }) => { promise: Promise<void> };
-      }>;
-      destroy: () => Promise<void>;
-    };
+    return (await loadPdfJsDocument(pdfjs, fileUrl)) as PdfJsDoc;
+  } catch {
+    return null;
+  }
+}
+
+/** Render one PDF page to an RGBA raster at roughly targetWidth px. */
+async function renderPdfPageFromDoc(
+  pdf: PdfJsDoc,
+  pageNumber: number,
+  targetWidth = 1400
+): Promise<RasterImage | null> {
+  if (typeof document === "undefined") return null;
+  try {
     const page = await pdf.getPage(pageNumber);
     const probe = page.getViewport({ scale: 1 });
     const scale = targetWidth / probe.width;
@@ -135,32 +153,44 @@ async function renderPdfPageRaster(
     if (!ctx) return null;
     await page.render({ canvas, canvasContext: ctx, viewport }).promise;
     const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    void pdf.destroy();
     return { width: data.width, height: data.height, data: data.data };
   } catch {
     return null;
   }
 }
 
+/** Render one PDF page (loads + destroys the document — single-page callers). */
+async function renderPdfPageRaster(
+  fileUrl: string,
+  pageNumber: number,
+  targetWidth = 1400
+): Promise<RasterImage | null> {
+  const pdf = await loadPdfDocument(fileUrl);
+  if (!pdf) return null;
+  try {
+    return await renderPdfPageFromDoc(pdf, pageNumber, targetWidth);
+  } finally {
+    void pdf.destroy();
+  }
+}
+
 // ---------------------------------------------------------------------------
-// Main entry
+// Matching helpers
 // ---------------------------------------------------------------------------
 
 const MIN_TEMPLATE_PX = 8;
 const MAX_TEMPLATE_DIM = 36;
+const MAX_CANDIDATES_PER_PAGE = 60;
+const MAX_CANDIDATES_TOTAL = 200;
 
-export async function findSimilarSymbols(
-  params: FindSimilarSymbolsParams
-): Promise<FindSimilarSymbolsResult> {
-  const { fileUrl, pageNumber, referenceBbox, threshold = 0.78 } = params;
-  if (typeof document === "undefined") {
-    return { candidates: [], unavailableReason: "no_dom" };
-  }
-
-  const pageRaster = await renderPdfPageRaster(fileUrl, pageNumber);
-  if (!pageRaster) return { candidates: [], unavailableReason: "render_failed" };
-
-  // Reference bbox → pixel rect on the rendered raster.
+function prepareTemplate(
+  pageRaster: RasterImage,
+  referenceBbox: NormalizedRect
+): {
+  template: RasterImage;
+  factor: number;
+  refPx: NormalizedRect;
+} | null {
   const refPx: NormalizedRect = {
     x: referenceBbox.x * pageRaster.width,
     y: referenceBbox.y * pageRaster.height,
@@ -168,20 +198,44 @@ export async function findSimilarSymbols(
     height: referenceBbox.height * pageRaster.height,
   };
   if (refPx.width < MIN_TEMPLATE_PX || refPx.height < MIN_TEMPLATE_PX) {
-    return { candidates: [], unavailableReason: "reference_too_small" };
+    return null;
   }
-
   let template = cropRaster(pageRaster, refPx);
-  let image = pageRaster;
   const maxDim = Math.max(template.width, template.height);
   const factor = Math.ceil(maxDim / MAX_TEMPLATE_DIM);
   if (factor > 1) {
     template = downscaleRaster(template, factor);
-    image = downscaleRaster(image, factor);
+  }
+  return { template, factor, refPx };
+}
+
+function matchPageWithTemplate(params: {
+  pageRaster: RasterImage;
+  template: RasterImage;
+  factor: number;
+  pageNumber: number;
+  drawingId: string;
+  threshold: number;
+  /** When set, exclude the reference bbox itself (same page). */
+  excludeRefPx?: NormalizedRect;
+}): SimilarSymbolCandidate[] {
+  const {
+    pageRaster,
+    template,
+    factor,
+    pageNumber,
+    drawingId,
+    threshold,
+    excludeRefPx,
+  } = params;
+
+  let image = pageRaster;
+  if (factor > 1) {
+    image = downscaleRaster(pageRaster, factor);
   }
 
   const templateMeta: VisualSymbolTemplate = {
-    id: `similar_ref_${params.drawingId}_${pageNumber}`,
+    id: `similar_ref_${drawingId}_${pageNumber}`,
     source: "user_confirmed",
     trade: "electrical",
     normalizedPoint: "unknown",
@@ -195,16 +249,17 @@ export async function findSimilarSymbols(
     stride: 2,
   });
 
-  // Reference bbox in the (possibly downscaled) matching space.
-  const refInMatchSpace = {
-    x: refPx.x / factor,
-    y: refPx.y / factor,
-    width: refPx.width / factor,
-    height: refPx.height / factor,
-  };
-
-  const candidates: SimilarSymbolCandidate[] = detections
-    .filter((d) => bboxIoU(d.bbox, refInMatchSpace) < 0.4)
+  return detections
+    .filter((d) => {
+      if (!excludeRefPx) return true;
+      const refInMatchSpace = {
+        x: excludeRefPx.x / factor,
+        y: excludeRefPx.y / factor,
+        width: excludeRefPx.width / factor,
+        height: excludeRefPx.height / factor,
+      };
+      return bboxIoU(d.bbox, refInMatchSpace) < 0.4;
+    })
     .map((d) => ({
       pageNumber,
       matchScore: d.matchScore,
@@ -216,7 +271,83 @@ export async function findSimilarSymbols(
       },
     }))
     .sort((a, b) => b.matchScore - a.matchScore)
-    .slice(0, 60);
+    .slice(0, MAX_CANDIDATES_PER_PAGE);
+}
 
-  return { candidates };
+// ---------------------------------------------------------------------------
+// Main entry
+// ---------------------------------------------------------------------------
+
+export async function findSimilarSymbols(
+  params: FindSimilarSymbolsParams
+): Promise<FindSimilarSymbolsResult> {
+  const {
+    fileUrl,
+    pageNumber,
+    referenceBbox,
+    threshold = 0.78,
+    scanAllPages = false,
+    drawingId,
+  } = params;
+  if (typeof document === "undefined") {
+    return { candidates: [], unavailableReason: "no_dom" };
+  }
+
+  if (!scanAllPages) {
+    const pageRaster = await renderPdfPageRaster(fileUrl, pageNumber);
+    if (!pageRaster) return { candidates: [], unavailableReason: "render_failed" };
+    const prepared = prepareTemplate(pageRaster, referenceBbox);
+    if (!prepared) {
+      return { candidates: [], unavailableReason: "reference_too_small" };
+    }
+    const candidates = matchPageWithTemplate({
+      pageRaster,
+      template: prepared.template,
+      factor: prepared.factor,
+      pageNumber,
+      drawingId,
+      threshold,
+      excludeRefPx: prepared.refPx,
+    });
+    return { candidates, pagesScanned: 1 };
+  }
+
+  const pdf = await loadPdfDocument(fileUrl);
+  if (!pdf) return { candidates: [], unavailableReason: "render_failed" };
+
+  try {
+    const refRaster = await renderPdfPageFromDoc(pdf, pageNumber);
+    if (!refRaster) return { candidates: [], unavailableReason: "render_failed" };
+    const prepared = prepareTemplate(refRaster, referenceBbox);
+    if (!prepared) {
+      return { candidates: [], unavailableReason: "reference_too_small" };
+    }
+
+    const all: SimilarSymbolCandidate[] = [];
+    const totalPages = Math.max(1, pdf.numPages || 1);
+
+    for (let p = 1; p <= totalPages; p++) {
+      const pageRaster =
+        p === pageNumber ? refRaster : await renderPdfPageFromDoc(pdf, p);
+      if (!pageRaster) continue;
+      const pageHits = matchPageWithTemplate({
+        pageRaster,
+        template: prepared.template,
+        factor: prepared.factor,
+        pageNumber: p,
+        drawingId,
+        threshold,
+        excludeRefPx: p === pageNumber ? prepared.refPx : undefined,
+      });
+      all.push(...pageHits);
+    }
+
+    const candidates = all
+      .sort((a, b) => b.matchScore - a.matchScore)
+      .slice(0, MAX_CANDIDATES_TOTAL);
+
+    return { candidates, pagesScanned: totalPages };
+  } finally {
+    void pdf.destroy();
+  }
 }

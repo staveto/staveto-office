@@ -8,7 +8,7 @@
  * The detailed takeoff is a first-class tab, not hidden under the summary.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardList,
   Euro,
@@ -36,6 +36,8 @@ import {
 import { useI18n } from "@/i18n/I18nContext";
 import { cn } from "@/lib/utils";
 import type { MaterialUnit } from "@/services/materials/types";
+import { EstimatorDocumentConflictsPanel } from "@/components/ai-estimator/EstimatorDocumentConflictsPanel";
+import { EstimatorDocumentSwitcher } from "@/components/ai-estimator/EstimatorDocumentSwitcher";
 import { EstimatorLinkedTakeoffTable } from "@/components/ai-estimator/EstimatorLinkedTakeoffTable";
 import { EstimatorPdfEvidenceViewer } from "@/components/ai-estimator/EstimatorPdfEvidenceViewer";
 import { EstimatorMarkingChecklist } from "@/components/ai-estimator/EstimatorMarkingChecklist";
@@ -45,10 +47,21 @@ import {
 import {
   isManualMarkAnchor,
   nextUnmarkedPositionId,
+  similarCandidateAnchors,
 } from "@/lib/ai/estimatorPositions";
+import {
+  buildSymbolDraftFromMark,
+  type SymbolDraftCategory,
+  type SymbolDraftScope,
+} from "@/lib/ai/unclassifiedSymbolDraft";
 import { captureMarkCrop } from "@/lib/ai/markCropCapture";
+import { findSimilarSymbols } from "@/services/takeoff/similarSymbolDetectionService";
 import { identifyDrawingSymbol } from "@/services/ai/identifySymbolService";
-import type { EstimatorPosition } from "@/types/estimatorPositions";
+import type {
+  EstimatorPosition,
+  EstimatorPositionUnit,
+  UnclassifiedSymbolDraft,
+} from "@/types/estimatorPositions";
 import {
   AI_SETUP_MATERIAL_UNITS,
   inferMaterialGroup,
@@ -139,7 +152,8 @@ export function AiSetupMaterialStep({
   const { t } = useI18n();
   const [showEditRows, setShowEditRows] = useState(false);
   const [pricePosition, setPricePosition] = useState<EstimatorPosition | null>(null);
-  const [markMode, setMarkMode] = useState(false);
+  // PDF-first by default: "Rozpoznať značku" — click the plan, then classify.
+  const [markMode, setMarkMode] = useState(true);
   const [pdfFullscreen, setPdfFullscreen] = useState(false);
 
   const update = (id: string, patch: Partial<AiSetupMaterialRow>) => {
@@ -155,7 +169,12 @@ export function AiSetupMaterialStep({
 
   const summary = useMemo(() => buildSummary(materials), [materials]);
   const includedMaterials = materials.filter((m) => m.included && m.name.trim());
-  const missingPrices = includedMaterials.filter((m) => !(m.price > 0)).length;
+  const missingPricesFromMaterials = includedMaterials.filter((m) => !(m.price > 0)).length;
+  // When PDF evidence is active, Ceny counts only plan-backed (accepted) positions.
+  const missingPrices =
+    evidence?.summary != null ? evidence.summary.priceMissing : missingPricesFromMaterials;
+  const materialsMetric =
+    evidence?.summary != null ? evidence.summary.withBbox : includedMaterials.length;
 
   const grouped = GROUP_ORDER.map((group) => ({
     group,
@@ -357,6 +376,10 @@ export function AiSetupMaterialStep({
         onIgnore: evidence.ignore,
         onExclude: evidence.exclude,
         onAddPrice: openPriceDrawer,
+        multiDocEnabled: evidence.multiDocEnabled,
+        documents: evidence.documents,
+        activeDocumentId: evidence.activeDocumentId,
+        conflicts: evidence.conflicts,
       }
     : null;
 
@@ -394,7 +417,7 @@ export function AiSetupMaterialStep({
             label={t("projects.aiSetup.positions.metric.total")}
           />
           <Metric
-            value={includedMaterials.length}
+            value={materialsMetric}
             label={t("projects.aiSetup.positions.metric.materials")}
           />
           <Metric
@@ -567,6 +590,13 @@ export function AiSetupMaterialStep({
       {/* -------------------------- Detailný výkaz ------------------------- */}
       {subTab === "detail" ? (
         <div className="space-y-4">
+          {evidence?.multiDocEnabled && evidence.conflicts.length > 0 ? (
+            <EstimatorDocumentConflictsPanel
+              conflicts={evidence.conflicts}
+              onResolve={evidence.resolveConflict}
+              onSaveNote={evidence.saveConflictNote}
+            />
+          ) : null}
           <div>
             <h4 className="text-sm font-bold text-[#0F2A4D]">
               {t("projects.aiSetup.material.detailTitle")}
@@ -722,7 +752,7 @@ export function AiSetupMaterialStep({
       <Button
         type="button"
         className="w-full sm:w-auto bg-[#E95F2A] hover:bg-[#D94F1F] h-11 text-base font-semibold px-8"
-        disabled={saving}
+        disabled={saving || (evidence?.quoteSafety.blocked ?? false)}
         onClick={onContinue}
       >
         {saving ? t("common.loading") : t("projects.aiSetup.cta.toWork")}
@@ -761,6 +791,88 @@ function PdfMarkingWorkspace({
     reason?: string;
   } | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [outsidePlanWarning, setOutsidePlanWarning] = useState(false);
+  const [pickFailedWarning, setPickFailedWarning] = useState(false);
+  const [markingToolMode, setMarkingToolMode] = useState<"click_symbol" | "draw_box">("click_symbol");
+  const [similarBusy, setSimilarBusy] = useState(false);
+  const [similarCandidates, setSimilarCandidates] = useState<number | null>(null);
+  const [symbolDraft, setSymbolDraft] = useState<UnclassifiedSymbolDraft | null>(null);
+  const [createdPositionCode, setCreatedPositionCode] = useState<string | null>(null);
+  const [draftAiBusy, setDraftAiBusy] = useState(false);
+  const [showAllMarks, setShowAllMarks] = useState(true);
+  const [highlightedPositionIds, setHighlightedPositionIds] = useState<string[]>([]);
+  const symbolDraftRef = useRef<UnclassifiedSymbolDraft | null>(null);
+  symbolDraftRef.current = symbolDraft;
+
+  const selectedPosition = evidence.selectedPositionId
+    ? evidence.positions.find((p) => p.id === evidence.selectedPositionId) ?? null
+    : null;
+
+  const pendingCandidateCount = selectedPosition
+    ? similarCandidateAnchors(selectedPosition).length
+    : 0;
+
+  const lastManualMark = selectedPosition
+    ? [...selectedPosition.evidenceAnchors].reverse().find((a) => isManualMarkAnchor(a) && a.bbox)
+    : undefined;
+
+  /** Find identical marks across the PDF, bump quantity, ready for next symbol type. */
+  const finalizeSymbolType = async (position: EstimatorPosition) => {
+    const mark = [...position.evidenceAnchors]
+      .reverse()
+      .find((a) => isManualMarkAnchor(a) && a.bbox);
+
+    setCreatedPositionCode(position.positionCode);
+    setSimilarBusy(true);
+    setSimilarCandidates(null);
+    try {
+      if (mark?.bbox && evidence.fileUrl) {
+        const referenceBbox = mark.tightSymbolBbox ?? mark.bbox;
+        const result = await findSimilarSymbols({
+          projectId: evidence.projectId,
+          drawingId: evidence.activeDocument?.fileId ?? evidence.fileName ?? "drawing",
+          fileUrl: evidence.fileUrl,
+          pageNumber: mark.page,
+          referenceBbox,
+          scanAllPages: true,
+          threshold: 0.8,
+        });
+        if (result.candidates.length > 0) {
+          evidence.addAndConfirmSimilarMarks(
+            position.id,
+            result.candidates.map((c) => ({
+              page: c.pageNumber,
+              bbox: c.normalizedPosition,
+              matchScore: c.matchScore,
+            }))
+          );
+          setSimilarCandidates(result.candidates.length);
+        } else {
+          setSimilarCandidates(0);
+        }
+      }
+    } finally {
+      setSimilarBusy(false);
+      // Next click must create a NEW position — never pile marks on this one.
+      evidence.setSelectedPositionId(null);
+      evidence.setSelectedAnchorId(null);
+      onMarkModeChange(true);
+    }
+  };
+
+  const handleFindSimilar = async () => {
+    if (!selectedPosition || !lastManualMark?.bbox || !evidence.fileUrl) return;
+    await finalizeSymbolType(selectedPosition);
+  };
+
+  const startNextSymbolType = () => {
+    evidence.setSelectedPositionId(null);
+    evidence.setSelectedAnchorId(null);
+    setSymbolDraft(null);
+    setCreatedPositionCode(null);
+    setSimilarCandidates(null);
+    onMarkModeChange(true);
+  };
 
   const handleIdentify = async (positionId: string) => {
     const pos = evidence.positions.find((p) => p.id === positionId);
@@ -804,12 +916,91 @@ function PdfMarkingWorkspace({
       )}
     >
       <div className="min-w-0 space-y-2">
+        {evidence.multiDocEnabled && evidence.documents.length > 1 ? (
+          <EstimatorDocumentSwitcher
+            documents={evidence.documents}
+            activeDocumentId={evidence.activeDocumentId}
+            onSelectDocument={evidence.setActiveDocumentId}
+          />
+        ) : null}
+        {evidence.selectedPositionId &&
+        !evidence.positions
+          .find((p) => p.id === evidence.selectedPositionId)
+          ?.evidenceAnchors.some((a) => a.bbox) ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            {t("projects.aiSetup.pdf.noPositionInPdf")}
+          </p>
+        ) : null}
         {markMode ? (
           <p className="rounded-lg border border-[#E95F2A]/40 bg-[#FFF8F5] px-3 py-2 text-xs font-medium text-[#B4441B]">
-            {evidence.selectedPositionId
-              ? t("projects.aiSetup.marking.viewerHintSelected")
-              : t("projects.aiSetup.marking.viewerHintPick")}
+            {markingToolMode === "click_symbol"
+              ? t("projects.aiSetup.marking.clickHint")
+              : evidence.selectedPositionId
+                ? t("projects.aiSetup.marking.viewerHintSelected")
+                : t("projects.aiSetup.marking.viewerHintPick")}
           </p>
+        ) : null}
+        {pickFailedWarning ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+            {t("projects.aiSetup.marking.pickFailed")}
+          </p>
+        ) : null}
+        {outsidePlanWarning ? (
+          <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+            {t("projects.aiSetup.marking.outsidePlan")}
+          </p>
+        ) : null}
+        {markMode && lastManualMark ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs"
+              disabled={similarBusy}
+              onClick={() => void handleFindSimilar()}
+            >
+              {similarBusy
+                ? t("common.loading")
+                : t("projects.aiSetup.marking.findSimilar")}
+            </Button>
+            {similarCandidates != null && similarCandidates > 0 ? (
+              <p className="text-xs text-[#0F2A4D]">
+                {t("projects.aiSetup.marking.similarFound", {
+                  count: similarCandidates,
+                })}
+              </p>
+            ) : null}
+            {pendingCandidateCount > 0 && selectedPosition ? (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 bg-[#1D376A] text-xs text-white hover:bg-[#162952]"
+                  onClick={() => {
+                    evidence.confirmSimilarCandidates(selectedPosition.id);
+                    setSimilarCandidates(null);
+                  }}
+                >
+                  {t("projects.aiSetup.marking.candidates.confirmAll", {
+                    count: pendingCandidateCount,
+                  })}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs"
+                  onClick={() => {
+                    evidence.dismissSimilarCandidates(selectedPosition.id);
+                    setSimilarCandidates(null);
+                  }}
+                >
+                  {t("projects.aiSetup.marking.candidates.dismiss")}
+                </Button>
+              </>
+            ) : null}
+          </div>
         ) : null}
         <EstimatorPdfEvidenceViewer
           fileUrl={evidence.fileUrl}
@@ -817,14 +1008,99 @@ function PdfMarkingWorkspace({
           annotations={evidence.annotations}
           selectedPositionId={evidence.selectedPositionId}
           selectedAnchorId={evidence.selectedAnchorId}
+          highlightedPositionIds={highlightedPositionIds}
+          showAllMarks={showAllMarks}
+          onShowAllMarksChange={setShowAllMarks}
           onAnnotationClick={(positionId) => evidence.setSelectedPositionId(positionId)}
           onAnchorClick={(anchorId) => evidence.setSelectedAnchorId(anchorId)}
-          markMode={markMode && !!evidence.selectedPositionId}
-          onMarkPlaced={(page, bbox, polygon) => {
+          markMode={markMode}
+          markingToolMode={markingToolMode}
+          onMarkingToolModeChange={setMarkingToolMode}
+          categoryHint={selectedPosition?.category}
+          normalizedPoint={selectedPosition?.normalizedPoint}
+          draftMarker={
+            symbolDraft
+              ? {
+                  page: symbolDraft.page,
+                  center: symbolDraft.center,
+                  bbox: symbolDraft.bbox,
+                  polygon: symbolDraft.polygon,
+                }
+              : null
+          }
+          onMarkPlaced={(page, bbox, polygon, meta) => {
+            // Always PDF-first: one click = one NEW position.
+            // Copies of the same type come from auto find-similar, not extra clicks.
             if (evidence.selectedPositionId) {
-              evidence.addManualMark(evidence.selectedPositionId, page, bbox, polygon);
+              evidence.setSelectedPositionId(null);
+              evidence.setSelectedAnchorId(null);
             }
+            if (meta?.outsidePlan) {
+              setOutsidePlanWarning(true);
+              return;
+            }
+            const draft = buildSymbolDraftFromMark({
+              page,
+              bbox,
+              rawSearchBbox: meta?.rawSelectionBbox,
+              polygon: polygon ?? meta?.polygon,
+              colorHint: meta?.colorHint,
+              confidence: meta?.confidence,
+              outsidePlan: meta?.outsidePlan,
+            });
+            if (!draft) return;
+            setSymbolDraft(draft);
+            setCreatedPositionCode(null);
+            setPickFailedWarning(false);
+            setOutsidePlanWarning(false);
+            setSimilarCandidates(null);
+            setDraftAiBusy(true);
+            const draftId = draft.id;
+            void (async () => {
+              try {
+                if (!evidence.fileUrl) return;
+                const crop = await captureMarkCrop({
+                  fileUrl: evidence.fileUrl,
+                  page: draft.page,
+                  bbox: draft.bbox,
+                });
+                const res = await identifyDrawingSymbol({
+                  imageBase64: crop.base64,
+                  language: "sk",
+                });
+                if (symbolDraftRef.current?.id !== draftId) return;
+                const category = mapIdentifiedCategory(res.category);
+                if (res.confidence === "high" || res.confidence === "medium") {
+                  const current = symbolDraftRef.current;
+                  if (!current) return;
+                  const position = evidence.createPositionFromDraft(current, {
+                    category,
+                    label: res.name,
+                  });
+                  setSymbolDraft(null);
+                  await finalizeSymbolType(position);
+                  return;
+                }
+                setSymbolDraft((current) => {
+                  if (!current || current.id !== draftId) return current;
+                  return {
+                    ...current,
+                    possibleTypes: [
+                      category,
+                      ...current.possibleTypes.filter((t) => t !== category),
+                    ],
+                    confidence: res.confidence,
+                  };
+                });
+              } catch {
+                // Keep draft card — user classifies manually.
+              } finally {
+                setDraftAiBusy(false);
+              }
+            })();
           }}
+          onPickFailed={() => setPickFailedWarning(true)}
+          onOutsidePlanMark={() => setOutsidePlanWarning(true)}
           onMarkDeleted={(positionId, anchorId) => {
             evidence.removeManualMark(positionId, anchorId);
             if (evidence.selectedAnchorId === anchorId) {
@@ -835,6 +1111,37 @@ function PdfMarkingWorkspace({
         />
       </div>
       <div className={cn("flex min-w-0 flex-col gap-3", fullscreen && "h-full min-h-0 overflow-hidden")}>
+        {symbolDraft ? (
+          <SymbolDraftClassifierCard
+            draft={symbolDraft}
+            aiBusy={draftAiBusy}
+            onCreate={(classification) => {
+              const position = evidence.createPositionFromDraft(
+                symbolDraft,
+                classification
+              );
+              setSymbolDraft(null);
+              void finalizeSymbolType(position);
+            }}
+            onIgnore={() => setSymbolDraft(null)}
+          />
+        ) : null}
+        {createdPositionCode ? (
+          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-900">
+            {similarBusy
+              ? t("projects.aiSetup.marking.draft.createdSearching", {
+                  code: createdPositionCode,
+                })
+              : similarCandidates != null && similarCandidates > 0
+                ? t("projects.aiSetup.marking.draft.createdWithCopies", {
+                    code: createdPositionCode,
+                    count: String(similarCandidates),
+                  })
+                : t("projects.aiSetup.marking.draft.createdReadyNext", {
+                    code: createdPositionCode,
+                  })}
+          </p>
+        ) : null}
         {evidence.selectedPositionId && !markMode ? (
           <SelectedPositionCard
             position={
@@ -905,6 +1212,15 @@ function PdfMarkingWorkspace({
             progress={evidence.markingProgress}
             selectedPositionId={evidence.selectedPositionId}
             selectedAnchorId={evidence.selectedAnchorId}
+            highlightedPositionIds={highlightedPositionIds}
+            onToggleHighlight={(positionId) => {
+              setHighlightedPositionIds((prev) =>
+                prev.includes(positionId)
+                  ? prev.filter((id) => id !== positionId)
+                  : [...prev, positionId]
+              );
+              setShowAllMarks(false);
+            }}
             onSelect={evidence.setSelectedPositionId}
             onSelectAnchor={evidence.setSelectedAnchorId}
             markMode={markMode}
@@ -926,9 +1242,18 @@ function PdfMarkingWorkspace({
                 evidence.setSelectedAnchorId(null);
               }
             }}
+            onDeletePosition={(positionId) => {
+              const pos = evidence.positions.find((p) => p.id === positionId);
+              if (!pos) return;
+              evidence.ignore(pos, "Odstránené z kontroly značiek.");
+              if (evidence.selectedPositionId === positionId) {
+                evidence.setSelectedPositionId(null);
+              }
+            }}
             onRename={(positionId, label) => evidence.renameLabel(positionId, label)}
             onUseMarkCount={(positionId) => evidence.useMarkCountAsQuantity(positionId)}
             onSetCategory={(positionId, category) => evidence.setCategory(positionId, category)}
+            onMarkAnother={startNextSymbolType}
             onIdentify={(positionId) => void handleIdentify(positionId)}
             identifyingPositionId={identifyingId}
           />
@@ -958,6 +1283,224 @@ function Metric({
     >
       {value} <span className="font-normal text-[#64748B]">{label}</span>
     </span>
+  );
+}
+
+const DRAFT_TYPE_ORDER: SymbolDraftCategory[] = [
+  "socket",
+  "double_socket",
+  "switch",
+  "lighting",
+  "led_strip",
+  "cable",
+  "installation_box",
+  "distribution_board",
+  "unknown",
+];
+
+function mapIdentifiedCategory(
+  category: string
+): SymbolDraftCategory {
+  switch (category) {
+    case "socket":
+      return "socket";
+    case "switch":
+      return "switch";
+    case "lighting":
+      return "lighting";
+    case "led_strip":
+      return "led_strip";
+    case "cable":
+      return "cable";
+    case "distribution_board":
+      return "distribution_board";
+    case "installation_material":
+      return "installation_box";
+    default:
+      return "unknown";
+  }
+}
+
+const DRAFT_SCOPES: SymbolDraftScope[] = [
+  "buy_install",
+  "install_only",
+  "prepare_outlet",
+  "chase_cable",
+  "customer_supplied",
+  "out_of_scope",
+];
+
+const DRAFT_UNITS: EstimatorPositionUnit[] = ["ks", "m", "m2", "set", "h"];
+
+/** Side panel card: "Čo je táto značka?" — classify a clicked PDF symbol. */
+function SymbolDraftClassifierCard({
+  draft,
+  aiBusy = false,
+  onCreate,
+  onIgnore,
+}: {
+  draft: UnclassifiedSymbolDraft;
+  aiBusy?: boolean;
+  onCreate: (classification: {
+    category: SymbolDraftCategory;
+    label?: string;
+    roomName?: string;
+    unit?: EstimatorPositionUnit;
+    scope?: SymbolDraftScope;
+  }) => void;
+  onIgnore: () => void;
+}) {
+  const { t } = useI18n();
+  const suggested = draft.possibleTypes.filter((c): c is SymbolDraftCategory =>
+    (DRAFT_TYPE_ORDER as string[]).includes(c)
+  );
+  const [category, setCategory] = useState<SymbolDraftCategory | null>(
+    suggested[0] ?? null
+  );
+  const [name, setName] = useState("");
+  const [room, setRoom] = useState("");
+  const [unit, setUnit] = useState<EstimatorPositionUnit>(
+    suggested[0] === "led_strip" || suggested[0] === "cable" ? "m" : "ks"
+  );
+  const [scope, setScope] = useState<SymbolDraftScope>("buy_install");
+
+  // When AI updates possibleTypes, prefer the new top suggestion.
+  useEffect(() => {
+    const next = suggested[0];
+    if (!next) return;
+    setCategory(next);
+    setUnit(next === "led_strip" || next === "cable" ? "m" : "ks");
+  }, [draft.possibleTypes.join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pickType = (c: SymbolDraftCategory) => {
+    setCategory(c);
+    setUnit(c === "led_strip" || c === "cable" ? "m" : "ks");
+  };
+
+  return (
+    <div className="space-y-3 rounded-xl border-2 border-[#E95F2A]/50 bg-[#FFF8F5] p-3 text-sm">
+      <div>
+        <p className="font-semibold text-[#0F2A4D]">
+          {t("projects.aiSetup.marking.draft.title")}
+        </p>
+        <p className="text-xs text-[#64748B]">
+          {aiBusy
+            ? t("projects.aiSetup.marking.draft.aiBusy")
+            : t("projects.aiSetup.marking.draft.subtitle")}
+        </p>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("projects.aiSetup.marking.draft.title")}>
+        {DRAFT_TYPE_ORDER.map((c) => {
+          const isSuggested = suggested.includes(c);
+          const active = category === c;
+          return (
+            <button
+              key={c}
+              type="button"
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
+                active
+                  ? "border-[#1D376A] bg-[#1D376A] text-white"
+                  : isSuggested
+                    ? "border-[#E95F2A]/60 bg-white text-[#B4441B] hover:bg-[#FFF1EA]"
+                    : "border-[#CBD5E1] bg-white text-[#334155] hover:bg-[#F1F5F9]"
+              )}
+              onClick={() => pickType(c)}
+            >
+              {t(`projects.aiSetup.marking.draft.type.${c}`)}
+              {isSuggested && !active ? (
+                <span className="ml-1 text-[9px] uppercase text-[#E95F2A]">
+                  {t("projects.aiSetup.marking.draft.suggested")}
+                </span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <label className="col-span-2 space-y-1 text-xs font-medium text-[#334155]">
+          {t("projects.aiSetup.marking.draft.nameLabel")}
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder={
+              category ? t(`projects.aiSetup.marking.draft.type.${category}`) : ""
+            }
+            className="h-8 bg-white text-sm"
+          />
+        </label>
+        <label className="space-y-1 text-xs font-medium text-[#334155]">
+          {t("projects.aiSetup.marking.draft.roomLabel")}
+          <Input
+            value={room}
+            onChange={(e) => setRoom(e.target.value)}
+            className="h-8 bg-white text-sm"
+          />
+        </label>
+        <label className="space-y-1 text-xs font-medium text-[#334155]">
+          {t("projects.aiSetup.marking.draft.unitLabel")}
+          <Select value={unit} onValueChange={(v) => setUnit(v as EstimatorPositionUnit)}>
+            <SelectTrigger className="h-8 bg-white text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {DRAFT_UNITS.map((u) => (
+                <SelectItem key={u} value={u}>
+                  {u}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+        <label className="col-span-2 space-y-1 text-xs font-medium text-[#334155]">
+          {t("projects.aiSetup.marking.draft.scopeLabel")}
+          <Select value={scope} onValueChange={(v) => setScope(v as SymbolDraftScope)}>
+            <SelectTrigger className="h-8 bg-white text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {DRAFT_SCOPES.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {t(`projects.aiSetup.marking.draft.scope.${s}`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          className="h-8 bg-[#E95F2A] text-white hover:bg-[#D14E1D]"
+          disabled={!category}
+          onClick={() => {
+            if (!category) return;
+            onCreate({
+              category,
+              label: name.trim() || undefined,
+              roomName: room.trim() || undefined,
+              unit,
+              scope,
+            });
+          }}
+        >
+          {t("projects.aiSetup.marking.draft.create")}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-8"
+          onClick={onIgnore}
+        >
+          {t("projects.aiSetup.marking.draft.ignore")}
+        </Button>
+      </div>
+    </div>
   );
 }
 

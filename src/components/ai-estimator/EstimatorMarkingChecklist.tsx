@@ -13,12 +13,15 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Check,
   Circle,
+  Crosshair,
+  Eye,
   Hash,
   Loader2,
   MapPin,
   Pencil,
   SkipForward,
   Sparkles,
+  Trash2,
   Undo2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -37,21 +40,23 @@ import {
 } from "@/lib/ai/estimatorPositions";
 
 const CATEGORY_OPTIONS = [
-  { id: "socket", color: "#16A34A" },
-  { id: "switch", color: "#DC2626" },
-  { id: "lighting", color: "#EA580C" },
-  { id: "led_strip", color: "#0891B2" },
+  { id: "socket", color: "#39FF14" },
+  { id: "double_socket", color: "#22C55E" },
+  { id: "switch", color: "#FF1744" },
+  { id: "lighting", color: "#FF00AA" },
+  { id: "led_strip", color: "#00F0FF" },
 ] as const;
 
 const LAYER_CHIP: Record<string, string> = {
-  socket: "#16A34A",
-  switch: "#DC2626",
-  lighting: "#EA580C",
-  led_strip: "#0891B2",
-  led: "#0891B2",
-  cabling: "#2563EB",
-  unknown: "#64748B",
-  warning: "#D97706",
+  socket: "#39FF14",
+  double_socket: "#22C55E",
+  switch: "#FF1744",
+  lighting: "#FF00AA",
+  led_strip: "#00F0FF",
+  led: "#00F0FF",
+  cabling: "#4D7CFF",
+  unknown: "#E040FB",
+  warning: "#FFEA00",
 };
 
 type Props = {
@@ -59,6 +64,8 @@ type Props = {
   progress: MarkingProgress;
   selectedPositionId: string | null;
   selectedAnchorId?: string | null;
+  highlightedPositionIds?: string[];
+  onToggleHighlight?: (positionId: string) => void;
   onSelect: (positionId: string | null) => void;
   onSelectAnchor?: (anchorId: string | null) => void;
   markMode: boolean;
@@ -66,11 +73,15 @@ type Props = {
   onNextUnmarked: () => void;
   onRemoveLastMark: (positionId: string) => void;
   onRemoveMark?: (positionId: string, anchorId: string) => void;
+  /** Soft-remove position from the checklist (ignore). */
+  onDeletePosition?: (positionId: string) => void;
   onRename: (positionId: string, label: string) => void;
   onUseMarkCount: (positionId: string) => void;
   onSetCategory?: (positionId: string, category: string) => void;
   onIdentify?: (positionId: string) => void;
   identifyingPositionId?: string | null;
+  /** Clear selection and arm mark mode for the next NEW symbol type. */
+  onMarkAnother?: () => void;
 };
 
 export function EstimatorMarkingChecklist({
@@ -78,6 +89,8 @@ export function EstimatorMarkingChecklist({
   progress,
   selectedPositionId,
   selectedAnchorId,
+  highlightedPositionIds = [],
+  onToggleHighlight,
   onSelect,
   onSelectAnchor,
   markMode,
@@ -85,11 +98,13 @@ export function EstimatorMarkingChecklist({
   onNextUnmarked,
   onRemoveLastMark,
   onRemoveMark,
+  onDeletePosition,
   onRename,
   onUseMarkCount,
   onSetCategory,
   onIdentify,
   identifyingPositionId,
+  onMarkAnother,
 }: Props) {
   const { t } = useI18n();
   const [editDraft, setEditDraft] = useState<string | null>(null);
@@ -232,6 +247,7 @@ export function EstimatorMarkingChecklist({
             const markAnchors = manualMarksOf(p);
             const target = positionMarkTarget(p);
             const isSelected = p.id === selectedPositionId;
+            const isHighlighted = highlightedPositionIds.includes(p.id);
             const identifying = identifyingPositionId === p.id;
             const color = chipColor(p);
 
@@ -240,17 +256,39 @@ export function EstimatorMarkingChecklist({
                 key={p.id}
                 className={cn(
                   "border-b border-[#F1F5F9]",
-                  isSelected && "bg-[#FFF8F5]"
+                  isSelected && "bg-[#FFF8F5]",
+                  isHighlighted && !isSelected && "bg-[#EEF2FF]"
                 )}
               >
+                <div className="flex items-stretch gap-0.5 px-1">
+                  {onToggleHighlight ? (
+                    <button
+                      type="button"
+                      className={cn(
+                        "my-1 shrink-0 self-center rounded-md p-1.5",
+                        isHighlighted
+                          ? "bg-[#EEF2FF] text-[#1D376A]"
+                          : "text-[#94A3B8] hover:bg-[#F1F5F9] hover:text-[#1D376A]"
+                      )}
+                      title={t("projects.aiSetup.marking.toggleHighlight")}
+                      aria-pressed={isHighlighted}
+                      onClick={() => onToggleHighlight(p.id)}
+                    >
+                      <Eye className="size-3.5" />
+                    </button>
+                  ) : null}
                 <button
                   type="button"
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-[#F8FAFC]"
-                  onClick={() => {
+                  className="flex min-w-0 flex-1 items-center gap-2.5 px-2 py-2 text-left transition-colors hover:bg-[#F8FAFC]"
+                  onClick={(e) => {
+                    if ((e.ctrlKey || e.metaKey) && onToggleHighlight) {
+                      onToggleHighlight(p.id);
+                      return;
+                    }
                     const next = isSelected ? null : p.id;
                     onSelect(next);
                     onSelectAnchor?.(null);
-                    if (next && !isPositionMarked(p)) onMarkModeChange(true);
+                    if (next) onMarkModeChange(true);
                   }}
                   aria-pressed={isSelected}
                 >
@@ -300,7 +338,30 @@ export function EstimatorMarkingChecklist({
                       {t("projects.aiSetup.marking.waiting")}
                     </span>
                   )}
+                  {onDeletePosition ? (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="shrink-0 rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 hover:bg-amber-100 hover:text-[#B91C1C]"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeletePosition(p.id);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onDeletePosition(p.id);
+                        }
+                      }}
+                      aria-label={t("projects.aiSetup.marking.deletePosition")}
+                      title={t("projects.aiSetup.marking.deletePosition")}
+                    >
+                      {t("common.delete")}
+                    </span>
+                  ) : null}
                 </button>
+                </div>
 
                 {isSelected ? (
                   <div className="space-y-2 px-3 pb-2.5">
@@ -407,6 +468,18 @@ export function EstimatorMarkingChecklist({
                     </div>
 
                     <div className="flex flex-wrap gap-1.5">
+                      {onMarkAnother ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 bg-[#E95F2A] px-2.5 text-xs text-white hover:bg-[#D45424]"
+                          title={t("projects.aiSetup.marking.markNextTypeHint")}
+                          onClick={() => onMarkAnother()}
+                        >
+                          <Crosshair className="mr-1 size-3.5" />
+                          {t("projects.aiSetup.marking.markNextType")}
+                        </Button>
+                      ) : null}
                       {marks > 0 && marks !== p.quantity ? (
                         <Button
                           type="button"
@@ -448,6 +521,18 @@ export function EstimatorMarkingChecklist({
                         >
                           <Undo2 className="size-3.5 mr-1" />
                           {t("projects.aiSetup.marking.undoLast")}
+                        </Button>
+                      ) : null}
+                      {onDeletePosition ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 border-amber-200 bg-amber-50 px-2 text-xs text-amber-900 hover:bg-amber-100 hover:text-[#B91C1C]"
+                          onClick={() => onDeletePosition(p.id)}
+                        >
+                          <Trash2 className="size-3.5 mr-1" />
+                          {t("projects.aiSetup.marking.deletePosition")}
                         </Button>
                       ) : null}
                     </div>

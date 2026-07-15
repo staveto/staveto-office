@@ -61,6 +61,17 @@ export function isAiEvidencePdfViewerEnabled(): boolean {
   );
 }
 
+/**
+ * Multi-document estimator: several PDFs/files in one session, merged takeoff + conflicts.
+ * Default OFF — set NEXT_PUBLIC_ENABLE_AI_MULTI_DOCUMENT_ESTIMATOR=1 to enable.
+ */
+export function isAiMultiDocumentEstimatorEnabled(): boolean {
+  return (
+    isAiEstimatorFlowEnabled() &&
+    process.env.NEXT_PUBLIC_ENABLE_AI_MULTI_DOCUMENT_ESTIMATOR === "1"
+  );
+}
+
 export function isAiEstimatorDebugEnabled(): boolean {
   return (
     process.env.NEXT_PUBLIC_AI_ESTIMATOR_DEBUG === "1" ||

@@ -342,6 +342,11 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
       prev.map((m) => (m.id === materialRowId ? { ...m, price: unitPrice } : m))
     );
   }, []);
+  const handleMaterialRowExcluded = useCallback((materialRowId: string) => {
+    setMaterials((prev) =>
+      prev.map((m) => (m.id === materialRowId ? { ...m, included: false } : m))
+    );
+  }, []);
   const estimatorPositions = useEstimatorPositions({
     project,
     workspace: activeWorkspace ?? null,
@@ -350,13 +355,50 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
     currency,
     enabled: evidenceEnabled,
     onMaterialPriceApplied: handleMaterialPriceApplied,
+    onMaterialRowExcluded: handleMaterialRowExcluded,
   });
 
-  const missingPriceCount = useMemo(
-    () =>
-      materials.filter((m) => m.included && m.name.trim() && !(m.price > 0)).length,
-    [materials]
-  );
+  // Keep quote materials in sync with plan evidence:
+  // ignored/excluded + AI estimates without a PDF mark drop out of the quote.
+  useEffect(() => {
+    if (!evidenceEnabled || estimatorPositions.loading) return;
+    const positions = estimatorPositions.positions;
+    if (positions.length === 0) return;
+
+    const excludeIds = new Set<string>();
+    for (const p of positions) {
+      if (!p.linkedMaterialRowId) continue;
+      const inactive =
+        p.reviewStatus === "ignored" || p.reviewStatus === "excluded";
+      const unmarkedAi =
+        p.quantitySource === "ai_estimate" &&
+        !p.evidenceAnchors.some((a) => a.bbox != null);
+      if (inactive || unmarkedAi) excludeIds.add(p.linkedMaterialRowId);
+    }
+    if (excludeIds.size === 0) return;
+
+    setMaterials((prev) => {
+      let changed = false;
+      const next = prev.map((m) => {
+        if (!excludeIds.has(m.id) || !m.included) return m;
+        changed = true;
+        return { ...m, included: false };
+      });
+      return changed ? next : prev;
+    });
+  }, [evidenceEnabled, estimatorPositions.loading, estimatorPositions.positions]);
+
+  const missingPriceCount = useMemo(() => {
+    if (evidenceEnabled && estimatorPositions.positions.length > 0) {
+      return estimatorPositions.summary.priceMissing;
+    }
+    return materials.filter((m) => m.included && m.name.trim() && !(m.price > 0)).length;
+  }, [
+    evidenceEnabled,
+    estimatorPositions.positions.length,
+    estimatorPositions.summary.priceMissing,
+    materials,
+  ]);
 
   // Default sub-tab: "Na kontrolu" when prices/review blockers exist, else "Súhrn".
   useEffect(() => {
