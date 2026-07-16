@@ -304,3 +304,49 @@ export function createPositionFromSymbolDraft(
 
   return { position, assembly, productSearchIntents };
 }
+
+/**
+ * Manual takeoff line without a PDF mark (bbox optional / empty).
+ * Appears in the takeoff, can be priced and included/excluded from quote.
+ */
+export function createManualEstimatorPosition(
+  input: {
+    label: string;
+    category?: SymbolDraftCategory;
+    quantity?: number;
+    unit?: EstimatorPositionUnit;
+    roomName?: string;
+    scope?: SymbolDraftScope;
+  },
+  existingPositions: EstimatorPosition[]
+): EstimatorPosition {
+  const category = input.category ?? "unknown";
+  const config = DRAFT_CATEGORY_CONFIG[category];
+  const scope = input.scope ?? "buy_install";
+  const label = input.label.trim() || config.defaultLabel;
+  const codePrefix = positionCategoryCode("electrical", config.positionCategory);
+  const positionCode = nextPositionCode(codePrefix, existingPositions);
+  const qty =
+    Number.isFinite(input.quantity) && (input.quantity ?? 0) > 0
+      ? Number(input.quantity)
+      : 1;
+  const outOfScope = scope === "out_of_scope";
+
+  return {
+    id: `pos_${positionCode}_manual_${Date.now().toString(36)}`,
+    positionCode,
+    trade: "electrical",
+    category: config.positionCategory,
+    normalizedPoint: config.normalizedPoint,
+    label,
+    roomName: input.roomName?.trim() || undefined,
+    quantity: qty,
+    unit: input.unit ?? config.defaultUnit,
+    quantitySource: "manual",
+    evidenceAnchors: [],
+    priceStatus: scope === "customer_supplied" ? "customer_supplied" : "price_missing",
+    reviewStatus: outOfScope ? "excluded" : "confirmed",
+    reviewReason: outOfScope ? SCOPE_NOTE_SK.out_of_scope : undefined,
+    note: SCOPE_NOTE_SK[scope],
+  };
+}

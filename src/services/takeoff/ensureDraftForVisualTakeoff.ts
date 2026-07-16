@@ -116,6 +116,10 @@ export async function ensureDraftProjectForVisualTakeoff(
   return { projectId, documentId };
 }
 
+/**
+ * Legacy Plan Takeoff Workbench URL (`DrawingOccurrence`).
+ * Kept for debug/documents entry — not the main AI wizard CTA.
+ */
 export function buildVisualTakeoffHref(params: {
   projectId: string;
   documentId?: string | null;
@@ -128,6 +132,22 @@ export function buildVisualTakeoffHref(params: {
   q.set("mode", params.mode ?? "quote-precheck");
   const qs = q.toString();
   return `/app/projects/${params.projectId}/takeoff${qs ? `?${qs}` : ""}`;
+}
+
+/**
+ * Main AI estimator visual tool — PDF marking in setup workspace
+ * (`EstimatorPosition` + PdfMarkingWorkspace).
+ */
+export function buildEstimatorPdfMarkingHref(params: {
+  projectId: string;
+  step?: "material" | "overview";
+  tab?: "pdf" | "summary" | "detail" | "prices" | "review";
+}): string {
+  const q = new URLSearchParams();
+  q.set("setup", "ai");
+  q.set("step", params.step ?? "material");
+  q.set("tab", params.tab ?? "pdf");
+  return `/app/projects/${params.projectId}?${q.toString()}`;
 }
 
 export async function setProjectVisualTakeoffStatus(

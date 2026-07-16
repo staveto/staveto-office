@@ -98,7 +98,8 @@ describe.skipIf(!existsSync(PDF) || !existsSync(FRESH))(
         for (const a of annotations) {
           expect(a.bbox.x).toBeGreaterThanOrEqual(0);
           expect(a.bbox.x).toBeLessThanOrEqual(1);
-          expect(a.label).toMatch(/^E-/);
+          // Marker label = human name, falls back to the position code.
+          expect(a.label).toBeTruthy();
         }
 
         // Selection sync: list row → annotation → back to the position.

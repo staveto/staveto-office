@@ -5,6 +5,7 @@ import type {
 } from "@/types/estimatorPositions";
 import {
   buildSymbolDraftFromMark,
+  createManualEstimatorPosition,
   createPositionFromSymbolDraft,
   nextPositionCode,
   possibleTypesForColorHint,
@@ -236,6 +237,34 @@ describe("similar-symbol candidates (find same in plan)", () => {
     expect(similarCandidateAnchors(dismissed)).toHaveLength(0);
     expect(manualMarkCount(dismissed)).toBe(1);
     expect(dismissed.quantity).toBe(1);
+  });
+
+  it("pending similar candidates block fixed quote", () => {
+    const withCandidates = positionWithCandidates();
+    const priced = {
+      ...withCandidates,
+      priceStatus: "manual_price" as const,
+      unitPrice: 5,
+      totalPrice: 5,
+    };
+    const safety = positionsBlockFixedQuote([priced]);
+    expect(safety.blocked).toBe(true);
+    expect(safety.reasons.join(" ")).toMatch(/kandidátov/i);
+  });
+});
+
+describe("createManualEstimatorPosition", () => {
+  it("creates a priced-ready line without PDF bbox", () => {
+    const position = createManualEstimatorPosition(
+      { label: "Krabica KU68", category: "installation_box", quantity: 4 },
+      []
+    );
+    expect(position.evidenceAnchors).toHaveLength(0);
+    expect(position.quantity).toBe(4);
+    expect(position.quantitySource).toBe("manual");
+    expect(position.priceStatus).toBe("price_missing");
+    expect(position.reviewStatus).toBe("confirmed");
+    expect(position.label).toBe("Krabica KU68");
   });
 });
 

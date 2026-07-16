@@ -21,12 +21,12 @@ describe("planBoundary", () => {
     expect(r.needsReview).toBe(true);
   });
 
-  it("flags legend region without excluding from takeoff", () => {
+  it("flags legend/table region and excludes from takeoff count", () => {
     const r = classifyPlanClick(
       { x: 0.85, y: 0.1 },
       { legendRegions: [{ x: 0.8, y: 0.05, width: 0.15, height: 0.2 }] }
     );
     expect(r.status).toBe("in_legend_or_table");
-    expect(r.excludeFromTakeoff).toBe(false);
+    expect(r.excludeFromTakeoff).toBe(true);
   });
 });

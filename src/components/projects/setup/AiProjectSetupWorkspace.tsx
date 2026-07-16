@@ -111,17 +111,30 @@ type Props = {
   project: ProjectDoc;
   userId: string;
   onProjectUpdated: (project: ProjectDoc) => void;
+  /** Deep-link from AI review visual CTA → material / PDF marking. */
+  initialStep?: AiSetupStepId;
+  initialMaterialTab?: MaterialSubTab;
 };
 
-export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: Props) {
+export function AiProjectSetupWorkspace({
+  project,
+  userId,
+  onProjectUpdated,
+  initialStep,
+  initialMaterialTab,
+}: Props) {
   const { t } = useI18n();
   const { activeWorkspace } = useWorkspace();
   const workspaceCtx = useActiveWorkspaceContext();
   const currency = workspaceCtx.activeCurrency || "EUR";
   const countryCode = workspaceCtx.activeCountryCode;
-  const [activeStep, setActiveStep] = useState<AiSetupStepId>("overview");
-  const [materialSubTab, setMaterialSubTab] = useState<MaterialSubTab>("summary");
-  const materialSubTabDefaultedRef = useRef(false);
+  const [activeStep, setActiveStep] = useState<AiSetupStepId>(
+    initialStep ?? "overview"
+  );
+  const [materialSubTab, setMaterialSubTab] = useState<MaterialSubTab>(
+    initialMaterialTab ?? "summary"
+  );
+  const materialSubTabDefaultedRef = useRef(Boolean(initialMaterialTab));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -400,7 +413,17 @@ export function AiProjectSetupWorkspace({ project, userId, onProjectUpdated }: P
     materials,
   ]);
 
+  // Deep-link: honor ?step=&tab= from AI review visual CTA.
+  useEffect(() => {
+    if (initialStep) setActiveStep(initialStep);
+    if (initialMaterialTab) {
+      setMaterialSubTab(initialMaterialTab);
+      materialSubTabDefaultedRef.current = true;
+    }
+  }, [initialStep, initialMaterialTab]);
+
   // Default sub-tab: "Na kontrolu" when prices/review blockers exist, else "Súhrn".
+  // Skipped when URL already requested a material tab (e.g. tab=pdf).
   useEffect(() => {
     if (loading || materialSubTabDefaultedRef.current) return;
     materialSubTabDefaultedRef.current = true;

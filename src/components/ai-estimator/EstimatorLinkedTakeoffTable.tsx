@@ -72,14 +72,6 @@ function categoryLabelKey(category: string): string {
   return map[category] ?? "projects.aiSetup.material.group.other";
 }
 
-function positionConfidence(p: EstimatorPosition): "high" | "medium" | "low" {
-  const order = { low: 0, medium: 1, high: 2 } as const;
-  return p.evidenceAnchors.reduce<"high" | "medium" | "low">(
-    (min, a) => (order[a.confidence] < order[min] ? a.confidence : min),
-    "high"
-  );
-}
-
 function hasBbox(p: EstimatorPosition): boolean {
   return p.evidenceAnchors.some((a) => a.bbox != null);
 }
@@ -317,15 +309,14 @@ export function EstimatorLinkedTakeoffTable({
           <table className="w-full min-w-[720px] text-sm">
             <thead>
               <tr className="border-b border-[#E2E8F0] bg-[#F8FAFC] text-left text-[11px] font-bold uppercase tracking-wide text-[#64748B]">
+                <th className="px-3 py-2">{t("projects.aiSetup.positions.col.name")}</th>
                 <th className="px-3 py-2">{t("projects.aiSetup.positions.col.position")}</th>
                 {multiDocEnabled && documents.length > 1 ? (
                   <th className="px-3 py-2">{t("projects.aiSetup.positions.col.sourceDocument")}</th>
                 ) : null}
                 <th className="px-3 py-2">{t("projects.aiSetup.positions.col.room")}</th>
-                <th className="px-3 py-2">{t("projects.aiSetup.positions.col.name")}</th>
                 <th className="px-3 py-2 text-right">{t("projects.aiSetup.positions.col.qty")}</th>
                 <th className="px-3 py-2">{t("projects.aiSetup.positions.col.source")}</th>
-                <th className="px-3 py-2">{t("projects.aiSetup.positions.col.confidence")}</th>
                 <th className="px-3 py-2 text-right">{t("projects.aiSetup.positions.col.price")}</th>
                 <th className="px-3 py-2">{t("projects.aiSetup.positions.col.status")}</th>
                 {!compact ? (
@@ -336,8 +327,8 @@ export function EstimatorLinkedTakeoffTable({
             <tbody>
               {rows.map((p) => {
                 const selected = p.id === selectedPositionId;
-                const conf = positionConfidence(p);
                 const inactive = p.reviewStatus === "ignored" || p.reviewStatus === "excluded";
+                const linked = hasBbox(p);
                 return (
                   <tr
                     key={p.id}
@@ -349,11 +340,20 @@ export function EstimatorLinkedTakeoffTable({
                     onClick={() => onSelectPosition?.(selected ? null : p.id)}
                     aria-selected={selected}
                   >
+                    <td className="px-3 py-2">
+                      <p className="font-medium text-[#0F2A4D] leading-snug">{p.label}</p>
+                      <p className="text-[11px] text-[#94A3B8]">{t(categoryLabelKey(p.category))}</p>
+                      {!linked ? (
+                        <p className="mt-0.5 text-[11px] font-semibold text-amber-700">
+                          {t("projects.aiSetup.positions.noPdfMarker")}
+                        </p>
+                      ) : null}
+                    </td>
                     <td className="px-3 py-2 whitespace-nowrap">
-                      <span className="font-mono text-xs font-bold text-[#0F2A4D]">
+                      <span className="font-mono text-xs font-bold text-[#64748B]">
                         {p.positionCode}
                       </span>
-                      {hasBbox(p) ? (
+                      {linked ? (
                         <MapPin
                           className="ml-1 inline size-3.5 text-[#1D376A]"
                           aria-label={t("projects.aiSetup.positions.metric.pdfLinked")}
@@ -367,10 +367,6 @@ export function EstimatorLinkedTakeoffTable({
                     ) : null}
                     <td className="px-3 py-2 text-xs text-[#475569] whitespace-nowrap">
                       {p.roomName ?? "—"}
-                    </td>
-                    <td className="px-3 py-2">
-                      <p className="font-medium text-[#0F2A4D] leading-snug">{p.label}</p>
-                      <p className="text-[11px] text-[#94A3B8]">{t(categoryLabelKey(p.category))}</p>
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap">
                       {p.quantity > 0 ? (
@@ -386,20 +382,6 @@ export function EstimatorLinkedTakeoffTable({
                     <td className="px-3 py-2">
                       <span className="rounded-full bg-[#EEF2F7] px-2 py-0.5 text-[11px] font-semibold text-[#334155] whitespace-nowrap">
                         {t(`projects.aiSetup.positions.qtySource.${p.quantitySource}`)}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap">
-                      <span
-                        className={cn(
-                          "font-semibold",
-                          conf === "high"
-                            ? "text-emerald-700"
-                            : conf === "medium"
-                              ? "text-[#475569]"
-                              : "text-amber-700"
-                        )}
-                      >
-                        {t(`projects.aiSetup.positions.confidence.${conf}`)}
                       </span>
                     </td>
                     <td className="px-3 py-2 text-right whitespace-nowrap">

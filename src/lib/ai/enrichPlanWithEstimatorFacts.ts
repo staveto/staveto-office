@@ -1,7 +1,7 @@
 import type { AiEstimatorFacts, AiExtractedItem } from "@/types/aiEstimator";
 import type { AiMaterialSuggestion, AiProjectPlan } from "@/lib/aiProjectSchema";
 import { foldLegendIntoEstimatorFacts } from "@/lib/ai/foldLegendIntoEstimatorFacts";
-import type { AiProjectDraftLocal, DraftMaterialSuggestion } from "@/lib/aiProjectDraftLocal";
+import type { AiProjectDraftLocal } from "@/lib/aiProjectDraftLocal";
 
 function mapOriginToMaterialSource(
   origin: AiExtractedItem["origin"],
@@ -12,16 +12,21 @@ function mapOriginToMaterialSource(
   return "inferred";
 }
 
-function newMaterialId(): string {
-  return `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
+/**
+ * Map estimator items → material *suggestions for review*.
+ * Callers must NOT treat these as trusted takeoff / auto-selected materials.
+ */
 export function estimatorItemsToMaterialSuggestions(
   facts: AiEstimatorFacts
 ): AiMaterialSuggestion[] {
   const folded = foldLegendIntoEstimatorFacts(facts);
+  // Exclude legend-promoted rows (ids from foldLegend) and raw legend-only noise.
+  // Keep AI extracted/inferred for "AI návrhy na kontrolu" only.
   const rows = [...folded.extractedItems, ...folded.inferredItems].filter(
-    (i) => i.included !== false && i.origin !== "missing"
+    (i) =>
+      i.included !== false &&
+      i.origin !== "missing" &&
+      !i.id.startsWith("legend_item_")
   );
   return rows.map((item) => ({
     name: item.roomName ? `${item.title} (${item.roomName})` : item.title,
@@ -30,13 +35,14 @@ export function estimatorItemsToMaterialSuggestions(
     suggestedQuantity: item.computedQuantity ?? item.quantity ?? undefined,
     unit: item.unit && item.unit !== "unknown" ? item.unit : undefined,
     confidence: item.confidence,
-    materialSource: mapOriginToMaterialSource(item.origin, item.needsReview),
+    materialSource: mapOriginToMaterialSource(item.origin, item.needsReview || true),
     sourceNote: [
       item.evidence?.[0]?.fileName
         ? `${item.evidence[0].fileName}${item.evidence[0].page != null ? ` p.${item.evidence[0].page}` : ""}`
         : null,
       `origin=${item.origin}`,
-      item.needsReview ? "needsReview" : null,
+      "needsReview",
+      "mvp_review_only",
       item.reviewReason,
     ]
       .filter(Boolean)
@@ -45,64 +51,28 @@ export function estimatorItemsToMaterialSuggestions(
   }));
 }
 
-/** Prefer legend/takeoff materials over sparse classic draft categories. */
+/**
+ * MVP safety: do NOT auto-replace draft materials from AI/legend facts.
+ * Suggestions stay on the review screen under "AI návrhy na kontrolu".
+ */
 export function syncDraftMaterialsFromEstimatorFacts(
   draft: AiProjectDraftLocal,
-  facts: AiEstimatorFacts
+  _facts: AiEstimatorFacts
 ): AiProjectDraftLocal {
-  const suggestions = estimatorItemsToMaterialSuggestions(facts);
-  if (suggestions.length === 0) return draft;
-  const existing = draft.materialSuggestions ?? [];
-  if (suggestions.length < Math.max(5, existing.length)) return draft;
-
-  const materials: DraftMaterialSuggestion[] = suggestions.map((m) => ({
-    ...m,
-    id: newMaterialId(),
-    selected: m.confidence !== "low",
-  }));
-
-  return {
-    ...draft,
-    summary: draft.summary || facts.inputSummary,
-    materialSuggestions: materials,
-  };
+  return draft;
 }
 
-/** Merge estimator materials into an existing AI plan without dropping phases/tasks. */
+/**
+ * MVP safety: do NOT auto-enrich plan.materialSuggestions from legend/AI takeoff.
+ * Keeps classic draft materials if any; estimator items are review-only in UI.
+ */
 export function enrichAiPlanWithEstimatorFacts(
   plan: AiProjectPlan,
   facts: AiEstimatorFacts
 ): AiProjectPlan {
-  const suggestions = estimatorItemsToMaterialSuggestions(facts);
-  if (suggestions.length === 0) return plan;
-
-  const existing = plan.materialSuggestions ?? [];
-  // Prefer detailed takeoff from legend/facts over sparse classic AI categories.
-  if (suggestions.length >= Math.max(5, existing.length)) {
-    return {
-      ...plan,
-      summary: plan.summary || facts.inputSummary,
-      materialSuggestions: suggestions,
-    };
-  }
-
-  const seen = new Set(
-    existing.map(
-      (m) =>
-        `${m.name.trim().toLowerCase()}|${m.suggestedQuantity ?? ""}|${m.unit ?? ""}`
-    )
-  );
-  const merged = [...existing];
-  for (const s of suggestions) {
-    const key = `${s.name.trim().toLowerCase()}|${s.suggestedQuantity ?? ""}|${s.unit ?? ""}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    merged.push(s);
-  }
-
   return {
     ...plan,
     summary: plan.summary || facts.inputSummary,
-    materialSuggestions: merged,
+    // Intentionally leave materialSuggestions unchanged — no legend dump into quote.
   };
 }

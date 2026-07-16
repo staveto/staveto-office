@@ -36,6 +36,12 @@ export type {
   EstimatorPosition,
   PdfOverlayAnnotation,
 } from "@/types/estimatorPositions";
+import {
+  bucketStrictSimilarHits,
+  SIMILAR_ACCEPTED_MIN,
+  SIMILAR_UNCERTAIN_MIN,
+  type StrictSimilarHit,
+} from "./strictSimilarMatch";
 
 // ---------------------------------------------------------------------------
 // Position codes (Phase 7)
@@ -601,7 +607,7 @@ export function buildPdfOverlayAnnotations(
         markStatus: anchor.markStatus,
         polygon: anchor.polygon,
         isManualMark: isManualMarkAnchor(anchor),
-        label: p.positionCode,
+        label: p.label || p.positionCode,
         colorKey:
           anchor.markStatus === "outside_plan"
             ? "warning"
@@ -831,14 +837,8 @@ export function filterEstimatorPositions(
           if (positionHasBbox(p)) return false;
           break;
         case "drawing_only":
-          if (
-            !p.evidenceAnchors.some(
-              (a) =>
-                a.sourceType === "drawing_occurrence" ||
-                a.sourceType === "visual_detection"
-            )
-          )
-            return false;
+          // "Z PDF" — any position with a plan mark / bbox.
+          if (!positionHasBbox(p)) return false;
           break;
         case "legend_only":
           if (!p.evidenceAnchors.every((a) => a.sourceType === "project_legend"))
@@ -973,6 +973,21 @@ export function markPositionCustomerSupplied(
     totalPrice: undefined,
     productRef: undefined,
   };
+}
+
+/** How many other price_missing positions would receive "apply to similar". */
+export function countSimilarPricelessPositions(
+  positions: EstimatorPosition[],
+  source: EstimatorPosition
+): number {
+  return positions.filter(
+    (p) =>
+      p.id !== source.id &&
+      p.reviewStatus !== "ignored" &&
+      p.reviewStatus !== "excluded" &&
+      p.priceStatus === "price_missing" &&
+      (p.normalizedPoint === source.normalizedPoint || p.category === source.category)
+  ).length;
 }
 
 /** Apply a price to all price_missing positions with the same normalizedPoint/category. */
@@ -1181,12 +1196,19 @@ export function addSimilarCandidateMarksToPosition(
     fileName: string;
     documentId?: string;
     fileId?: string;
-  }>
+  }>,
+  options?: { referenceBbox?: EstimatorPositionBBox; prefiltered?: boolean }
 ): EstimatorPosition {
   if (marks.length === 0) return position;
+  const accepted = options?.prefiltered
+    ? marks
+    : filterSimilarCandidateMarks(marks, {
+        referenceBbox: options?.referenceBbox,
+      }).accepted;
+  if (accepted.length === 0) return position;
   const existing = position.evidenceAnchors.filter((a) => a.bbox);
   const newAnchors: EstimatorEvidenceAnchor[] = [];
-  for (const m of marks) {
+  for (const m of accepted) {
     const bbox = {
       x: clamp01(m.bbox.x),
       y: clamp01(m.bbox.y),
@@ -1216,7 +1238,7 @@ export function addSimilarCandidateMarksToPosition(
       sourceType: "visual_detection",
       sourceText: `Podobná značka (${Math.round(m.matchScore * 100)}%)`,
       bbox,
-      confidence: m.matchScore >= 0.85 ? "medium" : "low",
+      confidence: m.matchScore >= 0.9 ? "high" : "medium",
       needsReview: true,
       markStatus: "needs_review",
     });
@@ -1301,6 +1323,192 @@ export function removeSimilarCandidateMarks(
     ...position,
     evidenceAnchors: position.evidenceAnchors.filter((a) => !candidateIds.has(a.id)),
   };
+}
+
+export function isSimilarCandidateAnchor(anchor: EstimatorEvidenceAnchor): boolean {
+  return (
+    anchor.id.startsWith(SIMILAR_CANDIDATE_PREFIX) &&
+    anchor.sourceType === "visual_detection" &&
+    Boolean(anchor.needsReview)
+  );
+}
+
+/** @deprecated use SIMILAR_ACCEPTED_MIN from strictSimilarMatch */
+export const SIMILAR_CANDIDATE_MIN_SCORE = 0.85;
+/** Cap accepted PDF markers. */
+export const SIMILAR_CANDIDATE_MAX_VISIBLE = 20;
+
+/**
+ * Filter find-similar hits with strict geometry + score bands.
+ * Only `accepted` attach to PDF by default; `uncertain` stay in review list.
+ */
+export function filterSimilarCandidateMarks<
+  T extends { matchScore: number; page?: number; bbox?: EstimatorPositionBBox },
+>(
+  marks: T[],
+  options?: {
+    minScore?: number;
+    maxVisible?: number;
+    referenceBbox?: EstimatorPositionBBox;
+  }
+): {
+  accepted: T[];
+  uncertain: T[];
+  rejected: T[];
+  rejectedLow: number;
+  truncated: number;
+} {
+  const maxVisible = options?.maxVisible ?? SIMILAR_CANDIDATE_MAX_VISIBLE;
+  const reference = options?.referenceBbox;
+  if (!reference) {
+    const minScore = options?.minScore ?? SIMILAR_ACCEPTED_MIN;
+    const ranked = [...marks].sort((a, b) => b.matchScore - a.matchScore);
+    const good = ranked.filter((m) => m.matchScore >= minScore);
+    const uncertain = ranked.filter(
+      (m) => m.matchScore >= SIMILAR_UNCERTAIN_MIN && m.matchScore < minScore
+    );
+    const accepted = good.slice(0, maxVisible);
+    return {
+      accepted,
+      uncertain,
+      rejected: ranked.filter((m) => m.matchScore < SIMILAR_UNCERTAIN_MIN),
+      rejectedLow: ranked.length - good.length - uncertain.length,
+      truncated: Math.max(0, good.length - accepted.length),
+    };
+  }
+  const hits: Array<T & StrictSimilarHit> = marks
+    .filter((m): m is T & { bbox: EstimatorPositionBBox } => m.bbox != null)
+    .map((m) => ({
+      ...m,
+      page: m.page ?? 1,
+      bbox: m.bbox,
+      matchScore: m.matchScore,
+    }));
+  const buckets = bucketStrictSimilarHits(reference, hits, { maxAccepted: maxVisible });
+  return {
+    accepted: buckets.accepted,
+    uncertain: buckets.uncertain,
+    rejected: buckets.rejected,
+    rejectedLow: buckets.rejected.length,
+    truncated: 0,
+  };
+}
+
+export type RemoveAnchorPlan =
+  | { kind: "candidate"; position: EstimatorPosition }
+  | { kind: "mark"; position: EstimatorPosition }
+  | { kind: "only_occurrence"; position: EstimatorPosition; anchorId: string };
+
+/** Plan delete of one evidence anchor (candidate vs confirmed mark). */
+export function planRemoveEvidenceAnchor(
+  position: EstimatorPosition,
+  anchorId: string
+): RemoveAnchorPlan | null {
+  const anchor = position.evidenceAnchors.find((a) => a.id === anchorId);
+  if (!anchor) return null;
+  if (isSimilarCandidateAnchor(anchor)) {
+    return {
+      kind: "candidate",
+      position: {
+        ...position,
+        evidenceAnchors: position.evidenceAnchors.filter((a) => a.id !== anchorId),
+      },
+    };
+  }
+  const countedMarks = position.evidenceAnchors.filter(
+    (a) => isManualMarkAnchor(a) || a.sourceType === "user_confirmed"
+  );
+  const isCounted =
+    isManualMarkAnchor(anchor) ||
+    (anchor.sourceType === "user_confirmed" && Boolean(anchor.bbox));
+  if (!isCounted) {
+    return {
+      kind: "candidate",
+      position: {
+        ...position,
+        evidenceAnchors: position.evidenceAnchors.filter((a) => a.id !== anchorId),
+      },
+    };
+  }
+  if (countedMarks.length <= 1) {
+    return { kind: "only_occurrence", position, anchorId };
+  }
+  const nextAnchors = position.evidenceAnchors.filter((a) => a.id !== anchorId);
+  const next = applyMarkCountAsQuantity({ ...position, evidenceAnchors: nextAnchors });
+  return { kind: "mark", position: next };
+}
+
+/** Remove mark but keep the position (quantity may become 0). */
+export function removeCountedMarkKeepPosition(
+  position: EstimatorPosition,
+  anchorId: string
+): EstimatorPosition {
+  const nextAnchors = position.evidenceAnchors.filter((a) => a.id !== anchorId);
+  const next = { ...position, evidenceAnchors: nextAnchors };
+  const count = manualMarkCount(next);
+  return {
+    ...next,
+    quantity: count,
+    quantitySource: count > 0 ? "manual" : next.quantitySource,
+    totalPrice:
+      next.unitPrice != null && next.unitPrice > 0 && count > 0
+        ? Number((next.unitPrice * count).toFixed(2))
+        : count === 0
+          ? undefined
+          : next.totalPrice,
+  };
+}
+
+/** Bulk-remove anchors. Candidates drop; counted marks update quantity. */
+export function removeEvidenceAnchorsBulk(
+  positions: EstimatorPosition[],
+  refs: Array<{ positionId: string; anchorId: string }>
+): EstimatorPosition[] {
+  if (refs.length === 0) return positions;
+  const byPos = new Map<string, Set<string>>();
+  for (const r of refs) {
+    const set = byPos.get(r.positionId) ?? new Set();
+    set.add(r.anchorId);
+    byPos.set(r.positionId, set);
+  }
+  return positions.map((p) => {
+    const ids = byPos.get(p.id);
+    if (!ids) return p;
+    let next = p;
+    for (const anchorId of ids) {
+      const plan = planRemoveEvidenceAnchor(next, anchorId);
+      if (!plan) continue;
+      if (plan.kind === "candidate" || plan.kind === "mark") {
+        next = plan.position;
+      } else {
+        next = removeCountedMarkKeepPosition(next, anchorId);
+      }
+    }
+    return next;
+  });
+}
+
+/** Drop only candidate anchors matching ids (qty unchanged). */
+export function removeCandidateAnchorsBulk(
+  positions: EstimatorPosition[],
+  refs: Array<{ positionId: string; anchorId: string }>
+): EstimatorPosition[] {
+  if (refs.length === 0) return positions;
+  const byPos = new Map<string, Set<string>>();
+  for (const r of refs) {
+    const set = byPos.get(r.positionId) ?? new Set();
+    set.add(r.anchorId);
+    byPos.set(r.positionId, set);
+  }
+  return positions.map((p) => {
+    const ids = byPos.get(p.id);
+    if (!ids) return p;
+    const nextAnchors = p.evidenceAnchors.filter(
+      (a) => !(ids.has(a.id) && isSimilarCandidateAnchor(a))
+    );
+    if (nextAnchors.length === p.evidenceAnchors.length) return p;
+    return { ...p, evidenceAnchors: nextAnchors };
+  });
 }
 
 /** Rename what the article/position is (user overrides AI/legend naming). */
@@ -1500,6 +1708,16 @@ export function positionsBlockFixedQuote(
   if (visualUnconfirmed.length > 0) {
     reasons.push(
       `${visualUnconfirmed.length} vizuálnych detekcií nie je potvrdených — nemôžu byť pevné položky.`
+    );
+  }
+  const pendingSimilar = active.filter((p) => similarCandidateAnchors(p).length > 0);
+  if (pendingSimilar.length > 0) {
+    const n = pendingSimilar.reduce(
+      (sum, p) => sum + similarCandidateAnchors(p).length,
+      0
+    );
+    reasons.push(
+      `${n} kandidátov „Nájsť rovnaké“ čaká na potvrdenie (${pendingSimilar.length} položiek).`
     );
   }
 

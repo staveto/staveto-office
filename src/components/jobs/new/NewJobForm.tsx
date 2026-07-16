@@ -25,7 +25,7 @@ import { useWorkspace } from "@/context/WorkspaceContext";
 import { createDraftJob, copyProjectConcept } from "@/services/projects";
 import {
   ensureDraftProjectForVisualTakeoff,
-  buildVisualTakeoffHref,
+  buildEstimatorPdfMarkingHref,
   setProjectVisualTakeoffStatus,
 } from "@/services/takeoff/ensureDraftForVisualTakeoff";
 import {
@@ -873,12 +873,12 @@ export function NewJobForm() {
         aiOfficeDraftId,
         aiUploadedFiles,
       });
+      // Main AI visual tool = setup PDF marking (not legacy /takeoff).
       router.push(
-        buildVisualTakeoffHref({
+        buildEstimatorPdfMarkingHref({
           projectId: result.projectId,
-          documentId: result.documentId,
-          returnTo: "new-project-proposal",
-          mode: "quote-precheck",
+          step: "material",
+          tab: "pdf",
         })
       );
     } catch (err) {

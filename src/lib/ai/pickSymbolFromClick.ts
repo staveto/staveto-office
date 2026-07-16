@@ -6,7 +6,7 @@
 import { classifyPixelColor } from "@/lib/ai/visualSymbolCounter";
 import type { VisualColorHint } from "@/types/visualSymbols";
 import type { EstimatorPositionBBox } from "@/types/estimatorPositions";
-import { extractSymbolOutlinePolygon } from "@/lib/ai/symbolShapeOutline";
+import { outlinePolygonFromInkPoints } from "@/lib/ai/symbolShapeOutline";
 
 export type PickSymbolCategoryHint =
   | "socket"
@@ -89,18 +89,33 @@ export type PickSymbolComponent = {
   maxY: number;
   pixels: number;
   color: VisualColorHint | "dark";
+  /** Exact ink pixel coords (page space) — source of the outline polygon. */
+  points?: Array<{ x: number; y: number }>;
+};
+
+export type RejectedSymbolComponent = {
+  bbox: EstimatorPositionBBox;
+  reason: string;
+  colorGroup: VisualColorHint | "dark" | "unknown";
 };
 
 export type PickSymbolFromClickResult = {
   found: boolean;
+  /** Debug-only search window — never use as evidence/display bbox. */
   rawSearchBbox: EstimatorPositionBBox;
+  /** Union of accepted symbol-mask pixels (before pad). */
+  symbolMaskBbox: EstimatorPositionBBox | null;
+  /** Display/evidence bbox wrapping only symbol ink. */
   tightSymbolBbox: EstimatorPositionBBox | null;
   center: { x: number; y: number };
   colorHint: VisualColorHint | "dark" | "unknown";
   components: PickSymbolComponent[];
+  rejectedComponents: RejectedSymbolComponent[];
   confidence: "high" | "medium" | "low";
   needsReview: boolean;
   reason?: string;
+  /** When a stacked/side-by-side socket pair was detected. */
+  suggestedNormalizedPoint?: "double_socket_point";
   /** Normalized outline of symbol ink (displayed page space). */
   outlinePolygon?: Array<{ x: number; y: number }>;
 };
@@ -220,6 +235,20 @@ function blobsOverlapOrNear(a: Blob, b: Blob, gap: number): boolean {
   );
 }
 
+/**
+ * Real bbox intersection (≥30 % of the smaller part) — parts of ONE symbol
+ * overlap (cross inside circle); neighbouring separate marks only sit near.
+ */
+function blobsStrictlyOverlap(a: Blob, b: Blob): boolean {
+  const iw = Math.min(a.maxX, b.maxX) - Math.max(a.minX, b.minX) + 1;
+  const ih = Math.min(a.maxY, b.maxY) - Math.max(a.minY, b.minY) + 1;
+  if (iw <= 1 || ih <= 1) return false;
+  const inter = iw * ih;
+  const aArea = (a.maxX - a.minX + 1) * (a.maxY - a.minY + 1);
+  const bArea = (b.maxX - b.minX + 1) * (b.maxY - b.minY + 1);
+  return inter >= Math.min(aArea, bArea) * 0.3;
+}
+
 function floodComponent(
   mask: Uint8Array,
   visited: Uint8Array,
@@ -235,11 +264,13 @@ function floodComponent(
   let maxX = 0;
   let maxY = 0;
   let pixels = 0;
+  const points: Array<{ x: number; y: number }> = [];
   while (stack.length > 0) {
     const idx = stack.pop()!;
     const x = idx % width;
     const y = (idx / width) | 0;
     pixels++;
+    points.push({ x, y });
     if (x < minX) minX = x;
     if (x > maxX) maxX = x;
     if (y < minY) minY = y;
@@ -264,41 +295,8 @@ function floodComponent(
     maxY,
     pixels,
     color: MASK_TO_COLOR[colorId] ?? "dark",
+    points,
   };
-}
-
-function mergeNearbyBlobs(blobs: Blob[], gap: number): Blob[] {
-  let merged = blobs;
-  let changed = true;
-  while (changed) {
-    changed = false;
-    const next: Blob[] = [];
-    const used = new Array(merged.length).fill(false);
-    for (let i = 0; i < merged.length; i++) {
-      if (used[i]) continue;
-      let acc = merged[i]!;
-      for (let j = i + 1; j < merged.length; j++) {
-        if (used[j]) continue;
-        const b = merged[j]!;
-        const sameColor = acc.color === b.color || acc.color === "dark" || b.color === "dark";
-        if (sameColor && blobsOverlapOrNear(acc, b, gap)) {
-          acc = {
-            minX: Math.min(acc.minX, b.minX),
-            minY: Math.min(acc.minY, b.minY),
-            maxX: Math.max(acc.maxX, b.maxX),
-            maxY: Math.max(acc.maxY, b.maxY),
-            pixels: acc.pixels + b.pixels,
-            color: acc.color !== "dark" ? acc.color : b.color,
-          };
-          used[j] = true;
-          changed = true;
-        }
-      }
-      next.push(acc);
-    }
-    merged = next;
-  }
-  return merged;
 }
 
 function distToBlob(cx: number, cy: number, b: Blob): number {
@@ -331,9 +329,127 @@ function isLongLineBlob(b: Blob, maxAspectRatio: number): boolean {
   return aspect > maxAspectRatio && Math.max(w, h) >= 24;
 }
 
+type ComponentVerdict = {
+  blob: Blob;
+  rejectReason: string | null;
+  colorGroup: VisualColorHint | "dark" | "unknown";
+  bboxW: number;
+  bboxH: number;
+  aspectRatio: number;
+  distanceFromClick: number;
+  pixelDensity: number;
+  lineLikeness: number;
+  textLikeness: number;
+  isWallLike: boolean;
+  isDimensionLike: boolean;
+  isTextLike: boolean;
+  isLineLike: boolean;
+};
+
+/**
+ * Score one connected component inside the search window.
+ * Rejects walls, dimensions, text labels, long lines, and oversized blobs.
+ */
+function analyzeComponent(
+  blob: Blob,
+  cx: number,
+  cy: number,
+  maxAspectRatio: number,
+  maxSymbolSizePx: number,
+  preferred: VisualColorHint[],
+  allowDark: boolean
+): ComponentVerdict {
+  const bboxW = blob.maxX - blob.minX + 1;
+  const bboxH = blob.maxY - blob.minY + 1;
+  const area = Math.max(1, bboxW * bboxH);
+  const pixelDensity = blob.pixels / area;
+  const aspectRatio = Math.max(bboxW, bboxH) / Math.max(1, Math.min(bboxW, bboxH));
+  const distanceFromClick = distToBlobEdge(cx, cy, blob);
+  const horizAspect = bboxW / Math.max(1, bboxH);
+  const vertAspect = bboxH / Math.max(1, bboxW);
+
+  // Green/orange plan labels are wide short runs of ink — not compact symbols.
+  const textLikeness =
+    blob.color !== "dark" && horizAspect >= 2.2 && bboxH <= 18
+      ? Math.min(1, 0.55 + (horizAspect - 2.2) * 0.15 + (pixelDensity < 0.5 ? 0.2 : 0))
+      : blob.color !== "dark" && horizAspect >= 3.2 && bboxW >= 28 && bboxH <= 22
+        ? 0.85
+        : blob.color !== "dark" && vertAspect >= 3.5 && bboxW <= 12 && bboxH >= 28
+          ? 0.7
+          : 0;
+  const isTextLike = textLikeness >= 0.45;
+
+  const isLineLike =
+    !isTextLike &&
+    (isLongLineBlob(blob, maxAspectRatio) ||
+      (aspectRatio > 5 && Math.max(bboxW, bboxH) >= 18));
+  const lineLikeness = isLineLike
+    ? Math.min(1, aspectRatio / 10)
+    : aspectRatio > 3.5
+      ? 0.45
+      : 0;
+
+  const isWallLike =
+    blob.color === "dark" &&
+    (aspectRatio > 3.2 ||
+      (Math.max(bboxW, bboxH) > 32 && pixelDensity < 0.25) ||
+      (bboxW > maxSymbolSizePx * 0.9 && pixelDensity < 0.35));
+
+  // Blue dimensions are not masked; dark thin strokes act as dimension stand-ins.
+  const isDimensionLike =
+    (isLineLike && blob.color === "dark") ||
+    (blob.color === "dark" && aspectRatio > 4.5 && Math.max(bboxW, bboxH) >= 20);
+
+  let rejectReason: string | null = null;
+  // Colored labels first; dark elongated strokes as lines/walls.
+  if (isTextLike) rejectReason = "text_like";
+  else if (isLineLike) rejectReason = "long_line";
+  else if (isWallLike) rejectReason = "wall_like";
+  else if (isDimensionLike) rejectReason = "dimension_like";
+  else if (bboxW > maxSymbolSizePx || bboxH > maxSymbolSizePx) rejectReason = "too_large";
+  else if (blob.color === "dark" && !allowDark) rejectReason = "wrong_color";
+  else if (
+    blob.color !== "dark" &&
+    preferred.length > 0 &&
+    preferred.length < 3 &&
+    !preferred.includes(blob.color as VisualColorHint)
+  ) {
+    rejectReason = "wrong_color";
+  } else if (pixelDensity < 0.07 && area > 100) {
+    rejectReason = "sparse_noise";
+  }
+
+  return {
+    blob,
+    rejectReason,
+    colorGroup: blob.color,
+    bboxW,
+    bboxH,
+    aspectRatio,
+    distanceFromClick,
+    pixelDensity,
+    lineLikeness,
+    textLikeness,
+    isWallLike,
+    isDimensionLike,
+    isTextLike,
+    isLineLike,
+  };
+}
+
+function similarStrokeSize(a: Blob, b: Blob): boolean {
+  const aMin = Math.min(a.maxX - a.minX + 1, a.maxY - a.minY + 1);
+  const bMin = Math.min(b.maxX - b.minX + 1, b.maxY - b.minY + 1);
+  const sideRatio = Math.max(aMin, bMin) / Math.max(1, Math.min(aMin, bMin));
+  const pixRatio =
+    Math.max(a.pixels, b.pixels) / Math.max(1, Math.min(a.pixels, b.pixels));
+  return sideRatio <= 2.4 && pixRatio <= 3.2;
+}
+
 /** Two similar blobs side-by-side → typical double-socket graphic. */
 function isHorizontalSocketPair(a: Blob, b: Blob, maxGapPx = 20): boolean {
   if (a.color !== b.color && a.color !== "dark" && b.color !== "dark") return false;
+  if (!similarStrokeSize(a, b)) return false;
   const aw = a.maxX - a.minX + 1;
   const ah = a.maxY - a.minY + 1;
   const bw = b.maxX - b.minX + 1;
@@ -348,6 +464,24 @@ function isHorizontalSocketPair(a: Blob, b: Blob, maxGapPx = 20): boolean {
   return true;
 }
 
+/** Two similar blobs stacked → “zásuvka pod sebou”. */
+function isVerticalSocketPair(a: Blob, b: Blob, maxGapPx = 20): boolean {
+  if (a.color !== b.color && a.color !== "dark" && b.color !== "dark") return false;
+  if (!similarStrokeSize(a, b)) return false;
+  const aw = a.maxX - a.minX + 1;
+  const ah = a.maxY - a.minY + 1;
+  const bw = b.maxX - b.minX + 1;
+  const bh = b.maxY - b.minY + 1;
+  if (Math.abs(aw - bw) > Math.max(aw, bw) * 0.55) return false;
+  if (Math.abs(ah - bh) > Math.max(ah, bh) * 0.55) return false;
+  const acx = (a.minX + a.maxX) / 2;
+  const bcx = (b.minX + b.maxX) / 2;
+  if (Math.abs(acx - bcx) > Math.max(aw, bw) * 0.65) return false;
+  const gap = a.maxY < b.minY ? b.minY - a.maxY : b.maxY < a.minY ? a.minY - b.maxY : -1;
+  if (gap < 1 || gap > maxGapPx) return false;
+  return true;
+}
+
 function mergeTwoBlobs(a: Blob, b: Blob): Blob {
   return {
     minX: Math.min(a.minX, b.minX),
@@ -356,28 +490,37 @@ function mergeTwoBlobs(a: Blob, b: Blob): Blob {
     maxY: Math.max(a.maxY, b.maxY),
     pixels: a.pixels + b.pixels,
     color: a.color !== "dark" ? a.color : b.color,
+    points: a.points && b.points ? [...a.points, ...b.points] : a.points ?? b.points,
   };
 }
 
+type SocketPairMergeResult = {
+  blobs: Blob[];
+  paired: boolean;
+};
+
 /**
- * Glue double-socket halves into one blob.
+ * Glue double-socket halves (side-by-side or stacked) into one blob.
  * If a third neighbour sits next to the pair, skip — that is a dense row of separate marks.
  */
-function mergeHorizontalSocketPairs(
+function mergeSocketPairs(
   blobs: Blob[],
   maxSymbolSizePx: number,
   maxGapPx = 20
-): Blob[] {
-  if (blobs.length < 2) return blobs;
+): SocketPairMergeResult {
+  if (blobs.length < 2) return { blobs, paired: false };
   const remaining = blobs.slice();
   const out: Blob[] = [];
+  let paired = false;
 
   while (remaining.length > 0) {
     const a = remaining.shift()!;
     let partnerIdx = -1;
     for (let i = 0; i < remaining.length; i++) {
       const b = remaining[i]!;
-      if (!isHorizontalSocketPair(a, b, maxGapPx)) continue;
+      if (!isHorizontalSocketPair(a, b, maxGapPx) && !isVerticalSocketPair(a, b, maxGapPx)) {
+        continue;
+      }
       const merged = mergeTwoBlobs(a, b);
       const mw = merged.maxX - merged.minX + 1;
       const mh = merged.maxY - merged.minY + 1;
@@ -395,11 +538,12 @@ function mergeHorizontalSocketPairs(
     if (partnerIdx >= 0) {
       const b = remaining.splice(partnerIdx, 1)[0]!;
       out.push(mergeTwoBlobs(a, b));
+      paired = true;
     } else {
       out.push(a);
     }
   }
-  return out;
+  return { blobs: out, paired };
 }
 
 function isSocketPairContext(
@@ -449,6 +593,8 @@ export function pickSymbolFromClick(input: PickSymbolFromClickInput): PickSymbol
   const cy = Math.round(clickCanvasPx.y);
 
   const radii = [minR, Math.round((minR + maxR) / 2), maxR];
+  let lastRawSearchBbox: EstimatorPositionBBox | null = null;
+  let lastRejected: RejectedSymbolComponent[] = [];
 
   for (const radius of radii) {
     const x0 = Math.max(0, Math.floor(cx - radius));
@@ -464,6 +610,7 @@ export function pickSymbolFromClick(input: PickSymbolFromClickInput): PickSymbol
       width: clamp01(winW / pageWidth),
       height: clamp01(winH / pageHeight),
     };
+    lastRawSearchBbox = rawSearchBbox;
 
     const mask = new Uint8Array(winW * winH);
     for (let y = y0; y < y1; y++) {
@@ -473,12 +620,14 @@ export function pickSymbolFromClick(input: PickSymbolFromClickInput): PickSymbol
         const g = imageData.data[idx + 1] ?? 255;
         const b = imageData.data[idx + 2] ?? 255;
         const local = (y - y0) * winW + (x - x0);
-        mask[local] = maskValueForPixel(r, g, b, preferred, allowDark);
+        // Dark strokes always form components — a symbol may mix colored and
+        // dark ink (cross + circle); analyzeComponent still rejects stray dark.
+        mask[local] = maskValueForPixel(r, g, b, preferred, true);
       }
     }
 
     const visited = new Uint8Array(winW * winH);
-    const blobs: Blob[] = [];
+    const rawBlobs: Blob[] = [];
     for (let start = 0; start < winW * winH; start++) {
       if (mask[start] === 0 || visited[start]) continue;
       const blob = floodComponent(mask, visited, winW, winH, start, mask[start]!);
@@ -487,34 +636,69 @@ export function pickSymbolFromClick(input: PickSymbolFromClickInput): PickSymbol
         blob.maxX += x0;
         blob.minY += y0;
         blob.maxY += y0;
-        if (!isLongLineBlob(blob, maxAspectRatio)) {
-          const bw = blob.maxX - blob.minX + 1;
-          const bh = blob.maxY - blob.minY + 1;
-          if (bw <= maxSymbolSizePx && bh <= maxSymbolSizePx) {
-            blobs.push(blob);
-          }
-        }
+        blob.points = blob.points?.map((p) => ({ x: p.x + x0, y: p.y + y0 }));
+        rawBlobs.push(blob);
       }
     }
 
-    if (blobs.length === 0) continue;
+    const rejectedEntries: Array<{
+      blob: Blob;
+      reason: string;
+      colorGroup: VisualColorHint | "dark" | "unknown";
+    }> = [];
+    const acceptedBlobs: Blob[] = [];
+    for (const blob of rawBlobs) {
+      const verdict = analyzeComponent(
+        blob,
+        cx,
+        cy,
+        maxAspectRatio,
+        maxSymbolSizePx,
+        preferred,
+        allowDark
+      );
+      if (verdict.rejectReason) {
+        rejectedEntries.push({
+          blob,
+          reason: verdict.rejectReason,
+          colorGroup: verdict.colorGroup,
+        });
+        continue;
+      }
+      acceptedBlobs.push(blob);
+    }
+    const toRejectedComponents = (
+      exclude?: ReadonlySet<Blob>
+    ): RejectedSymbolComponent[] =>
+      rejectedEntries
+        .filter((e) => !exclude?.has(e.blob))
+        .map((e) => ({
+          bbox: blobToBbox(e.blob, pageWidth, pageHeight, 0),
+          reason: e.reason,
+          colorGroup: e.colorGroup,
+        }));
+    const rejectedComponents = toRejectedComponents();
+    lastRejected = rejectedComponents;
 
-    const workBlobs = doSocketPair
-      ? mergeHorizontalSocketPairs(blobs, maxSymbolSizePx)
-      : blobs;
+    if (acceptedBlobs.length === 0) continue;
 
-    const localCx = cx;
-    const localCy = cy;
-    // Nearest blob under the pointer — do NOT pre-merge neighbours (dense plans).
+    // Socket pairs only from already-valid symbol components (never text/wall).
+    const pairMerge = doSocketPair
+      ? mergeSocketPairs(acceptedBlobs, maxSymbolSizePx)
+      : { blobs: acceptedBlobs, paired: false };
+    const workBlobs = pairMerge.blobs;
+
+    // Nearest valid blob under the pointer — do NOT pre-merge neighbours (dense plans).
     const near = workBlobs
-      .map((b) => ({ b, d: distToBlobEdge(localCx, localCy, b) }))
+      .map((b) => ({ b, d: distToBlobEdge(cx, cy, b) }))
       .filter((x) => x.d <= maxSeedDistancePx)
-      .sort((a, b) => a.d - b.d || distToBlob(localCx, localCy, a.b) - distToBlob(localCx, localCy, b.b));
+      .sort((a, b) => a.d - b.d || distToBlob(cx, cy, a.b) - distToBlob(cx, cy, b.b));
 
     if (near.length === 0) continue;
 
     const seed = near[0]!.b;
-    // Grow only with touching fragments of the same symbol (tiny gap), never other marks.
+    // Grow only with tiny same-symbol fragments — never peer marks / text / walls.
+    const fragmentGapPx = Math.min(partGapPx, 3);
     const cluster = [seed];
     let grew = true;
     while (grew) {
@@ -526,19 +710,28 @@ export function pickSymbolFromClick(input: PickSymbolFromClickInput): PickSymbol
           candidate.color === "dark" ||
           seed.color === "dark";
         if (!sameColor) continue;
-        const touches = cluster.some((c) => blobsOverlapOrNear(c, candidate, partGapPx));
+        if (!similarStrokeSize(seed, candidate) && candidate.pixels > seed.pixels * 0.35) {
+          continue;
+        }
+        const touches = cluster.some((c) =>
+          blobsOverlapOrNear(c, candidate, fragmentGapPx)
+        );
         if (!touches) continue;
-        // Peer-sized neighbour = separate mark (two lights side by side), not a fragment.
-        if (!doSocketPair) {
-          const seedW = seed.maxX - seed.minX + 1;
-          const seedH = seed.maxY - seed.minY + 1;
-          const candW = candidate.maxX - candidate.minX + 1;
-          const candH = candidate.maxY - candidate.minY + 1;
-          const seedArea = seedW * seedH;
-          const candArea = candW * candH;
-          const similarSize =
-            candArea >= seedArea * 0.4 && candArea <= seedArea * 2.5;
-          if (similarSize) continue;
+        // Peer-sized neighbour = separate mark, not a fragment (pairs already
+        // merged) — unless the bboxes truly overlap (cross inside circle).
+        const seedW = seed.maxX - seed.minX + 1;
+        const seedH = seed.maxY - seed.minY + 1;
+        const candW = candidate.maxX - candidate.minX + 1;
+        const candH = candidate.maxY - candidate.minY + 1;
+        const seedArea = seedW * seedH;
+        const candArea = candW * candH;
+        const similarSize =
+          candArea >= seedArea * 0.4 && candArea <= seedArea * 2.5;
+        if (
+          similarSize &&
+          !cluster.some((c) => blobsStrictlyOverlap(c, candidate))
+        ) {
+          continue;
         }
         const nextMinX = Math.min(...cluster.map((c) => c.minX), candidate.minX);
         const nextMinY = Math.min(...cluster.map((c) => c.minY), candidate.minY);
@@ -551,6 +744,34 @@ export function pickSymbolFromClick(input: PickSymbolFromClickInput): PickSymbol
         grew = true;
       }
     }
+
+    // Complete the symbol with parts rejected ONLY for color (e.g. dark circle
+    // around a colored cross). They must truly overlap — walls/text stay out.
+    const absorbedBlobs = new Set<Blob>();
+    let absorbed = true;
+    while (absorbed) {
+      absorbed = false;
+      for (const entry of rejectedEntries) {
+        if (entry.reason !== "wrong_color") continue;
+        if (absorbedBlobs.has(entry.blob)) continue;
+        if (!cluster.some((c) => blobsStrictlyOverlap(c, entry.blob))) continue;
+        const nMinX = Math.min(...cluster.map((c) => c.minX), entry.blob.minX);
+        const nMinY = Math.min(...cluster.map((c) => c.minY), entry.blob.minY);
+        const nMaxX = Math.max(...cluster.map((c) => c.maxX), entry.blob.maxX);
+        const nMaxY = Math.max(...cluster.map((c) => c.maxY), entry.blob.maxY);
+        if (
+          nMaxX - nMinX + 1 > maxSymbolSizePx ||
+          nMaxY - nMinY + 1 > maxSymbolSizePx
+        ) {
+          continue;
+        }
+        cluster.push(entry.blob);
+        absorbedBlobs.add(entry.blob);
+        absorbed = true;
+      }
+    }
+    const finalRejected =
+      absorbedBlobs.size > 0 ? toRejectedComponents(absorbedBlobs) : rejectedComponents;
 
     let minX = pageWidth;
     let minY = pageHeight;
@@ -578,16 +799,25 @@ export function pickSymbolFromClick(input: PickSymbolFromClickInput): PickSymbol
       return {
         found: false,
         rawSearchBbox,
+        symbolMaskBbox: null,
         tightSymbolBbox: null,
         center: { x: clamp01(cx / pageWidth), y: clamp01(cy / pageHeight) },
         colorHint: dominantColor,
-        components: blobs,
+        components: [],
+        rejectedComponents,
         confidence: "low",
         needsReview: true,
         reason: "dimension_line",
       };
     }
 
+    // Mask bbox = exact symbol pixels; tight = small pad for display/hit target.
+    const symbolMaskBbox: EstimatorPositionBBox = {
+      x: clamp01(minX / pageWidth),
+      y: clamp01(minY / pageHeight),
+      width: clamp01(blobW / pageWidth),
+      height: clamp01(blobH / pageHeight),
+    };
     const tightSymbolBbox: EstimatorPositionBBox = {
       x: clamp01((minX - 2) / pageWidth),
       y: clamp01((minY - 2) / pageHeight),
@@ -595,24 +825,39 @@ export function pickSymbolFromClick(input: PickSymbolFromClickInput): PickSymbol
       height: clamp01((blobH + 4) / pageHeight),
     };
 
+    const colorOk =
+      dominantColor !== "unknown" &&
+      (dominantColor === "dark"
+        ? allowDark
+        : preferred.includes(dominantColor as VisualColorHint));
     const confidence: "high" | "medium" | "low" =
-      totalPixels >= 12 && preferred.includes(dominantColor as VisualColorHint)
+      totalPixels >= 12 && colorOk
         ? "high"
-        : totalPixels >= 6
+        : totalPixels >= 6 && colorOk
           ? "medium"
           : "low";
 
+    const isDoublePair =
+      pairMerge.paired &&
+      (dominantColor === "green" || categoryHint === "socket");
+    // Low/medium pick → draft only; unknown colorHint → confirm; double socket → confirm.
+    const needsReview =
+      confidence === "low" ||
+      isDoublePair ||
+      categoryHint === "unknown" ||
+      !categoryHint ||
+      !colorOk;
+
+    // Outline strictly from the accepted cluster's own pixels — never from a
+    // bbox re-scan that could pull in same-color text/dimension ink nearby.
+    const clusterPoints = cluster.flatMap((c) => c.points ?? []);
     const outlinePolygon =
-      extractSymbolOutlinePolygon(
-        imageData,
-        { minX, minY, maxX, maxY },
-        pageWidth,
-        pageHeight
-      ) ?? undefined;
+      outlinePolygonFromInkPoints(clusterPoints, pageWidth, pageHeight) ?? undefined;
 
     return {
       found: true,
       rawSearchBbox,
+      symbolMaskBbox,
       tightSymbolBbox,
       center: {
         x: clamp01((minX + maxX) / 2 / pageWidth),
@@ -620,8 +865,11 @@ export function pickSymbolFromClick(input: PickSymbolFromClickInput): PickSymbol
       },
       colorHint: dominantColor,
       components: cluster,
+      rejectedComponents: finalRejected,
       confidence,
-      needsReview: confidence === "low",
+      needsReview,
+      reason: isDoublePair ? "composite_double_socket" : "symbol_mask",
+      suggestedNormalizedPoint: isDoublePair ? "double_socket_point" : undefined,
       outlinePolygon,
     };
   }
@@ -634,19 +882,21 @@ export function pickSymbolFromClick(input: PickSymbolFromClickInput): PickSymbol
 
   return {
     found: false,
-    rawSearchBbox: {
+    rawSearchBbox: lastRawSearchBbox ?? {
       x: clamp01(x0 / pageWidth),
       y: clamp01(y0 / pageHeight),
       width: clamp01((x1 - x0) / pageWidth),
       height: clamp01((y1 - y0) / pageHeight),
     },
+    symbolMaskBbox: null,
     tightSymbolBbox: null,
     center: { x: clamp01(cx / pageWidth), y: clamp01(cy / pageHeight) },
     colorHint: "unknown",
     components: [],
+    rejectedComponents: lastRejected,
     confidence: "low",
     needsReview: true,
-    reason: "no_symbol_pixels",
+    reason: lastRejected.length > 0 ? "no_clean_symbol" : "no_symbol_pixels",
   };
 }
 
@@ -657,11 +907,20 @@ export type NearbySymbolCandidate = {
   colorHint: VisualColorHint | "dark" | "unknown";
   pixelBbox: { minX: number; minY: number; maxX: number; maxY: number };
   distancePx: number;
+  /** Normalized outline of this candidate's own ink (displayed page space). */
+  outlinePolygon?: Array<{ x: number; y: number }>;
+  /** Exact ink pixels (device px) — merged outlines when assembling a symbol. */
+  inkPoints?: Array<{ x: number; y: number }>;
+  /**
+   * Not a stand-alone match (e.g. dark stroke for a colored category) —
+   * offered only as a building block when assembling the full symbol.
+   */
+  partOnly?: boolean;
 };
 
 /**
  * List separate symbol candidates near a click — for dense-plan loupe.
- * Neighbouring marks stay separate; only tiny same-symbol strokes are glued.
+ * Only symbol-like components (not text/wall/dimension/lines).
  */
 export function listNearbySymbolCandidates(
   input: PickSymbolFromClickInput
@@ -676,7 +935,6 @@ export function listNearbySymbolCandidates(
   } = input;
   const opts = input.options ?? {};
   const radius = opts.maxSearchRadiusPx ?? 56;
-  const partGapPx = opts.mergeGapPx ?? 4;
   const maxAspectRatio = opts.maxAspectRatio ?? 8;
   const minComponentPixels = opts.minComponentPixels ?? 3;
   const maxSymbolSizePx = opts.maxSymbolSizePx ?? 56;
@@ -702,18 +960,21 @@ export function listNearbySymbolCandidates(
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
       const idx = (y * pageWidth + x) * 4;
+      // Dark ink always forms components — usable as symbol building blocks.
       mask[(y - y0) * winW + (x - x0)] = maskValueForPixel(
         imageData.data[idx] ?? 255,
         imageData.data[idx + 1] ?? 255,
         imageData.data[idx + 2] ?? 255,
         preferred,
-        allowDark
+        true
       );
     }
   }
 
   const visited = new Uint8Array(winW * winH);
-  const blobs: Blob[] = [];
+  const acceptedBlobs: Blob[] = [];
+  /** Rejected ONLY for color — offered as parts when assembling a symbol. */
+  const partBlobs: Blob[] = [];
   for (let start = 0; start < winW * winH; start++) {
     if (mask[start] === 0 || visited[start]) continue;
     const blob = floodComponent(mask, visited, winW, winH, start, mask[start]!);
@@ -722,16 +983,28 @@ export function listNearbySymbolCandidates(
     blob.maxX += x0;
     blob.minY += y0;
     blob.maxY += y0;
-    if (isLongLineBlob(blob, maxAspectRatio)) continue;
-    const bw = blob.maxX - blob.minX + 1;
-    const bh = blob.maxY - blob.minY + 1;
-    if (bw > maxSymbolSizePx || bh > maxSymbolSizePx) continue;
-    blobs.push(blob);
+    blob.points = blob.points?.map((p) => ({ x: p.x + x0, y: p.y + y0 }));
+    const verdict = analyzeComponent(
+      blob,
+      cx,
+      cy,
+      maxAspectRatio,
+      maxSymbolSizePx,
+      preferred,
+      allowDark
+    );
+    if (verdict.rejectReason === "wrong_color") {
+      partBlobs.push(blob);
+      continue;
+    }
+    if (verdict.rejectReason) continue;
+    acceptedBlobs.push(blob);
   }
 
+  // Loupe lists separate marks; only glue true double-socket pairs when requested.
   const workBlobs = doSocketPair
-    ? mergeHorizontalSocketPairs(blobs, maxSymbolSizePx)
-    : blobs;
+    ? mergeSocketPairs(acceptedBlobs, maxSymbolSizePx).blobs
+    : acceptedBlobs;
 
   const used = new Set<Blob>();
   const ordered = workBlobs
@@ -740,6 +1013,7 @@ export function listNearbySymbolCandidates(
 
   const candidates: NearbySymbolCandidate[] = [];
   let n = 0;
+  const fragmentGapPx = 2;
   for (const seed of ordered) {
     if (used.has(seed)) continue;
     const cluster = [seed];
@@ -754,16 +1028,17 @@ export function listNearbySymbolCandidates(
           candidate.color === "dark" ||
           seed.color === "dark";
         if (!sameColor) continue;
-        if (!cluster.some((c) => blobsOverlapOrNear(c, candidate, partGapPx))) continue;
-        if (!doSocketPair) {
-          const seedW = seed.maxX - seed.minX + 1;
-          const seedH = seed.maxY - seed.minY + 1;
-          const candW = candidate.maxX - candidate.minX + 1;
-          const candH = candidate.maxY - candidate.minY + 1;
-          const seedArea = seedW * seedH;
-          const candArea = candW * candH;
-          if (candArea >= seedArea * 0.4 && candArea <= seedArea * 2.5) continue;
+        if (!cluster.some((c) => blobsOverlapOrNear(c, candidate, fragmentGapPx))) {
+          continue;
         }
+        const seedW = seed.maxX - seed.minX + 1;
+        const seedH = seed.maxY - seed.minY + 1;
+        const candW = candidate.maxX - candidate.minX + 1;
+        const candH = candidate.maxY - candidate.minY + 1;
+        const seedArea = seedW * seedH;
+        const candArea = candW * candH;
+        // Peer-sized = separate loupe option (user picks which parts belong).
+        if (candArea >= seedArea * 0.4 && candArea <= seedArea * 2.5) continue;
         const nextMinX = Math.min(...cluster.map((c) => c.minX), candidate.minX);
         const nextMinY = Math.min(...cluster.map((c) => c.minY), candidate.minY);
         const nextMaxX = Math.max(...cluster.map((c) => c.maxX), candidate.maxX);
@@ -792,6 +1067,7 @@ export function listNearbySymbolCandidates(
       maxY = Math.max(maxY, c.maxY);
       if (c.color !== "dark") color = c.color;
     }
+    const clusterPoints = cluster.flatMap((c) => c.points ?? []);
     candidates.push({
       id: `cand_${n++}`,
       bbox: {
@@ -814,12 +1090,47 @@ export function listNearbySymbolCandidates(
         pixels: 0,
         color: seed.color,
       }),
+      outlinePolygon:
+        outlinePolygonFromInkPoints(clusterPoints, pageWidth, pageHeight) ?? undefined,
+      inkPoints: clusterPoints,
     });
   }
 
-  return candidates.sort((a, b) => a.distancePx - b.distancePx);
+  // Wrong-color compact strokes = building blocks for manual symbol assembly.
+  for (const blob of partBlobs) {
+    candidates.push({
+      id: `part_${n++}`,
+      bbox: blobToBbox(blob, pageWidth, pageHeight, 1),
+      center: {
+        x: clamp01((blob.minX + blob.maxX) / 2 / pageWidth),
+        y: clamp01((blob.minY + blob.maxY) / 2 / pageHeight),
+      },
+      colorHint: blob.color,
+      pixelBbox: {
+        minX: blob.minX,
+        minY: blob.minY,
+        maxX: blob.maxX,
+        maxY: blob.maxY,
+      },
+      distancePx: distToBlobEdge(cx, cy, blob),
+      outlinePolygon:
+        outlinePolygonFromInkPoints(blob.points ?? [], pageWidth, pageHeight) ??
+        undefined,
+      inkPoints: blob.points,
+      partOnly: true,
+    });
+  }
+
+  // Full matches first (nearest first), assembly parts after.
+  return candidates.sort((a, b) => {
+    if (Boolean(a.partOnly) !== Boolean(b.partOnly)) return a.partOnly ? 1 : -1;
+    return a.distancePx - b.distancePx;
+  });
 }
 
+/** Dense = two or more full candidate marks near the click (parts don't count). */
 export function isDenseSymbolClick(input: PickSymbolFromClickInput): boolean {
-  return listNearbySymbolCandidates(input).length >= 2;
+  return (
+    listNearbySymbolCandidates(input).filter((c) => !c.partOnly).length >= 2
+  );
 }

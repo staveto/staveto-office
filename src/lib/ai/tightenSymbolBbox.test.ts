@@ -48,6 +48,83 @@ describe("tightenSymbolBboxFromCrop", () => {
     expect(result.outsidePlan).toBe(false);
   });
 
+  it("rectangle over symbol + wall tightens to colored symbol only", () => {
+    const pageWidth = 200;
+    const pageHeight = 200;
+    // Rect covers a green socket AND a black wall line — wall must be ignored.
+    const rawBbox: EstimatorPositionBBox = { x: 0.1, y: 0.1, width: 0.5, height: 0.5 };
+    const imageData = makeImageData(pageWidth, pageHeight, (x, y) => {
+      const nx = x / pageWidth;
+      const ny = y / pageHeight;
+      const symbol = nx >= 0.3 && nx <= 0.34 && ny >= 0.3 && ny <= 0.34;
+      const wall = ny >= 0.14 && ny <= 0.16 && nx >= 0.1 && nx <= 0.6;
+      if (symbol) return [22, 163, 74, 255];
+      if (wall) return [40, 40, 40, 255];
+      return [252, 252, 252, 255];
+    });
+
+    const result = tightenSymbolBboxFromCrop(imageData, rawBbox, {
+      pageWidth,
+      pageHeight,
+    });
+
+    expect(result.reliable).toBe(true);
+    expect(result.tightBbox).not.toBeNull();
+    // Tight box wraps the green symbol only — not stretched up to the wall.
+    expect(result.tightBbox!.y).toBeGreaterThan(0.25);
+    expect(result.tightBbox!.width).toBeLessThan(0.1);
+  });
+
+  it("explicit colorGroup ignores other colored ink", () => {
+    const pageWidth = 200;
+    const pageHeight = 200;
+    const rawBbox: EstimatorPositionBBox = { x: 0.1, y: 0.1, width: 0.5, height: 0.5 };
+    const imageData = makeImageData(pageWidth, pageHeight, (x, y) => {
+      const nx = x / pageWidth;
+      const ny = y / pageHeight;
+      const green = nx >= 0.3 && nx <= 0.34 && ny >= 0.3 && ny <= 0.34;
+      const orangeText = ny >= 0.18 && ny <= 0.21 && nx >= 0.12 && nx <= 0.5;
+      if (green) return [22, 163, 74, 255];
+      if (orangeText) return [234, 88, 12, 255];
+      return [252, 252, 252, 255];
+    });
+
+    const result = tightenSymbolBboxFromCrop(imageData, rawBbox, {
+      pageWidth,
+      pageHeight,
+      colorGroup: "green",
+    });
+
+    expect(result.reliable).toBe(true);
+    expect(result.tightBbox!.y).toBeGreaterThan(0.25);
+  });
+
+  it("same-color text label inside the rect never widens the tight bbox", () => {
+    const pageWidth = 200;
+    const pageHeight = 200;
+    const rawBbox: EstimatorPositionBBox = { x: 0.1, y: 0.1, width: 0.5, height: 0.5 };
+    // Green socket + wide green dimension text — both the SAME color.
+    const imageData = makeImageData(pageWidth, pageHeight, (x, y) => {
+      const nx = x / pageWidth;
+      const ny = y / pageHeight;
+      const symbol = nx >= 0.3 && nx <= 0.35 && ny >= 0.32 && ny <= 0.37;
+      const greenText = ny >= 0.15 && ny <= 0.185 && nx >= 0.12 && nx <= 0.5;
+      if (symbol || greenText) return [22, 163, 74, 255];
+      return [252, 252, 252, 255];
+    });
+
+    const result = tightenSymbolBboxFromCrop(imageData, rawBbox, {
+      pageWidth,
+      pageHeight,
+    });
+
+    expect(result.reliable).toBe(true);
+    expect(result.tightBbox).not.toBeNull();
+    // Box wraps only the symbol — the text row above stays out.
+    expect(result.tightBbox!.y).toBeGreaterThan(0.25);
+    expect(result.tightBbox!.width).toBeLessThan(0.12);
+  });
+
   it("flags empty crop as needs review, not outside_plan", () => {
     const pageWidth = 100;
     const pageHeight = 100;

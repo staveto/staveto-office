@@ -47,9 +47,15 @@ import {
   summarizeMarkingProgress,
   confirmSimilarCandidateMarks,
   removeSimilarCandidateMarks,
+  planRemoveEvidenceAnchor,
+  removeCountedMarkKeepPosition,
+  removeEvidenceAnchorsBulk,
+  removeCandidateAnchorsBulk,
 } from "@/lib/ai/estimatorPositions";
 import {
+  createManualEstimatorPosition,
   createPositionFromSymbolDraft,
+  type SymbolDraftCategory,
   type SymbolDraftClassification,
 } from "@/lib/ai/unclassifiedSymbolDraft";
 import type {
@@ -589,7 +595,8 @@ export function useEstimatorPositions(input: {
         page: number;
         bbox: EstimatorPositionBBox;
         matchScore: number;
-      }>
+      }>,
+      options?: { referenceBbox?: EstimatorPositionBBox; prefiltered?: boolean }
     ) => {
       setPositions((prev) =>
         prev.map((p) => {
@@ -601,7 +608,8 @@ export function useEstimatorPositions(input: {
               fileName: fileName ?? "podklad.pdf",
               documentId: activeDocument?.id,
               fileId: activeDocument?.fileId,
-            }))
+            })),
+            options
           );
           if (next !== p) recordOverride(next);
           return next;
@@ -666,6 +674,24 @@ export function useEstimatorPositions(input: {
     [fileName, activeDocument, recordOverride]
   );
 
+  const createManualPosition = useCallback(
+    (input: {
+      label: string;
+      category?: SymbolDraftCategory;
+      quantity?: number;
+      unit?: EstimatorPosition["unit"];
+      roomName?: string;
+    }): EstimatorPosition => {
+      const position = createManualEstimatorPosition(input, positionsRef.current);
+      recordOverride(position);
+      setPositions((prev) => [...prev, position]);
+      setSelectedPositionId(position.id);
+      setSelectedAnchorId(null);
+      return position;
+    },
+    [recordOverride]
+  );
+
   const confirmSimilarCandidates = useCallback(
     (positionId: string) => {
       setPositions((prev) =>
@@ -699,11 +725,84 @@ export function useEstimatorPositions(input: {
       setPositions((prev) =>
         prev.map((p) => {
           if (p.id !== positionId) return p;
-          const next = removeManualMarkFromPosition(p, anchorId);
+          if (!anchorId) {
+            const next = removeManualMarkFromPosition(p);
+            const withQty = applyMarkCountAsQuantity(next);
+            recordOverride(withQty);
+            return withQty;
+          }
+          const plan = planRemoveEvidenceAnchor(p, anchorId);
+          if (!plan) return p;
+          if (plan.kind === "only_occurrence") {
+            const next = removeCountedMarkKeepPosition(p, anchorId);
+            recordOverride(next);
+            return next;
+          }
+          recordOverride(plan.position);
+          return plan.position;
+        })
+      );
+    },
+    [recordOverride]
+  );
+
+  const removeAnchorsBulk = useCallback(
+    (refs: Array<{ positionId: string; anchorId: string }>) => {
+      setPositions((prev) => {
+        const next = removeEvidenceAnchorsBulk(prev, refs);
+        for (const p of next) {
+          const before = prev.find((x) => x.id === p.id);
+          if (before && before !== p) recordOverride(p);
+        }
+        return next;
+      });
+    },
+    [recordOverride]
+  );
+
+  const removeCandidatesBulk = useCallback(
+    (refs: Array<{ positionId: string; anchorId: string }>) => {
+      setPositions((prev) => {
+        const next = removeCandidateAnchorsBulk(prev, refs);
+        for (const p of next) {
+          const before = prev.find((x) => x.id === p.id);
+          if (before && before !== p) recordOverride(p);
+        }
+        return next;
+      });
+    },
+    [recordOverride]
+  );
+
+  const applyRemoveAnchorPlan = useCallback(
+    (
+      positionId: string,
+      anchorId: string,
+      choice: "mark" | "position" | "cancel"
+    ) => {
+      if (choice === "cancel") return;
+      if (choice === "position") {
+        setPositions((prev) =>
+          prev.map((p) => {
+            if (p.id !== positionId) return p;
+            const next = ignorePosition(p, "Odstránené z kontroly značiek.");
+            recordOverride(next);
+            return next;
+          })
+        );
+        setSelectedPositionId(null);
+        setSelectedAnchorId(null);
+        return;
+      }
+      setPositions((prev) =>
+        prev.map((p) => {
+          if (p.id !== positionId) return p;
+          const next = removeCountedMarkKeepPosition(p, anchorId);
           recordOverride(next);
           return next;
         })
       );
+      setSelectedAnchorId(null);
     },
     [recordOverride]
   );
@@ -810,9 +909,18 @@ export function useEstimatorPositions(input: {
     addSimilarCandidateMarks,
     addAndConfirmSimilarMarks,
     createPositionFromDraft,
+    createManualPosition,
     confirmSimilarCandidates,
     dismissSimilarCandidates,
     removeManualMark,
+    removeAnchorsBulk,
+    removeCandidatesBulk,
+    applyRemoveAnchorPlan,
+    planRemoveEvidenceAnchor: (positionId: string, anchorId: string) => {
+      const p = positionsRef.current.find((x) => x.id === positionId);
+      if (!p) return null;
+      return planRemoveEvidenceAnchor(p, anchorId);
+    },
     renameLabel,
     useMarkCountAsQuantity,
     setCategory,

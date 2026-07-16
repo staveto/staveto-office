@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildPdfDisplayMarkers,
   DEFAULT_MARKER_RADIUS_PX,
+  isCandidateAnchorId,
   markerCenterFromAnnotation,
+  markerSizePx,
   shouldRenderTechnicalBbox,
 } from "./pdfDisplayMarkers";
 import type { PdfOverlayAnnotation } from "@/types/estimatorPositions";
@@ -59,6 +61,21 @@ describe("pdfDisplayMarkers", () => {
     expect(shouldRenderTechnicalBbox(true)).toBe(true);
   });
 
+  it("never uses rawSelectionBbox as display marker when tightSymbolBbox exists", () => {
+    const raw = { x: 0.05, y: 0.05, width: 0.5, height: 0.5 };
+    const tight = { x: 0.24, y: 0.24, width: 0.02, height: 0.02 };
+    const a = ann({
+      id: "ann_raw",
+      bbox: raw,
+      rawSelectionBbox: raw,
+      tightSymbolBbox: tight,
+    });
+    const [marker] = buildPdfDisplayMarkers([a]);
+    expect(marker!.displayBbox).toEqual(tight);
+    expect(marker!.displayBbox).not.toEqual(raw);
+    expect(marker!.center).toEqual({ x: 0.25, y: 0.25 });
+  });
+
   it("omits outside-plan marks from display markers", () => {
     const annotations = [
       ann({
@@ -103,5 +120,20 @@ describe("pdfDisplayMarkers", () => {
     for (const m of markers) {
       expect(m.radius).toBe(DEFAULT_MARKER_RADIUS_PX);
     }
+  });
+
+  it("flags sim_ anchors as candidates and sizes markers", () => {
+    expect(isCandidateAnchorId("sim_abc")).toBe(true);
+    expect(isCandidateAnchorId("mark_sim_abc")).toBe(false);
+    expect(markerSizePx("medium").minOutline).toBeGreaterThan(markerSizePx("small").minOutline);
+    expect(markerSizePx("large").minOutline).toBeGreaterThan(markerSizePx("medium").minOutline);
+    const [marker] = buildPdfDisplayMarkers([
+      ann({
+        id: "ann_sim",
+        evidenceAnchorId: "sim_x1",
+        bbox: { x: 0.2, y: 0.2, width: 0.02, height: 0.02 },
+      }),
+    ]);
+    expect(marker.isCandidate).toBe(true);
   });
 });

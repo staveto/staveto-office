@@ -18,6 +18,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  Hand,
   Minus,
   Plus,
   ChevronLeft,
@@ -33,8 +34,10 @@ import { isAiEstimatorDebugEnabled, logAiEstimatorDebug } from "@/lib/ai/aiEstim
 import {
   buildPdfDisplayMarkers,
   DEFAULT_MARKER_RADIUS_PX,
-  MIN_SYMBOL_OUTLINE_PX,
+  colorGroupForOverlayKey,
   markerCenterFromAnnotation,
+  markerSizePx,
+  type MarkerSizeOption,
   shouldRenderTechnicalBbox,
 } from "@/lib/ai/pdfDisplayMarkers";
 import {
@@ -44,11 +47,13 @@ import {
 import { classifyPlanClick } from "@/lib/ai/planBoundary";
 import {
   extractSymbolOutlinePolygon,
+  outlinePolygonFromInkPoints,
   pixelBboxFromNormalized,
   buildTintedSymbolMask,
   hexToRgb,
 } from "@/lib/ai/symbolShapeOutline";
 import {
+  categoryToColorPreference,
   estimatorCategoryToPickHint,
   listNearbySymbolCandidates,
   pickOptionsForContext,
@@ -261,6 +266,10 @@ type Props = {
   onMarkDeleted?: (positionId: string, anchorId: string) => void;
   selectedAnchorId?: string | null;
   onAnchorClick?: (anchorId: string) => void;
+  /** Ctrl/Cmd+click marker toggles multi-select. */
+  onToggleBulkSelect?: (positionId: string, anchorId: string) => void;
+  /** Exit marking mode (Esc). */
+  onMarkModeChange?: (on: boolean) => void;
   heightClassName?: string;
 };
 
@@ -285,6 +294,8 @@ export function EstimatorPdfEvidenceViewer({
   onMarkDeleted,
   selectedAnchorId,
   onAnchorClick,
+  onToggleBulkSelect,
+  onMarkModeChange,
   heightClassName = "h-[520px]",
 }: Props) {
   const { t } = useI18n();
@@ -298,6 +309,11 @@ export function EstimatorPdfEvidenceViewer({
   /** Debounced zoom used for expensive pdf.js rasterization. */
   const [renderZoom, setRenderZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
+  const [markerSize, setMarkerSize] = useState<MarkerSizeOption>("medium");
+  const [panMode, setPanMode] = useState(false);
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const panningRef = useRef(false);
+  const panLastRef = useRef<{ x: number; y: number } | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [loadErrorDetail, setLoadErrorDetail] = useState<string | null>(null);
   const [rendering, setRendering] = useState(false);
@@ -307,18 +323,22 @@ export function EstimatorPdfEvidenceViewer({
   const [drawRect, setDrawRect] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(
     null
   );
+  /** Ink hulls computed live for marks without a stored polygon (displayed space). */
+  const [liveOutlines, setLiveOutlines] = useState<
+    Record<string, Array<{ x: number; y: number }>>
+  >({});
   /** Live tinted ink copies of marked symbols (shape, not frame). */
   const [shapeOverlays, setShapeOverlays] = useState<
     Array<{
       id: string;
+      positionId?: string;
+      evidenceAnchorId?: string;
       left: number;
       top: number;
       width: number;
       height: number;
       dataUrl: string;
-      opacity: number;
       glowColor: string;
-      selected: boolean;
     }>
   >([]);
   const [loupe, setLoupe] = useState<{
@@ -331,6 +351,8 @@ export function EstimatorPdfEvidenceViewer({
   /** Prevent double-commit from rapid double-click. */
   const markCooldownUntilRef = useRef(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  /** Cached PDF page pixels for marker overlays (invalidated on page/zoom/rotation). */
+  const pagePixelsRef = useRef<{ key: string; data: ImageData } | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
@@ -472,15 +494,36 @@ export function EstimatorPdfEvidenceViewer({
     }
     let cancelled = false;
     try {
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const pixelKey = `${page}|${renderZoom}|${rotation}|${canvas.width}x${canvas.height}`;
+      let imageData = pagePixelsRef.current?.key === pixelKey
+        ? pagePixelsRef.current.data
+        : null;
+      if (!imageData) {
+        imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        pagePixelsRef.current = { key: pixelKey, data: imageData };
+      }
       const scaleX = canvasSize.width / canvas.width;
       const scaleY = canvasSize.height / canvas.height;
       const next: typeof shapeOverlays = [];
+      const nextOutlines: Record<string, Array<{ x: number; y: number }>> = {};
 
       for (const m of pageMarkers) {
         const box = m.displayBbox ?? m.tightSymbolBbox;
         if (!box) continue;
         const shown = rotateBBox(box, rotation);
+        // Only this category's ink color — walls/dimensions never in the shape.
+        const inkColorGroup = colorGroupForOverlayKey(m.colorKey);
+        // Live ink hull for marks without a stored polygon — shape, not frame.
+        if (!m.polygon || m.polygon.length < 3) {
+          const hull = extractSymbolOutlinePolygon(
+            imageData,
+            pixelBboxFromNormalized(shown, canvas.width, canvas.height),
+            canvas.width,
+            canvas.height,
+            { colorGroup: inkColorGroup }
+          );
+          if (hull && hull.length >= 3) nextOutlines[m.id] = hull;
+        }
         // Tiny pad only — dense plans must not pull neighbour ink into the mask.
         const pad = 0.0015;
         const expanded = {
@@ -489,24 +532,8 @@ export function EstimatorPdfEvidenceViewer({
           width: Math.min(1 - Math.max(0, shown.x - pad), shown.width + pad * 2),
           height: Math.min(1 - Math.max(0, shown.y - pad), shown.height + pad * 2),
         };
-        const isSelectedPos = m.positionId === selectedPositionId;
-        const isHighlighted =
-          Boolean(m.positionId) && highlightedPositionIds.includes(m.positionId!);
-        const isSelectedAnchor = selectedAnchorId
-          ? m.evidenceAnchorId === selectedAnchorId
-          : m.selected;
-        const selected = isSelectedAnchor || isSelectedPos || isHighlighted;
-        const focusActive =
-          !showAllMarks &&
-          (Boolean(selectedPositionId) ||
-            Boolean(selectedAnchorId) ||
-            highlightedPositionIds.length > 0);
-        const dimmed =
-          focusActive &&
-          !isSelectedPos &&
-          !isHighlighted &&
-          !(selectedAnchorId && isSelectedAnchor);
-        const glowColor = LAYER_STYLE[m.colorKey].border;
+        // Neutral navy tint — category neon is only on the ring outline (visibility).
+        const glowColor = "#1D376A";
         const tint = hexToRgb(glowColor);
         const mask = buildTintedSymbolMask(
           imageData,
@@ -514,10 +541,9 @@ export function EstimatorPdfEvidenceViewer({
           canvas.width,
           canvas.height,
           tint,
-          { padPx: 2, alpha: selected ? 255 : 230 }
+          { padPx: 2, alpha: 200, colorGroup: inkColorGroup }
         );
         if (!mask) {
-          // No ink found — tiny center pin (never a rectangle frame).
           const cx = (shown.x + shown.width / 2) * canvasSize.width;
           const cy = (shown.y + shown.height / 2) * canvasSize.height;
           const pin = 7;
@@ -529,48 +555,48 @@ export function EstimatorPdfEvidenceViewer({
             pctx.beginPath();
             pctx.arc(pin, pin, pin - 1, 0, Math.PI * 2);
             pctx.fillStyle = glowColor;
-            pctx.globalAlpha = 0.95;
+            pctx.globalAlpha = 0.9;
             pctx.fill();
             pctx.lineWidth = 2;
             pctx.strokeStyle = "#fff";
             pctx.stroke();
             next.push({
               id: m.id,
+              positionId: m.positionId,
+              evidenceAnchorId: m.evidenceAnchorId,
               left: cx - pin,
               top: cy - pin,
               width: pin * 2,
               height: pin * 2,
               dataUrl: pinCanvas.toDataURL("image/png"),
-              opacity: dimmed ? 0.3 : 1,
               glowColor,
-              selected,
             });
           }
           continue;
         }
         next.push({
           id: m.id,
+          positionId: m.positionId,
+          evidenceAnchorId: m.evidenceAnchorId,
           left: mask.canvasX * scaleX,
           top: mask.canvasY * scaleY,
           width: mask.width * scaleX,
           height: mask.height * scaleY,
           dataUrl: mask.dataUrl,
-          opacity: dimmed ? 0.3 : 1,
           glowColor,
-          selected,
         });
       }
 
       if (draftMarker && draftMarker.page === page && draftMarker.bbox) {
         const shown = rotateBBox(draftMarker.bbox, rotation);
-        const draftGlow = "#FFEA00";
+        const draftGlow = "#E95F2A";
         const mask = buildTintedSymbolMask(
           imageData,
           pixelBboxFromNormalized(shown, canvas.width, canvas.height),
           canvas.width,
           canvas.height,
           hexToRgb(draftGlow),
-          { padPx: 5, alpha: 255 }
+          { padPx: 5, alpha: 220 }
         );
         if (mask) {
           next.push({
@@ -580,32 +606,25 @@ export function EstimatorPdfEvidenceViewer({
             width: mask.width * scaleX,
             height: mask.height * scaleY,
             dataUrl: mask.dataUrl,
-            opacity: 1,
             glowColor: draftGlow,
-            selected: true,
           });
         }
       }
 
-      if (!cancelled) setShapeOverlays(next);
+      if (!cancelled) {
+        setShapeOverlays(next);
+        setLiveOutlines(nextOutlines);
+      }
     } catch {
-      if (!cancelled) setShapeOverlays([]);
+      if (!cancelled) {
+        setShapeOverlays([]);
+        setLiveOutlines({});
+      }
     }
     return () => {
       cancelled = true;
     };
-  }, [
-    pageMarkers,
-    draftMarker,
-    page,
-    canvasSize,
-    rotation,
-    rendering,
-    selectedPositionId,
-    selectedAnchorId,
-    highlightedPositionIds,
-    showAllMarks,
-  ]);
+  }, [pageMarkers, draftMarker, page, canvasSize, rotation, renderZoom, rendering]);
 
   const layersInUse = useMemo(() => {
     const used = new Set(annotations.map((a) => a.colorKey));
@@ -727,7 +746,9 @@ export function EstimatorPdfEvidenceViewer({
     const clickBox = clickFallbackBbox(storedNorm);
     const boundary = classifyPlanClick(storedNorm);
 
-    if (boundary.excludeFromTakeoff) {
+    // True page-outside only — legend/table still runs symbol pick so we can
+    // learn a project key without counting a floor-plan occurrence.
+    if (boundary.status === "outside_plan" && boundary.excludeFromTakeoff) {
       onOutsidePlanMark?.();
       onMarkPlaced(page, clickBox, undefined, {
         rawSelectionBbox: clickBox,
@@ -760,8 +781,10 @@ export function EstimatorPdfEvidenceViewer({
         normalizedPoint,
         options: pickOpts,
       });
-      // Dense detail → interactive loupe so the user picks the exact mark.
-      if (forceLoupe || candidates.length >= 2) {
+      // Dense detail → interactive loupe so the user picks/assembles the exact
+      // mark. Part-only building blocks never open the loupe by themselves.
+      const fullCandidates = candidates.filter((c) => !c.partOnly);
+      if (forceLoupe || fullCandidates.length >= 2) {
         setLoupe({
           imageData,
           centerCanvasPx: canvasPt,
@@ -830,13 +853,15 @@ export function EstimatorPdfEvidenceViewer({
           outlineDisplayed = picked.outlinePolygon;
         }
       }
-      if (!tightStored) {
-        colorHint = picked?.colorHint;
-        confidence = picked?.confidence ?? "low";
-      }
     }
 
-    const bbox = tightStored ?? clickBox;
+    // Click with no detectable symbol → do not create an item (rectangle tool still works).
+    if (!tightStored) {
+      onPickFailed?.();
+      return;
+    }
+
+    const bbox = tightStored;
     if (!outlineDisplayed && imageData) {
       const displayBox = rotateBBox(bbox, rotation);
       outlineDisplayed =
@@ -853,42 +878,66 @@ export function EstimatorPdfEvidenceViewer({
         ? "in_legend_or_table"
         : boundary.status === "boundary_uncertain"
           ? "boundary_uncertain"
-          : tightStored && !needsReview
+          : !needsReview
             ? "confirmed"
             : "needs_review";
 
     onMarkPlaced(page, bbox, outlineStored, {
       rawSelectionBbox: clickBox,
-      tightSymbolBbox: tightStored ?? bbox,
-      needsReview: !tightStored || needsReview,
+      tightSymbolBbox: tightStored,
+      needsReview: needsReview || boundary.excludeFromTakeoff,
       markStatus,
       cropId: `crop_click_${Date.now().toString(36)}`,
       colorHint,
       confidence,
       polygon: outlineStored,
+      outsidePlan: boundary.excludeFromTakeoff,
     });
   };
 
-  const commitMarkFromCandidate = (candidate: NearbySymbolCandidate) => {
-    if (!onMarkPlaced || !loupe) return;
+  /** User assembled the symbol from one or more parts — commit ONE mark. */
+  const commitMarkFromCandidates = (selected: NearbySymbolCandidate[]) => {
+    if (!onMarkPlaced || !loupe || selected.length === 0) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const storedBox = unrotateBBox(candidate.bbox, rotation);
+
+    let minX = 1;
+    let minY = 1;
+    let maxX = 0;
+    let maxY = 0;
+    for (const c of selected) {
+      minX = Math.min(minX, c.bbox.x);
+      minY = Math.min(minY, c.bbox.y);
+      maxX = Math.max(maxX, c.bbox.x + c.bbox.width);
+      maxY = Math.max(maxY, c.bbox.y + c.bbox.height);
+    }
+    const displayedUnion: EstimatorPositionBBox = {
+      x: minX,
+      y: minY,
+      width: Math.max(0, maxX - minX),
+      height: Math.max(0, maxY - minY),
+    };
+    const storedBox = unrotateBBox(displayedUnion, rotation);
+
+    // One outline around ALL selected parts — exact ink, never a bbox re-scan.
+    const allInkPoints = selected.flatMap((c) => c.inkPoints ?? []);
     const outlineDisplayed =
-      extractSymbolOutlinePolygon(
-        loupe.imageData,
-        candidate.pixelBbox,
-        canvas.width,
-        canvas.height
-      ) ?? undefined;
+      outlinePolygonFromInkPoints(allInkPoints, canvas.width, canvas.height) ??
+      (selected.length === 1 ? selected[0]!.outlinePolygon : undefined) ??
+      undefined;
     const outlineStored = outlineDisplayed?.map((p) => unrotatePoint(p, rotation));
+
+    const colorHint =
+      selected.find((c) => c.colorHint !== "dark" && c.colorHint !== "unknown")
+        ?.colorHint ?? selected[0]!.colorHint;
+
     onMarkPlaced(page, storedBox, outlineStored, {
       rawSelectionBbox: storedBox,
       tightSymbolBbox: storedBox,
       needsReview: false,
       markStatus: "confirmed",
       cropId: `crop_loupe_${Date.now().toString(36)}`,
-      colorHint: candidate.colorHint,
+      colorHint,
       confidence: "high",
       polygon: outlineStored,
     });
@@ -937,9 +986,19 @@ export function EstimatorPdfEvidenceViewer({
     if (ctx && canvas && canvas.width > 0) {
       try {
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        // Expected color by category; else dominant colored ink inside the rect —
+        // walls/dimension linework never becomes the marked symbol.
+        const preferredColors = categoryToColorPreference(
+          estimatorCategoryToPickHint(categoryHint ?? "unknown"),
+          normalizedPoint
+        );
+        const single = preferredColors.length === 1 ? preferredColors[0] : null;
         const tightened = tightenSymbolBboxFromCrop(imageData, rawBbox, {
           pageWidth: canvas.width,
           pageHeight: canvas.height,
+          colorGroup:
+            single === "red" || single === "orange" || single === "green" ? single : null,
+          preferDominantColor: true,
         });
         meta = {
           rawSelectionBbox: rawBbox,
@@ -970,7 +1029,45 @@ export function EstimatorPdfEvidenceViewer({
     onMarkPlaced(page, rawBbox, stored, { rawSelectionBbox: rawBbox, needsReview: true });
   };
 
+  const panActive = panMode || spaceHeld;
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space" && !e.repeat) {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable)
+          return;
+        e.preventDefault();
+        setSpaceHeld(true);
+      }
+      if (e.key === "Escape") {
+        if (loupe) {
+          setLoupe(null);
+          return;
+        }
+        if (markMode) onMarkModeChange?.(false);
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") setSpaceHeld(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, [loupe, markMode, onMarkModeChange]);
+
   const handlePointerDown = (e: React.PointerEvent) => {
+    const wantPan = panActive || e.button === 1;
+    if (wantPan) {
+      e.preventDefault();
+      panningRef.current = true;
+      panLastRef.current = { x: e.clientX, y: e.clientY };
+      overlayRef.current?.setPointerCapture(e.pointerId);
+      return;
+    }
     if (!markMode || !onMarkPlaced) return;
     if ((e.target as HTMLElement).closest("[data-mark-ui], [data-marker-hit]")) return;
     const p = overlayPointFromEvent(e);
@@ -984,6 +1081,14 @@ export function EstimatorPdfEvidenceViewer({
   };
 
   const handlePointerMove = (e: React.PointerEvent) => {
+    if (panningRef.current && panLastRef.current && scrollRef.current) {
+      const dx = e.clientX - panLastRef.current.x;
+      const dy = e.clientY - panLastRef.current.y;
+      panLastRef.current = { x: e.clientX, y: e.clientY };
+      scrollRef.current.scrollLeft -= dx;
+      scrollRef.current.scrollTop -= dy;
+      return;
+    }
     if (!drawingRef.current || !rectStartRef.current || markingToolMode !== "draw_box") return;
     const p = overlayPointFromEvent(e);
     if (!p) return;
@@ -1008,11 +1113,24 @@ export function EstimatorPdfEvidenceViewer({
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
+    if (panningRef.current) {
+      panningRef.current = false;
+      panLastRef.current = null;
+      overlayRef.current?.releasePointerCapture(e.pointerId);
+      return;
+    }
     if (drawingRef.current) {
       overlayRef.current?.releasePointerCapture(e.pointerId);
       finishDrawing();
     }
   };
+
+  const sizePx = markerSizePx(markerSize);
+  const focusActive =
+    Boolean(selectedPositionId) ||
+    Boolean(selectedAnchorId) ||
+    highlightedPositionIds.length > 0 ||
+    !showAllMarks;
 
   if (!fileUrl) {
     return (
@@ -1095,6 +1213,40 @@ export function EstimatorPdfEvidenceViewer({
           >
             <RotateCw className="size-4" />
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={cn(
+              "h-8 gap-1 px-2 border-[#CBD5E1] text-[11px]",
+              panMode && "border-[#1D376A] bg-[#EEF2FF] text-[#1D376A]"
+            )}
+            onClick={() => setPanMode((v) => !v)}
+            aria-pressed={panMode}
+            title={t("projects.aiSetup.marking.panHint")}
+          >
+            <Hand className="size-3.5" />
+            {t("projects.aiSetup.marking.pan")}
+          </Button>
+          <div className="flex items-center gap-0.5 border-l border-[#E2E8F0] pl-2 ml-0.5">
+            {(["small", "medium", "large"] as const).map((s) => (
+              <button
+                key={s}
+                type="button"
+                className={cn(
+                  "rounded-full border px-1.5 py-0.5 text-[10px] font-bold uppercase",
+                  markerSize === s
+                    ? "border-[#1D376A] bg-[#1D376A] text-white"
+                    : "border-[#CBD5E1] bg-white text-[#64748B]"
+                )}
+                onClick={() => setMarkerSize(s)}
+                aria-pressed={markerSize === s}
+                title={t(`projects.aiSetup.marking.markerSize.${s}`)}
+              >
+                {s === "small" ? "S" : s === "large" ? "L" : "M"}
+              </button>
+            ))}
+          </div>
         </div>
         {doc && doc.numPages > 1 ? (
           <div className="flex items-center gap-1">
@@ -1220,15 +1372,35 @@ export function EstimatorPdfEvidenceViewer({
         </div>
       </div>
 
-      {/* Canvas + overlay */}
+      {markMode ? (
+        <div className="sticky top-0 z-20 border-b border-[#E95F2A]/50 bg-[#E95F2A] px-3 py-1.5 text-center text-xs font-bold text-white">
+          {markingToolMode === "click_symbol"
+            ? t("projects.aiSetup.marking.activeHintClick")
+            : t("projects.aiSetup.marking.activeHintBox")}
+          <span className="ml-2 font-normal opacity-90">
+            {t("projects.aiSetup.marking.activeHintEsc")}
+          </span>
+        </div>
+      ) : null}
+
+      {/* Canvas + overlay — overflow-auto keeps horizontal scrollbar at high zoom */}
       <div
         ref={scrollRef}
-        className={cn("relative overflow-auto bg-[#EEF2F7] p-2", heightClassName)}
+        className={cn(
+          "relative overflow-auto overscroll-contain bg-[#EEF2F7] p-2",
+          heightClassName
+        )}
         onWheel={(e) => {
-          if (!(e.ctrlKey || e.metaKey)) return;
-          e.preventDefault();
-          const delta = e.deltaY > 0 ? -0.15 : 0.15;
-          setZoom((z) => Math.min(4, Math.max(0.5, Number((z + delta).toFixed(2)))));
+          if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? -0.15 : 0.15;
+            setZoom((z) => Math.min(4, Math.max(0.5, Number((z + delta).toFixed(2)))));
+            return;
+          }
+          if (e.shiftKey && scrollRef.current) {
+            e.preventDefault();
+            scrollRef.current.scrollLeft += e.deltaY !== 0 ? e.deltaY : e.deltaX;
+          }
         }}
       >
         {!doc ? (
@@ -1249,11 +1421,16 @@ export function EstimatorPdfEvidenceViewer({
         >
         <div
           ref={overlayRef}
-          className={cn("relative", markMode && markingToolMode === "draw_box" && "cursor-crosshair", markMode && markingToolMode === "click_symbol" && "cursor-pointer")}
+          className={cn(
+            "relative",
+            panActive && "cursor-grab active:cursor-grabbing",
+            !panActive && markMode && markingToolMode === "draw_box" && "cursor-crosshair",
+            !panActive && markMode && markingToolMode === "click_symbol" && "cursor-crosshair"
+          )}
           style={{
             width: canvasSize.width || undefined,
             height: canvasSize.height || undefined,
-            touchAction: markMode ? "none" : undefined,
+            touchAction: markMode || panActive ? "none" : undefined,
             transform: liveScale !== 1 ? `scale(${liveScale})` : undefined,
             transformOrigin: "0 0",
           }}
@@ -1320,33 +1497,115 @@ export function EstimatorPdfEvidenceViewer({
               })
             : null}
 
-          {/* Real symbol ink copies — tinted pixels only, never a frame */}
-          {shapeOverlays.map((o) => (
-            <img
-              key={o.id}
-              src={o.dataUrl}
-              alt=""
-              aria-hidden
-              className="pointer-events-none absolute z-10"
-              style={{
-                left: o.left,
-                top: o.top,
-                width: o.width,
-                height: o.height,
-                opacity: o.opacity,
-                imageRendering: "pixelated",
-                // Fluorescent halo so marks stay readable on dense ink.
-                filter: o.selected
-                  ? `drop-shadow(0 0 1px #fff) drop-shadow(0 0 4px ${o.glowColor}) drop-shadow(0 0 10px ${o.glowColor})`
-                  : `drop-shadow(0 0 1px #fff) drop-shadow(0 0 3px ${o.glowColor})`,
-              }}
-              draggable={false}
-            />
-          ))}
+          {/* Subtle ink tint — selection/dimming applied in CSS (no PDF rerender). */}
+          {shapeOverlays.map((o) => {
+            const isSelectedPos = o.positionId === selectedPositionId;
+            const isHighlighted =
+              Boolean(o.positionId) && highlightedPositionIds.includes(o.positionId!);
+            const isSelectedAnchor = selectedAnchorId
+              ? o.evidenceAnchorId === selectedAnchorId
+              : false;
+            const selected = isSelectedAnchor || isSelectedPos || isHighlighted;
+            const dimmed =
+              focusActive &&
+              !isSelectedPos &&
+              !isHighlighted &&
+              !(selectedAnchorId && isSelectedAnchor) &&
+              o.id !== "draft_shape";
+            return (
+              <img
+                key={o.id}
+                src={o.dataUrl}
+                alt=""
+                aria-hidden
+                className="pointer-events-none absolute z-10"
+                style={{
+                  left: o.left,
+                  top: o.top,
+                  width: o.width,
+                  height: o.height,
+                  opacity: dimmed ? 0.22 : selected ? 1 : 0.75,
+                  imageRendering: "pixelated",
+                  filter: selected
+                    ? "drop-shadow(0 0 1px #fff) drop-shadow(0 0 3px #0F2A4D)"
+                    : "drop-shadow(0 0 1px #fff)",
+                }}
+                draggable={false}
+              />
+            );
+          })}
 
-          {/* Hit targets + labels for marks */}
+          {/* Symbol shape outlines — follow the ink hull, not a rectangle. */}
+          {canvasSize.width > 0 ? (
+            <svg
+              className="pointer-events-none absolute inset-0 z-16"
+              width={canvasSize.width}
+              height={canvasSize.height}
+              viewBox={`0 0 ${canvasSize.width} ${canvasSize.height}`}
+            >
+              {pageMarkers.map((m) => {
+                // Stored polygon (unrotated space) or live hull (already displayed space).
+                const storedPoly =
+                  m.polygon && m.polygon.length >= 3 ? m.polygon : null;
+                const livePoly = storedPoly ? null : liveOutlines[m.id] ?? null;
+                if (!storedPoly && !livePoly) return null;
+                const isSelectedPos = m.positionId === selectedPositionId;
+                const isHighlighted =
+                  Boolean(m.positionId) &&
+                  highlightedPositionIds.includes(m.positionId!);
+                const isSelectedAnchor = selectedAnchorId
+                  ? m.evidenceAnchorId === selectedAnchorId
+                  : m.selected;
+                const selected = isSelectedAnchor || isSelectedPos || isHighlighted;
+                const dimmed =
+                  focusActive &&
+                  !isSelectedPos &&
+                  !isHighlighted &&
+                  !(selectedAnchorId && isSelectedAnchor);
+                const isCandidate = Boolean(m.isCandidate);
+                const isWarning = Boolean(m.needsReview) && !isCandidate;
+                const stroke = selected
+                  ? "#E95F2A"
+                  : isWarning
+                    ? "#D97706"
+                    : isCandidate
+                      ? "#1D376A"
+                      : "#0F2A4D";
+                const strokeW = selected ? 2.5 : 1.75;
+                const displayPts = storedPoly
+                  ? storedPoly.map((p) => rotatePoint(p, rotation))
+                  : livePoly!;
+                const pts = displayPts
+                  .map(
+                    (p) =>
+                      `${(p.x * canvasSize.width).toFixed(1)},${(p.y * canvasSize.height).toFixed(1)}`
+                  )
+                  .join(" ");
+                return (
+                  <g key={`shape_${m.id}`} opacity={dimmed ? 0.28 : 1}>
+                    <polygon
+                      points={pts}
+                      fill="none"
+                      stroke="#fff"
+                      strokeWidth={strokeW + 2}
+                      strokeLinejoin="round"
+                    />
+                    <polygon
+                      points={pts}
+                      fill={selected ? "rgba(233,95,42,0.12)" : "none"}
+                      stroke={stroke}
+                      strokeWidth={strokeW}
+                      strokeDasharray={isCandidate ? "4 3" : undefined}
+                      strokeLinejoin="round"
+                    />
+                  </g>
+                );
+              })}
+            </svg>
+          ) : null}
+
+          {/* High-contrast rings: white halo + dark outline (not plan colors). */}
           {pageMarkers.map((m) => {
-            const style = LAYER_STYLE[m.colorKey];
             const box = m.displayBbox ?? m.tightSymbolBbox;
             const shownBox = box
               ? rotateBBox(box, rotation)
@@ -1360,12 +1619,16 @@ export function EstimatorPdfEvidenceViewer({
                     height: DEFAULT_MARK_FRAC,
                   };
                 })();
-            let left = shownBox.x * canvasSize.width;
-            let top = shownBox.y * canvasSize.height;
-            let w = Math.max(MIN_SYMBOL_OUTLINE_PX, shownBox.width * canvasSize.width);
-            let h = Math.max(MIN_SYMBOL_OUTLINE_PX, shownBox.height * canvasSize.height);
-            left -= (w - shownBox.width * canvasSize.width) / 2;
-            top -= (h - shownBox.height * canvasSize.height) / 2;
+            const left = shownBox.x * canvasSize.width - sizePx.pad;
+            const top = shownBox.y * canvasSize.height - sizePx.pad;
+            const w = Math.max(
+              sizePx.minOutline,
+              shownBox.width * canvasSize.width + sizePx.pad * 2
+            );
+            const h = Math.max(
+              sizePx.minOutline,
+              shownBox.height * canvasSize.height + sizePx.pad * 2
+            );
             const cx = left + w / 2;
             const isSelectedPos = m.positionId === selectedPositionId;
             const isHighlighted =
@@ -1374,53 +1637,86 @@ export function EstimatorPdfEvidenceViewer({
               ? m.evidenceAnchorId === selectedAnchorId
               : m.selected;
             const selected = isSelectedAnchor || isSelectedPos || isHighlighted;
-            const focusActive =
-              !showAllMarks &&
-              (Boolean(selectedPositionId) ||
-                Boolean(selectedAnchorId) ||
-                highlightedPositionIds.length > 0);
             const dimmed =
               focusActive &&
               !isSelectedPos &&
               !isHighlighted &&
               !(selectedAnchorId && isSelectedAnchor);
             const annId = m.evidenceAnchorId ? `ann_${m.evidenceAnchorId}` : m.id;
+            const isCandidate = Boolean(m.isCandidate);
+            const isWarning = Boolean(m.needsReview) && !isCandidate;
+            const stroke = selected
+              ? "#E95F2A"
+              : isWarning
+                ? "#D97706"
+                : isCandidate
+                  ? "#1D376A"
+                  : "#0F2A4D";
+            const strokeW = selected ? 3 : 2;
+            // Shape-outlined marks (polygon) get an invisible hit target only —
+            // the ink hull SVG above is the visible marker, not a rectangle.
+            const hasShape =
+              Boolean(m.polygon && m.polygon.length >= 3) ||
+              Boolean(liveOutlines[m.id] && liveOutlines[m.id]!.length >= 3);
 
             return (
               <span
                 key={`hit_${m.id}`}
                 className="contents"
-                style={{ opacity: dimmed ? 0.5 : 1 }}
+                style={{ opacity: dimmed ? 0.28 : 1 }}
               >
                 <button
                   type="button"
                   data-marker-hit
                   className={cn(
-                    "absolute z-15 bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0F2A4D]",
-                    selected && "z-20"
+                    "absolute z-15 rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#E95F2A]",
+                    !hasShape && "bg-white/10",
+                    selected && !hasShape && "z-20 bg-[#E95F2A]/15",
+                    selected && hasShape && "z-20"
                   )}
-                  style={{ left, top, width: w, height: h }}
+                  style={{
+                    left,
+                    top,
+                    width: w,
+                    height: h,
+                    ...(hasShape
+                      ? { background: "transparent" }
+                      : {
+                          boxShadow: `0 0 0 2px #fff, 0 0 0 ${2 + strokeW}px ${stroke}`,
+                          border: isCandidate
+                            ? `${strokeW}px dashed ${stroke}`
+                            : `${strokeW}px solid ${stroke}`,
+                        }),
+                  }}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (
+                      (e.ctrlKey || e.metaKey) &&
+                      onToggleBulkSelect &&
+                      m.positionId &&
+                      m.evidenceAnchorId
+                    ) {
+                      onToggleBulkSelect(m.positionId, m.evidenceAnchorId);
+                      return;
+                    }
                     if (m.evidenceAnchorId) onAnchorClick?.(m.evidenceAnchorId);
                     onAnnotationClick?.(m.positionId || null, annId);
                   }}
                   title={m.label}
                   aria-label={`${m.label} — ${layerLabel(m.colorKey)}`}
                 />
-                {selected ? (
-                  <span
-                    className="pointer-events-none absolute z-25 whitespace-nowrap rounded px-1 py-px text-[10px] font-bold text-white shadow"
-                    style={{
-                      left: cx,
-                      top: top - 16,
-                      transform: "translateX(-50%)",
-                      backgroundColor: style.chip,
-                    }}
-                  >
-                    {m.label}
-                  </span>
-                ) : null}
+                <span
+                  className="pointer-events-none absolute z-25 max-w-[120px] truncate rounded-sm px-1 py-px font-bold text-white shadow"
+                  style={{
+                    left: cx,
+                    top: Math.max(0, top - sizePx.label - 4),
+                    transform: "translateX(-50%)",
+                    fontSize: sizePx.label,
+                    backgroundColor: selected ? "#E95F2A" : "#0F2A4D",
+                  }}
+                >
+                  {m.label}
+                </span>
                 {selected && m.isManualMark && onMarkDeleted && m.evidenceAnchorId ? (
                   <button
                     type="button"
@@ -1457,7 +1753,7 @@ export function EstimatorPdfEvidenceViewer({
           pageHeight={loupe.imageData.height}
           centerCanvasPx={loupe.centerCanvasPx}
           candidates={loupe.candidates}
-          onPickCandidate={commitMarkFromCandidate}
+          onConfirmCandidates={commitMarkFromCandidates}
           onPickPoint={(pt) => {
             commitMarkAtCanvasPoint(pt, loupe.imageData);
             setLoupe(null);

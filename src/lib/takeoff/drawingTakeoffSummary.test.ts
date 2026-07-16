@@ -5,7 +5,10 @@ import {
   isQuoteCreateSecondary,
   primaryCtaForTakeoff,
 } from "./drawingTakeoffSummary";
-import { buildVisualTakeoffHref } from "@/services/takeoff/ensureDraftForVisualTakeoff";
+import {
+  buildEstimatorPdfMarkingHref,
+  buildVisualTakeoffHref,
+} from "@/services/takeoff/ensureDraftForVisualTakeoff";
 
 function occ(overrides: Partial<DrawingOccurrence>): DrawingOccurrence {
   return {
@@ -74,7 +77,7 @@ describe("drawingTakeoffSummary", () => {
 });
 
 describe("buildVisualTakeoffHref", () => {
-  it("builds takeoff URL with doc, mode and returnTo", () => {
+  it("builds legacy takeoff URL (not main AI CTA)", () => {
     expect(
       buildVisualTakeoffHref({
         projectId: "abc",
@@ -85,5 +88,17 @@ describe("buildVisualTakeoffHref", () => {
     ).toBe(
       "/app/projects/abc/takeoff?doc=doc1&returnTo=new-project-proposal&mode=quote-precheck"
     );
+  });
+});
+
+describe("buildEstimatorPdfMarkingHref", () => {
+  it("routes AI review visual CTA to setup=ai PDF marking, not /takeoff", () => {
+    const href = buildEstimatorPdfMarkingHref({
+      projectId: "abc",
+      step: "material",
+      tab: "pdf",
+    });
+    expect(href).toBe("/app/projects/abc?setup=ai&step=material&tab=pdf");
+    expect(href).not.toContain("/takeoff");
   });
 });

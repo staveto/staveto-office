@@ -8,12 +8,56 @@ import type {
   EstimatorPositionBBox,
   PdfDisplayMarker,
   PdfOverlayAnnotation,
+  PdfOverlayColorKey,
 } from "@/types/estimatorPositions";
+
+/**
+ * Expected symbol ink color per category layer — used to mask/outline only
+ * the symbol's own pixels (walls/dimension ink is never highlighted).
+ */
+export function colorGroupForOverlayKey(
+  key: PdfOverlayColorKey
+): "red" | "orange" | "green" | null {
+  switch (key) {
+    case "socket":
+      return "green";
+    case "switch":
+      return "red";
+    case "lighting":
+    case "led":
+      return "orange";
+    default:
+      return null;
+  }
+}
 
 export const DEFAULT_MARKER_RADIUS_PX = 9;
 export const SELECTED_MARKER_RADIUS_PX = 11;
 /** Minimum on-screen size of a symbol outline (CSS px) so tiny symbols stay clickable. */
 export const MIN_SYMBOL_OUTLINE_PX = 18;
+
+export type MarkerSizeOption = "small" | "medium" | "large";
+
+/** Hit-target / outline pad by marker size (CSS px). */
+export function markerSizePx(size: MarkerSizeOption = "medium"): {
+  minOutline: number;
+  pad: number;
+  label: number;
+} {
+  switch (size) {
+    case "small":
+      return { minOutline: 14, pad: 2, label: 9 };
+    case "large":
+      return { minOutline: 34, pad: 7, label: 11 };
+    default:
+      return { minOutline: 22, pad: 4, label: 10 };
+  }
+}
+
+/** Unconfirmed similar-symbol candidates use dashed markers. */
+export function isCandidateAnchorId(evidenceAnchorId?: string | null): boolean {
+  return Boolean(evidenceAnchorId?.startsWith("sim_"));
+}
 
 function bboxCenter(bbox: EstimatorPositionBBox): { x: number; y: number } {
   return {
@@ -68,6 +112,7 @@ export function buildPdfDisplayMarkers(
         needsReview: a.needsReview,
         selected: Boolean(a.selected),
         isManualMark: a.isManualMark,
+        isCandidate: isCandidateAnchorId(a.evidenceAnchorId),
         markStatus: a.markStatus,
         rawSelectionBbox: a.rawSelectionBbox,
         tightSymbolBbox: a.tightSymbolBbox,

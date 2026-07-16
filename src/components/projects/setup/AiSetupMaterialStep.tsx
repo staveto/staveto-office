@@ -11,6 +11,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardList,
+  Crosshair,
   Euro,
   FileSearch,
   Maximize2,
@@ -44,8 +45,12 @@ import { EstimatorMarkingChecklist } from "@/components/ai-estimator/EstimatorMa
 import {
   EstimatorPriceDrawer,
 } from "@/components/ai-estimator/EstimatorPriceDrawer";
+import { SelectedMarkDetailPreview } from "@/components/ai-estimator/SelectedMarkDetailPreview";
 import {
+  countSimilarPricelessPositions,
+  filterSimilarCandidateMarks,
   isManualMarkAnchor,
+  isSimilarCandidateAnchor,
   nextUnmarkedPositionId,
   similarCandidateAnchors,
 } from "@/lib/ai/estimatorPositions";
@@ -54,12 +59,24 @@ import {
   type SymbolDraftCategory,
   type SymbolDraftScope,
 } from "@/lib/ai/unclassifiedSymbolDraft";
+import {
+  detectPlanTradeProfile,
+  filterCategoriesByProfile,
+} from "@/lib/ai/planTradeProfile";
+import {
+  isLineSymbolKey,
+  resolveBestSymbolKey,
+  upsertLegendSymbolKey,
+  upsertUserLearnedSymbolKey,
+} from "@/lib/ai/projectSymbolKey";
 import { captureMarkCrop } from "@/lib/ai/markCropCapture";
 import { findSimilarSymbols } from "@/services/takeoff/similarSymbolDetectionService";
 import { identifyDrawingSymbol } from "@/services/ai/identifySymbolService";
 import type {
   EstimatorPosition,
+  EstimatorPositionBBox,
   EstimatorPositionUnit,
+  ProjectSymbolKeyEntry,
   UnclassifiedSymbolDraft,
 } from "@/types/estimatorPositions";
 import {
@@ -182,10 +199,16 @@ export function AiSetupMaterialStep({
   })).filter((g) => g.rows.length > 0);
 
   const positionsSummary = evidence?.summary;
-  const reviewPositions = useMemo(
-    () => (evidence?.positions ?? []).filter((p) => p.reviewStatus === "needs_review"),
-    [evidence?.positions]
-  );
+  const reviewPositions = useMemo(() => {
+    const all = evidence?.positions ?? [];
+    return all.filter((p) => {
+      if (p.reviewStatus === "ignored" || p.reviewStatus === "excluded") return false;
+      if (p.reviewStatus === "needs_review") return true;
+      if (p.priceStatus === "price_missing" && p.category !== "labor") return true;
+      if (similarCandidateAnchors(p).length > 0) return true;
+      return false;
+    });
+  }, [evidence?.positions]);
   const hasPdfTab = Boolean(evidence);
 
   const TABS: { id: MaterialSubTab; labelKey: string; badge?: number }[] = [
@@ -380,6 +403,7 @@ export function AiSetupMaterialStep({
         documents: evidence.documents,
         activeDocumentId: evidence.activeDocumentId,
         conflicts: evidence.conflicts,
+        requirePlanMark: false,
       }
     : null;
 
@@ -437,14 +461,29 @@ export function AiSetupMaterialStep({
             />
           ) : null}
         </div>
+        <p className="text-xs font-medium text-[#1D376A]">
+          {t("projects.aiSetup.positions.confirmedOnlyHint")}
+        </p>
         <div className="flex flex-wrap gap-2">
+          {hasPdfTab ? (
+            <Button
+              type="button"
+              className="bg-[#E95F2A] hover:bg-[#D94F1F] h-10 px-4 font-semibold"
+              onClick={() => onSubTabChange("pdf")}
+              data-testid="open-pdf-marking"
+            >
+              <FileSearch className="size-4 mr-1.5" />
+              {t("projects.aiSetup.positions.action.openPdfMarking")}
+            </Button>
+          ) : null}
           <Button
             type="button"
-            className="bg-[#E95F2A] hover:bg-[#D94F1F] h-10 px-4 font-semibold"
+            variant="outline"
+            className="h-10 border-[#CBD5E1] px-4"
             onClick={() => onSubTabChange("detail")}
           >
-            <ClipboardList className="size-4 mr-1.5" />
-            {t("projects.aiSetup.positions.action.openDetail")}
+            <Plus className="size-4 mr-1.5" />
+            {t("projects.aiSetup.positions.action.addManual")}
           </Button>
           <Button
             type="button"
@@ -460,17 +499,15 @@ export function AiSetupMaterialStep({
               </span>
             ) : null}
           </Button>
-          {hasPdfTab ? (
-            <Button
-              type="button"
-              variant="outline"
-              className="h-10 border-[#CBD5E1] px-4"
-              onClick={() => onSubTabChange("pdf")}
-            >
-              <FileSearch className="size-4 mr-1.5" />
-              {t("projects.aiSetup.positions.action.showPdf")}
-            </Button>
-          ) : null}
+          <Button
+            type="button"
+            variant="ghost"
+            className="h-10 px-3 text-[#64748B]"
+            onClick={() => onSubTabChange("detail")}
+          >
+            <ClipboardList className="size-4 mr-1.5" />
+            {t("projects.aiSetup.positions.action.openDetail")}
+          </Button>
         </div>
       </div>
 
@@ -608,6 +645,13 @@ export function AiSetupMaterialStep({
           {takeoffTableProps ? (
             <EstimatorLinkedTakeoffTable {...takeoffTableProps} />
           ) : null}
+          {evidence ? (
+            <ManualItemForm
+              onAdd={(input) => {
+                evidence.createManualPosition(input);
+              }}
+            />
+          ) : null}
           <div className="border-t border-[#E2E8F0] pt-4">
             <Button
               type="button"
@@ -729,7 +773,7 @@ export function AiSetupMaterialStep({
             ) : (
               <EstimatorLinkedTakeoffTable
                 {...takeoffTableProps}
-                initialQuickFilter="needs_review"
+                positions={reviewPositions}
               />
             )
           ) : (
@@ -742,6 +786,11 @@ export function AiSetupMaterialStep({
         <EstimatorPriceDrawer
           position={pricePosition}
           currency={currency}
+          similarPricelessCount={
+            pricePosition
+              ? countSimilarPricelessPositions(evidence.positions, pricePosition)
+              : 0
+          }
           onClose={() => setPricePosition(null)}
           onApplyManualPrice={evidence.applyManualPrice}
           onApplyCatalogPrice={evidence.applyCatalogPrice}
@@ -796,11 +845,28 @@ function PdfMarkingWorkspace({
   const [markingToolMode, setMarkingToolMode] = useState<"click_symbol" | "draw_box">("click_symbol");
   const [similarBusy, setSimilarBusy] = useState(false);
   const [similarCandidates, setSimilarCandidates] = useState<number | null>(null);
+  const [similarMatchSummary, setSimilarMatchSummary] = useState<{
+    accepted: number;
+    uncertain: number;
+    rejected: number;
+  } | null>(null);
+  const [uncertainPool, setUncertainPool] = useState<
+    Array<{ page: number; bbox: EstimatorPositionBBox; matchScore: number }>
+  >([]);
+  const [symbolKeys, setSymbolKeys] = useState<ProjectSymbolKeyEntry[]>([]);
   const [symbolDraft, setSymbolDraft] = useState<UnclassifiedSymbolDraft | null>(null);
   const [createdPositionCode, setCreatedPositionCode] = useState<string | null>(null);
   const [draftAiBusy, setDraftAiBusy] = useState(false);
   const [showAllMarks, setShowAllMarks] = useState(true);
+  const [showDetailList, setShowDetailList] = useState(false);
+  const [lineSymbolHint, setLineSymbolHint] = useState(false);
   const [highlightedPositionIds, setHighlightedPositionIds] = useState<string[]>([]);
+  const [bulkKeys, setBulkKeys] = useState<Set<string>>(() => new Set());
+  const [similarFloodWarning, setSimilarFloodWarning] = useState(false);
+  const [deleteChoice, setDeleteChoice] = useState<{
+    positionId: string;
+    anchorId: string;
+  } | null>(null);
   const symbolDraftRef = useRef<UnclassifiedSymbolDraft | null>(null);
   symbolDraftRef.current = symbolDraft;
 
@@ -808,7 +874,29 @@ function PdfMarkingWorkspace({
     ? evidence.positions.find((p) => p.id === evidence.selectedPositionId) ?? null
     : null;
 
-  const pendingCandidateCount = selectedPosition
+  // Trade + country detected from file name and already-extracted texts —
+  // constrains symbol suggestions to the right profession/norm (no AI call).
+  const tradeProfile = useMemo(
+    () =>
+      detectPlanTradeProfile({
+        fileName: evidence.fileName,
+        texts: [
+          ...evidence.positions.map((p) => p.label),
+          ...evidence.positions.flatMap((p) =>
+            p.evidenceAnchors.map((a) => a.sourceText)
+          ),
+        ],
+      }),
+    [evidence.fileName, evidence.positions]
+  );
+
+  const pendingCandidateCount = useMemo(
+    () =>
+      evidence.positions.reduce((n, p) => n + similarCandidateAnchors(p).length, 0),
+    [evidence.positions]
+  );
+
+  const selectedPendingCount = selectedPosition
     ? similarCandidateAnchors(selectedPosition).length
     : 0;
 
@@ -816,53 +904,170 @@ function PdfMarkingWorkspace({
     ? [...selectedPosition.evidenceAnchors].reverse().find((a) => isManualMarkAnchor(a) && a.bbox)
     : undefined;
 
-  /** Find identical marks across the PDF, bump quantity, ready for next symbol type. */
-  const finalizeSymbolType = async (position: EstimatorPosition) => {
-    const mark = [...position.evidenceAnchors]
-      .reverse()
-      .find((a) => isManualMarkAnchor(a) && a.bbox);
+  const anchorKey = (positionId: string, anchorId: string) =>
+    `${positionId}::${anchorId}`;
 
+  /** After create: keep selection, do NOT auto-run find-similar. */
+  const afterPositionCreated = (
+    position: EstimatorPosition,
+    draft?: UnclassifiedSymbolDraft | null
+  ) => {
     setCreatedPositionCode(position.positionCode);
+    setSimilarCandidates(null);
+    setSimilarMatchSummary(null);
+    setUncertainPool([]);
+    setSimilarFloodWarning(false);
+    setLineSymbolHint(false);
+    const templateBbox =
+      draft?.bbox ??
+      [...position.evidenceAnchors].reverse().find((a) => a.tightSymbolBbox || a.bbox)
+        ?.tightSymbolBbox ??
+      [...position.evidenceAnchors].reverse().find((a) => a.bbox)?.bbox;
+    setSymbolKeys((keys) =>
+      upsertUserLearnedSymbolKey(keys, position, templateBbox, draft?.colorHint)
+    );
+    evidence.setSelectedPositionId(position.id);
+    evidence.setSelectedAnchorId(null);
+    onMarkModeChange(true);
+  };
+
+  /** Manual "Nájsť rovnaké" — confirmed template/key only, strict bands. */
+  const handleFindSimilar = async () => {
+    if (!selectedPosition || !lastManualMark?.bbox || !evidence.fileUrl) return;
+    const key = resolveBestSymbolKey(symbolKeys, {
+      positionId: selectedPosition.id,
+      normalizedPoint: selectedPosition.normalizedPoint,
+      category: selectedPosition.category,
+    });
+    if (key && isLineSymbolKey(key)) {
+      setLineSymbolHint(true);
+      setSimilarMatchSummary(null);
+      setSimilarCandidates(null);
+      setUncertainPool([]);
+      return;
+    }
+    if (
+      selectedPosition.category === "led_strip" ||
+      selectedPosition.category === "cable"
+    ) {
+      setLineSymbolHint(true);
+      setSimilarMatchSummary(null);
+      setSimilarCandidates(null);
+      setUncertainPool([]);
+      return;
+    }
+
     setSimilarBusy(true);
     setSimilarCandidates(null);
+    setSimilarMatchSummary(null);
+    setUncertainPool([]);
+    setSimilarFloodWarning(false);
+    setLineSymbolHint(false);
     try {
-      if (mark?.bbox && evidence.fileUrl) {
-        const referenceBbox = mark.tightSymbolBbox ?? mark.bbox;
-        const result = await findSimilarSymbols({
-          projectId: evidence.projectId,
-          drawingId: evidence.activeDocument?.fileId ?? evidence.fileName ?? "drawing",
-          fileUrl: evidence.fileUrl,
-          pageNumber: mark.page,
+      const referenceBbox =
+        key?.templateBbox ?? lastManualMark.tightSymbolBbox ?? lastManualMark.bbox;
+      const result = await findSimilarSymbols({
+        projectId: evidence.projectId,
+        drawingId: evidence.activeDocument?.fileId ?? evidence.fileName ?? "drawing",
+        fileUrl: evidence.fileUrl,
+        pageNumber: lastManualMark.page,
+        referenceBbox,
+        scanAllPages: true,
+        threshold: 0.82,
+      });
+      const filtered = filterSimilarCandidateMarks(
+        result.candidates.map((c) => ({
+          page: c.pageNumber,
+          bbox: c.normalizedPosition,
+          matchScore: c.matchScore,
+        })),
+        { referenceBbox }
+      );
+      setSimilarMatchSummary({
+        accepted: filtered.accepted.length,
+        uncertain: filtered.uncertain.length,
+        rejected: filtered.rejected.length,
+      });
+      setUncertainPool(filtered.uncertain);
+      if (filtered.uncertain.length > 0 || filtered.rejected.length > 12) {
+        setSimilarFloodWarning(true);
+      }
+      if (filtered.accepted.length > 0) {
+        evidence.addSimilarCandidateMarks(selectedPosition.id, filtered.accepted, {
           referenceBbox,
-          scanAllPages: true,
-          threshold: 0.8,
+          prefiltered: true,
         });
-        if (result.candidates.length > 0) {
-          evidence.addAndConfirmSimilarMarks(
-            position.id,
-            result.candidates.map((c) => ({
-              page: c.pageNumber,
-              bbox: c.normalizedPosition,
-              matchScore: c.matchScore,
-            }))
-          );
-          setSimilarCandidates(result.candidates.length);
-        } else {
-          setSimilarCandidates(0);
-        }
+        setSimilarCandidates(filtered.accepted.length);
+        evidence.setSelectedPositionId(selectedPosition.id);
+      } else {
+        setSimilarCandidates(0);
       }
     } finally {
       setSimilarBusy(false);
-      // Next click must create a NEW position — never pile marks on this one.
-      evidence.setSelectedPositionId(null);
-      evidence.setSelectedAnchorId(null);
-      onMarkModeChange(true);
     }
   };
 
-  const handleFindSimilar = async () => {
-    if (!selectedPosition || !lastManualMark?.bbox || !evidence.fileUrl) return;
-    await finalizeSymbolType(selectedPosition);
+  const promoteUncertainToReview = () => {
+    if (!selectedPosition || uncertainPool.length === 0) return;
+    evidence.addSimilarCandidateMarks(selectedPosition.id, uncertainPool, {
+      prefiltered: true,
+    });
+    setUncertainPool([]);
+    setShowDetailList(true);
+  };
+
+  const confirmDeleteSelected = () => {
+    const positionId = evidence.selectedPositionId;
+    const anchorId = evidence.selectedAnchorId;
+    if (!positionId || !anchorId) return;
+    const plan = evidence.planRemoveEvidenceAnchor(positionId, anchorId);
+    if (!plan) return;
+    if (plan.kind === "candidate") {
+      evidence.removeManualMark(positionId, anchorId);
+      evidence.setSelectedAnchorId(null);
+      setBulkKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(anchorKey(positionId, anchorId));
+        return next;
+      });
+      return;
+    }
+    if (plan.kind === "mark") {
+      if (
+        typeof window !== "undefined" &&
+        !window.confirm(t("projects.aiSetup.marking.deleteMarkConfirm"))
+      ) {
+        return;
+      }
+      evidence.removeManualMark(positionId, anchorId);
+      evidence.setSelectedAnchorId(null);
+      return;
+    }
+    setDeleteChoice({ positionId, anchorId });
+  };
+
+  const runBulkDelete = () => {
+    const refs = [...bulkKeys].map((k) => {
+      const [positionId, anchorId] = k.split("::");
+      return { positionId: positionId!, anchorId: anchorId! };
+    });
+    if (refs.length === 0) return;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        t("projects.aiSetup.marking.bulkDeleteConfirm", { count: String(refs.length) })
+      )
+    ) {
+      return;
+    }
+    const onlyCandidates = refs.every((r) => {
+      const p = evidence.positions.find((x) => x.id === r.positionId);
+      const a = p?.evidenceAnchors.find((x) => x.id === r.anchorId);
+      return a ? isSimilarCandidateAnchor(a) : false;
+    });
+    if (onlyCandidates) evidence.removeCandidatesBulk(refs);
+    else evidence.removeAnchorsBulk(refs);
+    setBulkKeys(new Set());
   };
 
   const startNextSymbolType = () => {
@@ -871,8 +1076,30 @@ function PdfMarkingWorkspace({
     setSymbolDraft(null);
     setCreatedPositionCode(null);
     setSimilarCandidates(null);
+    setSimilarMatchSummary(null);
+    setUncertainPool([]);
     onMarkModeChange(true);
   };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || (e.target as HTMLElement)?.isContentEditable)
+        return;
+      if (e.key === "Escape" && markMode) {
+        e.preventDefault();
+        onMarkModeChange(false);
+        return;
+      }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault();
+        if (bulkKeys.size > 0) runBulkDelete();
+        else confirmDeleteSelected();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   const handleIdentify = async (positionId: string) => {
     const pos = evidence.positions.find((p) => p.id === positionId);
@@ -911,7 +1138,7 @@ function PdfMarkingWorkspace({
       className={cn(
         "grid gap-4",
         fullscreen
-          ? "h-full grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px]"
+          ? "h-full min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_360px]"
           : "xl:grid-cols-[minmax(0,3fr)_minmax(280px,2fr)]"
       )}
     >
@@ -932,14 +1159,30 @@ function PdfMarkingWorkspace({
           </p>
         ) : null}
         {markMode ? (
-          <p className="rounded-lg border border-[#E95F2A]/40 bg-[#FFF8F5] px-3 py-2 text-xs font-medium text-[#B4441B]">
+          <p className="sticky top-0 z-[5] rounded-lg border-2 border-[#E95F2A]/50 bg-[#FFF8F5] px-3 py-2 text-xs font-semibold text-[#B4441B] shadow-sm">
             {markingToolMode === "click_symbol"
-              ? t("projects.aiSetup.marking.clickHint")
-              : evidence.selectedPositionId
-                ? t("projects.aiSetup.marking.viewerHintSelected")
-                : t("projects.aiSetup.marking.viewerHintPick")}
+              ? t("projects.aiSetup.marking.activeHintClick")
+              : t("projects.aiSetup.marking.activeHintBox")}{" "}
+            <span className="font-normal text-[#B4441B]/80">
+              {t("projects.aiSetup.marking.activeHintEsc")}
+            </span>
           </p>
         ) : null}
+        <p className="text-[11px] text-[#64748B]">
+          {tradeProfile.trade === "unknown" ? (
+            t("projects.aiSetup.marking.profile.unknown")
+          ) : (
+            <>
+              {t("projects.aiSetup.marking.profile.detected", {
+                trade: t(`projects.aiSetup.marking.profile.trade.${tradeProfile.trade}`),
+                standard: tradeProfile.standardHint,
+              })}
+              {tradeProfile.confidence !== "high"
+                ? ` · ${t("projects.aiSetup.marking.profile.lowConfidence")}`
+                : null}
+            </>
+          )}
+        </p>
         {pickFailedWarning ? (
           <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
             {t("projects.aiSetup.marking.pickFailed")}
@@ -950,57 +1193,25 @@ function PdfMarkingWorkspace({
             {t("projects.aiSetup.marking.outsidePlan")}
           </p>
         ) : null}
-        {markMode && lastManualMark ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 text-xs"
-              disabled={similarBusy}
-              onClick={() => void handleFindSimilar()}
-            >
-              {similarBusy
-                ? t("common.loading")
-                : t("projects.aiSetup.marking.findSimilar")}
-            </Button>
-            {similarCandidates != null && similarCandidates > 0 ? (
-              <p className="text-xs text-[#0F2A4D]">
-                {t("projects.aiSetup.marking.similarFound", {
-                  count: similarCandidates,
-                })}
-              </p>
-            ) : null}
-            {pendingCandidateCount > 0 && selectedPosition ? (
-              <>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-8 bg-[#1D376A] text-xs text-white hover:bg-[#162952]"
-                  onClick={() => {
-                    evidence.confirmSimilarCandidates(selectedPosition.id);
-                    setSimilarCandidates(null);
-                  }}
-                >
-                  {t("projects.aiSetup.marking.candidates.confirmAll", {
-                    count: pendingCandidateCount,
-                  })}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-8 text-xs"
-                  onClick={() => {
-                    evidence.dismissSimilarCandidates(selectedPosition.id);
-                    setSimilarCandidates(null);
-                  }}
-                >
-                  {t("projects.aiSetup.marking.candidates.dismiss")}
-                </Button>
-              </>
-            ) : null}
-          </div>
+        {lineSymbolHint ? (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">
+            {t("projects.aiSetup.marking.lineSymbolNoPointMatch")}
+          </p>
+        ) : null}
+        {similarMatchSummary ? (
+          <p className="text-xs font-medium text-[#0F2A4D]">
+            {t("projects.aiSetup.marking.similarSummary", {
+              accepted: similarMatchSummary.accepted,
+              uncertain: similarMatchSummary.uncertain,
+              rejected: similarMatchSummary.rejected,
+            })}
+          </p>
+        ) : similarCandidates != null && similarCandidates > 0 ? (
+          <p className="text-xs text-[#0F2A4D]">
+            {t("projects.aiSetup.marking.similarFound", {
+              count: similarCandidates,
+            })}
+          </p>
         ) : null}
         <EstimatorPdfEvidenceViewer
           fileUrl={evidence.fileUrl}
@@ -1013,7 +1224,19 @@ function PdfMarkingWorkspace({
           onShowAllMarksChange={setShowAllMarks}
           onAnnotationClick={(positionId) => evidence.setSelectedPositionId(positionId)}
           onAnchorClick={(anchorId) => evidence.setSelectedAnchorId(anchorId)}
+          onToggleBulkSelect={(positionId, anchorId) => {
+            const key = anchorKey(positionId, anchorId);
+            setBulkKeys((prev) => {
+              const next = new Set(prev);
+              if (next.has(key)) next.delete(key);
+              else next.add(key);
+              return next;
+            });
+            evidence.setSelectedPositionId(positionId);
+            evidence.setSelectedAnchorId(anchorId);
+          }}
           markMode={markMode}
+          onMarkModeChange={onMarkModeChange}
           markingToolMode={markingToolMode}
           onMarkingToolModeChange={setMarkingToolMode}
           categoryHint={selectedPosition?.category}
@@ -1029,15 +1252,33 @@ function PdfMarkingWorkspace({
               : null
           }
           onMarkPlaced={(page, bbox, polygon, meta) => {
+            // Legend/table: learn project key only — never count as takeoff.
+            if (meta?.markStatus === "in_legend_or_table") {
+              const label = selectedPosition?.label ?? "Legenda";
+              const normalizedPoint =
+                selectedPosition?.normalizedPoint ??
+                selectedPosition?.category ??
+                "unknown";
+              setSymbolKeys((keys) =>
+                upsertLegendSymbolKey(keys, {
+                  label,
+                  normalizedPoint,
+                  category: selectedPosition?.category,
+                  templateBbox: meta.tightSymbolBbox ?? bbox,
+                  colorHint: meta.colorHint,
+                })
+              );
+              setOutsidePlanWarning(true);
+              return;
+            }
+            if (meta?.outsidePlan || meta?.markStatus === "outside_plan") {
+              setOutsidePlanWarning(true);
+              return;
+            }
             // Always PDF-first: one click = one NEW position.
-            // Copies of the same type come from auto find-similar, not extra clicks.
             if (evidence.selectedPositionId) {
               evidence.setSelectedPositionId(null);
               evidence.setSelectedAnchorId(null);
-            }
-            if (meta?.outsidePlan) {
-              setOutsidePlanWarning(true);
-              return;
             }
             const draft = buildSymbolDraftFromMark({
               page,
@@ -1046,14 +1287,20 @@ function PdfMarkingWorkspace({
               polygon: polygon ?? meta?.polygon,
               colorHint: meta?.colorHint,
               confidence: meta?.confidence,
-              outsidePlan: meta?.outsidePlan,
+              outsidePlan: false,
             });
             if (!draft) return;
+            // Suggest only categories of the detected trade (e.g. elektro).
+            draft.possibleTypes = filterCategoriesByProfile(
+              draft.possibleTypes,
+              tradeProfile
+            );
             setSymbolDraft(draft);
             setCreatedPositionCode(null);
             setPickFailedWarning(false);
             setOutsidePlanWarning(false);
             setSimilarCandidates(null);
+            setSimilarMatchSummary(null);
             setDraftAiBusy(true);
             const draftId = draft.id;
             void (async () => {
@@ -1078,7 +1325,7 @@ function PdfMarkingWorkspace({
                     label: res.name,
                   });
                   setSymbolDraft(null);
-                  await finalizeSymbolType(position);
+                  afterPositionCreated(position, current);
                   return;
                 }
                 setSymbolDraft((current) => {
@@ -1102,162 +1349,500 @@ function PdfMarkingWorkspace({
           onPickFailed={() => setPickFailedWarning(true)}
           onOutsidePlanMark={() => setOutsidePlanWarning(true)}
           onMarkDeleted={(positionId, anchorId) => {
-            evidence.removeManualMark(positionId, anchorId);
-            if (evidence.selectedAnchorId === anchorId) {
+            evidence.setSelectedPositionId(positionId);
+            evidence.setSelectedAnchorId(anchorId);
+            const plan = evidence.planRemoveEvidenceAnchor(positionId, anchorId);
+            if (!plan) return;
+            if (plan.kind === "candidate") {
+              evidence.removeManualMark(positionId, anchorId);
               evidence.setSelectedAnchorId(null);
+              return;
             }
+            if (plan.kind === "mark") {
+              if (window.confirm(t("projects.aiSetup.marking.deleteMarkConfirm"))) {
+                evidence.removeManualMark(positionId, anchorId);
+                evidence.setSelectedAnchorId(null);
+              }
+              return;
+            }
+            setDeleteChoice({ positionId, anchorId });
           }}
           heightClassName={viewerHeightClassName}
         />
       </div>
-      <div className={cn("flex min-w-0 flex-col gap-3", fullscreen && "h-full min-h-0 overflow-hidden")}>
-        {symbolDraft ? (
-          <SymbolDraftClassifierCard
-            draft={symbolDraft}
-            aiBusy={draftAiBusy}
-            onCreate={(classification) => {
-              const position = evidence.createPositionFromDraft(
-                symbolDraft,
-                classification
-              );
-              setSymbolDraft(null);
-              void finalizeSymbolType(position);
-            }}
-            onIgnore={() => setSymbolDraft(null)}
-          />
-        ) : null}
-        {createdPositionCode ? (
-          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-900">
-            {similarBusy
-              ? t("projects.aiSetup.marking.draft.createdSearching", {
-                  code: createdPositionCode,
-                })
-              : similarCandidates != null && similarCandidates > 0
-                ? t("projects.aiSetup.marking.draft.createdWithCopies", {
-                    code: createdPositionCode,
-                    count: String(similarCandidates),
-                  })
-                : t("projects.aiSetup.marking.draft.createdReadyNext", {
-                    code: createdPositionCode,
-                  })}
-          </p>
-        ) : null}
-        {evidence.selectedPositionId && !markMode ? (
-          <SelectedPositionCard
-            position={
-              evidence.positions.find((p) => p.id === evidence.selectedPositionId) ?? null
-            }
-            onAddPrice={onAddPrice}
-            onConfirm={evidence.confirm}
-          />
-        ) : null}
-
-        {aiSuggestion ? (
-          <div className="rounded-xl border border-[#1D376A]/30 bg-[#F6F8FB] p-3 text-sm space-y-2">
-            <div className="flex items-start justify-between gap-2">
-              <p className="font-semibold text-[#0F2A4D]">
-                <Sparkles className="mr-1 inline size-4 text-[#E95F2A]" />
-                {t("projects.aiSetup.marking.aiSuggestionTitle")}
-              </p>
-              <button
-                type="button"
-                className="text-[#94A3B8] hover:text-[#0F2A4D]"
-                onClick={() => setAiSuggestion(null)}
-                aria-label={t("flyover.close")}
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-            <p className="text-[#0F2A4D]">
-              {aiSuggestion.name}{" "}
-              <span
-                className={cn(
-                  "ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold",
-                  aiSuggestion.confidence === "high"
-                    ? "bg-emerald-100 text-emerald-800"
-                    : aiSuggestion.confidence === "medium"
-                      ? "bg-amber-100 text-amber-800"
-                      : "bg-slate-200 text-slate-700"
-                )}
-              >
-                {t(`projects.aiSetup.marking.aiConfidence.${aiSuggestion.confidence}`)}
-              </span>
+      <div
+        className={cn(
+          "flex min-w-0 flex-col gap-2",
+          fullscreen ? "h-full min-h-0" : "max-h-[640px]"
+        )}
+      >
+        <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
+          {/* 1. Aktuálna položka */}
+          <section className="rounded-xl border-2 border-[#1D376A]/20 bg-white p-3 space-y-2">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-[#1D376A]">
+              {t("projects.aiSetup.marking.panel.currentItem")}
             </p>
-            {aiSuggestion.reason ? (
-              <p className="text-xs text-[#64748B]">{aiSuggestion.reason}</p>
+            <SelectedMarkDetailPreview
+              position={selectedPosition}
+              fileUrl={evidence.fileUrl}
+              selectedAnchorId={evidence.selectedAnchorId}
+            />
+            {selectedPosition ? (
+              <SelectedPositionCard
+                position={selectedPosition}
+                onAddPrice={onAddPrice}
+                onConfirm={evidence.confirm}
+                compact
+              />
+            ) : (
+              <p className="text-xs text-[#64748B]">
+                {t("projects.aiSetup.marking.panel.noCurrentItem")}
+              </p>
+            )}
+            {symbolDraft ? (
+              <SymbolDraftClassifierCard
+                draft={symbolDraft}
+                aiBusy={draftAiBusy}
+                onCreate={(classification) => {
+                  const position = evidence.createPositionFromDraft(
+                    symbolDraft,
+                    classification
+                  );
+                  setSymbolDraft(null);
+                  afterPositionCreated(position, symbolDraft);
+                }}
+                onIgnore={() => setSymbolDraft(null)}
+              />
             ) : null}
+            {createdPositionCode ? (
+              <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-900">
+                {t("projects.aiSetup.marking.draft.createdReadyFind", {
+                  code: createdPositionCode,
+                })}
+              </p>
+            ) : null}
+            {aiSuggestion ? (
+              <div className="rounded-xl border border-[#1D376A]/30 bg-[#F6F8FB] p-3 text-sm space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-semibold text-[#0F2A4D]">
+                    <Sparkles className="mr-1 inline size-4 text-[#E95F2A]" />
+                    {t("projects.aiSetup.marking.aiSuggestionTitle")}
+                  </p>
+                  <button
+                    type="button"
+                    className="text-[#94A3B8] hover:text-[#0F2A4D]"
+                    onClick={() => setAiSuggestion(null)}
+                    aria-label={t("flyover.close")}
+                  >
+                    <X className="size-4" />
+                  </button>
+                </div>
+                <p className="text-[#0F2A4D]">{aiSuggestion.name}</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 bg-[#1D376A] text-white hover:bg-[#162952]"
+                  onClick={() => {
+                    evidence.renameLabel(aiSuggestion.positionId, aiSuggestion.name);
+                    setAiSuggestion(null);
+                  }}
+                >
+                  {t("projects.aiSetup.marking.aiApplyName")}
+                </Button>
+              </div>
+            ) : null}
+            {aiError ? (
+              <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                {t("projects.aiSetup.marking.aiError")}{" "}
+                <span className="font-mono text-[10px]">{aiError}</span>
+              </p>
+            ) : null}
+          </section>
+
+          {/* 2. Projektový kľúč značiek */}
+          <section className="rounded-xl border border-[#E2E8F0] bg-[#F6F8FB] p-3 space-y-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-[#475569]">
+              {t("projects.aiSetup.marking.panel.symbolKey")}
+            </p>
+            {symbolKeys.length === 0 ? (
+              <p className="text-xs text-[#64748B]">
+                {t("projects.aiSetup.marking.panel.symbolKeyEmpty")}
+              </p>
+            ) : (
+              <ul className="max-h-28 space-y-1 overflow-y-auto">
+                {symbolKeys.map((k) => (
+                  <li
+                    key={k.id}
+                    className="flex items-center justify-between gap-2 rounded-md bg-white px-2 py-1 text-xs text-[#0F2A4D]"
+                  >
+                    <span className="truncate font-medium">{k.label}</span>
+                    <span className="shrink-0 text-[10px] text-[#94A3B8]">
+                      {k.source === "user_learned"
+                        ? t("projects.aiSetup.marking.panel.keyLearned")
+                        : k.source === "project_legend"
+                          ? t("projects.aiSetup.marking.panel.keyLegend")
+                          : t("projects.aiSetup.marking.panel.keyAi")}
+                      {k.kind === "line_symbol" ? " · line" : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* 3. Na kontrolu */}
+          <section className="rounded-xl border border-amber-200 bg-amber-50/60 p-3 space-y-2">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-amber-800">
+              {t("projects.aiSetup.marking.panel.needsReview")}
+            </p>
+            {similarMatchSummary ? (
+              <p className="text-xs text-amber-950">
+                {t("projects.aiSetup.marking.similarSummary", {
+                  accepted: similarMatchSummary.accepted,
+                  uncertain: similarMatchSummary.uncertain,
+                  rejected: similarMatchSummary.rejected,
+                })}
+              </p>
+            ) : null}
+            {similarFloodWarning ? (
+              <p className="text-xs font-semibold text-amber-900">
+                {t("projects.aiSetup.marking.similarFloodWarning")}
+              </p>
+            ) : null}
+            <div className="flex flex-wrap gap-1.5">
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 bg-[#1D376A] text-xs text-white hover:bg-[#162952]"
+                disabled={selectedPendingCount === 0 || !selectedPosition}
+                onClick={() => {
+                  if (!selectedPosition) return;
+                  evidence.confirmSimilarCandidates(selectedPosition.id);
+                  setSimilarCandidates(null);
+                  setSimilarMatchSummary(null);
+                }}
+              >
+                {t("projects.aiSetup.marking.confirmProbable")}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
+                disabled={uncertainPool.length === 0 || !selectedPosition}
+                onClick={promoteUncertainToReview}
+              >
+                {t("projects.aiSetup.marking.reviewUncertain")}
+                {uncertainPool.length > 0 ? ` (${uncertainPool.length})` : ""}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 text-xs"
+                disabled={
+                  (selectedPendingCount === 0 && uncertainPool.length === 0) ||
+                  !selectedPosition
+                }
+                onClick={() => {
+                  if (!selectedPosition) return;
+                  evidence.dismissSimilarCandidates(selectedPosition.id);
+                  setUncertainPool([]);
+                  setSimilarCandidates(null);
+                  setSimilarMatchSummary(null);
+                }}
+              >
+                {t("projects.aiSetup.marking.candidates.dismiss")}
+              </Button>
+            </div>
+            <p className="text-xs text-amber-900/80">
+              {t("projects.aiSetup.marking.panel.reviewCount", {
+                candidates: selectedPendingCount || pendingCandidateCount,
+                uncertain: uncertainPool.length,
+              })}
+            </p>
+          </section>
+
+          <button
+            type="button"
+            className="w-full rounded-lg border border-[#CBD5E1] bg-white px-3 py-2 text-left text-xs font-semibold text-[#1D376A] hover:bg-[#F6F8FB]"
+            onClick={() => setShowDetailList((v) => !v)}
+            aria-expanded={showDetailList}
+          >
+            {t("projects.aiSetup.marking.detailList")}
+            {showDetailList ? " ▴" : " ▾"}
+          </button>
+
+          {showDetailList ? (
+            <div className={cn("min-h-0", checklistMaxHeightClassName)}>
+              <EstimatorMarkingChecklist
+                positions={evidence.positions}
+                progress={evidence.markingProgress}
+                selectedPositionId={evidence.selectedPositionId}
+                selectedAnchorId={evidence.selectedAnchorId}
+                highlightedPositionIds={highlightedPositionIds}
+                bulkKeys={bulkKeys}
+                hideHeaderControls
+                onToggleBulkKey={(positionId, anchorId) => {
+                  const key = anchorKey(positionId, anchorId);
+                  setBulkKeys((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(key)) next.delete(key);
+                    else next.add(key);
+                    return next;
+                  });
+                }}
+                onSelectAllCandidates={() => {
+                  const next = new Set<string>();
+                  for (const p of evidence.positions) {
+                    for (const a of similarCandidateAnchors(p)) {
+                      next.add(anchorKey(p.id, a.id));
+                    }
+                  }
+                  setBulkKeys(next);
+                }}
+                onConfirmAllCandidates={() => {
+                  for (const p of evidence.positions) {
+                    if (similarCandidateAnchors(p).length > 0) {
+                      evidence.confirmSimilarCandidates(p.id);
+                    }
+                  }
+                  setSimilarCandidates(null);
+                  setBulkKeys(new Set());
+                }}
+                onDismissAllCandidates={() => {
+                  for (const p of evidence.positions) {
+                    if (similarCandidateAnchors(p).length > 0) {
+                      evidence.dismissSimilarCandidates(p.id);
+                    }
+                  }
+                  setSimilarCandidates(null);
+                  setUncertainPool([]);
+                  setBulkKeys(new Set());
+                }}
+                onToggleHighlight={(positionId) => {
+                  setHighlightedPositionIds((prev) =>
+                    prev.includes(positionId)
+                      ? prev.filter((id) => id !== positionId)
+                      : [...prev, positionId]
+                  );
+                  setShowAllMarks(false);
+                }}
+                onSelect={evidence.setSelectedPositionId}
+                onSelectAnchor={evidence.setSelectedAnchorId}
+                markMode={markMode}
+                onMarkModeChange={onMarkModeChange}
+                onNextUnmarked={() => {
+                  const next = nextUnmarkedPositionId(
+                    evidence.positions,
+                    evidence.selectedPositionId
+                  );
+                  if (next) {
+                    evidence.setSelectedPositionId(next);
+                    onMarkModeChange(true);
+                  }
+                }}
+                onRemoveLastMark={(positionId) => evidence.removeManualMark(positionId)}
+                onRemoveMark={(positionId, anchorId) => {
+                  evidence.removeManualMark(positionId, anchorId);
+                  if (evidence.selectedAnchorId === anchorId) {
+                    evidence.setSelectedAnchorId(null);
+                  }
+                }}
+                onDeletePosition={(positionId) => {
+                  const pos = evidence.positions.find((p) => p.id === positionId);
+                  if (!pos) return;
+                  evidence.ignore(pos, "Odstránené z kontroly značiek.");
+                  if (evidence.selectedPositionId === positionId) {
+                    evidence.setSelectedPositionId(null);
+                  }
+                }}
+                onRename={(positionId, label) => evidence.renameLabel(positionId, label)}
+                onUseMarkCount={(positionId) => evidence.useMarkCountAsQuantity(positionId)}
+                onSetCategory={(positionId, category) => {
+                  evidence.setCategory(positionId, category);
+                  const pos = evidence.positions.find((p) => p.id === positionId);
+                  if (pos) {
+                    setSymbolKeys((keys) =>
+                      upsertUserLearnedSymbolKey(
+                        keys,
+                        { ...pos, category },
+                        undefined,
+                        undefined
+                      )
+                    );
+                  }
+                }}
+                onMarkAnother={startNextSymbolType}
+                onIdentify={(positionId) => void handleIdentify(positionId)}
+                identifyingPositionId={identifyingId}
+              />
+            </div>
+          ) : null}
+        </div>
+
+        {/* Fixed bottom action bar — always visible, including mark mode */}
+        <div className="shrink-0 border-t-2 border-[#1D376A]/20 bg-white px-1 py-2 shadow-[0_-4px_12px_rgba(15,42,77,0.08)]">
+          <div className="flex flex-wrap gap-1.5">
             <Button
               type="button"
               size="sm"
-              className="h-8 bg-[#1D376A] text-white hover:bg-[#162952]"
+              className="h-8 bg-[#E95F2A] text-xs text-white hover:bg-[#D94F1F]"
               onClick={() => {
-                evidence.renameLabel(aiSuggestion.positionId, aiSuggestion.name);
-                setAiSuggestion(null);
+                startNextSymbolType();
+                onMarkModeChange(false);
               }}
             >
-              {t("projects.aiSetup.marking.aiApplyName")}
+              {t("projects.aiSetup.marking.done")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className={cn(
+                "h-8 text-xs font-semibold",
+                markMode
+                  ? "bg-[#E95F2A] text-white hover:bg-[#D94F1F] ring-2 ring-[#E95F2A]/35"
+                  : "bg-[#1D376A] text-white hover:bg-[#162952]"
+              )}
+              aria-pressed={markMode}
+              onClick={() => onMarkModeChange(!markMode)}
+            >
+              <Crosshair className="mr-1 size-3.5" />
+              {markMode
+                ? t("projects.aiSetup.marking.modeOn")
+                : t("projects.aiSetup.marking.modeOff")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs"
+              onClick={() => {
+                const next = nextUnmarkedPositionId(
+                  evidence.positions,
+                  evidence.selectedPositionId
+                );
+                if (next) {
+                  evidence.setSelectedPositionId(next);
+                  onMarkModeChange(true);
+                }
+              }}
+            >
+              {t("projects.aiSetup.marking.nextUnmarked")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs"
+              disabled={similarBusy || !lastManualMark?.bbox || !evidence.fileUrl}
+              onClick={() => void handleFindSimilar()}
+            >
+              {similarBusy
+                ? t("common.loading")
+                : t("projects.aiSetup.marking.findSimilarShort")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 bg-[#1D376A] text-xs text-white hover:bg-[#162952]"
+              disabled={selectedPendingCount === 0 || !selectedPosition}
+              onClick={() => {
+                if (!selectedPosition) return;
+                evidence.confirmSimilarCandidates(selectedPosition.id);
+                setSimilarCandidates(null);
+                setSimilarMatchSummary(null);
+              }}
+            >
+              {t("projects.aiSetup.marking.candidates.confirmAll", {
+                count: selectedPendingCount || pendingCandidateCount,
+              })}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs"
+              disabled={
+                (selectedPendingCount === 0 && uncertainPool.length === 0) ||
+                !selectedPosition
+              }
+              onClick={() => {
+                if (!selectedPosition) return;
+                evidence.dismissSimilarCandidates(selectedPosition.id);
+                setUncertainPool([]);
+                setSimilarCandidates(null);
+                setSimilarMatchSummary(null);
+              }}
+            >
+              {t("projects.aiSetup.marking.candidates.dismiss")}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 border-red-200 text-xs text-red-700 hover:bg-red-50"
+              disabled={!evidence.selectedAnchorId && bulkKeys.size === 0}
+              onClick={() => {
+                if (bulkKeys.size > 0) runBulkDelete();
+                else confirmDeleteSelected();
+              }}
+            >
+              {t("projects.aiSetup.marking.deleteSelected")}
+              {bulkKeys.size > 0 ? ` (${bulkKeys.size})` : ""}
             </Button>
           </div>
-        ) : null}
-        {aiError ? (
-          <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            {t("projects.aiSetup.marking.aiError")}{" "}
-            <span className="font-mono text-[10px]">{aiError}</span>
-          </p>
-        ) : null}
-
-        <div className={cn("min-h-0 flex-1", checklistMaxHeightClassName)}>
-          <EstimatorMarkingChecklist
-            positions={evidence.positions}
-            progress={evidence.markingProgress}
-            selectedPositionId={evidence.selectedPositionId}
-            selectedAnchorId={evidence.selectedAnchorId}
-            highlightedPositionIds={highlightedPositionIds}
-            onToggleHighlight={(positionId) => {
-              setHighlightedPositionIds((prev) =>
-                prev.includes(positionId)
-                  ? prev.filter((id) => id !== positionId)
-                  : [...prev, positionId]
-              );
-              setShowAllMarks(false);
-            }}
-            onSelect={evidence.setSelectedPositionId}
-            onSelectAnchor={evidence.setSelectedAnchorId}
-            markMode={markMode}
-            onMarkModeChange={onMarkModeChange}
-            onNextUnmarked={() => {
-              const next = nextUnmarkedPositionId(
-                evidence.positions,
-                evidence.selectedPositionId
-              );
-              if (next) {
-                evidence.setSelectedPositionId(next);
-                onMarkModeChange(true);
-              }
-            }}
-            onRemoveLastMark={(positionId) => evidence.removeManualMark(positionId)}
-            onRemoveMark={(positionId, anchorId) => {
-              evidence.removeManualMark(positionId, anchorId);
-              if (evidence.selectedAnchorId === anchorId) {
-                evidence.setSelectedAnchorId(null);
-              }
-            }}
-            onDeletePosition={(positionId) => {
-              const pos = evidence.positions.find((p) => p.id === positionId);
-              if (!pos) return;
-              evidence.ignore(pos, "Odstránené z kontroly značiek.");
-              if (evidence.selectedPositionId === positionId) {
-                evidence.setSelectedPositionId(null);
-              }
-            }}
-            onRename={(positionId, label) => evidence.renameLabel(positionId, label)}
-            onUseMarkCount={(positionId) => evidence.useMarkCountAsQuantity(positionId)}
-            onSetCategory={(positionId, category) => evidence.setCategory(positionId, category)}
-            onMarkAnother={startNextSymbolType}
-            onIdentify={(positionId) => void handleIdentify(positionId)}
-            identifyingPositionId={identifyingId}
-          />
         </div>
+
+        {deleteChoice ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="w-full max-w-sm space-y-3 rounded-xl border border-[#E2E8F0] bg-white p-4 shadow-xl">
+              <p className="text-sm font-semibold text-[#0F2A4D]">
+                {t("projects.aiSetup.marking.deleteItemOrMark")}
+              </p>
+              <div className="flex flex-col gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    evidence.applyRemoveAnchorPlan(
+                      deleteChoice.positionId,
+                      deleteChoice.anchorId,
+                      "mark"
+                    );
+                    setDeleteChoice(null);
+                  }}
+                >
+                  {t("projects.aiSetup.marking.deleteMarkOnly")}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="bg-red-600 text-white hover:bg-red-700"
+                  onClick={() => {
+                    evidence.applyRemoveAnchorPlan(
+                      deleteChoice.positionId,
+                      deleteChoice.anchorId,
+                      "position"
+                    );
+                    setDeleteChoice(null);
+                  }}
+                >
+                  {t("projects.aiSetup.marking.deleteWholeItem")}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setDeleteChoice(null)}
+                >
+                  {t("common.cancel")}
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -1504,46 +2089,191 @@ function SymbolDraftClassifierCard({
   );
 }
 
+function ManualItemForm({
+  onAdd,
+}: {
+  onAdd: (input: {
+    label: string;
+    category?: SymbolDraftCategory;
+    quantity?: number;
+    roomName?: string;
+  }) => void;
+}) {
+  const { t } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [qty, setQty] = useState("1");
+  const [room, setRoom] = useState("");
+  const [category, setCategory] = useState<SymbolDraftCategory>("unknown");
+
+  if (!open) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="border-[#CBD5E1]"
+        onClick={() => setOpen(true)}
+      >
+        <Plus className="mr-1.5 size-3.5" />
+        {t("projects.aiSetup.positions.manualAdd")}
+      </Button>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-[#CBD5E1] bg-[#F8FAFC] p-3 space-y-2">
+      <p className="text-xs font-semibold text-[#475569]">
+        {t("projects.aiSetup.positions.manualAddHint")}
+      </p>
+      <div className="grid gap-2 sm:grid-cols-4">
+        <Input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t("projects.aiSetup.positions.manualNamePlaceholder")}
+          className="h-9 sm:col-span-2"
+          aria-label={t("projects.aiSetup.positions.manualNamePlaceholder")}
+        />
+        <Input
+          type="number"
+          min={0.01}
+          step={1}
+          value={qty}
+          onChange={(e) => setQty(e.target.value)}
+          className="h-9 tabular-nums"
+          aria-label={t("projects.aiSetup.positions.col.qty")}
+        />
+        <Input
+          value={room}
+          onChange={(e) => setRoom(e.target.value)}
+          placeholder={t("projects.aiSetup.marking.draft.roomLabel")}
+          className="h-9"
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Select
+          value={category}
+          onValueChange={(v) => setCategory(v as SymbolDraftCategory)}
+        >
+          <SelectTrigger className="h-9 w-[160px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(
+              [
+                "socket",
+                "switch",
+                "lighting",
+                "led_strip",
+                "cable",
+                "unknown",
+              ] as const
+            ).map((c) => (
+              <SelectItem key={c} value={c}>
+                {t(`projects.aiSetup.marking.draft.type.${c}`)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          type="button"
+          size="sm"
+          className="h-9 bg-[#1D376A] text-white hover:bg-[#162952]"
+          disabled={!name.trim()}
+          onClick={() => {
+            const q = Number(qty.replace(",", "."));
+            onAdd({
+              label: name.trim(),
+              category,
+              quantity: Number.isFinite(q) && q > 0 ? q : 1,
+              roomName: room.trim() || undefined,
+            });
+            setName("");
+            setQty("1");
+            setRoom("");
+            setOpen(false);
+          }}
+        >
+          {t("projects.aiSetup.marking.draft.create")}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-9"
+          onClick={() => setOpen(false)}
+        >
+          {t("common.cancel")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function SelectedPositionCard({
   position,
   onAddPrice,
   onConfirm,
+  compact = false,
 }: {
   position: EstimatorPosition | null;
   onAddPrice: (p: EstimatorPosition) => void;
   onConfirm: (p: EstimatorPosition) => void;
+  compact?: boolean;
 }) {
   const { t } = useI18n();
   if (!position) return null;
+  const typeKey = `projects.aiSetup.marking.draft.type.${position.category}`;
+  const typeLabel = t(typeKey);
+  const sourceAnchor = [...position.evidenceAnchors].reverse().find((a) => a.sourceType);
   return (
-    <div className="rounded-xl border-2 border-[#E95F2A]/40 bg-[#FFF8F5] p-3 space-y-2">
-      <p className="text-xs font-bold uppercase tracking-wide text-[#E95F2A]">
-        {t("projects.aiSetup.positions.selectedDetail")}
-      </p>
-      <p className="text-sm font-semibold text-[#0F2A4D]">
-        <span className="font-mono text-xs">{position.positionCode}</span> · {position.label}
-        {position.roomName ? ` · ${position.roomName}` : ""}
-      </p>
-      <div className="space-y-1">
-        <p className="text-xs font-semibold text-[#475569]">
-          {t("projects.aiSetup.positions.evidence.title")}
+    <div
+      className={cn(
+        "space-y-2",
+        compact
+          ? ""
+          : "rounded-xl border-2 border-[#E95F2A]/40 bg-[#FFF8F5] p-3"
+      )}
+    >
+      {!compact ? (
+        <p className="text-xs font-bold uppercase tracking-wide text-[#E95F2A]">
+          {t("projects.aiSetup.positions.selectedDetail")}
         </p>
-        <ul className="space-y-1">
-          {position.evidenceAnchors.slice(0, 6).map((a) => (
-            <li key={a.id} className="text-xs text-[#64748B] leading-snug">
-              {t(`projects.aiSetup.positions.evidence.source.${a.sourceType}`)} ·{" "}
-              {t("projects.aiSetup.positions.evidence.page", { page: a.page })}
-              {a.sourceText ? ` · „${a.sourceText}“` : ""}
-              {!a.bbox ? ` · ${t("projects.aiSetup.positions.evidence.noBbox")}` : ""}
-            </li>
-          ))}
-          {position.evidenceAnchors.length > 6 ? (
-            <li className="text-xs text-[#94A3B8]">
-              +{position.evidenceAnchors.length - 6}
-            </li>
+      ) : null}
+      <div>
+        <p className="text-sm font-semibold text-[#0F2A4D]">{position.label}</p>
+        <p className="font-mono text-[11px] text-[#64748B]">{position.positionCode}</p>
+        <p className="mt-1 text-xs text-[#475569]">
+          {typeLabel === typeKey ? position.category : typeLabel}
+          {" · "}
+          {position.quantity} {position.unit === "unknown" ? "ks" : position.unit}
+          {sourceAnchor ? (
+            <>
+              {" · "}
+              {t(`projects.aiSetup.positions.evidence.source.${sourceAnchor.sourceType}`)}
+            </>
           ) : null}
-        </ul>
+          {" · "}
+          {t(`projects.aiSetup.positions.price.${position.priceStatus}`)}
+        </p>
       </div>
+      {!compact ? (
+        <div className="space-y-1">
+          <p className="text-xs font-semibold text-[#475569]">
+            {t("projects.aiSetup.positions.evidence.title")}
+          </p>
+          <ul className="space-y-1">
+            {position.evidenceAnchors.slice(0, 6).map((a) => (
+              <li key={a.id} className="text-xs text-[#64748B] leading-snug">
+                {t(`projects.aiSetup.positions.evidence.source.${a.sourceType}`)} ·{" "}
+                {t("projects.aiSetup.positions.evidence.page", { page: a.page })}
+                {a.sourceText ? ` · „${a.sourceText}“` : ""}
+                {!a.bbox ? ` · ${t("projects.aiSetup.positions.evidence.noBbox")}` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       <div className="flex flex-wrap gap-2 pt-1">
         {position.reviewStatus === "needs_review" ? (
           <Button

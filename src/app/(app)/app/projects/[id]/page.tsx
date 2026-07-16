@@ -36,6 +36,8 @@ export default function ProjectDetailPage() {
   const { role } = useWorkspaceProduct();
   const id = params.id as string;
   const setupAi = searchParams.get("setup") === "ai";
+  const setupStep = searchParams.get("step");
+  const setupTab = searchParams.get("tab");
 
   const [project, setProject] = useState<ProjectDoc | null>(null);
   const [loading, setLoading] = useState(true);
@@ -139,6 +141,24 @@ export default function ProjectDetailPage() {
         project={project}
         userId={user.id}
         onProjectUpdated={setProject}
+        initialStep={
+          setupStep === "material" ||
+          setupStep === "overview" ||
+          setupStep === "work" ||
+          setupStep === "price" ||
+          setupStep === "offer"
+            ? setupStep
+            : undefined
+        }
+        initialMaterialTab={
+          setupTab === "pdf" ||
+          setupTab === "summary" ||
+          setupTab === "detail" ||
+          setupTab === "prices" ||
+          setupTab === "review"
+            ? setupTab
+            : undefined
+        }
       />
     );
   }

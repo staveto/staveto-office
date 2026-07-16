@@ -40,6 +40,8 @@ export type CatalogPriceChoice = {
 type Props = {
   position: EstimatorPosition | null;
   currency?: string;
+  /** Hide "apply to similar" when there are no matching priceless rows. */
+  similarPricelessCount?: number;
   onClose: () => void;
   onApplyManualPrice: (position: EstimatorPosition, unitPrice: number, applySimilar: boolean) => void;
   onApplyCatalogPrice: (
@@ -76,6 +78,7 @@ function candidateSourceType(
 export function EstimatorPriceDrawer({
   position,
   currency = "EUR",
+  similarPricelessCount = 0,
   onClose,
   onApplyManualPrice,
   onApplyCatalogPrice,
@@ -87,8 +90,9 @@ export function EstimatorPriceDrawer({
   const [searched, setSearched] = useState(false);
   const [candidates, setCandidates] = useState<ProductCandidate[]>([]);
   const [manualPrice, setManualPrice] = useState("");
-  const [applySimilar, setApplySimilar] = useState(true);
+  const [applySimilar, setApplySimilar] = useState(false);
   const [zeroWarning, setZeroWarning] = useState(false);
+  const canApplySimilar = similarPricelessCount > 0;
 
   const runSearch = useCallback(async () => {
     if (!position) return;
@@ -283,15 +287,17 @@ export function EstimatorPriceDrawer({
               {t("projects.aiSetup.positions.priceDrawer.zeroGuard")}
             </p>
           ) : null}
-          <label className="flex items-center gap-2 text-sm text-[#334155]">
-            <input
-              type="checkbox"
-              checked={applySimilar}
-              onChange={(e) => setApplySimilar(e.target.checked)}
-              className="size-4 accent-[#E95F2A]"
-            />
-            {t("projects.aiSetup.positions.priceDrawer.applySimilar")}
-          </label>
+          {canApplySimilar ? (
+            <label className="flex items-center gap-2 text-sm text-[#334155]">
+              <input
+                type="checkbox"
+                checked={applySimilar}
+                onChange={(e) => setApplySimilar(e.target.checked)}
+                className="size-4 accent-[#E95F2A]"
+              />
+              {t("projects.aiSetup.positions.priceDrawer.applySimilar")}
+            </label>
+          ) : null}
         </section>
 
         {/* Customer supplied */}

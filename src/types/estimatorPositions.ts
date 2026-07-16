@@ -241,6 +241,8 @@ export type PdfDisplayMarker = {
   needsReview: boolean;
   selected: boolean;
   isManualMark?: boolean;
+  /** Unconfirmed find-similar candidate (dashed marker). */
+  isCandidate?: boolean;
   markStatus?:
     | "confirmed"
     | "outside_plan"
@@ -251,6 +253,24 @@ export type PdfDisplayMarker = {
   /** Debug-only technical boxes (normalized 0..1). */
   rawSelectionBbox?: EstimatorPositionBBox;
   tightSymbolBbox?: EstimatorPositionBBox;
+};
+
+/** Project/session symbol key used as truth for strict find-similar. */
+export type ProjectSymbolKeySource = "project_legend" | "user_learned" | "ai_suggested";
+export type ProjectSymbolKeyKind = "point_symbol" | "line_symbol" | "text_annotation";
+
+export type ProjectSymbolKeyEntry = {
+  id: string;
+  label: string;
+  normalizedPoint: string;
+  category?: string;
+  source: ProjectSymbolKeySource;
+  kind: ProjectSymbolKeyKind;
+  colorHint: "red" | "orange" | "green" | "dark" | "black" | "unknown";
+  templateBbox: EstimatorPositionBBox;
+  confidence: "high" | "medium" | "low";
+  needsReview: boolean;
+  linkedPositionId?: string;
 };
 
 /**

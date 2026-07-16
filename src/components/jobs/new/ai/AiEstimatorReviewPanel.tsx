@@ -6,13 +6,17 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  ClipboardList,
   ExternalLink,
   FileText,
+  ListPlus,
   Loader2,
+  PenLine,
   Ruler,
   Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useI18n } from "@/i18n/I18nContext";
 import {
   isAiEstimatorDebugEnabled,
@@ -26,18 +30,19 @@ import {
   buildSymbolCountComparisonRows,
   getSymbolCountingSummary,
   resolveQuantitySource,
-  resolveQuoteReadiness,
   type SymbolCountRowStatus,
 } from "@/lib/ai/quantitySource";
 import { createUnavailableSymbolCounting } from "@/lib/ai/symbolOccurrenceService";
 import {
   buildEstimatorExtractionQualityReport,
-  formatExtractionSummarySk,
 } from "@/lib/ai/estimatorExtractionQuality";
 import {
+  estimatorFactsAsReviewSuggestions,
+  resolveMvpQuoteGate,
+  type MvpConfirmedTakeoffRow,
+} from "@/lib/ai/estimatorMvpTakeoffGate";
+import {
   buildDrawingTakeoffSummary,
-  isQuoteCreateSecondary,
-  primaryCtaForTakeoff,
   type DrawingTakeoffSummary,
 } from "@/lib/takeoff/drawingTakeoffSummary";
 import { getDrawingTakeoffSummary } from "@/services/takeoff/drawingTakeoffSummaryService";
@@ -251,6 +256,17 @@ export function AiEstimatorReviewPanel({
   }>({ quantity: "", roomName: "", unit: "ks", included: true });
   const [takeoffSummary, setTakeoffSummary] = useState<DrawingTakeoffSummary | null>(null);
   const [takeoffSkippedLocal, setTakeoffSkippedLocal] = useState(false);
+  const [confirmedRows, setConfirmedRows] = useState<MvpConfirmedTakeoffRow[]>([]);
+  const [ignoredSuggestionIds, setIgnoredSuggestionIds] = useState<Set<string>>(() => new Set());
+  const [showManualForm, setShowManualForm] = useState(false);
+  const [showListPlaceholder, setShowListPlaceholder] = useState(false);
+  const [manualDraft, setManualDraft] = useState({
+    label: "",
+    quantity: "1",
+    unit: "ks",
+    roomName: "",
+    category: "other",
+  });
 
   const previewFiles = attachmentFiles.length
     ? attachmentFiles
@@ -294,12 +310,6 @@ export function AiEstimatorReviewPanel({
     return base;
   }, [takeoffSummary, takeoffSkippedLocal]);
 
-  const primaryTakeoffCta = primaryCtaForTakeoff(resolvedTakeoffSummary);
-  const quoteSecondary =
-    hasPdfAttachments &&
-    !takeoffSkippedLocal &&
-    isQuoteCreateSecondary(hasPdfAttachments, resolvedTakeoffSummary);
-
   const rows = useMemo(() => {
     const all = [...displayFacts.extractedItems, ...displayFacts.inferredItems];
     return all
@@ -309,6 +319,14 @@ export function AiEstimatorReviewPanel({
       })
       .filter((i) => i.included !== false);
   }, [displayFacts, manualOverrides]);
+
+  const aiSuggestions = useMemo(
+    () =>
+      estimatorFactsAsReviewSuggestions(displayFacts).filter(
+        (i) => !ignoredSuggestionIds.has(i.id) && !i.id.startsWith("legend_item_")
+      ),
+    [displayFacts, ignoredSuggestionIds]
+  );
 
   const reviewItems = useMemo(
     () => rows.filter((i) => i.needsReview || i.confidence === "low" || i.origin === "assumption"),
@@ -367,59 +385,67 @@ export function AiEstimatorReviewPanel({
     [displayFacts, manualOverrides]
   );
 
-  const priceRisk =
-    displayFacts.confidence === "low" || criticalQs.length > 0
-      ? "high"
-      : displayFacts.confidence === "medium" || reviewItems.length > 0
-        ? "medium"
-        : "low";
-
-  const blockerCount = criticalQs.length + unclearSymbols.length;
-  const readiness = useMemo(
+  const priceMissingFromEstimate = useMemo(
     () =>
-      resolveQuoteReadiness({
-        facts: displayFacts,
-        criticalQuestionCount: criticalQs.length,
-        comparisonRows,
-      }),
-    [displayFacts, criticalQs.length, comparisonRows]
+      (quoteDraft?.lines ?? estimateLines).filter(
+        (l) => l.totalPrice == null && (l.unitPrice == null || l.unitPrice <= 0)
+      ).length,
+    [quoteDraft, estimateLines]
   );
-  const readyForQuote = readiness.state === "ready";
-  const partiallyReady = readiness.state === "partially_ready";
 
-  const recommendation =
-    readiness.state === "ready"
+  const mvpGate = useMemo(
+    () =>
+      resolveMvpQuoteGate({
+        facts: displayFacts,
+        takeoffSummary: resolvedTakeoffSummary,
+        confirmedRows,
+        priceMissingCount: priceMissingFromEstimate,
+        reviewPendingCount: criticalQs.length + reviewItems.length + unclearSymbols.length,
+        criticalQuestionCount: criticalQs.length,
+      }),
+    [
+      displayFacts,
+      resolvedTakeoffSummary,
+      confirmedRows,
+      priceMissingFromEstimate,
+      criticalQs.length,
+      reviewItems.length,
+      unclearSymbols.length,
+    ]
+  );
+
+  const readyForQuote = mvpGate.allowFixedQuote;
+  const quoteActionsEnabled = mvpGate.hasConfirmedTakeoff;
+  const preliminaryOnly = mvpGate.preliminaryOnly;
+
+  const recommendation = !mvpGate.hasConfirmedTakeoff
+    ? t("projects.aiEstimator.mvp.takeoffNotConfirmed")
+    : readyForQuote
       ? t("projects.aiEstimator.cockpit.ready")
-      : readiness.state === "partially_ready"
-        ? readiness.warning || t("projects.aiEstimator.cockpit.partiallyReady")
-        : criticalQs.length > 0
-          ? t("projects.aiEstimator.cockpit.recommendation", {
-              count: String(criticalQs.length),
-            })
-          : readiness.warning || t("projects.aiEstimator.cockpit.needsReviewReady");
+      : criticalQs.length > 0
+        ? t("projects.aiEstimator.cockpit.recommendation", {
+            count: String(criticalQs.length),
+          })
+        : t("projects.aiEstimator.mvp.quotePreliminary");
 
-  const drawingCountDisplay = resolvedTakeoffSummary.hasVisualTakeoff
-    ? String(resolvedTakeoffSummary.countedOnDrawing)
-    : hasPdfAttachments
-      ? t("projects.aiEstimator.cockpit.drawingNotChecked")
-      : t("projects.aiEstimator.cockpit.drawingCountUnavailable");
+  const stickyStatus = readyForQuote
+    ? t("projects.aiEstimator.cockpit.statusReady")
+    : quoteActionsEnabled
+      ? t("projects.aiEstimator.cockpit.statusPartial")
+      : t("projects.aiEstimator.cockpit.statusBlocked", {
+          count: String(Math.max(mvpGate.reasons.length, 1)),
+        });
 
-  const needsReviewDisplay = resolvedTakeoffSummary.hasVisualTakeoff
-    ? String(resolvedTakeoffSummary.needsReviewCount)
-    : String(criticalQs.length + reviewItems.length + unclearSymbols.length);
-
-  const effectivePriceRisk =
-    takeoffSkippedLocal || resolvedTakeoffSummary.takeoffStatus === "skipped_manual"
-      ? priceRisk === "low"
-        ? "medium"
-        : priceRisk
-      : hasPdfAttachments &&
-          (resolvedTakeoffSummary.takeoffStatus === "not_started" ||
-            resolvedTakeoffSummary.takeoffStatus === "needs_review")
-        ? priceRisk === "low"
-          ? "medium"
-          : priceRisk
-        : priceRisk;
+  const addConfirmedManualRow = (row: Omit<MvpConfirmedTakeoffRow, "id" | "quantityConfirmed">) => {
+    setConfirmedRows((prev) => [
+      ...prev,
+      {
+        ...row,
+        id: `manual_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+        quantityConfirmed: true,
+      },
+    ]);
+  };
 
   const roomsGrouped = useMemo(() => {
     const map = new Map<string, AiExtractedItem[]>();
@@ -487,15 +513,6 @@ export function AiEstimatorReviewPanel({
     });
   };
 
-  const stickyStatus =
-    readiness.state === "ready"
-      ? t("projects.aiEstimator.cockpit.statusReady")
-      : readiness.state === "partially_ready"
-        ? t("projects.aiEstimator.cockpit.statusPartial")
-        : t("projects.aiEstimator.cockpit.statusBlocked", {
-            count: String(Math.max(criticalQs.length, 1)),
-          });
-
   const saveManualEdit = (itemId: string) => {
     const qty = Number(editDraft.quantity);
     setManualOverrides((prev) => ({
@@ -508,6 +525,17 @@ export function AiEstimatorReviewPanel({
         quantitySource: "manual",
       },
     }));
+    const sourceItem = rows.find((r) => r.id === itemId);
+    if (sourceItem && Number.isFinite(qty) && qty > 0 && editDraft.included) {
+      addConfirmedManualRow({
+        label: sourceItem.title,
+        category: sourceItem.category,
+        quantity: qty,
+        unit: (editDraft.unit as string) || "ks",
+        roomName: editDraft.roomName || undefined,
+        source: "manual",
+      });
+    }
     setEditingCountId(null);
   };
 
@@ -540,25 +568,14 @@ export function AiEstimatorReviewPanel({
               className={njNavPrimary()}
               disabled={busy || visualTakeoffBusy}
               data-testid="start-visual-takeoff"
-              onClick={() => {
-                if (primaryTakeoffCta === "continue_quote" && onBuildQuote) {
-                  setTab("offer");
-                  void onBuildQuote();
-                  return;
-                }
-                void onStartVisualTakeoff();
-              }}
+              onClick={() => void onStartVisualTakeoff()}
             >
               {visualTakeoffBusy ? (
                 <Loader2 className="mr-2 size-4 animate-spin" />
               ) : (
                 <Ruler className="mr-2 size-4" />
               )}
-              {primaryTakeoffCta === "finish_review"
-                ? t("projects.aiEstimator.visualTakeoff.ctaFinish")
-                : primaryTakeoffCta === "continue_quote"
-                  ? t("projects.aiEstimator.visualTakeoff.ctaContinue")
-                  : t("projects.aiEstimator.visualTakeoff.ctaStart")}
+              {t("projects.aiEstimator.visualTakeoff.ctaStart")}
             </Button>
           ) : previewFiles.some((f) => f.storagePath) ? (
             previewFiles
@@ -586,12 +603,19 @@ export function AiEstimatorReviewPanel({
           {onBuildQuote ? (
             <Button
               type="button"
-              variant={quoteSecondary ? "outline" : "default"}
-              className={quoteSecondary ? njNavSecondary() : njNavPrimary()}
-              disabled={!!busy || (!!quoteSecondary && !takeoffSkippedLocal)}
+              variant={quoteActionsEnabled && !preliminaryOnly ? "default" : "outline"}
+              className={
+                quoteActionsEnabled && !preliminaryOnly ? njNavPrimary() : njNavSecondary()
+              }
+              disabled={!!busy || !quoteActionsEnabled}
               data-testid="create-quote-from-review"
+              title={
+                !quoteActionsEnabled
+                  ? t("projects.aiEstimator.mvp.quotePreliminary")
+                  : undefined
+              }
               onClick={() => {
-                if (quoteSecondary && !takeoffSkippedLocal) return;
+                if (!quoteActionsEnabled) return;
                 setTab("offer");
                 void onBuildQuote();
               }}
@@ -602,6 +626,35 @@ export function AiEstimatorReviewPanel({
           ) : null}
         </div>
       </div>
+
+      {/* MVP honesty banner — until takeoff is user-confirmed */}
+      {!mvpGate.hasConfirmedTakeoff ? (
+        <div
+          className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 space-y-1"
+          data-testid="mvp-takeoff-honesty"
+          role="status"
+        >
+          <p className="text-sm font-semibold text-amber-950">
+            {t("projects.aiEstimator.mvp.takeoffNotConfirmed")}
+          </p>
+          <p className="text-xs text-amber-900">
+            {t("projects.aiEstimator.mvp.verifyInSetup")}
+          </p>
+          <p className="text-xs text-amber-900">
+            {t("projects.aiEstimator.mvp.aiHelpedRead")}
+          </p>
+        </div>
+      ) : (
+        <div
+          className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2"
+          data-testid="mvp-takeoff-confirmed"
+          role="status"
+        >
+          <p className="text-xs font-medium text-emerald-900">
+            {t("projects.aiEstimator.mvp.aiHelpedRead")}
+          </p>
+        </div>
+      )}
 
       {previewError ? (
         <p className="text-sm text-amber-700 dark:text-amber-200" role="alert">
@@ -614,35 +667,11 @@ export function AiEstimatorReviewPanel({
           className="rounded-xl border border-[#1D376A]/25 bg-[#EFF6FF] px-4 py-3 space-y-2"
           data-testid="visual-takeoff-block"
         >
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <p className="text-sm font-semibold text-[#1D376A]">
-                {t("projects.aiEstimator.visualTakeoff.title")}
-              </p>
-              <p className="mt-0.5 text-xs text-[#475569]">
-                {t(`projects.aiEstimator.visualTakeoff.status.${resolvedTakeoffSummary.takeoffStatus}`)}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-3 text-xs text-[#334155]">
-              <span>
-                {t("projects.aiEstimator.visualTakeoff.confirmed")}:{" "}
-                <strong>{resolvedTakeoffSummary.confirmedCount + resolvedTakeoffSummary.usedInQuoteCount}</strong>
-              </span>
-              <span>
-                {t("projects.aiEstimator.visualTakeoff.candidates")}:{" "}
-                <strong>{resolvedTakeoffSummary.needsReviewCount}</strong>
-              </span>
-              <span>
-                {t("projects.aiEstimator.visualTakeoff.inQuote")}:{" "}
-                <strong>{resolvedTakeoffSummary.usedInQuoteCount}</strong>
-              </span>
-            </div>
-          </div>
-          <p className="text-xs text-[#475569] leading-relaxed">
-            {t("projects.aiEstimator.visualTakeoff.hintLegend")}
+          <p className="text-sm font-semibold text-[#1D376A]">
+            {t("projects.aiEstimator.visualTakeoff.title")}
           </p>
           <p className="text-xs text-[#475569] leading-relaxed">
-            {t("projects.aiEstimator.visualTakeoff.hintMarks")}
+            {t("projects.aiEstimator.mvp.verifyInSetup")}
           </p>
           <div className="flex flex-wrap gap-2 pt-1">
             {onStartVisualTakeoff ? (
@@ -651,6 +680,7 @@ export function AiEstimatorReviewPanel({
                 size="sm"
                 className="h-8 bg-[#1D376A] text-white hover:bg-[#162952]"
                 disabled={busy || visualTakeoffBusy}
+                data-testid="start-visual-takeoff-secondary"
                 onClick={() => void onStartVisualTakeoff()}
               >
                 {visualTakeoffBusy ? (
@@ -658,14 +688,10 @@ export function AiEstimatorReviewPanel({
                 ) : (
                   <Ruler className="mr-1.5 size-3.5" />
                 )}
-                {primaryTakeoffCta === "finish_review"
-                  ? t("projects.aiEstimator.visualTakeoff.ctaFinish")
-                  : primaryTakeoffCta === "continue_quote"
-                    ? t("projects.aiEstimator.visualTakeoff.ctaOpenWorkbench")
-                    : t("projects.aiEstimator.visualTakeoff.ctaStart")}
+                {t("projects.aiEstimator.visualTakeoff.ctaStart")}
               </Button>
             ) : null}
-            {quoteSecondary && onSkipVisualTakeoff ? (
+            {onSkipVisualTakeoff && !mvpGate.hasConfirmedTakeoff ? (
               <Button
                 type="button"
                 size="sm"
@@ -675,6 +701,7 @@ export function AiEstimatorReviewPanel({
                 data-testid="skip-visual-takeoff"
                 onClick={() => {
                   setTakeoffSkippedLocal(true);
+                  setShowManualForm(true);
                   void onSkipVisualTakeoff();
                 }}
               >
@@ -682,62 +709,216 @@ export function AiEstimatorReviewPanel({
               </Button>
             ) : null}
           </div>
-          {quoteSecondary ? (
+          {!mvpGate.hasConfirmedTakeoff ? (
             <p className="text-xs text-amber-800">
-              {t("projects.aiEstimator.visualTakeoff.quoteBlockedHint")}
-            </p>
-          ) : null}
-          {takeoffSkippedLocal || resolvedTakeoffSummary.takeoffStatus === "skipped_manual" ? (
-            <p className="text-xs text-[#64748B]">
-              {t("projects.aiEstimator.visualTakeoff.skippedHint")}
+              {t("projects.aiEstimator.mvp.quotePreliminary")}
             </p>
           ) : null}
         </div>
       ) : null}
 
-      {/* Summary strip — honest counters */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+      {/* Create takeoff — three modes */}
+      <div
+        className="rounded-xl border-2 border-[#1D376A]/20 bg-[#F6F8FB] px-4 py-3 space-y-3"
+        data-testid="mvp-create-takeoff"
+      >
+        <p className="text-sm font-bold text-[#0F2A4D]">
+          {t("projects.aiEstimator.mvp.createTakeoff")}
+        </p>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-auto flex-col items-start gap-1 whitespace-normal px-3 py-3 text-left"
+            disabled={busy || visualTakeoffBusy || !onStartVisualTakeoff}
+            data-testid="takeoff-mode-docs"
+            onClick={() => {
+              if (onStartVisualTakeoff) void onStartVisualTakeoff();
+            }}
+          >
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-[#1D376A]">
+              <Ruler className="size-4" />
+              {t("projects.aiEstimator.mvp.modeDocs")}
+            </span>
+            <span className="text-[11px] font-normal text-[#64748B]">
+              {t("projects.aiEstimator.mvp.modeDocsHint")}
+            </span>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-auto flex-col items-start gap-1 whitespace-normal px-3 py-3 text-left"
+            data-testid="takeoff-mode-list"
+            onClick={() => {
+              setShowListPlaceholder(true);
+              setShowManualForm(true);
+            }}
+          >
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-[#1D376A]">
+              <ClipboardList className="size-4" />
+              {t("projects.aiEstimator.mvp.modeList")}
+            </span>
+            <span className="text-[11px] font-normal text-[#64748B]">
+              {t("projects.aiEstimator.mvp.modeListHint")}
+            </span>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-auto flex-col items-start gap-1 whitespace-normal px-3 py-3 text-left"
+            data-testid="takeoff-mode-manual"
+            onClick={() => setShowManualForm(true)}
+          >
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-[#1D376A]">
+              <PenLine className="size-4" />
+              {t("projects.aiEstimator.mvp.modeManual")}
+            </span>
+            <span className="text-[11px] font-normal text-[#64748B]">
+              {t("projects.aiEstimator.mvp.modeManualHint")}
+            </span>
+          </Button>
+        </div>
+        {showListPlaceholder ? (
+          <p className="text-xs text-[#475569]" data-testid="schedule-list-placeholder">
+            {t("projects.aiEstimator.mvp.modeListPlaceholder")}
+          </p>
+        ) : null}
+        {showManualForm ? (
+          <div
+            className="space-y-2 rounded-lg border border-[#E2E8F0] bg-white p-3"
+            data-testid="manual-takeoff-form"
+          >
+            <p className="text-xs font-semibold text-[#0F2A4D]">
+              {t("projects.aiEstimator.mvp.manualAdd")}
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Input
+                value={manualDraft.label}
+                onChange={(e) => setManualDraft((d) => ({ ...d, label: e.target.value }))}
+                placeholder={t("projects.aiEstimator.mvp.manualName")}
+                aria-label={t("projects.aiEstimator.mvp.manualName")}
+              />
+              <Input
+                value={manualDraft.category}
+                onChange={(e) => setManualDraft((d) => ({ ...d, category: e.target.value }))}
+                placeholder={t("projects.aiEstimator.mvp.manualCategory")}
+                aria-label={t("projects.aiEstimator.mvp.manualCategory")}
+              />
+              <Input
+                value={manualDraft.quantity}
+                onChange={(e) => setManualDraft((d) => ({ ...d, quantity: e.target.value }))}
+                placeholder={t("projects.aiEstimator.mvp.manualQty")}
+                aria-label={t("projects.aiEstimator.mvp.manualQty")}
+              />
+              <Input
+                value={manualDraft.unit}
+                onChange={(e) => setManualDraft((d) => ({ ...d, unit: e.target.value }))}
+                placeholder={t("projects.aiEstimator.mvp.manualUnit")}
+                aria-label={t("projects.aiEstimator.mvp.manualUnit")}
+              />
+              <Input
+                className="sm:col-span-2"
+                value={manualDraft.roomName}
+                onChange={(e) => setManualDraft((d) => ({ ...d, roomName: e.target.value }))}
+                placeholder={t("projects.aiEstimator.mvp.manualRoom")}
+                aria-label={t("projects.aiEstimator.mvp.manualRoom")}
+              />
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 bg-[#1D376A] text-white hover:bg-[#162952]"
+              disabled={!manualDraft.label.trim() || Number(manualDraft.quantity) <= 0}
+              onClick={() => {
+                const q = Number(manualDraft.quantity.replace(",", "."));
+                if (!manualDraft.label.trim() || !(q > 0)) return;
+                addConfirmedManualRow({
+                  label: manualDraft.label.trim(),
+                  category: manualDraft.category.trim() || "other",
+                  quantity: q,
+                  unit: manualDraft.unit.trim() || "ks",
+                  roomName: manualDraft.roomName.trim() || undefined,
+                  source: showListPlaceholder ? "schedule" : "manual",
+                });
+                setManualDraft({
+                  label: "",
+                  quantity: "1",
+                  unit: "ks",
+                  roomName: "",
+                  category: "other",
+                });
+              }}
+            >
+              <ListPlus className="mr-1 size-3.5" />
+              {t("projects.aiEstimator.mvp.addToTakeoff")}
+            </Button>
+            {confirmedRows.length > 0 ? (
+              <ul className="space-y-1 text-xs text-[#334155]">
+                {confirmedRows.map((r) => (
+                  <li key={r.id} className="flex justify-between gap-2 border-b border-[#E2E8F0] py-1">
+                    <span>
+                      {r.label}
+                      {r.roomName ? ` · ${r.roomName}` : ""}
+                    </span>
+                    <span className="tabular-nums">
+                      {r.quantity} {r.unit}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      {/* Main metrics — confirmed takeoff only */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <SummaryCard
-          label={t("projects.aiEstimator.cockpit.legendMarks")}
-          value={String(legendEntries.length)}
+          label={t("projects.aiEstimator.cockpit.metricConfirmed")}
+          value={String(mvpGate.metrics.confirmedItems)}
+          emphasize={mvpGate.metrics.confirmedItems === 0}
         />
         <SummaryCard
-          label={t("projects.aiEstimator.cockpit.scheduleItems")}
-          value={String(rows.length)}
+          label={t("projects.aiEstimator.cockpit.metricReview")}
+          value={String(mvpGate.metrics.needsReview)}
+          emphasize={mvpGate.metrics.needsReview > 0}
         />
         <SummaryCard
-          label={t("projects.aiEstimator.cockpit.drawingCounted")}
-          value={drawingCountDisplay}
-          emphasize={!resolvedTakeoffSummary.hasVisualTakeoff || resolvedTakeoffSummary.countedOnDrawing === 0}
+          label={t("projects.aiEstimator.cockpit.metricNoPrice")}
+          value={String(mvpGate.metrics.priceMissing)}
+          emphasize={mvpGate.metrics.priceMissing > 0}
         />
         <SummaryCard
-          label={t("projects.aiEstimator.cockpit.needsReview")}
-          value={needsReviewDisplay}
-          emphasize={
-            resolvedTakeoffSummary.needsReviewCount > 0 ||
-            criticalQs.length > 0 ||
-            unclearSymbols.length > 0
-          }
-        />
-        <SummaryCard
-          label={t("projects.aiEstimator.cockpit.priceRisk")}
-          value={riskLevelLabel(effectivePriceRisk, t)}
-          emphasize={effectivePriceRisk !== "low"}
+          label={t("projects.aiEstimator.cockpit.metricInQuote")}
+          value={String(mvpGate.metrics.usedInQuote)}
         />
       </div>
 
-      <p className="text-sm text-muted-foreground" data-testid="ai-extraction-summary">
-        {formatExtractionSummarySk(quality.report, rows.length)}
-      </p>
+      {preliminaryOnly ? (
+        <div
+          className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950"
+          role="status"
+          data-testid="mvp-quote-preliminary"
+        >
+          <p className="font-medium">{t("projects.aiEstimator.mvp.quotePreliminary")}</p>
+          {mvpGate.reasons.length > 0 ? (
+            <ul className="mt-1 list-disc pl-4 text-xs">
+              {mvpGate.reasons.map((r) => (
+                <li key={r}>
+                  {t(`projects.aiEstimator.mvp.reason.${r}`)}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
 
       <div
         className={cn(
           "rounded-lg border px-3 py-2 text-sm",
           readyForQuote
             ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-900 dark:text-emerald-100"
-            : partiallyReady
-              ? "border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100"
-              : "border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100"
+            : "border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100"
         )}
         role="status"
       >
@@ -779,13 +960,92 @@ export function AiEstimatorReviewPanel({
             </ReviewSection>
           ) : null}
 
-          {blockerCount === 0 &&
+          {mvpGate.hasConfirmedTakeoff &&
+          criticalQs.length === 0 &&
           reviewItems.length === 0 &&
           quality.criticalWarnings.length === 0 ? (
             <div className="flex items-start gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-3">
               <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-600" />
               <p>{t("projects.aiEstimator.cockpit.noIssues")}</p>
             </div>
+          ) : null}
+
+          {/* AI suggestions — review only, not trusted takeoff */}
+          {aiSuggestions.length > 0 ? (
+            <ReviewSection title={t("projects.aiEstimator.mvp.suggestionsTitle")}>
+              <p className="mb-2 text-xs text-muted-foreground">
+                {t("projects.aiEstimator.mvp.suggestionsHint")}
+              </p>
+              <ul className="space-y-2">
+                {aiSuggestions.slice(0, showMoreReview ? 40 : 8).map((item) => (
+                  <li
+                    key={item.id}
+                    className="rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2"
+                    data-testid="ai-suggestion-row"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-medium text-[var(--foreground)]">{item.title}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.quantity != null ? `${item.quantity} ${item.unit}` : "—"}
+                          {item.roomName ? ` · ${item.roomName}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-7 bg-[#1D376A] px-2 text-[11px] text-white hover:bg-[#162952]"
+                          onClick={() => {
+                            const q = item.computedQuantity ?? item.quantity ?? 1;
+                            addConfirmedManualRow({
+                              label: item.title,
+                              category: item.category,
+                              quantity: q > 0 ? q : 1,
+                              unit: item.unit && item.unit !== "unknown" ? item.unit : "ks",
+                              roomName: item.roomName,
+                              source: "manual",
+                            });
+                            setIgnoredSuggestionIds((prev) => new Set(prev).add(item.id));
+                          }}
+                        >
+                          {t("projects.aiEstimator.mvp.addToTakeoff")}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-[11px]"
+                          onClick={() => {
+                            setShowManualForm(true);
+                            setManualDraft({
+                              label: item.title,
+                              quantity: String(item.computedQuantity ?? item.quantity ?? 1),
+                              unit: item.unit && item.unit !== "unknown" ? item.unit : "ks",
+                              roomName: item.roomName ?? "",
+                              category: item.category,
+                            });
+                          }}
+                        >
+                          {t("projects.aiEstimator.mvp.editSuggestion")}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-[11px] text-muted-foreground"
+                          onClick={() =>
+                            setIgnoredSuggestionIds((prev) => new Set(prev).add(item.id))
+                          }
+                        >
+                          {t("projects.aiEstimator.mvp.ignoreSuggestion")}
+                        </Button>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </ReviewSection>
           ) : null}
 
           {criticalQs.length > 0 ? (
@@ -1216,19 +1476,17 @@ export function AiEstimatorReviewPanel({
 
       {tab === "symbols" ? (
         <div className="space-y-4 text-sm">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <p className="text-xs text-muted-foreground">
+            {t("projects.aiEstimator.mvp.aiHelpedRead")}
+          </p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <SummaryCard
-              label={t("projects.aiEstimator.cockpit.legendMarks")}
+              label={t("projects.aiEstimator.cockpit.legendMarksDetail")}
               value={String(legendEntries.length)}
             />
             <SummaryCard
-              label={t("projects.aiEstimator.cockpit.scheduleItems")}
-              value={String(rows.length)}
-            />
-            <SummaryCard
-              label={t("projects.aiEstimator.cockpit.drawingCounted")}
-              value={drawingCountDisplay}
-              emphasize={!symbolCounting.drawingDetectionAvailable}
+              label={t("projects.aiEstimator.mvp.suggestionsTitle")}
+              value={String(aiSuggestions.length)}
             />
             <SummaryCard
               label={t("projects.aiEstimator.symbols.unclear")}
@@ -1492,16 +1750,14 @@ export function AiEstimatorReviewPanel({
           >
             {readyForQuote
               ? t("projects.aiEstimator.cockpit.offerReady")
-              : partiallyReady
-                ? readiness.warning || t("projects.aiEstimator.cockpit.partiallyReady")
-                : t("projects.aiEstimator.cockpit.offerBlocked", {
-                    count: String(Math.max(criticalQs.length, 1)),
-                  })}
+              : t("projects.aiEstimator.mvp.quotePreliminary")}
           </div>
-          {readiness.warning && !readyForQuote ? (
-            <p className="text-xs text-amber-800 dark:text-amber-200" role="status">
-              {t("projects.aiEstimator.counts.quoteWarning")}
-            </p>
+          {preliminaryOnly ? (
+            <ul className="list-disc pl-4 text-xs text-amber-800 dark:text-amber-200" role="status">
+              {mvpGate.reasons.map((r) => (
+                <li key={r}>{t(`projects.aiEstimator.mvp.reason.${r}`)}</li>
+              ))}
+            </ul>
           ) : null}
 
           {quoteDraft ? (
@@ -1579,7 +1835,7 @@ export function AiEstimatorReviewPanel({
               <Button
                 type="button"
                 className={njNavPrimary()}
-                disabled={busy}
+                disabled={busy || !quoteActionsEnabled}
                 onClick={() => void onBuildQuote()}
               >
                 {busy ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
@@ -1590,8 +1846,13 @@ export function AiEstimatorReviewPanel({
               <Button
                 type="button"
                 className={njNavPrimary()}
-                disabled={busy || !quoteDraft}
+                disabled={busy || !quoteDraft || !readyForQuote}
                 onClick={() => void onCreateQuoteProject()}
+                title={
+                  !readyForQuote
+                    ? t("projects.aiEstimator.mvp.quotePreliminary")
+                    : undefined
+                }
               >
                 {t("projects.aiEstimator.confirmQuoteProject")}
               </Button>
@@ -1614,7 +1875,7 @@ export function AiEstimatorReviewPanel({
                 variant="outline"
                 size="sm"
                 className={njNavSecondary()}
-                disabled={busy}
+                disabled={busy || !quoteActionsEnabled}
                 onClick={() => void onBuildEstimate()}
               >
                 {t("projects.aiEstimator.buildEstimate")}
@@ -1643,6 +1904,22 @@ export function AiEstimatorReviewPanel({
               ))}
             </ul>
           ) : null}
+          <p className="font-medium pt-2">
+            {t("projects.aiEstimator.cockpit.legendMarksDetail")}
+          </p>
+          <p className="text-muted-foreground tabular-nums">
+            {legendEntries.length}
+          </p>
+          {legendEntries.length > 0 ? (
+            <ul className="max-h-40 overflow-y-auto rounded-lg border border-[var(--border)] p-2 text-xs space-y-1">
+              {legendEntries.slice(0, 40).map((l) => (
+                <li key={l.id}>
+                  {l.symbolLabel ? `${l.symbolLabel} — ` : ""}
+                  {l.symbolDescription}
+                </li>
+              ))}
+            </ul>
+          ) : null}
           <p className="font-medium pt-2">{t("projects.aiEstimator.rooms")}</p>
           <p className="text-muted-foreground">
             {displayFacts.rooms.map((r) => r.name).join(", ") || "—"}
@@ -1650,7 +1927,7 @@ export function AiEstimatorReviewPanel({
         </div>
       ) : null}
 
-      {/* Action bar — normal document flow (no absolute overlay; ancestor overflow-hidden breaks sticky) */}
+      {/* Action bar */}
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border)] bg-[var(--muted)]/20 px-3 py-2.5">
         <p className="text-xs text-muted-foreground">
           {t("projects.aiEstimator.cockpit.unsavedOnce")}
@@ -1674,9 +1951,15 @@ export function AiEstimatorReviewPanel({
               type="button"
               size="sm"
               className={njNavPrimary()}
-              disabled={busy}
+              disabled={busy || !quoteActionsEnabled}
+              title={
+                !quoteActionsEnabled
+                  ? t("projects.aiEstimator.mvp.quotePreliminary")
+                  : undefined
+              }
               onClick={() => {
-                if (quoteDraft && onCreateQuoteProject) {
+                if (!quoteActionsEnabled) return;
+                if (quoteDraft && onCreateQuoteProject && readyForQuote) {
                   void onCreateQuoteProject();
                 } else if (onBuildQuote) {
                   setTab("offer");
