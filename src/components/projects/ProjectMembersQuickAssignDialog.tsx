@@ -248,8 +248,12 @@ export function ProjectMembersQuickAssignDialog({
       const removedIds = previousIds.filter((uid) => !selectedUidSet.has(uid));
 
       if (effectiveOrgId) {
+        // Re-assert ALL selected members (idempotent writes) — this self-heals
+        // projects where a previous save created the member doc but failed to
+        // update assignedMemberIds on the project document.
+        const toEnsure = selected.filter((s) => s.userId !== project.ownerId);
         await Promise.all([
-          ...newlyAdded.map((member) =>
+          ...toEnsure.map((member) =>
             assignMemberToBusinessProject({
               projectId: project.id,
               uid: member.userId,

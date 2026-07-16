@@ -68,16 +68,24 @@ export async function listBusinessProjectsAssignedToMember(
   );
 }
 
-function mergeSnapshots(
+/** Firestore rejects undefined field values — keep only present fields. */
+function compactSnapshot(row: AssignedMemberSnapshot): AssignedMemberSnapshot {
+  const out: AssignedMemberSnapshot = { uid: row.uid };
+  if (typeof row.name === "string" && row.name.trim()) out.name = row.name.trim();
+  if (typeof row.role === "string" && row.role.trim()) out.role = row.role.trim();
+  return out;
+}
+
+export function mergeSnapshots(
   current: AssignedMemberSnapshot[],
   nextMember: AssignedMemberSnapshot
 ): AssignedMemberSnapshot[] {
   const byId = new Map<string, AssignedMemberSnapshot>();
   for (const row of current) {
     if (!row?.uid) continue;
-    byId.set(row.uid, row);
+    byId.set(row.uid, compactSnapshot(row));
   }
-  byId.set(nextMember.uid, nextMember);
+  byId.set(nextMember.uid, compactSnapshot(nextMember));
   return [...byId.values()];
 }
 
@@ -148,29 +156,36 @@ export async function assignMemberToBusinessProject(input: {
     role: input.role,
   });
 
-  await setDoc(
-    doc(db, "projects", input.projectId, "members", input.uid),
-    {
-      userId: input.uid,
-      name: input.name ?? null,
-      role: "member",
-      status: "active",
-      pendingAcknowledgment: true,
-      permissionLevel: "editor",
-      addedBy: input.actorUid ?? null,
-      addedAt: serverTimestamp(),
-      sharedItems: {
-        tasks: true,
-        phases: true,
-        expenses: true,
-        diary: true,
-        documents: true,
-        timeTracking: true,
-      },
-      updatedAt: serverTimestamp(),
+  // Idempotent: re-saving an already-assigned member must not re-trigger the
+  // mobile invite prompt (pendingAcknowledgment) or overwrite addedAt/addedBy.
+  const memberRef = doc(db, "projects", input.projectId, "members", input.uid);
+  const existingMember = await getDoc(memberRef);
+  const memberPatch: Record<string, unknown> = {
+    userId: input.uid,
+    role: "member",
+    status: "active",
+    permissionLevel: "editor",
+    sharedItems: {
+      tasks: true,
+      phases: true,
+      expenses: true,
+      diary: true,
+      documents: true,
+      timeTracking: true,
     },
-    { merge: true }
-  );
+    updatedAt: serverTimestamp(),
+  };
+  if (input.name?.trim()) {
+    memberPatch.name = input.name.trim();
+  } else if (!existingMember.exists()) {
+    memberPatch.name = null;
+  }
+  if (!existingMember.exists()) {
+    memberPatch.pendingAcknowledgment = true;
+    memberPatch.addedBy = input.actorUid ?? null;
+    memberPatch.addedAt = serverTimestamp();
+  }
+  await setDoc(memberRef, memberPatch, { merge: true });
 
   const patch: Record<string, unknown> = {
     assignedMemberIds: arrayUnion(input.uid),

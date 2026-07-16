@@ -23,6 +23,7 @@ export default defineConfig({
       "src/services/estimatorKnowledge/**/*.test.ts",
       "src/lib/takeoff/**/*.test.ts",
       "src/services/takeoff/**/*.test.ts",
+      "src/services/projects/**/*.test.ts",
     ],
   },
   resolve: {
