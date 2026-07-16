@@ -721,6 +721,16 @@ service cloud.firestore {
       );
     }
 
+    // Subcollection variant: `resource` inside a subcollection match is the child doc,
+    // so the project doc must be fetched by id (member assignment, phases, problems, ...).
+    function canManageProjectId(projectId) {
+      let p = projectData(projectId);
+      return isSignedIn() && (
+        p.ownerId == request.auth.uid
+        || (projectLinkedOrg(p) != null && canManageOrganization(projectLinkedOrg(p)))
+      );
+    }
+
     match /projects/{projectId} {
       allow read: if canReadProject();
       allow create: if canCreateProject();
@@ -752,34 +762,34 @@ service cloud.firestore {
 
       match /members/{memberId} {
         allow read: if canAccessProjectId(projectId);
-        allow write: if canManageProjectDoc();
+        allow write: if canManageProjectId(projectId);
       }
 
       match /phases/{phaseId} {
         allow read: if canAccessProjectId(projectId);
-        allow write: if canManageProjectDoc();
+        allow write: if canManageProjectId(projectId);
       }
 
       // Site problems (mobile: projects/{projectId}/problems)
       match /problems/{problemId} {
         allow read: if canAccessProjectId(projectId);
         allow create: if canAccessProjectId(projectId);
-        allow update: if canAccessProjectId(projectId) || canManageProjectDoc();
-        allow delete: if canManageProjectDoc();
+        allow update: if canAccessProjectId(projectId) || canManageProjectId(projectId);
+        allow delete: if canManageProjectId(projectId);
       }
 
       // Mobile compat: construction diary, attachments, activity events.
       match /constructionDiary/{entryId} {
         allow read: if canAccessProjectId(projectId);
         allow create: if canAccessProjectId(projectId);
-        allow update, delete: if canManageProjectDoc()
+        allow update, delete: if canManageProjectId(projectId)
           || (canAccessProjectId(projectId) && resource.data.get('createdBy', null) == request.auth.uid);
       }
 
       match /attachments/{attachmentId} {
         allow read: if canAccessProjectId(projectId);
         allow create: if canAccessProjectId(projectId);
-        allow update, delete: if canManageProjectDoc()
+        allow update, delete: if canManageProjectId(projectId)
           || (canAccessProjectId(projectId) && resource.data.get('createdBy', null) == request.auth.uid);
       }
 
