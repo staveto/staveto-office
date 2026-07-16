@@ -81,7 +81,7 @@ function mergeSnapshots(
   return [...byId.values()];
 }
 
-/** Link legacy company projects that were created without orgId (project owner only). */
+/** Link legacy company projects that were created without orgId (owner or org manager). */
 export async function ensureProjectOrgLink(input: {
   projectId: string;
   orgId: string;
@@ -101,14 +101,18 @@ export async function ensureProjectOrgLink(input: {
   const existingOrgId = typeof data.orgId === "string" ? data.orgId.trim() : "";
   if (existingOrgId) return;
 
-  if (data.ownerId !== input.actorUid) return;
-
-  await updateDoc(projectRef, {
-    orgId,
-    workspaceType: "team",
-    workspaceId: orgId,
-    updatedAt: serverTimestamp(),
-  });
+  try {
+    await updateDoc(projectRef, {
+      orgId,
+      workspaceType: "team",
+      workspaceId: orgId,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (err) {
+    // Non-owner actors may be rejected by rules on legacy projects without any
+    // org link; assignment below can still succeed via workspaceId fallback.
+    if (data.ownerId === input.actorUid) throw err;
+  }
 }
 
 export async function assignMemberToBusinessProject(input: {

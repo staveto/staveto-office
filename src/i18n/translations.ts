@@ -2197,7 +2197,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.membersQuick.save": "Save members",
     "projects.membersQuick.savedToast": "Project members updated.",
     "projects.membersQuick.permissionDenied": "You do not have permission to assign project members. Owner, admin, or manager role is required.",
-    "projects.membersQuick.rulesHint": "If you are the company owner, deploy the latest Firestore rules (mobile/firestore.rules) and try again.",
+    "projects.membersQuick.rulesHint": "If you are the company owner, deploy the latest Firestore rules (staveto-office/firestore.rules) and try again.",
     "projects.errors.permissionDenied": "You do not have permission for this action.",
     "projects.progressColumn": "Progress",
     "projects.progressValue": "{{percent}}%",
@@ -3501,7 +3501,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.aiSetup.marking.loupe.hint":
       "{{count}} nearby marks — select the right one, then confirm (or double-click).",
     "projects.aiSetup.marking.loupe.pickHint":
-      "The closest mark is pre-selected. Confirm to open its detail, or click another mark. Double-click confirms immediately.",
+      "The closest mark is highlighted. Confirm to save it as a position (material to order / install).",
     "projects.aiSetup.marking.loupe.emptyHint":
       "No clear mark found here — click precisely on the symbol ink in the preview.",
     "projects.aiSetup.marking.loupe.candidate": "Mark {{n}}",
@@ -3512,6 +3512,19 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.aiSetup.marking.loupe.confirm": "Confirm mark ({{n}})",
     "projects.aiSetup.marking.loupe.confirmEmpty": "Select a mark first",
     "projects.aiSetup.marking.loupe.cancel": "Cancel",
+    "projects.aiSetup.marking.loupe.stackTitle": "Separate overlapping marks",
+    "projects.aiSetup.marking.loupe.stackHint":
+      "Marks sit on top of each other. Isolate one (card or arrows), save it as its own position, then continue with the next.",
+    "projects.aiSetup.marking.loupe.stackProgress": "Saved {{saved}} of {{total}} as separate positions",
+    "projects.aiSetup.marking.loupe.isolating": "Isolating mark {{n}} / {{total}}",
+    "projects.aiSetup.marking.loupe.focusHint": "Mark {{n}} ready to save as a position",
+    "projects.aiSetup.marking.loupe.saveAndNext": "Save this mark → next",
+    "projects.aiSetup.marking.loupe.saveAll": "Save all {{n}} separately",
+    "projects.aiSetup.marking.loupe.saved": "Saved as position",
+    "projects.aiSetup.marking.loupe.tapToIsolate": "Tap to highlight alone",
+    "projects.aiSetup.marking.loupe.prev": "Previous mark",
+    "projects.aiSetup.marking.loupe.next": "Next mark",
+    "projects.aiSetup.marking.loupe.done": "Done",
     "projects.aiSetup.marking.clickHint":
       "Click a symbol once — AI creates the item, finds copies across the plan, then mark the next type.",
     "projects.aiSetup.marking.pickFailed":
@@ -7249,7 +7262,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.membersQuick.save": "Uložiť členov",
     "projects.membersQuick.savedToast": "Členovia projektu boli aktualizovaní.",
     "projects.membersQuick.permissionDenied": "Nemáte oprávnenie priraďovať členov projektu. Vyžaduje sa rola vlastník, admin alebo manažér.",
-    "projects.membersQuick.rulesHint": "Ak ste vlastník firmy, nasaďte najnovšie Firestore rules (mobile/firestore.rules) a skúste znova.",
+    "projects.membersQuick.rulesHint": "Ak ste vlastník firmy, nasaďte najnovšie Firestore rules (staveto-office/firestore.rules) a skúste znova.",
     "projects.errors.permissionDenied": "Na túto akciu nemáte oprávnenie.",
     "projects.progressColumn": "Priebeh",
     "projects.progressValue": "{{percent}} %",
@@ -8554,7 +8567,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.aiSetup.marking.loupe.hint":
       "{{count}} značiek nablízku — vyberte správnu a potvrďte (alebo dvojklik).",
     "projects.aiSetup.marking.loupe.pickHint":
-      "Najbližšia značka je predvybraná. Potvrďte pre detail, alebo kliknite na inú. Dvojklik potvrdí hneď.",
+      "Najbližšia značka je zvýraznená. Potvrďte ju ako samostatnú pozíciu (materiál na objednanie / montáž).",
     "projects.aiSetup.marking.loupe.emptyHint":
       "Tu nie je jasná značka — kliknite presne na atrament symbolu vo výreze.",
     "projects.aiSetup.marking.loupe.candidate": "Značka {{n}}",
@@ -8565,6 +8578,19 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.aiSetup.marking.loupe.confirm": "Potvrdiť značku ({{n}})",
     "projects.aiSetup.marking.loupe.confirmEmpty": "Najprv vyberte značku",
     "projects.aiSetup.marking.loupe.cancel": "Zrušiť",
+    "projects.aiSetup.marking.loupe.stackTitle": "Rozdeliť prekryté značky",
+    "projects.aiSetup.marking.loupe.stackHint":
+      "Značky ležia na sebe. Izolujte jednu (karta alebo šípky), uložte ako vlastnú pozíciu a pokračujte ďalšou.",
+    "projects.aiSetup.marking.loupe.stackProgress": "Uložené {{saved}} z {{total}} ako samostatné pozície",
+    "projects.aiSetup.marking.loupe.isolating": "Izolovaná značka {{n}} / {{total}}",
+    "projects.aiSetup.marking.loupe.focusHint": "Značka {{n}} pripravená na uloženie ako pozícia",
+    "projects.aiSetup.marking.loupe.saveAndNext": "Uložiť túto → ďalšia",
+    "projects.aiSetup.marking.loupe.saveAll": "Uložiť všetkých {{n}} samostatne",
+    "projects.aiSetup.marking.loupe.saved": "Uložené ako pozícia",
+    "projects.aiSetup.marking.loupe.tapToIsolate": "Kliknite — vysvieti sa sama",
+    "projects.aiSetup.marking.loupe.prev": "Predchádzajúca značka",
+    "projects.aiSetup.marking.loupe.next": "Ďalšia značka",
+    "projects.aiSetup.marking.loupe.done": "Hotovo",
     "projects.aiSetup.marking.clickHint":
       "Kliknite raz na symbol — AI vytvorí položku, nájde kópie v pláne a potom označte ďalší typ.",
     "projects.aiSetup.marking.pickFailed":

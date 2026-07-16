@@ -34,6 +34,13 @@ service cloud.firestore {
         );
     }
 
+    // Mobile parity: member docs without a status field, or with status 'pending',
+    // are still treated as usable members (see mobile orgMemberStatusOk).
+    function orgMemberRoleStatusOk(orgId) {
+      let member = get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data;
+      return !('status' in member) || member.status in ['active', 'pending'];
+    }
+
     function isOrgOwnerOrAdmin(orgId) {
       let org = get(/databases/$(database)/documents/organizations/$(orgId)).data;
       return isSignedIn() && (
@@ -41,7 +48,7 @@ service cloud.firestore {
         || (
           exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid))
           && get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data.role in ['admin', 'owner']
-          && get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data.status == 'active'
+          && orgMemberRoleStatusOk(orgId)
         )
       );
     }
@@ -53,7 +60,7 @@ service cloud.firestore {
         || (
           exists(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid))
           && get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data.role in ['admin', 'owner', 'manager']
-          && get(/databases/$(database)/documents/organizations/$(orgId)/members/$(request.auth.uid)).data.status == 'active'
+          && orgMemberRoleStatusOk(orgId)
         )
       );
     }
@@ -239,10 +246,18 @@ service cloud.firestore {
       ]);
     }
 
+    // Team projects may store the org link on orgId and/or legacy workspaceId
+    // (mirrors mobile/firestore.rules projectLinkedOrgId).
+    function projectLinkedOrg(data) {
+      return data.get('orgId', null) != null && data.orgId != ''
+        ? data.orgId
+        : (data.get('workspaceId', null) != null && data.workspaceId != '' ? data.workspaceId : null);
+    }
+
     function canReadProject() {
       return isSignedIn() && (
         resource.data.ownerId == request.auth.uid
-        || (resource.data.orgId != null && isOrgMember(resource.data.orgId))
+        || (projectLinkedOrg(resource.data) != null && isOrgMember(projectLinkedOrg(resource.data)))
       );
     }
 
@@ -264,7 +279,7 @@ service cloud.firestore {
       let p = projectData(projectId);
       return isSignedIn() && (
         p.ownerId == request.auth.uid
-        || (p.orgId != null && isOrgMember(p.orgId))
+        || (projectLinkedOrg(p) != null && isOrgMember(projectLinkedOrg(p)))
       );
     }
 
@@ -702,7 +717,7 @@ service cloud.firestore {
     function canManageProjectDoc() {
       return isSignedIn() && (
         resource.data.ownerId == request.auth.uid
-        || (resource.data.orgId != null && canManageOrganization(resource.data.orgId))
+        || (projectLinkedOrg(resource.data) != null && canManageOrganization(projectLinkedOrg(resource.data)))
       );
     }
 
