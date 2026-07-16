@@ -3497,6 +3497,20 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.aiSetup.marking.loupe.toolbar": "Precise pick",
     "projects.aiSetup.marking.loupe.toolbarHint":
       "Next click opens a zoomed detail so you can pick the exact symbol in a crowded area.",
+    "projects.aiSetup.marking.aiDetect.button": "AI symbols",
+    "projects.aiSetup.marking.aiDetect.hint":
+      "AI scans the whole page and highlights every symbol it finds. Click a proposal to confirm it.",
+    "projects.aiSetup.marking.aiDetect.busy": "AI is scanning the page for symbols…",
+    "projects.aiSetup.marking.aiDetect.pickBusy": "AI is defining the clicked symbol…",
+    "projects.aiSetup.marking.aiDetect.count":
+      "{{count}} AI proposals — click a highlighted symbol to confirm it, ✕ to dismiss.",
+    "projects.aiSetup.marking.aiDetect.empty": "AI found no new symbols on this page.",
+    "projects.aiSetup.marking.aiDetect.error":
+      "AI symbol scan failed. Please try again.",
+    "projects.aiSetup.marking.aiDetect.clear": "Discard proposals",
+    "projects.aiSetup.marking.aiDetect.proposal": "AI proposal",
+    "projects.aiSetup.marking.aiDetect.acceptHint": "click to confirm",
+    "projects.aiSetup.marking.aiDetect.dismiss": "Dismiss proposal",
     "projects.aiSetup.marking.loupe.title": "Pick the exact symbol",
     "projects.aiSetup.marking.loupe.hint":
       "{{count}} nearby marks — select the right one, then confirm (or double-click).",
@@ -8563,6 +8577,20 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.aiSetup.marking.loupe.toolbar": "Presný výber",
     "projects.aiSetup.marking.loupe.toolbarHint":
       "Ďalší klik otvorí zväčšený detail, aby ste v prehustenom mieste označili presne tú správnu značku.",
+    "projects.aiSetup.marking.aiDetect.button": "AI značky",
+    "projects.aiSetup.marking.aiDetect.hint":
+      "AI prejde celú stranu a vysvieti všetky značky, ktoré nájde. Návrh potvrdíte kliknutím.",
+    "projects.aiSetup.marking.aiDetect.busy": "AI hľadá značky na strane…",
+    "projects.aiSetup.marking.aiDetect.pickBusy": "AI rozpoznáva označenú značku…",
+    "projects.aiSetup.marking.aiDetect.count":
+      "{{count}} návrhov od AI — kliknite na vysvietenú značku pre potvrdenie, ✕ pre zahodenie.",
+    "projects.aiSetup.marking.aiDetect.empty": "AI nenašla na tejto strane žiadne nové značky.",
+    "projects.aiSetup.marking.aiDetect.error":
+      "AI vyhľadanie značiek zlyhalo. Skúste to znova.",
+    "projects.aiSetup.marking.aiDetect.clear": "Zahodiť návrhy",
+    "projects.aiSetup.marking.aiDetect.proposal": "Návrh AI",
+    "projects.aiSetup.marking.aiDetect.acceptHint": "kliknutím potvrdíte",
+    "projects.aiSetup.marking.aiDetect.dismiss": "Zahodiť návrh",
     "projects.aiSetup.marking.loupe.title": "Označte presnú značku",
     "projects.aiSetup.marking.loupe.hint":
       "{{count}} značiek nablízku — vyberte správnu a potvrďte (alebo dvojklik).",

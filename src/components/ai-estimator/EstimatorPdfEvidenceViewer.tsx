@@ -19,11 +19,13 @@ import {
   Eye,
   EyeOff,
   Hand,
+  Loader2,
   Minus,
   Plus,
   ChevronLeft,
   ChevronRight,
   RotateCw,
+  Sparkles,
   X,
   ZoomIn,
 } from "lucide-react";
@@ -62,6 +64,11 @@ import {
 } from "@/lib/ai/pickSymbolFromClick";
 import { SymbolDetailLoupe } from "@/components/ai-estimator/SymbolDetailLoupe";
 import { tightenSymbolBboxFromCrop } from "@/lib/ai/tightenSymbolBbox";
+import {
+  detectAllSymbolsOnCanvas,
+  detectSymbolAtCanvasPoint,
+} from "@/services/ai/detectPlanSymbolsService";
+import { filterAlreadyMarked } from "@/lib/ai/aiSymbolDetection";
 import type {
   EstimatorPositionBBox,
   PdfOverlayAnnotation,
@@ -223,6 +230,21 @@ export type MarkPlacedMeta = {
   confidence?: "high" | "medium" | "low";
   /** Normalized outline of the symbol ink (stored page space). */
   polygon?: Array<{ x: number; y: number }>;
+  /** AI vision already named this symbol — parent can classify without a second call. */
+  aiSuggestion?: {
+    name: string;
+    category: string;
+    confidence: "high" | "medium" | "low";
+  };
+};
+
+/** AI page-scan proposal shown as a clickable highlight (stored page space). */
+type AiSymbolProposal = {
+  id: string;
+  storedBbox: EstimatorPositionBBox;
+  name: string;
+  category: string;
+  confidence: "high" | "medium" | "low";
 };
 
 /** Temporary marker for an unclassified symbol draft (PDF-first flow). */
@@ -348,6 +370,13 @@ export function EstimatorPdfEvidenceViewer({
   } | null>(null);
   /** Next click always opens the detail loupe (user requested precise pick). */
   const forceLoupeNextRef = useRef(false);
+  /** AI is defining the clicked symbol right now. */
+  const [aiPickBusy, setAiPickBusy] = useState(false);
+  const aiPickSeqRef = useRef(0);
+  /** AI full-page scan proposals ("vysvietiť všetky značky"). */
+  const [aiProposals, setAiProposals] = useState<AiSymbolProposal[] | null>(null);
+  const [aiDetectBusy, setAiDetectBusy] = useState(false);
+  const [aiDetectError, setAiDetectError] = useState(false);
   /** Prevent double-commit from rapid double-click. */
   const markCooldownUntilRef = useRef(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -369,6 +398,14 @@ export function EstimatorPdfEvidenceViewer({
   }, [zoom]);
 
   const liveScale = zoom / Math.max(0.01, renderZoom);
+
+  // AI page-scan proposals belong to one page — drop them on page change.
+  useEffect(() => {
+    setAiProposals(null);
+    setAiDetectError(false);
+    aiPickSeqRef.current += 1;
+    setAiPickBusy(false);
+  }, [page, fileUrl]);
 
   // Load the document.
   useEffect(() => {
@@ -855,9 +892,13 @@ export function EstimatorPdfEvidenceViewer({
       }
     }
 
-    // Click with no detectable symbol → do not create an item (rectangle tool still works).
+    // Local pick found nothing usable → let AI vision define the symbol.
     if (!tightStored) {
-      onPickFailed?.();
+      if (imageData) {
+        void commitMarkViaAi(canvasPt, imageData, boundary);
+      } else {
+        onPickFailed?.();
+      }
       return;
     }
 
@@ -950,6 +991,171 @@ export function EstimatorPdfEvidenceViewer({
     if (!options?.continueSeparating) {
       setLoupe(null);
     }
+  };
+
+  /**
+   * Commit a mark from an AI-detected symbol box (displayed canvas space).
+   * The AI box defines the COMPLETE symbol; local ink analysis only tightens
+   * it to the exact strokes and builds the shape outline — never fragments.
+   */
+  const commitAiBoxAsMark = (
+    detection: {
+      bbox: EstimatorPositionBBox;
+      name: string;
+      category: string;
+      confidence: "high" | "medium" | "low";
+    },
+    imageData: ImageData,
+    cropIdPrefix: string,
+    boundary?: ReturnType<typeof classifyPlanClick>
+  ) => {
+    if (!onMarkPlaced) return;
+    const canvas = canvasRef.current;
+    if (!canvas || canvas.width === 0) return;
+
+    // Small pad so the tightening never clips symbol strokes on the AI box edge.
+    const padX = detection.bbox.width * 0.15;
+    const padY = detection.bbox.height * 0.15;
+    const displayedRaw: EstimatorPositionBBox = {
+      x: Math.max(0, detection.bbox.x - padX),
+      y: Math.max(0, detection.bbox.y - padY),
+      width: Math.min(1, detection.bbox.width + padX * 2),
+      height: Math.min(1, detection.bbox.height + padY * 2),
+    };
+
+    let displayedBox = detection.bbox;
+    const tightened = tightenSymbolBboxFromCrop(imageData, displayedRaw, {
+      pageWidth: canvas.width,
+      pageHeight: canvas.height,
+      preferDominantColor: true,
+    });
+    if (tightened.tightBbox) {
+      // Trust local ink only when it stays inside the AI-defined symbol window.
+      const t = tightened.tightBbox;
+      const inside =
+        t.x >= displayedRaw.x - 0.002 &&
+        t.y >= displayedRaw.y - 0.002 &&
+        t.x + t.width <= displayedRaw.x + displayedRaw.width + 0.002 &&
+        t.y + t.height <= displayedRaw.y + displayedRaw.height + 0.002;
+      if (inside && t.width > 0 && t.height > 0) displayedBox = t;
+    }
+
+    const outlineDisplayed =
+      extractSymbolOutlinePolygon(
+        imageData,
+        pixelBboxFromNormalized(displayedBox, canvas.width, canvas.height),
+        canvas.width,
+        canvas.height
+      ) ?? undefined;
+
+    const storedBox = unrotateBBox(displayedBox, rotation);
+    const outlineStored = outlineDisplayed?.map((p) => unrotatePoint(p, rotation));
+    const needsReview = detection.confidence === "low" || Boolean(boundary?.needsReview);
+
+    onMarkPlaced(page, storedBox, outlineStored, {
+      rawSelectionBbox: unrotateBBox(detection.bbox, rotation),
+      tightSymbolBbox: storedBox,
+      needsReview,
+      markStatus: needsReview ? "needs_review" : "confirmed",
+      cropId: `${cropIdPrefix}_${Date.now().toString(36)}`,
+      confidence: detection.confidence,
+      polygon: outlineStored,
+      aiSuggestion: {
+        name: detection.name,
+        category: detection.category,
+        confidence: detection.confidence,
+      },
+    });
+  };
+
+  /** Local pick failed → ask Gemini vision to define the symbol at the click. */
+  const commitMarkViaAi = async (
+    canvasPt: { x: number; y: number },
+    imageData: ImageData,
+    boundary?: ReturnType<typeof classifyPlanClick>
+  ) => {
+    if (!onMarkPlaced) return;
+    const seq = ++aiPickSeqRef.current;
+    setAiPickBusy(true);
+    try {
+      const detection = await detectSymbolAtCanvasPoint({
+        imageData,
+        clickCanvasPx: canvasPt,
+      });
+      if (seq !== aiPickSeqRef.current) return;
+      if (!detection) {
+        onPickFailed?.();
+        return;
+      }
+      commitAiBoxAsMark(detection, imageData, "crop_aiclick", boundary);
+    } catch {
+      if (seq === aiPickSeqRef.current) onPickFailed?.();
+    } finally {
+      if (seq === aiPickSeqRef.current) setAiPickBusy(false);
+    }
+  };
+
+  /** "Vysvietiť všetky značky" — AI scans the page and proposes every symbol. */
+  const runAiDetectAll = async () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx || canvas.width === 0 || aiDetectBusy) return;
+    setAiDetectBusy(true);
+    setAiDetectError(false);
+    try {
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const detections = await detectAllSymbolsOnCanvas({ imageData });
+      // Never propose what is already marked.
+      const existingDisplayed = pageAnnotations
+        .map((a) => a.tightSymbolBbox ?? a.bbox)
+        .filter((b): b is EstimatorPositionBBox => Boolean(b))
+        .map((b) => rotateBBox(b, rotation));
+      const fresh = filterAlreadyMarked(detections, existingDisplayed);
+      const stamp = Date.now().toString(36);
+      setAiProposals(
+        fresh.map((d, i) => ({
+          id: `aiprop_${stamp}_${i}`,
+          storedBbox: unrotateBBox(d.bbox, rotation),
+          name: d.name,
+          category: d.category,
+          confidence: d.confidence,
+        }))
+      );
+    } catch {
+      setAiDetectError(true);
+      setAiProposals(null);
+    } finally {
+      setAiDetectBusy(false);
+    }
+  };
+
+  /** Clicking an AI proposal confirms it as a real mark. */
+  const acceptAiProposal = (proposal: AiSymbolProposal) => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx || canvas.width === 0) return;
+    let imageData: ImageData | null = null;
+    try {
+      imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    } catch {
+      imageData = null;
+    }
+    if (!imageData) return;
+    commitAiBoxAsMark(
+      {
+        bbox: rotateBBox(proposal.storedBbox, rotation),
+        name: proposal.name,
+        category: proposal.category,
+        confidence: proposal.confidence,
+      },
+      imageData,
+      "crop_aiall"
+    );
+    setAiProposals((prev) => prev?.filter((p) => p.id !== proposal.id) ?? null);
+  };
+
+  const dismissAiProposal = (proposalId: string) => {
+    setAiProposals((prev) => prev?.filter((p) => p.id !== proposalId) ?? null);
   };
 
   const placeMarkFromRect = (x1: number, y1: number, x2: number, y2: number) => {
@@ -1323,6 +1529,36 @@ export function EstimatorPdfEvidenceViewer({
               <ZoomIn className="size-3" />
               {t("projects.aiSetup.marking.loupe.toolbar")}
             </button>
+            <button
+              type="button"
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold",
+                aiDetectBusy
+                  ? "border-[#7C3AED] bg-[#F5F3FF] text-[#7C3AED]"
+                  : "border-[#7C3AED]/50 bg-white text-[#7C3AED] hover:bg-[#F5F3FF]"
+              )}
+              title={t("projects.aiSetup.marking.aiDetect.hint")}
+              disabled={aiDetectBusy || rendering}
+              onClick={() => void runAiDetectAll()}
+            >
+              {aiDetectBusy ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Sparkles className="size-3" />
+              )}
+              {t("projects.aiSetup.marking.aiDetect.button")}
+            </button>
+            {aiProposals && aiProposals.length > 0 ? (
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-full border border-[#CBD5E1] bg-white px-2 py-0.5 text-[11px] font-semibold text-[#64748B] hover:bg-[#F8FAFC]"
+                onClick={() => setAiProposals(null)}
+                title={t("projects.aiSetup.marking.aiDetect.clear")}
+              >
+                <X className="size-3" />
+                {t("projects.aiSetup.marking.aiDetect.clear")}
+              </button>
+            ) : null}
           </div>
         ) : null}
         <div className="ml-auto flex flex-wrap items-center gap-1">
@@ -1388,6 +1624,36 @@ export function EstimatorPdfEvidenceViewer({
           <span className="ml-2 font-normal opacity-90">
             {t("projects.aiSetup.marking.activeHintEsc")}
           </span>
+        </div>
+      ) : null}
+
+      {aiPickBusy || aiDetectBusy ? (
+        <div className="sticky top-0 z-20 flex items-center justify-center gap-2 border-b border-[#7C3AED]/40 bg-[#F5F3FF] px-3 py-1.5 text-center text-xs font-semibold text-[#6D28D9]" role="status">
+          <Loader2 className="size-3.5 animate-spin" />
+          {aiDetectBusy
+            ? t("projects.aiSetup.marking.aiDetect.busy")
+            : t("projects.aiSetup.marking.aiDetect.pickBusy")}
+        </div>
+      ) : null}
+      {aiProposals !== null && !aiDetectBusy ? (
+        <div
+          className={cn(
+            "border-b px-3 py-1.5 text-center text-xs font-semibold",
+            aiProposals.length > 0
+              ? "border-[#7C3AED]/40 bg-[#F5F3FF] text-[#6D28D9]"
+              : "border-[#E2E8F0] bg-[#F8FAFC] text-[#64748B]"
+          )}
+        >
+          {aiProposals.length > 0
+            ? t("projects.aiSetup.marking.aiDetect.count", {
+                count: aiProposals.length,
+              })
+            : t("projects.aiSetup.marking.aiDetect.empty")}
+        </div>
+      ) : null}
+      {aiDetectError ? (
+        <div className="border-b border-amber-300 bg-amber-50 px-3 py-1.5 text-center text-xs font-semibold text-amber-900">
+          {t("projects.aiSetup.marking.aiDetect.error")}
         </div>
       ) : null}
 
@@ -1744,6 +2010,57 @@ export function EstimatorPdfEvidenceViewer({
               </span>
             );
           })}
+
+          {/* AI page-scan proposals — click to confirm, small ✕ to dismiss. */}
+          {canvasSize.width > 0 && aiProposals
+            ? aiProposals.map((p) => {
+                const shown = rotateBBox(p.storedBbox, rotation);
+                const left = shown.x * canvasSize.width;
+                const top = shown.y * canvasSize.height;
+                const w = Math.max(10, shown.width * canvasSize.width);
+                const h = Math.max(10, shown.height * canvasSize.height);
+                return (
+                  <span key={p.id} className="contents">
+                    <button
+                      type="button"
+                      data-mark-ui
+                      className="absolute z-20 rounded-sm border-2 border-dashed border-[#7C3AED] bg-[#7C3AED]/10 hover:bg-[#7C3AED]/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7C3AED]"
+                      style={{ left, top, width: w, height: h }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        acceptAiProposal(p);
+                      }}
+                      title={`${p.name || t("projects.aiSetup.marking.aiDetect.proposal")} — ${t("projects.aiSetup.marking.aiDetect.acceptHint")}`}
+                      aria-label={`${p.name || t("projects.aiSetup.marking.aiDetect.proposal")} — ${t("projects.aiSetup.marking.aiDetect.acceptHint")}`}
+                    />
+                    <span
+                      className="pointer-events-none absolute z-25 max-w-[140px] truncate rounded-sm bg-[#7C3AED] px-1 py-px text-[9px] font-bold text-white shadow"
+                      style={{
+                        left: left + w / 2,
+                        top: Math.max(0, top - 14),
+                        transform: "translateX(-50%)",
+                      }}
+                    >
+                      {p.name || t("projects.aiSetup.marking.aiDetect.proposal")}
+                    </span>
+                    <button
+                      type="button"
+                      data-mark-ui
+                      className="absolute z-30 grid size-4 place-items-center rounded-full bg-white text-[#7C3AED] shadow ring-1 ring-[#7C3AED]/40 hover:bg-[#F5F3FF]"
+                      style={{ left: left + w - 6, top: top - 6 }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        dismissAiProposal(p.id);
+                      }}
+                      title={t("projects.aiSetup.marking.aiDetect.dismiss")}
+                      aria-label={t("projects.aiSetup.marking.aiDetect.dismiss")}
+                    >
+                      <X className="size-2.5" />
+                    </button>
+                  </span>
+                );
+              })
+            : null}
         </div>
         </div>
       </div>

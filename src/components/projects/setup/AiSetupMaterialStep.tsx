@@ -1295,6 +1295,24 @@ function PdfMarkingWorkspace({
               draft.possibleTypes,
               tradeProfile
             );
+            // AI vision already named this symbol during marking — classify
+            // immediately, no second identify round-trip.
+            const suggestion = meta?.aiSuggestion;
+            if (
+              suggestion &&
+              (suggestion.confidence === "high" || suggestion.confidence === "medium")
+            ) {
+              const category = mapIdentifiedCategory(suggestion.category);
+              const position = evidence.createPositionFromDraft(draft, {
+                category,
+                label: suggestion.name?.trim() || undefined,
+              });
+              setSymbolDraft(null);
+              setPickFailedWarning(false);
+              setOutsidePlanWarning(false);
+              afterPositionCreated(position, draft);
+              return;
+            }
             setSymbolDraft(draft);
             setCreatedPositionCode(null);
             setPickFailedWarning(false);

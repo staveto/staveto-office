@@ -16,6 +16,7 @@ import {
   handleSyncEstimatorMaterialsToProject,
 } from "./estimator/estimatorHandlers";
 import { handleIdentifyDrawingSymbol } from "./estimator/identifySymbol";
+import { handleDetectPlanSymbols } from "./estimator/detectSymbols";
 import { handleCreateBusinessOrg } from "./businessOrg";
 import { handleAskManagerAgent } from "./managerAgent";
 import { handleImproveProjectBrief } from "./aiBrief/improveBrief";
@@ -227,6 +228,18 @@ export const identifyDrawingSymbol = onCall(
   async (request) => {
     try {
       return await handleIdentifyDrawingSymbol(request.auth?.uid, request.data);
+    } catch (e) {
+      mapError(e);
+    }
+  }
+);
+
+/** AI vision detection of drawing symbols with bounding boxes (click or whole page). */
+export const detectPlanSymbols = onCall(
+  { ...callableOptions, secrets: ["GEMINI_API_KEY"], timeoutSeconds: 120, memory: "512MiB" as const },
+  async (request) => {
+    try {
+      return await handleDetectPlanSymbols(request.auth?.uid, request.data);
     } catch (e) {
       mapError(e);
     }
