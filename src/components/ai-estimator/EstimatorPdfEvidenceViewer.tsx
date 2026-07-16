@@ -895,8 +895,14 @@ export function EstimatorPdfEvidenceViewer({
     });
   };
 
-  /** User assembled the symbol from one or more parts — commit ONE mark. */
-  const commitMarkFromCandidates = (selected: NearbySymbolCandidate[]) => {
+  /**
+   * Commit one (or assembled) mark from loupe candidates.
+   * When continueSeparating, keep the loupe open so stacked marks can be saved one-by-one.
+   */
+  const commitMarkFromCandidates = (
+    selected: NearbySymbolCandidate[],
+    options?: { continueSeparating?: boolean }
+  ) => {
     if (!onMarkPlaced || !loupe || selected.length === 0) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -936,12 +942,14 @@ export function EstimatorPdfEvidenceViewer({
       tightSymbolBbox: storedBox,
       needsReview: false,
       markStatus: "confirmed",
-      cropId: `crop_loupe_${Date.now().toString(36)}`,
+      cropId: `crop_loupe_${Date.now().toString(36)}_${selected[0]!.id.slice(-6)}`,
       colorHint,
       confidence: "high",
       polygon: outlineStored,
     });
-    setLoupe(null);
+    if (!options?.continueSeparating) {
+      setLoupe(null);
+    }
   };
 
   const placeMarkFromRect = (x1: number, y1: number, x2: number, y2: number) => {
