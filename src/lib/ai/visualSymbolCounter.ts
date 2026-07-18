@@ -152,6 +152,14 @@ export type ColorDetectionOptions = {
   maxAspectRatio?: number;
   /** Templates used to label detections; defaults to internal samples. */
   templates?: VisualSymbolTemplate[];
+  /**
+   * Minimum ink fill ratio (pixels / bbox area) to accept a blob as a real
+   * symbol. Default (0.03) is intentionally loose for backward
+   * compatibility with existing callers (Find Similar); the region
+   * analyzer passes a stricter value to reject sparse wall-hatch/texture
+   * fragments that a loose density would otherwise accept as candidates.
+   */
+  minDensity?: number;
 };
 
 type Blob = {
@@ -205,6 +213,7 @@ export function detectSymbolsByColorDetailed(
     mergeGapPx = 8,
     maxAspectRatio = 6,
     templates = getSeedVisualTemplates(),
+    minDensity = 0.03,
   } = options;
   const { width, height, data } = image;
 
@@ -319,8 +328,10 @@ export function detectSymbolsByColorDetailed(
     }
 
     const density = b.pixels / (w * h);
-    if (density < 0.03) {
-      // scattered noise
+    if (density < minDensity) {
+      // scattered noise / sparse texture (e.g. a wall hatch band merged
+      // into one bbox by the color detector — real symbols are filled or
+      // outlined shapes with much higher ink density than that).
       rejected.push({ bboxLocalPx, color: b.color, pixels: b.pixels, aspect, reason: "low_density" });
       continue;
     }

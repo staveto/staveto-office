@@ -14,6 +14,7 @@
 import {
   getFirestoreInstance,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -170,6 +171,22 @@ export async function getSymbolCandidate(
   return { ...(snap.data() as Omit<SymbolCandidate, "id">), id: snap.id };
 }
 
+/**
+ * Permanently remove a candidate row. Callers must never call this for a
+ * `status: "confirmed"` candidate directly — confirmed symbols carry a
+ * takeoff quantity/evidence that a plain delete would leave dangling; use
+ * the symmetric unconfirm-and-delete flow in symbolCandidateReviewService
+ * instead (it deletes the candidate as its last step).
+ */
+export async function deleteSymbolCandidate(
+  projectId: string,
+  candidateId: string
+): Promise<void> {
+  const db = getFirestoreInstance();
+  if (!db) throw new Error("Firestore not configured");
+  await deleteDoc(doc(db, "projects", projectId, "symbolCandidates", candidateId));
+}
+
 export async function updateSymbolCandidateStatus(
   projectId: string,
   candidateId: string,
@@ -187,6 +204,46 @@ export async function updateSymbolCandidateStatus(
       ...(symbolTypeHint ? { metadataSymbolType: symbolTypeHint } : {}),
       updatedAt: new Date().toISOString(),
     }) as Record<string, unknown>
+  );
+}
+
+/**
+ * Move a not-yet-confirmed candidate (drag on the plan) — only the overlay
+ * position changes; status/quantities are untouched.
+ */
+export async function updateSymbolCandidatePosition(
+  projectId: string,
+  candidateId: string,
+  position: { normalizedPosition: NormalizedRect; bboxPdf: BBoxPdf }
+): Promise<void> {
+  const db = getFirestoreInstance();
+  if (!db) throw new Error("Firestore not configured");
+  await updateDoc(
+    doc(db, "projects", projectId, "symbolCandidates", candidateId),
+    stripUndefined({ ...position, updatedAt: new Date().toISOString() }) as Record<
+      string,
+      unknown
+    >
+  );
+}
+
+/**
+ * Move an already-confirmed symbol (drag on the plan) — corrects a
+ * mis-placed mark without touching quantity/evidence, which stay linked by id.
+ */
+export async function updateConfirmedSymbolPosition(
+  projectId: string,
+  symbolId: string,
+  position: { normalizedPosition: NormalizedRect; bboxPdf: BBoxPdf }
+): Promise<void> {
+  const db = getFirestoreInstance();
+  if (!db) throw new Error("Firestore not configured");
+  await updateDoc(
+    doc(db, "projects", projectId, "confirmedSymbols", symbolId),
+    stripUndefined({ ...position, updatedAt: new Date().toISOString() }) as Record<
+      string,
+      unknown
+    >
   );
 }
 
@@ -221,6 +278,38 @@ export async function getConfirmedSymbol(
   return { ...(snap.data() as Omit<ConfirmedSymbol, "id">), id: snap.id };
 }
 
+/**
+ * Retype an already-confirmed symbol. Callers must re-bucket the takeoff
+ * quantity BEFORE calling this — see changeConfirmedSymbolType in
+ * symbolCandidateReviewService.ts, which is the safe entry point.
+ */
+export async function updateConfirmedSymbolType(
+  projectId: string,
+  symbolId: string,
+  symbolType: string
+): Promise<void> {
+  const db = getFirestoreInstance();
+  if (!db) throw new Error("Firestore not configured");
+  await updateDoc(doc(db, "projects", projectId, "confirmedSymbols", symbolId), {
+    symbolType,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/**
+ * Permanently remove a confirmed symbol row. Callers must reverse the
+ * takeoff quantity/evidence it created FIRST — see unconfirmAndDeleteSymbol
+ * in symbolCandidateReviewService.ts, which is the safe entry point.
+ */
+export async function deleteConfirmedSymbol(
+  projectId: string,
+  symbolId: string
+): Promise<void> {
+  const db = getFirestoreInstance();
+  if (!db) throw new Error("Firestore not configured");
+  await deleteDoc(doc(db, "projects", projectId, "confirmedSymbols", symbolId));
+}
+
 export async function listConfirmedSymbolsForDrawing(
   projectId: string,
   drawingId: string
@@ -233,6 +322,20 @@ export async function listConfirmedSymbolsForDrawing(
     ...(d.data() as Omit<ConfirmedSymbol, "id">),
     id: d.id,
   }));
+}
+
+/** Reverse-lookup of the confirmed symbol created FROM a given candidate row. */
+export async function getConfirmedSymbolByCandidateId(
+  projectId: string,
+  candidateId: string
+): Promise<ConfirmedSymbol | null> {
+  const db = getFirestoreInstance();
+  if (!db) return null;
+  const col = collection(db, "projects", projectId, "confirmedSymbols");
+  const snap = await getDocs(query(col, where("candidateId", "==", candidateId)));
+  const first = snap.docs[0];
+  if (!first) return null;
+  return { ...(first.data() as Omit<ConfirmedSymbol, "id">), id: first.id };
 }
 
 export async function listConfirmedSymbolsForPage(
@@ -265,6 +368,12 @@ export async function listTakeoffItems(
   return snap.docs
     .map((d) => ({ ...(d.data() as Omit<TakeoffItem, "id">), id: d.id }))
     .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function deleteTakeoffItem(projectId: string, itemId: string): Promise<void> {
+  const db = getFirestoreInstance();
+  if (!db) throw new Error("Firestore not configured");
+  await deleteDoc(doc(db, "projects", projectId, "takeoffItems", itemId));
 }
 
 export async function upsertTakeoffItem(item: TakeoffItem): Promise<TakeoffItem> {
@@ -309,6 +418,15 @@ export async function listTakeoffEvidenceForItem(
     ...(d.data() as Omit<TakeoffEvidence, "id">),
     id: d.id,
   }));
+}
+
+export async function deleteTakeoffEvidence(
+  projectId: string,
+  evidenceId: string
+): Promise<void> {
+  const db = getFirestoreInstance();
+  if (!db) throw new Error("Firestore not configured");
+  await deleteDoc(doc(db, "projects", projectId, "takeoffEvidence", evidenceId));
 }
 
 /** Evidence rows created by a specific confirmed symbol (duplicate-conflict lookup). */

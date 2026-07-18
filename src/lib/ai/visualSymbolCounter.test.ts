@@ -175,6 +175,44 @@ describe("detectSymbolsByColorDetailed", () => {
     expect(accepted).toHaveLength(0);
     expect(rejected.some((r) => r.reason === "line_like" && r.color === "red")).toBe(true);
   });
+
+  /**
+   * A 4-connected diagonal "staircase" — a compact (aspect ≈ 1, so it
+   * never trips the line_like/aspect filter) but sparse ink pattern, just
+   * like a wall corner where hatch strokes cross: real symbols are filled
+   * or outlined shapes, not a thin zig-zag scattered over a much larger
+   * bounding box.
+   */
+  function paintStaircase(img: RasterImage, x0: number, y0: number, steps: number, rgb: [number, number, number]) {
+    let x = x0;
+    let y = y0;
+    paintRect(img, x, y, 1, 1, rgb);
+    for (let i = 0; i < steps; i++) {
+      x += 1;
+      paintRect(img, x, y, 1, 1, rgb);
+      y += 1;
+      paintRect(img, x, y, 1, 1, rgb);
+    }
+  }
+
+  it("minDensity option defaults to the loose 0.03 threshold (unchanged for existing callers)", () => {
+    const img = whiteImage(100, 100);
+    paintStaircase(img, 20, 20, 25, RED); // ~0.075 density
+    const { accepted } = detectSymbolsByColorDetailed(img, { page: 1, minSymbolSizePx: 4 });
+    expect(accepted.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("a stricter minDensity rejects a sparse blob that the loose default would accept", () => {
+    const img = whiteImage(100, 100);
+    paintStaircase(img, 20, 20, 25, RED); // ~0.075 density
+    const { accepted, rejected } = detectSymbolsByColorDetailed(img, {
+      page: 1,
+      minSymbolSizePx: 4,
+      minDensity: 0.12,
+    });
+    expect(accepted).toHaveLength(0);
+    expect(rejected.some((r) => r.reason === "low_density")).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------

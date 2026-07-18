@@ -53,6 +53,25 @@ export function screenToNormalizedRect(
   };
 }
 
+/**
+ * Does a screen-pixel point fall inside a screen rect, with extra padding
+ * on every side? Used for forgiving marker hit-testing — clicking just
+ * outside a tiny mark's exact box (or landing on the edge of a dense
+ * cluster) should still count as "hit this marker".
+ */
+export function screenRectContainsPoint(
+  rect: NormalizedRect,
+  point: { x: number; y: number },
+  paddingPx = 0
+): boolean {
+  return (
+    point.x >= rect.x - paddingPx &&
+    point.x <= rect.x + rect.width + paddingPx &&
+    point.y >= rect.y - paddingPx &&
+    point.y <= rect.y + rect.height + paddingPx
+  );
+}
+
 /** Point click → small normalized marker box centered on the click. */
 export function pointToNormalizedRect(
   point: { x: number; y: number },

@@ -5,6 +5,7 @@
 
 import type {
   AnalyzeRegionCandidateDto,
+  BBoxPdf,
   SymbolCandidate,
   SymbolColorLayer,
   TakeoffItem,
@@ -263,6 +264,47 @@ export function applyConfirmToTakeoffItems(params: {
   return { items: [...items, created], updatedItem: created, created: true };
 }
 
+/**
+ * Reverse of applyConfirmToTakeoffItems — deleting a confirmed symbol must
+ * give back the exact quantity/evidence it added, never leave a stale
+ * takeoff item behind, and never touch unrelated items (different
+ * drawing/profession/symbolType never match).
+ */
+export function applyUnconfirmToTakeoffItems(params: {
+  items: TakeoffItem[];
+  drawingId: string;
+  profession: string;
+  symbolType: string;
+  name: string;
+  quantityValue: number;
+  now: string;
+}): { updatedItem: TakeoffItem | null; removeItemId: string | null } {
+  const { items, drawingId, profession, symbolType, name, quantityValue, now } = params;
+
+  const existing = items.find(
+    (i) =>
+      i.drawingId === drawingId &&
+      i.profession === profession &&
+      i.sourceOfQuantity === "symbol_detection" &&
+      (i.metadata?.symbolType === symbolType || i.name === name)
+  );
+  if (!existing) return { updatedItem: null, removeItemId: null };
+
+  const nextQuantity = existing.quantity - quantityValue;
+  const nextEvidenceCount = Math.max(0, existing.evidenceCount - 1);
+  if (nextQuantity <= 0 || nextEvidenceCount === 0) {
+    return { updatedItem: null, removeItemId: existing.id };
+  }
+
+  const updated: TakeoffItem = {
+    ...existing,
+    quantity: nextQuantity,
+    evidenceCount: nextEvidenceCount,
+    updatedAt: now,
+  };
+  return { updatedItem: updated, removeItemId: null };
+}
+
 /** Intersection-over-union of two normalized page rects (0 when disjoint). */
 export function normalizedRectOverlapRatio(
   a: NormalizedRect,
@@ -274,6 +316,30 @@ export function normalizedRectOverlapRatio(
   if (inter <= 0) return 0;
   const union = a.width * a.height + b.width * b.height - inter;
   return union > 0 ? inter / union : 0;
+}
+
+/**
+ * Translate a stored bbox_pdf the SAME real-world distance the marker was
+ * dragged, expressed in normalized (0..1 page) coordinates.
+ *
+ * bbox_pdf is stored in either PDF points OR normalized 0..1 units
+ * depending on whether page size in points was known when the entity was
+ * created (see types/pdfTakeoff.ts header) — so this never assumes a unit
+ * convention. It derives a per-axis scale factor from the EXISTING
+ * bbox_pdf vs. the EXISTING normalizedPosition, then applies that same
+ * scale to the delta — correct regardless of which units bbox_pdf is in,
+ * and a no-op (falls back to 1) when a rect has zero width/height.
+ */
+export function translateBboxPdfForMove(
+  oldBboxPdf: BBoxPdf,
+  oldNormalized: NormalizedRect,
+  newNormalized: NormalizedRect
+): BBoxPdf {
+  const scaleX = oldNormalized.width > 0 ? (oldBboxPdf[2] - oldBboxPdf[0]) / oldNormalized.width : 1;
+  const scaleY = oldNormalized.height > 0 ? (oldBboxPdf[3] - oldBboxPdf[1]) / oldNormalized.height : 1;
+  const dx = (newNormalized.x - oldNormalized.x) * scaleX;
+  const dy = (newNormalized.y - oldNormalized.y) * scaleY;
+  return [oldBboxPdf[0] + dx, oldBboxPdf[1] + dy, oldBboxPdf[2] + dx, oldBboxPdf[3] + dy];
 }
 
 export const CONFIRMED_SYMBOL_DUPLICATE_IOU = 0.5;

@@ -20,6 +20,14 @@ vi.mock("@/services/takeoff/pdfTakeoffRegionService", () => ({
   upsertTakeoffItem: vi.fn(),
   createTakeoffEvidence: vi.fn(),
   createSymbolTemplate: vi.fn(),
+  deleteSymbolCandidate: vi.fn(),
+  deleteConfirmedSymbol: vi.fn(),
+  deleteTakeoffEvidence: vi.fn(),
+  deleteTakeoffItem: vi.fn(),
+  getConfirmedSymbolByCandidateId: vi.fn(),
+  updateConfirmedSymbolType: vi.fn(),
+  updateSymbolCandidatePosition: vi.fn(),
+  updateConfirmedSymbolPosition: vi.fn(),
 }));
 
 vi.mock("@/services/takeoff/takeoffImageService", () => ({
@@ -28,17 +36,29 @@ vi.mock("@/services/takeoff/takeoffImageService", () => ({
 }));
 
 import {
+  changeConfirmedSymbolType,
   confirmSymbolCandidate,
+  deleteCandidate,
   DuplicateConfirmedSymbolError,
+  moveCandidateOrConfirmedSymbol,
   rejectSymbolCandidate,
+  unconfirmAndDeleteSymbol,
 } from "./symbolCandidateReviewService";
 import {
   createConfirmedSymbol,
   createTakeoffEvidence,
+  deleteConfirmedSymbol,
+  deleteSymbolCandidate,
+  deleteTakeoffEvidence,
+  deleteTakeoffItem,
+  getConfirmedSymbolByCandidateId,
   getSymbolCandidate,
   listConfirmedSymbolsForPage,
   listTakeoffEvidenceForConfirmedSymbol,
   listTakeoffItems,
+  updateConfirmedSymbolPosition,
+  updateConfirmedSymbolType,
+  updateSymbolCandidatePosition,
   updateSymbolCandidateStatus,
   upsertTakeoffItem,
 } from "@/services/takeoff/pdfTakeoffRegionService";
@@ -109,6 +129,12 @@ beforeEach(() => {
   vi.mocked(createTakeoffEvidence).mockImplementation(
     async (input) => ({ ...input, id: "tev_1", createdAt: "" }) as never
   );
+  vi.mocked(deleteSymbolCandidate).mockResolvedValue(undefined);
+  vi.mocked(deleteConfirmedSymbol).mockResolvedValue(undefined);
+  vi.mocked(deleteTakeoffEvidence).mockResolvedValue(undefined);
+  vi.mocked(deleteTakeoffItem).mockResolvedValue(undefined);
+  vi.mocked(getConfirmedSymbolByCandidateId).mockResolvedValue(null);
+  vi.mocked(updateConfirmedSymbolType).mockResolvedValue(undefined);
 });
 
 describe("confirmSymbolCandidate — duplicate conflict", () => {
@@ -257,5 +283,423 @@ describe("rejectSymbolCandidate — duplicate resolution", () => {
     expect(createConfirmedSymbol).not.toHaveBeenCalled();
     expect(upsertTakeoffItem).not.toHaveBeenCalled();
     expect(createTakeoffEvidence).not.toHaveBeenCalled();
+  });
+});
+
+describe("deleteCandidate — permanent removal of a not-yet-confirmed row", () => {
+  it("deletes a rejected candidate outright", async () => {
+    vi.mocked(getSymbolCandidate).mockResolvedValue({
+      ...candidateRow(),
+      id: "cand_rej_1",
+      status: "rejected",
+    });
+
+    await deleteCandidate({ projectId: "p1", candidateId: "cand_rej_1" });
+
+    expect(deleteSymbolCandidate).toHaveBeenCalledExactlyOnceWith("p1", "cand_rej_1");
+  });
+
+  it("deletes a plain candidate/probable row without touching quantities", async () => {
+    vi.mocked(getSymbolCandidate).mockResolvedValue({
+      ...candidateRow(),
+      id: "cand_1",
+      status: "probable",
+    });
+
+    await deleteCandidate({ projectId: "p1", candidateId: "cand_1" });
+
+    expect(deleteSymbolCandidate).toHaveBeenCalledExactlyOnceWith("p1", "cand_1");
+    expect(upsertTakeoffItem).not.toHaveBeenCalled();
+    expect(deleteConfirmedSymbol).not.toHaveBeenCalled();
+  });
+
+  it("refuses to delete a CONFIRMED candidate directly — must use unconfirmAndDeleteSymbol", async () => {
+    vi.mocked(getSymbolCandidate).mockResolvedValue({
+      ...candidateRow(),
+      id: "cand_confirmed",
+      status: "confirmed",
+    });
+
+    await expect(
+      deleteCandidate({ projectId: "p1", candidateId: "cand_confirmed" })
+    ).rejects.toThrow("CANDIDATE_CONFIRMED_USE_UNCONFIRM");
+    expect(deleteSymbolCandidate).not.toHaveBeenCalled();
+  });
+});
+
+describe("unconfirmAndDeleteSymbol — symmetric reversal of confirm", () => {
+  function confirmedRow(overrides?: Partial<ConfirmedSymbol>): ConfirmedSymbol {
+    return {
+      id: "csym_1",
+      candidateId: "cand_1",
+      drawingId: "d1",
+      projectId: "p1",
+      pageNumber: 2,
+      bboxPdf: [100, 100, 120, 120],
+      normalizedPosition: NORMALIZED,
+      symbolType: "socket",
+      profession: "electrical",
+      roomId: null,
+      zoneId: null,
+      quantityValue: 1,
+      quantityUnit: "ks",
+      confirmationSource: "user",
+      confidence: 0.9,
+      evidenceImageUrl: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      ...overrides,
+    };
+  }
+
+  it("throws when the candidate has no backing confirmed symbol", async () => {
+    vi.mocked(getConfirmedSymbolByCandidateId).mockResolvedValue(null);
+
+    await expect(
+      unconfirmAndDeleteSymbol({ projectId: "p1", candidateId: "cand_missing" })
+    ).rejects.toThrow("CONFIRMED_SYMBOL_NOT_FOUND");
+  });
+
+  it("removes the takeoff item entirely when it was the only evidence (quantity 1)", async () => {
+    vi.mocked(getConfirmedSymbolByCandidateId).mockResolvedValue(confirmedRow());
+    vi.mocked(listTakeoffEvidenceForConfirmedSymbol).mockResolvedValue([
+      {
+        id: "tev_1",
+        takeoffItemId: "titem_1",
+        confirmedSymbolId: "csym_1",
+        drawingId: "d1",
+        projectId: "p1",
+        pageNumber: 2,
+        bboxPdf: [100, 100, 120, 120],
+        evidenceImageUrl: null,
+        createdAt: "",
+      },
+    ]);
+    vi.mocked(listTakeoffItems).mockResolvedValue([
+      {
+        id: "titem_1",
+        projectId: "p1",
+        drawingId: "d1",
+        quoteId: null,
+        name: "zásuvka",
+        profession: "electrical",
+        quantity: 1,
+        unit: "ks",
+        sourceOfQuantity: "symbol_detection",
+        status: "confirmed",
+        evidenceCount: 1,
+        metadata: { symbolType: "socket" },
+        createdAt: "",
+        updatedAt: "",
+      },
+    ]);
+
+    const result = await unconfirmAndDeleteSymbol({ projectId: "p1", candidateId: "cand_1" });
+
+    expect(result.removedTakeoffItemId).toBe("titem_1");
+    expect(result.updatedTakeoffItemId).toBeNull();
+    expect(deleteTakeoffItem).toHaveBeenCalledExactlyOnceWith("p1", "titem_1");
+    expect(upsertTakeoffItem).not.toHaveBeenCalled();
+    expect(deleteTakeoffEvidence).toHaveBeenCalledExactlyOnceWith("p1", "tev_1");
+    expect(deleteConfirmedSymbol).toHaveBeenCalledExactlyOnceWith("p1", "csym_1");
+    expect(deleteSymbolCandidate).toHaveBeenCalledExactlyOnceWith("p1", "cand_1");
+  });
+
+  it("decrements (never deletes) the takeoff item when other evidence remains", async () => {
+    vi.mocked(getConfirmedSymbolByCandidateId).mockResolvedValue(confirmedRow());
+    vi.mocked(listTakeoffEvidenceForConfirmedSymbol).mockResolvedValue([
+      {
+        id: "tev_1",
+        takeoffItemId: "titem_1",
+        confirmedSymbolId: "csym_1",
+        drawingId: "d1",
+        projectId: "p1",
+        pageNumber: 2,
+        bboxPdf: [100, 100, 120, 120],
+        evidenceImageUrl: null,
+        createdAt: "",
+      },
+    ]);
+    vi.mocked(listTakeoffItems).mockResolvedValue([
+      {
+        id: "titem_1",
+        projectId: "p1",
+        drawingId: "d1",
+        quoteId: null,
+        name: "zásuvka",
+        profession: "electrical",
+        quantity: 4,
+        unit: "ks",
+        sourceOfQuantity: "symbol_detection",
+        status: "confirmed",
+        evidenceCount: 4,
+        metadata: { symbolType: "socket" },
+        createdAt: "",
+        updatedAt: "",
+      },
+    ]);
+
+    const result = await unconfirmAndDeleteSymbol({ projectId: "p1", candidateId: "cand_1" });
+
+    expect(result.removedTakeoffItemId).toBeNull();
+    expect(result.updatedTakeoffItemId).toBe("titem_1");
+    expect(deleteTakeoffItem).not.toHaveBeenCalled();
+    const savedItem = vi.mocked(upsertTakeoffItem).mock.calls[0]![0];
+    expect(savedItem.quantity).toBe(3);
+    expect(savedItem.evidenceCount).toBe(3);
+  });
+
+  it("never touches an unrelated takeoff item (different drawing/profession/symbolType)", async () => {
+    vi.mocked(getConfirmedSymbolByCandidateId).mockResolvedValue(confirmedRow());
+    vi.mocked(listTakeoffEvidenceForConfirmedSymbol).mockResolvedValue([]);
+    vi.mocked(listTakeoffItems).mockResolvedValue([
+      {
+        id: "titem_other",
+        projectId: "p1",
+        drawingId: "d1",
+        quoteId: null,
+        name: "vypínač",
+        profession: "electrical",
+        quantity: 2,
+        unit: "ks",
+        sourceOfQuantity: "symbol_detection",
+        status: "confirmed",
+        evidenceCount: 2,
+        metadata: { symbolType: "switch" },
+        createdAt: "",
+        updatedAt: "",
+      },
+    ]);
+
+    const result = await unconfirmAndDeleteSymbol({ projectId: "p1", candidateId: "cand_1" });
+
+    expect(result.removedTakeoffItemId).toBeNull();
+    expect(result.updatedTakeoffItemId).toBeNull();
+    expect(upsertTakeoffItem).not.toHaveBeenCalled();
+    expect(deleteTakeoffItem).not.toHaveBeenCalled();
+  });
+});
+
+describe("changeConfirmedSymbolType — retype an already-confirmed symbol", () => {
+  function confirmedRow(overrides?: Partial<ConfirmedSymbol>): ConfirmedSymbol {
+    return {
+      id: "csym_1",
+      candidateId: "cand_1",
+      drawingId: "d1",
+      projectId: "p1",
+      pageNumber: 2,
+      bboxPdf: [100, 100, 120, 120],
+      normalizedPosition: NORMALIZED,
+      symbolType: "socket",
+      profession: "electrical",
+      roomId: null,
+      zoneId: null,
+      quantityValue: 1,
+      quantityUnit: "ks",
+      confirmationSource: "user",
+      confidence: 0.9,
+      evidenceImageUrl: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      ...overrides,
+    };
+  }
+
+  it("throws when the candidate has no backing confirmed symbol", async () => {
+    vi.mocked(getConfirmedSymbolByCandidateId).mockResolvedValue(null);
+
+    await expect(
+      changeConfirmedSymbolType({ projectId: "p1", candidateId: "cand_missing", symbol_type: "switch" })
+    ).rejects.toThrow("CONFIRMED_SYMBOL_NOT_FOUND");
+  });
+
+  it("moves the quantity from the old bucket to a new bucket for the new type", async () => {
+    vi.mocked(getConfirmedSymbolByCandidateId).mockResolvedValue(confirmedRow());
+    vi.mocked(listTakeoffItems).mockResolvedValue([
+      {
+        id: "titem_socket",
+        projectId: "p1",
+        drawingId: "d1",
+        quoteId: null,
+        name: "zásuvka",
+        profession: "electrical",
+        quantity: 1,
+        unit: "ks",
+        sourceOfQuantity: "symbol_detection",
+        status: "confirmed",
+        evidenceCount: 1,
+        metadata: { symbolType: "socket" },
+        createdAt: "",
+        updatedAt: "",
+      },
+    ]);
+
+    const result = await changeConfirmedSymbolType({
+      projectId: "p1",
+      candidateId: "cand_1",
+      symbol_type: "switch",
+    });
+
+    // Old bucket (only evidence) is removed entirely, not left at quantity 0.
+    expect(deleteTakeoffItem).toHaveBeenCalledExactlyOnceWith("p1", "titem_socket");
+    // A new bucket is created for the new type with the same quantity moved over.
+    const savedItem = vi.mocked(upsertTakeoffItem).mock.calls.at(-1)![0];
+    expect(savedItem.metadata?.symbolType).toBe("switch");
+    expect(savedItem.quantity).toBe(1);
+    expect(savedItem.evidenceCount).toBe(1);
+    expect(result.confirmedSymbol.symbolType).toBe("switch");
+    expect(updateConfirmedSymbolType).toHaveBeenCalledExactlyOnceWith("p1", "csym_1", "switch");
+  });
+
+  it("adds to an existing bucket of the new type instead of creating a duplicate", async () => {
+    vi.mocked(getConfirmedSymbolByCandidateId).mockResolvedValue(confirmedRow());
+    vi.mocked(listTakeoffItems).mockResolvedValue([
+      {
+        id: "titem_socket",
+        projectId: "p1",
+        drawingId: "d1",
+        quoteId: null,
+        name: "zásuvka",
+        profession: "electrical",
+        quantity: 1,
+        unit: "ks",
+        sourceOfQuantity: "symbol_detection",
+        status: "confirmed",
+        evidenceCount: 1,
+        metadata: { symbolType: "socket" },
+        createdAt: "",
+        updatedAt: "",
+      },
+      {
+        id: "titem_switch",
+        projectId: "p1",
+        drawingId: "d1",
+        quoteId: null,
+        name: "vypínač",
+        profession: "electrical",
+        quantity: 3,
+        unit: "ks",
+        sourceOfQuantity: "symbol_detection",
+        status: "confirmed",
+        evidenceCount: 3,
+        metadata: { symbolType: "switch" },
+        createdAt: "",
+        updatedAt: "",
+      },
+    ]);
+
+    await changeConfirmedSymbolType({
+      projectId: "p1",
+      candidateId: "cand_1",
+      symbol_type: "switch",
+    });
+
+    const savedItem = vi.mocked(upsertTakeoffItem).mock.calls.at(-1)![0];
+    expect(savedItem.id).toBe("titem_switch");
+    expect(savedItem.quantity).toBe(4);
+    expect(savedItem.evidenceCount).toBe(4);
+  });
+
+  it("is a no-op for quantities when the requested type equals the current type", async () => {
+    vi.mocked(getConfirmedSymbolByCandidateId).mockResolvedValue(confirmedRow());
+
+    const result = await changeConfirmedSymbolType({
+      projectId: "p1",
+      candidateId: "cand_1",
+      symbol_type: "socket",
+    });
+
+    expect(upsertTakeoffItem).not.toHaveBeenCalled();
+    expect(deleteTakeoffItem).not.toHaveBeenCalled();
+    expect(updateConfirmedSymbolType).not.toHaveBeenCalled();
+    expect(result.takeoffItemId).toBeNull();
+  });
+});
+
+describe("moveCandidateOrConfirmedSymbol — drag-to-reposition on the plan", () => {
+  const NEW_POSITION = { x: 0.5, y: 0.5, width: 0.03, height: 0.03 };
+
+  it("updates the symbolCandidate position for a not-yet-confirmed row", async () => {
+    vi.mocked(getSymbolCandidate).mockResolvedValue(candidateRow()); // status: probable
+
+    await moveCandidateOrConfirmedSymbol({
+      projectId: "p1",
+      candidateId: "cand_1",
+      newNormalizedPosition: NEW_POSITION,
+    });
+
+    expect(updateSymbolCandidatePosition).toHaveBeenCalledWith(
+      "p1",
+      "cand_1",
+      expect.objectContaining({ normalizedPosition: NEW_POSITION })
+    );
+    expect(updateConfirmedSymbolPosition).not.toHaveBeenCalled();
+  });
+
+  it("updates the confirmedSymbol position (not the candidate row) for a confirmed row", async () => {
+    vi.mocked(getSymbolCandidate).mockResolvedValue({
+      ...candidateRow(),
+      status: "confirmed",
+    });
+    vi.mocked(getConfirmedSymbolByCandidateId).mockResolvedValue(existingConfirmed());
+
+    await moveCandidateOrConfirmedSymbol({
+      projectId: "p1",
+      candidateId: "cand_1",
+      newNormalizedPosition: NEW_POSITION,
+    });
+
+    expect(updateConfirmedSymbolPosition).toHaveBeenCalledWith(
+      "p1",
+      "csym_existing",
+      expect.objectContaining({ normalizedPosition: NEW_POSITION })
+    );
+    expect(updateSymbolCandidatePosition).not.toHaveBeenCalled();
+  });
+
+  it("throws if a confirmed candidate has no backing confirmedSymbol row", async () => {
+    vi.mocked(getSymbolCandidate).mockResolvedValue({
+      ...candidateRow(),
+      status: "confirmed",
+    });
+    vi.mocked(getConfirmedSymbolByCandidateId).mockResolvedValue(null);
+
+    await expect(
+      moveCandidateOrConfirmedSymbol({
+        projectId: "p1",
+        candidateId: "cand_1",
+        newNormalizedPosition: NEW_POSITION,
+      })
+    ).rejects.toThrow("CONFIRMED_SYMBOL_NOT_FOUND");
+  });
+
+  it("skips the extra Firestore read when the caller already has the DTO", async () => {
+    await moveCandidateOrConfirmedSymbol({
+      projectId: "p1",
+      candidateId: "cand_1",
+      newNormalizedPosition: NEW_POSITION,
+      candidateDto: {
+        id: "cand_1",
+        page_number: 2,
+        bbox_pdf: [100, 100, 120, 120],
+        bbox_px: [10, 10, 30, 30],
+        color_layer: "green",
+        kind: "symbol_candidate",
+        label_suggestions: [{ label: "zásuvka", confidence: 0.8 }],
+        nearby_text: null,
+        confidence: 0.8,
+        source: "opencv",
+        status: "probable",
+        preview_image_url: null,
+        normalized_position: NORMALIZED,
+      },
+    });
+
+    expect(getSymbolCandidate).not.toHaveBeenCalled();
+    expect(updateSymbolCandidatePosition).toHaveBeenCalledWith(
+      "p1",
+      "cand_1",
+      expect.objectContaining({ normalizedPosition: NEW_POSITION })
+    );
   });
 });

@@ -17,6 +17,7 @@ import {
   countByStatus,
   groupByTrade,
   rotateNormalizedRect,
+  screenRectContainsPoint,
   typesForTrade,
   defaultUnitFor,
   unrotateNormalizedRect,
@@ -389,5 +390,29 @@ describe("fit calculations (left edge stays reachable)", () => {
   it("fit zoom is always positive even for degenerate inputs", () => {
     expect(fitPageZoom({ width: 0, height: 0 }, { width: 800, height: 600 })).toBe(1);
     expect(fitWidthZoom(baseCss, { width: 0 })).toBeGreaterThan(0);
+  });
+});
+
+describe("screenRectContainsPoint (marker hit-testing)", () => {
+  const rect = { x: 100, y: 100, width: 10, height: 10 };
+
+  it("is true for a point strictly inside the rect", () => {
+    expect(screenRectContainsPoint(rect, { x: 105, y: 105 })).toBe(true);
+  });
+
+  it("is false for a point outside the rect with no padding", () => {
+    expect(screenRectContainsPoint(rect, { x: 130, y: 130 })).toBe(false);
+  });
+
+  it("extends the hit area with padding — clicking near a tiny mark still hits it", () => {
+    // 8px outside the rect on both axes.
+    const nearMiss = { x: 118, y: 108 };
+    expect(screenRectContainsPoint(rect, nearMiss, 0)).toBe(false);
+    expect(screenRectContainsPoint(rect, nearMiss, 10)).toBe(true);
+  });
+
+  it("boundary points count as inside (inclusive)", () => {
+    expect(screenRectContainsPoint(rect, { x: 100, y: 100 })).toBe(true);
+    expect(screenRectContainsPoint(rect, { x: 110, y: 110 })).toBe(true);
   });
 });

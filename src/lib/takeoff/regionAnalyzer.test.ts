@@ -305,6 +305,65 @@ describe("analyzeRegionRaster", () => {
     }
   });
 
+  it("a sparse wall-corner-like ink patch does not become a false symbol candidate", () => {
+    const region = solidRaster(200, 150, [252, 252, 252]);
+    // 4-connected diagonal staircase — compact bbox (aspect ≈ 1, so the
+    // line_like filter never sees it) but low ink density, the way a wall
+    // corner's crossing hatch strokes look once merged into one bbox.
+    let x = 20;
+    let y = 20;
+    paintSquare(region, x, y, 1, [230, 140, 20]);
+    for (let i = 0; i < 25; i++) {
+      x += 1;
+      paintSquare(region, x, y, 1, [230, 140, 20]);
+      y += 1;
+      paintSquare(region, x, y, 1, [230, 140, 20]);
+    }
+    // A real, dense orange light symbol elsewhere in the same region.
+    paintSquare(region, 140, 90, 14, [230, 140, 20]);
+
+    const result = analyzeRegionRaster({
+      regionRaster: region,
+      pageNumber: 1,
+      profession: "electrical",
+      regionBboxPx: [0, 0, 200, 150],
+      pageWidthPx: 200,
+      pageHeightPx: 150,
+    });
+
+    // Only the real dense symbol becomes a candidate — the sparse patch does not.
+    expect(result.candidates.filter((c) => c.color_layer === "orange")).toHaveLength(1);
+    expect(
+      result.debug.detectionsBeforeFilter.some((d) => d.rejectReason === "low_density")
+    ).toBe(true);
+  });
+
+  it("a thick orange band (merged wall-hatch strokes) is not promoted to a false LED strip", () => {
+    const region = solidRaster(300, 200, [252, 252, 252]);
+    // Same aspect-ratio ballpark as the genuine LED-strip test (elongated
+    // enough to be rejected as line_like) but much thicker (short dim well
+    // above the thinness gate) — a wall-hatch band, not a thin drawn line.
+    for (let x = 10; x < 69; x++) {
+      paintSquare(region, x, 90, 12, [230, 140, 20]);
+    }
+
+    const result = analyzeRegionRaster({
+      regionRaster: region,
+      pageNumber: 1,
+      profession: "electrical",
+      regionBboxPx: [0, 0, 300, 200],
+      pageWidthPx: 300,
+      pageHeightPx: 200,
+    });
+
+    expect(result.candidates.filter((c) => c.color_layer === "orange")).toHaveLength(0);
+    expect(
+      result.debug.detectionsBeforeFilter.some(
+        (d) => d.colorLayer === "orange" && d.rejectReason === "line_like"
+      )
+    ).toBe(true);
+  });
+
   it("colored ink below minimum size → emptyReason too_small", () => {
     const region = solidRaster(300, 300, [255, 255, 255]);
     // Scattered 2×2 green specks: colored pixels exist, but every component

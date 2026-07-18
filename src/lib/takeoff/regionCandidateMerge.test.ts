@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeRasterAndTemplateCandidates } from "./regionCandidateMerge";
+import { dedupeOverlappingCandidates, mergeRasterAndTemplateCandidates } from "./regionCandidateMerge";
 import type { AnalyzeRegionCandidateDto } from "@/types/pdfTakeoff";
 
 function cand(overrides?: Partial<AnalyzeRegionCandidateDto>): AnalyzeRegionCandidateDto {
@@ -143,5 +143,47 @@ describe("mergeRasterAndTemplateCandidates", () => {
     });
 
     expect(result.candidates.every((c) => c.status !== "confirmed")).toBe(true);
+  });
+});
+
+describe("dedupeOverlappingCandidates — whole-page tile scan merge", () => {
+  it("collapses the same symbol detected in two overlapping tiles into one", () => {
+    const tileA = cand({ id: "cand_tile0_1", confidence: 0.6 });
+    const tileB = cand({
+      id: "cand_tile1_1",
+      confidence: 0.72,
+      normalized_position: { x: 0.405, y: 0.402, width: 0.02, height: 0.02 },
+      label_suggestions: [{ label: "zásuvka (t2)", confidence: 0.72 }],
+    });
+
+    const result = dedupeOverlappingCandidates([tileA, tileB]);
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.dedupedCount).toBe(1);
+    // Higher-confidence detection wins; labels from both are kept.
+    expect(result.candidates[0]!.id).toBe("cand_tile1_1");
+    const labels = result.candidates[0]!.label_suggestions.map((l) => l.label);
+    expect(labels).toContain("zásuvka");
+    expect(labels).toContain("zásuvka (t2)");
+  });
+
+  it("keeps candidates from different tiles separate when they don't overlap", () => {
+    const tileA = cand({ id: "cand_a", normalized_position: { x: 0.05, y: 0.05, width: 0.02, height: 0.02 } });
+    const tileB = cand({ id: "cand_b", normalized_position: { x: 0.9, y: 0.9, width: 0.02, height: 0.02 } });
+
+    const result = dedupeOverlappingCandidates([tileA, tileB]);
+
+    expect(result.candidates).toHaveLength(2);
+    expect(result.dedupedCount).toBe(0);
+  });
+
+  it("never merges overlapping candidates of different color layers", () => {
+    const green = cand({ id: "cand_green", color_layer: "green" });
+    const red = cand({ id: "cand_red", color_layer: "red" });
+
+    const result = dedupeOverlappingCandidates([green, red]);
+
+    expect(result.candidates).toHaveLength(2);
+    expect(result.dedupedCount).toBe(0);
   });
 });

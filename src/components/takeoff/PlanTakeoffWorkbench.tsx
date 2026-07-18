@@ -47,7 +47,7 @@ import {
   findSimilarForCandidate,
   findSimilarForConfirmedSymbol,
 } from "@/services/takeoff/confirmedSymbolSimilarService";
-import { analyzeDrawingRegion } from "@/services/takeoff/analyzeRegionService";
+import { analyzeDrawingRegion, scanWholeDrawingPage } from "@/services/takeoff/analyzeRegionService";
 import {
   listTakeoffEvidenceForItem,
   listTakeoffItems,
@@ -55,15 +55,20 @@ import {
   saveSymbolCandidates,
 } from "@/services/takeoff/pdfTakeoffRegionService";
 import {
+  changeConfirmedSymbolType,
   changeSymbolCandidateType,
   confirmAllProbableCandidates,
   confirmSymbolCandidate,
+  deleteCandidate,
   DuplicateConfirmedSymbolError,
   markSymbolCandidateUnknownType,
+  moveCandidateOrConfirmedSymbol,
   rejectSymbolCandidate,
+  unconfirmAndDeleteSymbol,
 } from "@/services/takeoff/symbolCandidateReviewService";
 import {
   buildManualCandidateDto,
+  defaultLabelForSymbolType,
   dtoFromSymbolCandidate,
 } from "@/lib/takeoff/candidateReview";
 import { addTakeoffLinesToQuoteDraft } from "@/services/takeoff/takeoffQuoteService";
@@ -194,6 +199,7 @@ export function PlanTakeoffWorkbench({
   const [finishBusy, setFinishBusy] = useState(false);
   const regionAnalyzerEnabled = isPdfTakeoffRegionAnalyzerEnabled();
   const [analyzeBusy, setAnalyzeBusy] = useState(false);
+  const [scanningWholePage, setScanningWholePage] = useState(false);
   const [regionCandidates, setRegionCandidates] = useState<AnalyzeRegionCandidateDto[]>([]);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [lastAnalyzeSummary, setLastAnalyzeSummary] = useState<AnalyzeRegionResponse["summary"] | null>(
@@ -376,6 +382,55 @@ export function PlanTakeoffWorkbench({
     [fileUrl, analyzeBusy, projectId, drawingId, formTrade, showToast, t]
   );
 
+  // "Skenovať celú stranu" — tiled whole-page scan (Task 5). Same guarantees
+  // as region analyze: only symbolCandidates, never confirmed/items/evidence.
+  const handleScanWholePage = useCallback(
+    async (pageNumber: number) => {
+      if (scanningWholePage || analyzeBusy) return;
+      if (!fileUrl) {
+        setAnalyzeNotice("failed");
+        return;
+      }
+      setScanningWholePage(true);
+      setSelectedCandidateId(null);
+      setAnalyzeNotice(null);
+      try {
+        const result = await scanWholeDrawingPage({
+          projectId,
+          drawingId,
+          fileUrl,
+          pageNumber,
+          profession: formTrade,
+        });
+        setRegionCandidates((prev) => [
+          ...prev.filter((c) => c.status === "confirmed" || c.status === "rejected"),
+          ...result.candidates,
+        ]);
+        setLastAnalyzeSummary(result.summary);
+        setLastDebug(result.debug ?? null);
+        setLastRegionImageUrl(null);
+        setPlanQualityLabel(
+          t("takeoff.analyzeRegion.planQualityDetail", {
+            type: result.plan_quality.detected_plan_type,
+            ocr: result.plan_quality.ocr_required
+              ? t("takeoff.analyzeRegion.ocrYes")
+              : t("takeoff.analyzeRegion.ocrNo"),
+          })
+        );
+        setAnalyzeNotice(result.candidates.length === 0 ? "empty" : null);
+        showToast(t("takeoff.toast.scanWholePageDone", { count: result.candidates.length }));
+        setMarkerMode("select");
+        setRightTab("candidates");
+      } catch {
+        setAnalyzeNotice("failed");
+        showToast(t("takeoff.toast.scanWholePageFailed"));
+      } finally {
+        setScanningWholePage(false);
+      }
+    },
+    [scanningWholePage, analyzeBusy, fileUrl, projectId, drawingId, formTrade, showToast, t]
+  );
+
   const refreshTakeoffItems = useCallback(async () => {
     const items = await listTakeoffItems(projectId, drawingId);
     setTakeoffItems(items);
@@ -457,6 +512,106 @@ export function PlanTakeoffWorkbench({
     [projectId, patchCandidateLocal, showToast, t]
   );
 
+  const removeCandidateLocal = useCallback((id: string) => {
+    setRegionCandidates((prev) => prev.filter((c) => c.id !== id));
+    setSelectedCandidateId((sel) => (sel === id ? null : sel));
+  }, []);
+
+  /** Permanently remove a candidate/probable/rejected/unknown row — never a confirmed one. */
+  const handleDeleteCandidate = useCallback(
+    async (candidateId: string) => {
+      setReviewBusy(true);
+      try {
+        await deleteCandidate({ projectId, candidateId });
+        removeCandidateLocal(candidateId);
+        showToast(t("takeoff.toast.candidateDeleted"));
+      } catch {
+        showToast(t("takeoff.toast.reviewFailed"));
+      } finally {
+        setReviewBusy(false);
+      }
+    },
+    [projectId, removeCandidateLocal, showToast, t]
+  );
+
+  /** Delete all rejected/hidden candidates in one go — clears review-list clutter. */
+  const handleDeleteAllRejected = useCallback(async () => {
+    const targets = regionCandidates.filter((c) => c.status === "rejected");
+    if (targets.length === 0) return;
+    setReviewBusy(true);
+    try {
+      let removed = 0;
+      for (const c of targets) {
+        try {
+          await deleteCandidate({ projectId, candidateId: c.id });
+          removed++;
+        } catch {
+          /* keep going — one bad row must not block the rest */
+        }
+      }
+      setRegionCandidates((prev) => prev.filter((c) => c.status !== "rejected"));
+      showToast(t("takeoff.toast.rejectedCleared", { count: removed }));
+    } finally {
+      setReviewBusy(false);
+    }
+  }, [projectId, regionCandidates, showToast, t]);
+
+  /**
+   * Delete a CONFIRMED symbol — reverses the exact quantity/evidence it
+   * added (symmetric with confirm), then removes it and its originating
+   * candidate. This is the only way to fully remove a confirmed mark;
+   * rejecting only hides it and never applies to confirmed rows.
+   */
+  const handleDeleteConfirmedSymbol = useCallback(
+    async (candidateId: string) => {
+      const dto = regionCandidates.find((c) => c.id === candidateId);
+      if (!dto) return;
+      setReviewBusy(true);
+      try {
+        await unconfirmAndDeleteSymbol({ projectId, candidateId });
+        removeCandidateLocal(candidateId);
+        await refreshTakeoffItems();
+        showToast(t("takeoff.toast.confirmedDeleted"));
+      } catch {
+        showToast(t("takeoff.toast.reviewFailed"));
+      } finally {
+        setReviewBusy(false);
+      }
+    },
+    [projectId, regionCandidates, removeCandidateLocal, refreshTakeoffItems, showToast, t]
+  );
+
+  /**
+   * Delete a candidate or confirmed symbol from the overlay's inline (x)
+   * button — dispatches to the right service so confirmed rows still
+   * reverse their quantity/evidence instead of just vanishing.
+   */
+  const handleDeleteCandidateFromViewer = useCallback(
+    (candidate: AnalyzeRegionCandidateDto) => {
+      if (candidate.status === "confirmed") {
+        void handleDeleteConfirmedSymbol(candidate.id);
+      } else {
+        void handleDeleteCandidate(candidate.id);
+      }
+    },
+    [handleDeleteCandidate, handleDeleteConfirmedSymbol]
+  );
+
+  /** Drag-to-reposition a candidate/confirmed symbol mark on the plan. */
+  const handleMoveCandidate = useCallback(
+    (candidateId: string, normalized: NormalizedRect) => {
+      const dto = regionCandidates.find((c) => c.id === candidateId);
+      patchCandidateLocal(candidateId, { normalized_position: normalized });
+      moveCandidateOrConfirmedSymbol({
+        projectId,
+        candidateId,
+        newNormalizedPosition: normalized,
+        candidateDto: dto,
+      }).catch(() => showToast(t("takeoff.toast.saveFailed")));
+    },
+    [projectId, regionCandidates, patchCandidateLocal, showToast, t]
+  );
+
   const handleChangeCandidateType = useCallback(
     async (candidateId: string, symbolType: string) => {
       const dto = regionCandidates.find((c) => c.id === candidateId);
@@ -476,6 +631,32 @@ export function PlanTakeoffWorkbench({
       }
     },
     [regionCandidates, projectId, patchCandidateLocal, showToast, t]
+  );
+
+  /**
+   * Retype an already-CONFIRMED symbol — e.g. a light wrongly marked as a
+   * switch. Moves its quantity from the old takeoff item bucket to the new
+   * one (never both), keeping the confirmedSymbol/evidence rows intact so
+   * evidence in the plan stays traceable.
+   */
+  const handleChangeConfirmedType = useCallback(
+    async (candidateId: string, symbolType: string) => {
+      setReviewBusy(true);
+      try {
+        const label = defaultLabelForSymbolType(symbolType);
+        await changeConfirmedSymbolType({ projectId, candidateId, symbol_type: symbolType });
+        patchCandidateLocal(candidateId, {
+          label_suggestions: [{ label, confidence: 1 }],
+        });
+        await refreshTakeoffItems();
+        showToast(t("takeoff.toast.confirmedTypeChanged"));
+      } catch {
+        showToast(t("takeoff.toast.reviewFailed"));
+      } finally {
+        setReviewBusy(false);
+      }
+    },
+    [projectId, patchCandidateLocal, refreshTakeoffItems, showToast, t]
   );
 
   const handleMarkUnknown = useCallback(
@@ -746,6 +927,19 @@ export function PlanTakeoffWorkbench({
       setOccurrences((prev) => prev.filter((o) => o.id !== id));
       setSelectedId((sel) => (sel === id ? null : sel));
       deleteDrawingOccurrence(projectId, id).catch(() =>
+        showToast(t("takeoff.toast.saveFailed"))
+      );
+    },
+    [projectId, showToast, t]
+  );
+
+  /** Drag-to-reposition a legacy manual mark on the plan. */
+  const handleMoveOccurrence = useCallback(
+    (id: string, normalized: NormalizedRect) => {
+      setOccurrences((prev) =>
+        prev.map((o) => (o.id === id ? { ...o, normalizedPosition: normalized } : o))
+      );
+      updateDrawingOccurrence(projectId, id, { normalizedPosition: normalized }).catch(() =>
         showToast(t("takeoff.toast.saveFailed"))
       );
     },
@@ -1026,6 +1220,11 @@ export function PlanTakeoffWorkbench({
                 {t("takeoff.analyzeRegion.button")}
               </Button>
             ) : null}
+            {regionAnalyzerEnabled && perms.allowAnalyze ? (
+              <p className="basis-full text-[11px] text-muted-foreground">
+                {t("takeoff.empty.scanHint")}
+              </p>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -1154,6 +1353,8 @@ export function PlanTakeoffWorkbench({
             selectedOccurrenceId={selectedId}
             onMarkerClick={(id) => setSelectedId(id)}
             onMarkerDrawn={handleMarkerDrawn}
+            onOccurrenceMove={perms.allowEdit ? handleMoveOccurrence : undefined}
+            onOccurrenceDelete={perms.allowEdit ? handleDelete : undefined}
             markerMode={markerMode}
             onMarkerModeChange={setMarkerMode}
             heightClassName={
@@ -1165,10 +1366,23 @@ export function PlanTakeoffWorkbench({
               setSelectedCandidateId(id);
               setRightTab("candidates");
             }}
+            onCandidateMove={perms.allowConfirm ? handleMoveCandidate : undefined}
+            onCandidateDelete={perms.allowConfirm ? handleDeleteCandidateFromViewer : undefined}
             showAnalyzeRegionMode={regionAnalyzerEnabled && perms.allowAnalyze}
             allowMarking={perms.allowEdit}
             initialPage={initialPage}
             analyzingRegion={analyzeBusy}
+            onScanVisibleArea={
+              regionAnalyzerEnabled && perms.allowAnalyze && fileUrl
+                ? (pageNumber, rect) => void handleAnalyzeRegion(pageNumber, rect)
+                : undefined
+            }
+            onScanWholePage={
+              regionAnalyzerEnabled && perms.allowAnalyze && fileUrl
+                ? (pageNumber) => void handleScanWholePage(pageNumber)
+                : undefined
+            }
+            scanningWholePage={scanningWholePage}
             focusEvidence={focusEvidence}
           />
         </div>
@@ -1275,8 +1489,18 @@ export function PlanTakeoffWorkbench({
                     onConfirm={handleConfirmCandidate}
                     onReject={handleRejectCandidate}
                     onChangeType={handleChangeCandidateType}
+                    onChangeConfirmedType={
+                      perms.allowConfirm ? handleChangeConfirmedType : undefined
+                    }
                     onMarkUnknown={handleMarkUnknown}
                     onConfirmAllProbable={handleConfirmAllProbable}
+                    onDeleteCandidate={perms.allowConfirm ? handleDeleteCandidate : undefined}
+                    onDeleteConfirmed={
+                      perms.allowConfirm ? handleDeleteConfirmedSymbol : undefined
+                    }
+                    onDeleteAllRejected={
+                      perms.allowConfirm ? handleDeleteAllRejected : undefined
+                    }
                     onEvidenceClick={(id) => void handleEvidenceClick(id)}
                     evidenceThumbs={evidenceThumbs}
                     onEvidenceThumbClick={handleEvidenceThumbClick}

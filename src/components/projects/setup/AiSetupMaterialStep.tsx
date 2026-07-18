@@ -43,6 +43,11 @@ import { EstimatorLinkedTakeoffTable } from "@/components/ai-estimator/Estimator
 import { EstimatorPdfEvidenceViewer } from "@/components/ai-estimator/EstimatorPdfEvidenceViewer";
 import { PlanTakeoffWorkbench } from "@/components/takeoff/PlanTakeoffWorkbench";
 import { isPdfTakeoffRegionAnalyzerEnabled } from "@/lib/ai/aiEstimatorFeature";
+import {
+  resolveCanonicalDrawingId,
+  type ResolveCanonicalDrawingIdResult,
+} from "@/services/takeoff/drawingIdentityService";
+import { mergeTakeoffDrawingData } from "@/services/takeoff/takeoffDrawingMergeService";
 import { EstimatorMarkingChecklist } from "@/components/ai-estimator/EstimatorMarkingChecklist";
 import {
   EstimatorPriceDrawer,
@@ -176,6 +181,58 @@ export function AiSetupMaterialStep({
   const [pdfFullscreen, setPdfFullscreen] = useState(false);
   // One shared PDF takeoff tool for quote + project + documents.
   const sharedTakeoffEnabled = isPdfTakeoffRegionAnalyzerEnabled();
+
+  // Canonical drawing identity — quote takeoff must key on the SAME
+  // drawingId Project Documents would use for the same PDF (task: fix
+  // quote/project drawing identity mismatch). Resolution is best-effort and
+  // never destructive; it falls back to the AI-draft fileId immediately and
+  // upgrades once resolved so the workbench never blocks on it.
+  const activeFileId = evidence?.activeDocument?.fileId ?? null;
+  const activeFileName = evidence?.activeDocument?.fileName ?? evidence?.fileName ?? null;
+  const [canonicalDrawingId, setCanonicalDrawingId] = useState<string | null>(null);
+  const [drawingAliasWarning, setDrawingAliasWarning] =
+    useState<ResolveCanonicalDrawingIdResult | null>(null);
+  const [mergingLegacyDrawingData, setMergingLegacyDrawingData] = useState(false);
+  useEffect(() => {
+    if (!activeFileId || !evidence?.projectId || !sharedTakeoffEnabled) {
+      setCanonicalDrawingId(null);
+      setDrawingAliasWarning(null);
+      return;
+    }
+    let cancelled = false;
+    resolveCanonicalDrawingId({
+      projectId: evidence.projectId,
+      fileId: activeFileId,
+      fileName: activeFileName,
+    })
+      .then((result) => {
+        if (cancelled) return;
+        setCanonicalDrawingId(result.canonicalDrawingId);
+        setDrawingAliasWarning(result.hasLegacyDataUnderAlias ? result : null);
+      })
+      .catch(() => {
+        if (!cancelled) setCanonicalDrawingId(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeFileId, activeFileName, evidence?.projectId, sharedTakeoffEnabled]);
+
+  const handleMergeLegacyDrawingData = async () => {
+    if (!drawingAliasWarning?.aliasFileId || !evidence?.projectId || mergingLegacyDrawingData) return;
+    setMergingLegacyDrawingData(true);
+    try {
+      await mergeTakeoffDrawingData({
+        projectId: evidence.projectId,
+        fromDrawingId: drawingAliasWarning.aliasFileId,
+        toDrawingId: drawingAliasWarning.canonicalDrawingId,
+        dryRun: false,
+      });
+      setDrawingAliasWarning(null);
+    } finally {
+      setMergingLegacyDrawingData(false);
+    }
+  };
 
   const update = (id: string, patch: Partial<AiSetupMaterialRow>) => {
     onMaterialsChange(
@@ -703,9 +760,32 @@ export function AiSetupMaterialStep({
           estimator marking stays only as fallback when the analyzer is off. */}
       {subTab === "pdf" && evidence && sharedTakeoffEnabled ? (
         <div className="space-y-3" data-testid="quote-shared-takeoff">
+          {drawingAliasWarning ? (
+            <div
+              className="flex flex-wrap items-center gap-2 rounded-lg border border-dashed border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200"
+              data-testid="drawing-alias-warning"
+            >
+              <span className="min-w-0 flex-1">
+                {t("projects.aiSetup.pdf.legacyDrawingDataWarning")}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 border-amber-500/60 text-xs"
+                disabled={mergingLegacyDrawingData}
+                data-testid="merge-legacy-drawing-data"
+                onClick={() => void handleMergeLegacyDrawingData()}
+              >
+                {mergingLegacyDrawingData
+                  ? t("common.loading")
+                  : t("projects.aiSetup.pdf.mergeLegacyDrawingData")}
+              </Button>
+            </div>
+          ) : null}
           <PlanTakeoffWorkbench
             projectId={evidence.projectId}
-            drawingId={evidence.activeDocument?.fileId ?? evidence.fileName ?? "drawing"}
+            drawingId={canonicalDrawingId ?? evidence.activeDocument?.fileId ?? evidence.fileName ?? "drawing"}
             fileName={evidence.fileName ?? "plan.pdf"}
             fileUrl={evidence.fileUrl}
             mode="quote"

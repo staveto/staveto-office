@@ -13,7 +13,7 @@
  *  - "select" mode: click a marker to select the linked list item.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ExternalLink,
   Frame,
@@ -29,8 +29,12 @@ import {
   RotateCw,
   Square,
   ScanSearch,
+  ScanLine,
+  LayoutGrid,
   Undo2,
   CheckCircle2,
+  Highlighter,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nContext";
@@ -43,6 +47,7 @@ import {
   nextRotation,
   normalizedToScreenRect,
   rotateNormalizedRect,
+  screenRectContainsPoint,
   screenToNormalizedRect,
   pointToNormalizedRect,
   normalizeDragRect,
@@ -57,6 +62,7 @@ import {
   type ViewRotation,
 } from "@/lib/takeoff/drawingTakeoff";
 import { loadPdfJsDocument, pdfJsWorkerSrc } from "@/lib/takeoff/loadPdfJsDocument";
+import { SELECTED_HIGHLIGHT_COLOR } from "@/lib/takeoff/selectionHighlight";
 
 type PdfDocument = {
   numPages: number;
@@ -91,6 +97,79 @@ const CANDIDATE_LAYER_COLORS: Record<SymbolColorLayer, string> = {
   unknown: "#7C3AED",
 };
 
+/** Marker button minimum rendered/clickable size (CSS px) — tiny marks stay easy to hit. */
+const OCCURRENCE_MARKER_MIN_PX = 12;
+const CANDIDATE_MARKER_MIN_PX = 10;
+/** Extra forgiveness around a marker's own box for click/drag hit-testing. */
+const MARKER_HIT_PADDING_PX = 8;
+/** Pointer must move this far before a marker press counts as a drag, not a click. */
+const MARKER_DRAG_THRESHOLD_PX = 4;
+
+function clamp01(v: number): number {
+  return Math.min(1, Math.max(0, v));
+}
+
+type MarkerKind = "occurrence" | "candidate";
+
+type MarkerDragState = {
+  kind: MarkerKind;
+  id: string;
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  /** toView(original normalizedPosition) — view-space 0..1, captured once at drag start. */
+  originViewRect: NormalizedRect;
+  dxPx: number;
+  dyPx: number;
+  moved: boolean;
+};
+
+type OverlapPickerItem = {
+  kind: MarkerKind;
+  id: string;
+  label: string;
+  color: string;
+  confirmed?: boolean;
+};
+
+/**
+ * A tiny/thin mark (e.g. an LED strip's slim bbox) can make the selected
+ * border+glow nearly invisible — the box itself is too small to notice.
+ * This locator ping is a FIXED-SIZE pulsing target centered on the mark,
+ * independent of the underlying bbox size, so selection is unmistakable
+ * even for the smallest or thinnest candidates.
+ */
+function SelectedLocatorPing({ centerX, centerY }: { centerX: number; centerY: number }) {
+  const size = 26;
+  return (
+    <div
+      className="pointer-events-none absolute z-40"
+      style={{ left: centerX - size / 2, top: centerY - size / 2, width: size, height: size }}
+      aria-hidden
+    >
+      <span
+        className="absolute inset-0 animate-ping rounded-full"
+        style={{ backgroundColor: `${SELECTED_HIGHLIGHT_COLOR}99` }}
+      />
+      <span
+        className="absolute inset-0 rounded-full"
+        style={{ border: `2px solid ${SELECTED_HIGHLIGHT_COLOR}`, boxShadow: `0 0 8px 2px ${SELECTED_HIGHLIGHT_COLOR}` }}
+      />
+      <span
+        className="absolute rounded-full"
+        style={{
+          left: size / 2 - 3,
+          top: size / 2 - 3,
+          width: 6,
+          height: 6,
+          backgroundColor: SELECTED_HIGHLIGHT_COLOR,
+          boxShadow: "0 0 3px 1px rgba(0,0,0,0.4)",
+        }}
+      />
+    </div>
+  );
+}
+
 type Props = {
   fileUrl: string | null;
   fileName?: string;
@@ -103,16 +182,36 @@ type Props = {
   onMarkerModeChange: (mode: MarkerMode) => void;
   onPageChange?: (page: number) => void;
   heightClassName?: string;
+  /**
+   * Drag-to-reposition a mis-placed mark in "select" mode. When omitted,
+   * markers are not draggable (read-only viewers keep the old behavior).
+   */
+  onOccurrenceMove?: (occurrenceId: string, normalized: NormalizedRect) => void;
+  /** Inline delete (×) shown on the selected mark — permanent removal. */
+  onOccurrenceDelete?: (occurrenceId: string) => void;
   /** Region-analyzer candidates (Phase 1 overlays — not quote quantities). */
   regionCandidates?: AnalyzeRegionCandidateDto[];
   selectedCandidateId?: string | null;
   onCandidateClick?: (candidateId: string) => void;
+  /** Drag-to-reposition a candidate/confirmed symbol (see onOccurrenceMove). */
+  onCandidateMove?: (candidateId: string, normalized: NormalizedRect) => void;
+  /** Inline delete (×) shown on the selected candidate/confirmed symbol. */
+  onCandidateDelete?: (candidate: AnalyzeRegionCandidateDto) => void;
   showAnalyzeRegionMode?: boolean;
   /** When false, manual marking modes (point/rect) are hidden (read-only). */
   allowMarking?: boolean;
   /** Page to open initially (deep link). */
   initialPage?: number;
   analyzingRegion?: boolean;
+  /**
+   * Primary AI-scan actions — "Skenovať viditeľnú oblasť" analyzes exactly
+   * what's on screen right now; "Skenovať celú stranu" tiles the whole page.
+   * Both reuse the analyze-region v2 pipeline and only ever produce review
+   * candidates (never confirmed symbols / quantities).
+   */
+  onScanVisibleArea?: (pageNumber: number, normalized: NormalizedRect) => void;
+  onScanWholePage?: (pageNumber: number) => void;
+  scanningWholePage?: boolean;
   /**
    * Evidence focus — jump to page + scroll/zoom bbox into view
    * when the user clicks a takeoff quantity evidence link.
@@ -143,13 +242,20 @@ export function DrawingPdfViewer({
   onMarkerModeChange,
   onPageChange,
   heightClassName = "h-[620px]",
+  onOccurrenceMove,
+  onOccurrenceDelete,
   regionCandidates = [],
   selectedCandidateId = null,
   onCandidateClick,
+  onCandidateMove,
+  onCandidateDelete,
   showAnalyzeRegionMode = true,
   allowMarking = true,
   initialPage,
   analyzingRegion = false,
+  onScanVisibleArea,
+  onScanWholePage,
+  scanningWholePage = false,
   focusEvidence = null,
 }: Props) {
   const { t } = useI18n();
@@ -163,12 +269,28 @@ export function DrawingPdfViewer({
   const [rendering, setRendering] = useState(false);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [hiddenLayers, setHiddenLayers] = useState<Set<TakeoffLayerKey>>(new Set());
+  // "Show all on plan" — glows EVERY mark (not just the selected one) so the
+  // user can compare the whole list against the drawing at a glance and spot
+  // real symbols that have no mark yet (nothing missing → covers everything).
+  const [highlightAll, setHighlightAll] = useState(false);
   const [dragRect, setDragRect] = useState<NormalizedRect | null>(null);
+  // Drag-to-move a marker (candidate/occurrence) on the plan.
+  const [markerDrag, setMarkerDrag] = useState<MarkerDragState | null>(null);
+  // Clustered/overlapping marks — clicking any of them opens a small picker
+  // instead of always resolving to whichever one happens to be on top.
+  const [overlapPicker, setOverlapPicker] = useState<{
+    x: number;
+    y: number;
+    items: OverlapPickerItem[];
+  } | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  // A completed drag suppresses the browser's synthetic click that follows
+  // pointerup, so releasing a drag never also re-triggers marker selection.
+  const suppressClickRef = useRef(false);
   const panStartRef = useRef<{ x: number; y: number; left: number; top: number } | null>(
     null
   );
@@ -316,6 +438,37 @@ export function DrawingPdfViewer({
     });
   }, [selectedOccurrenceId, occurrences, page, canvasSize, toView]);
 
+  // Selecting a candidate row in the review panel must actually show WHERE
+  // it is on the plan — change page + scroll it into view (and zoom in a
+  // bit for tiny marks), exactly like the evidence-link focus below. Without
+  // this, picking a candidate on a different page or outside the current
+  // scroll viewport looked like "nothing happened".
+  useEffect(() => {
+    if (!selectedCandidateId) return;
+    const target = regionCandidates.find((c) => c.id === selectedCandidateId);
+    if (!target?.normalized_position) return;
+    const targetPage = target.page_number ?? page;
+    if (targetPage !== page) {
+      setPage(targetPage);
+      return;
+    }
+    const container = scrollRef.current;
+    if (!container || canvasSize.width === 0) return;
+    const focusTarget = computeEvidenceFocusTarget(
+      toView(target.normalized_position),
+      canvasSize,
+      { width: container.clientWidth, height: container.clientHeight }
+    );
+    if (focusTarget.zoomBump) {
+      setZoom((z) => Math.min(3, Math.max(z, 1.5)));
+    }
+    container.scrollTo({
+      left: focusTarget.scrollLeft,
+      top: focusTarget.scrollTop,
+      behavior: "smooth",
+    });
+  }, [selectedCandidateId, regionCandidates, page, canvasSize, toView]);
+
   // Evidence link: change page + scroll to bbox (and bump zoom if tiny).
   // Works after rotation because the bbox is mapped page→view first.
   useEffect(() => {
@@ -378,6 +531,23 @@ export function DrawingPdfViewer({
     setRotation((r) => nextRotation(r, delta));
   }, []);
 
+  // "Skenovať viditeľnú oblasť" — analyze exactly what's currently scrolled
+  // into view, no drag needed. Approximate (ignores the few px of canvas
+  // padding) — good enough since the analyzer expands tiny regions anyway.
+  const handleScanVisibleArea = useCallback(() => {
+    if (!onScanVisibleArea || canvasSize.width === 0 || canvasSize.height === 0) return;
+    const container = scrollRef.current;
+    if (!container) return;
+    const left = Math.max(0, Math.min(container.scrollLeft, canvasSize.width));
+    const top = Math.max(0, Math.min(container.scrollTop, canvasSize.height));
+    const width = Math.max(1, Math.min(canvasSize.width - left, container.clientWidth));
+    const height = Math.max(1, Math.min(canvasSize.height - top, container.clientHeight));
+    const normalized = fromView(
+      screenToNormalizedRect({ x: left, y: top, width, height }, canvasSize)
+    );
+    onScanVisibleArea(page, normalized);
+  }, [onScanVisibleArea, canvasSize, page, fromView]);
+
   // Keyboard shortcuts — active when the viewer has focus.
   const handleKeyDown = (e: React.KeyboardEvent) => {
     const target = e.target as HTMLElement;
@@ -439,7 +609,7 @@ export function DrawingPdfViewer({
       };
       return;
     }
-    if (markerMode === "select" || !onMarkerDrawn || analyzingRegion) return;
+    if (markerMode === "select" || !onMarkerDrawn || analyzingRegion || scanningWholePage) return;
     const p = localPoint(e);
     if (!p) return;
     e.preventDefault();
@@ -477,7 +647,8 @@ export function DrawingPdfViewer({
       markerMode === "pan" ||
       !onMarkerDrawn ||
       !start ||
-      analyzingRegion
+      analyzingRegion ||
+      scanningWholePage
     ) {
       setDragRect(null);
       return;
@@ -513,6 +684,168 @@ export function DrawingPdfViewer({
           c.status !== "rejected"
       ),
     [regionCandidates, page]
+  );
+
+  // ---- Marker select / drag / delete interactions ---------------------------
+
+  const localPointFromClient = useCallback((clientX: number, clientY: number) => {
+    const el = overlayRef.current;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }, []);
+
+  /** Every marker (occurrence + candidate) whose forgiving hit box covers a point. */
+  const findMarkersAtPoint = useCallback(
+    (point: { x: number; y: number }): OverlapPickerItem[] => {
+      const hits: OverlapPickerItem[] = [];
+      for (const o of pageOccurrences) {
+        const style = occurrenceMarkerStyle(o);
+        const r = normalizedToScreenRect(toView(o.normalizedPosition), canvasSize);
+        const box = {
+          x: r.x,
+          y: r.y,
+          width: Math.max(OCCURRENCE_MARKER_MIN_PX, r.width),
+          height: Math.max(OCCURRENCE_MARKER_MIN_PX, r.height),
+        };
+        if (screenRectContainsPoint(box, point, MARKER_HIT_PADDING_PX)) {
+          hits.push({ kind: "occurrence", id: o.id, label: o.label, color: style.color });
+        }
+      }
+      for (const c of pageCandidates) {
+        const color = CANDIDATE_LAYER_COLORS[c.color_layer] ?? CANDIDATE_LAYER_COLORS.unknown;
+        const r = normalizedToScreenRect(toView(c.normalized_position), canvasSize);
+        const box = {
+          x: r.x,
+          y: r.y,
+          width: Math.max(CANDIDATE_MARKER_MIN_PX, r.width),
+          height: Math.max(CANDIDATE_MARKER_MIN_PX, r.height),
+        };
+        if (screenRectContainsPoint(box, point, MARKER_HIT_PADDING_PX)) {
+          hits.push({
+            kind: "candidate",
+            id: c.id,
+            label: c.label_suggestions[0]?.label ?? c.color_layer,
+            color,
+            confirmed: c.status === "confirmed",
+          });
+        }
+      }
+      return hits;
+    },
+    [pageOccurrences, pageCandidates, toView, canvasSize]
+  );
+
+  /**
+   * A marker was clicked (not dragged). If it's the only mark near the
+   * click, select it directly — same behavior as before. If several marks
+   * overlap at that point (a dense cluster), let the user pick exactly
+   * which one instead of always resolving to whichever is visually on top.
+   */
+  const handleMarkerActivate = useCallback(
+    (kind: MarkerKind, id: string, clientX: number, clientY: number) => {
+      const point = localPointFromClient(clientX, clientY);
+      const hits = point ? findMarkersAtPoint(point) : [];
+      if (hits.length <= 1 || !point) {
+        if (kind === "occurrence") onMarkerClick?.(id);
+        else onCandidateClick?.(id);
+        return;
+      }
+      setOverlapPicker({ x: point.x, y: point.y, items: hits });
+    },
+    [localPointFromClient, findMarkersAtPoint, onMarkerClick, onCandidateClick]
+  );
+
+  const pickOverlapItem = useCallback(
+    (item: OverlapPickerItem) => {
+      setOverlapPicker(null);
+      if (item.kind === "occurrence") onMarkerClick?.(item.id);
+      else onCandidateClick?.(item.id);
+    },
+    [onMarkerClick, onCandidateClick]
+  );
+
+  const startMarkerDrag = useCallback(
+    (e: React.PointerEvent, kind: MarkerKind, id: string, normalizedPosition: NormalizedRect) => {
+      if (markerMode !== "select" || panActive) return;
+      const canMove = kind === "occurrence" ? Boolean(onOccurrenceMove) : Boolean(onCandidateMove);
+      if (!canMove) return;
+      e.stopPropagation();
+      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+      setOverlapPicker(null);
+      setMarkerDrag({
+        kind,
+        id,
+        pointerId: e.pointerId,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        originViewRect: toView(normalizedPosition),
+        dxPx: 0,
+        dyPx: 0,
+        moved: false,
+      });
+    },
+    [markerMode, panActive, onOccurrenceMove, onCandidateMove, toView]
+  );
+
+  const handleMarkerDragMove = useCallback((e: React.PointerEvent) => {
+    setMarkerDrag((prev) => {
+      if (!prev || prev.pointerId !== e.pointerId) return prev;
+      const dxPx = e.clientX - prev.startClientX;
+      const dyPx = e.clientY - prev.startClientY;
+      const moved =
+        prev.moved ||
+        Math.abs(dxPx) > MARKER_DRAG_THRESHOLD_PX ||
+        Math.abs(dyPx) > MARKER_DRAG_THRESHOLD_PX;
+      return { ...prev, dxPx, dyPx, moved };
+    });
+  }, []);
+
+  const handleMarkerDragEnd = useCallback(
+    (e: React.PointerEvent) => {
+      setMarkerDrag((prev) => {
+        if (!prev || prev.pointerId !== e.pointerId) return null;
+        if (prev.moved && canvasSize.width > 0 && canvasSize.height > 0) {
+          const nextViewRect: NormalizedRect = {
+            x: clamp01(prev.originViewRect.x + prev.dxPx / canvasSize.width),
+            y: clamp01(prev.originViewRect.y + prev.dyPx / canvasSize.height),
+            width: prev.originViewRect.width,
+            height: prev.originViewRect.height,
+          };
+          const finalNormalized = fromView(nextViewRect);
+          suppressClickRef.current = true;
+          if (prev.kind === "occurrence") onOccurrenceMove?.(prev.id, finalNormalized);
+          else onCandidateMove?.(prev.id, finalNormalized);
+        }
+        return null;
+      });
+    },
+    [canvasSize, fromView, onOccurrenceMove, onCandidateMove]
+  );
+
+  const handleOccurrenceDeleteClick = useCallback(
+    (o: DrawingOccurrence) => {
+      if (!onOccurrenceDelete) return;
+      onOccurrenceDelete(o.id);
+    },
+    [onOccurrenceDelete]
+  );
+
+  const handleCandidateDeleteClick = useCallback(
+    (c: AnalyzeRegionCandidateDto) => {
+      if (!onCandidateDelete) return;
+      if (c.status === "confirmed") {
+        const label = c.label_suggestions[0]?.label ?? t("takeoff.review.status.confirmed");
+        const ok = window.confirm(
+          `${t("takeoff.review.deleteConfirmedTitle")}\n${t("takeoff.review.deleteConfirmedBody", {
+            name: label,
+          })}`
+        );
+        if (!ok) return;
+      }
+      onCandidateDelete(c);
+    },
+    [onCandidateDelete, t]
   );
 
   const layerLabel = (key: TakeoffLayerKey) => t(`takeoff.layer.${key}`);
@@ -574,13 +907,53 @@ export function DrawingPdfViewer({
               onClick={() => onMarkerModeChange(mode)}
               aria-pressed={markerMode === mode}
               title={t(labelKey)}
-              disabled={analyzingRegion && mode !== "analyze_region"}
+              disabled={(analyzingRegion && mode !== "analyze_region") || scanningWholePage}
             >
               <Icon className="size-3.5" />
               <span className="hidden lg:inline">{t(labelKey)}</span>
             </button>
           ))}
         </div>
+
+        {/* Primary AI-detection CTAs — always visible next to the mode
+            switcher so "I want AI to find symbols" never means "draw a box
+            first". Both reuse analyze-region v2 and only create candidates. */}
+        {showAnalyzeRegionMode && (onScanVisibleArea || onScanWholePage) ? (
+          <div className="flex items-center gap-1">
+            {onScanVisibleArea ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 border-[#e06737]/50 text-[#C9552B] hover:bg-[#e06737]/10"
+                data-testid="scan-visible-area"
+                disabled={analyzingRegion || scanningWholePage || !doc}
+                onClick={handleScanVisibleArea}
+                title={t("takeoff.viewer.scanVisibleArea")}
+              >
+                <ScanLine className="size-3.5 lg:mr-1" />
+                <span className="hidden lg:inline">{t("takeoff.viewer.scanVisibleArea")}</span>
+              </Button>
+            ) : null}
+            {onScanWholePage ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 border-[#e06737]/50 text-[#C9552B] hover:bg-[#e06737]/10"
+                data-testid="scan-whole-page"
+                disabled={analyzingRegion || scanningWholePage || !doc}
+                onClick={() => onScanWholePage(page)}
+                title={t("takeoff.viewer.scanWholePage")}
+              >
+                <LayoutGrid className="size-3.5 lg:mr-1" />
+                <span className="hidden lg:inline">
+                  {scanningWholePage ? t("common.loading") : t("takeoff.viewer.scanWholePage")}
+                </span>
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="flex items-center gap-1">
           <Button
@@ -708,6 +1081,25 @@ export function DrawingPdfViewer({
         ) : null}
 
         <div className="ml-auto flex flex-wrap items-center gap-1">
+          {(regionCandidates.length > 0 || occurrences.length > 0) ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className={cn(
+                "h-8 gap-1",
+                highlightAll &&
+                  "border-[#C400FF] bg-[#C400FF]/15 text-[#C400FF] hover:bg-[#C400FF]/25"
+              )}
+              data-testid="highlight-all-marks"
+              onClick={() => setHighlightAll((v) => !v)}
+              aria-pressed={highlightAll}
+              title={t("takeoff.viewer.highlightAllHint")}
+            >
+              <Highlighter className="size-3.5" />
+              <span className="hidden lg:inline">{t("takeoff.viewer.highlightAll")}</span>
+            </Button>
+          ) : null}
           {layersInUse.map((key) => {
             const hidden = hiddenLayers.has(key);
             return (
@@ -747,23 +1139,37 @@ export function DrawingPdfViewer({
         </div>
       </div>
 
-      {(markerMode !== "select" && markerMode !== "pan") || analyzingRegion ? (
+      {(markerMode !== "select" && markerMode !== "pan") ||
+      analyzingRegion ||
+      scanningWholePage ||
+      highlightAll ||
+      (markerMode === "select" &&
+        (onOccurrenceMove || onCandidateMove) &&
+        (pageOccurrences.length > 0 || pageCandidates.length > 0)) ? (
         <p
           className={cn(
             "border-b border-border px-3 py-1.5 text-xs text-foreground",
-            markerMode === "analyze_region" || analyzingRegion
-              ? "bg-[#e06737]/15"
-              : "bg-primary/10"
+            highlightAll
+              ? "bg-[#C400FF]/10"
+              : markerMode === "analyze_region" || analyzingRegion || scanningWholePage
+                ? "bg-[#e06737]/15"
+                : "bg-primary/10"
           )}
           role="status"
         >
-          {analyzingRegion
-            ? t("takeoff.viewer.analyzeLoading")
-            : markerMode === "point"
-              ? t("takeoff.viewer.pointHint")
-              : markerMode === "analyze_region"
-                ? t("takeoff.viewer.analyzeHint")
-                : t("takeoff.viewer.rectHint")}
+          {highlightAll
+            ? t("takeoff.viewer.highlightAllHint")
+            : scanningWholePage
+              ? t("takeoff.viewer.scanWholePageLoading")
+              : analyzingRegion
+                ? t("takeoff.viewer.analyzeLoading")
+                : markerMode === "point"
+                  ? t("takeoff.viewer.pointHint")
+                  : markerMode === "analyze_region"
+                    ? t("takeoff.viewer.analyzeHint")
+                    : markerMode === "select"
+                      ? t("takeoff.viewer.dragMarkHint")
+                      : t("takeoff.viewer.rectHint")}
         </p>
       ) : null}
 
@@ -803,17 +1209,30 @@ export function DrawingPdfViewer({
 
           {pageOccurrences.map((o) => {
             const style = occurrenceMarkerStyle(o);
-            const selected = o.id === selectedOccurrenceId;
-            const rect = normalizedToScreenRect(toView(o.normalizedPosition), canvasSize);
-            const w = Math.max(12, rect.width);
-            const h = Math.max(12, rect.height);
+            const isPicked = o.id === selectedOccurrenceId;
+            const selected = highlightAll || isPicked;
+            const isDragging = markerDrag?.kind === "occurrence" && markerDrag.id === o.id;
+            const viewRect = isDragging
+              ? {
+                  x: clamp01(markerDrag.originViewRect.x + markerDrag.dxPx / (canvasSize.width || 1)),
+                  y: clamp01(markerDrag.originViewRect.y + markerDrag.dyPx / (canvasSize.height || 1)),
+                  width: markerDrag.originViewRect.width,
+                  height: markerDrag.originViewRect.height,
+                }
+              : toView(o.normalizedPosition);
+            const rect = normalizedToScreenRect(viewRect, canvasSize);
+            const w = Math.max(OCCURRENCE_MARKER_MIN_PX, rect.width);
+            const h = Math.max(OCCURRENCE_MARKER_MIN_PX, rect.height);
             return (
+              <Fragment key={o.id}>
               <button
-                key={o.id}
                 type="button"
                 className={cn(
                   "absolute rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   selected && "z-20",
+                  selected && !isDragging && "animate-pulse",
+                  isDragging && "z-40 cursor-grabbing",
+                  markerMode === "select" && onOccurrenceMove && "cursor-grab",
                   markerMode !== "select" && "pointer-events-none"
                 )}
                 style={{
@@ -822,21 +1241,57 @@ export function DrawingPdfViewer({
                   width: w,
                   height: h,
                   opacity: style.opacity,
-                  border: `2px ${style.dashed ? "dashed" : "solid"} ${style.color}`,
-                  backgroundColor: selected ? `${style.color}40` : `${style.color}1E`,
-                  boxShadow: selected ? `0 0 0 3px ${style.color}55` : undefined,
+                  border: selected
+                    ? `3px solid ${SELECTED_HIGHLIGHT_COLOR}`
+                    : `2px ${style.dashed ? "dashed" : "solid"} ${style.color}`,
+                  backgroundColor: selected
+                    ? `${SELECTED_HIGHLIGHT_COLOR}55`
+                    : `${style.color}1E`,
+                  boxShadow: selected
+                    ? `0 0 0 4px ${SELECTED_HIGHLIGHT_COLOR}aa, 0 0 14px 4px ${SELECTED_HIGHLIGHT_COLOR}`
+                    : undefined,
                 }}
-                onClick={() => onMarkerClick?.(o.id)}
+                onPointerDown={(e) => startMarkerDrag(e, "occurrence", o.id, o.normalizedPosition)}
+                onPointerMove={handleMarkerDragMove}
+                onPointerUp={handleMarkerDragEnd}
+                onClick={(e) => {
+                  if (suppressClickRef.current) {
+                    suppressClickRef.current = false;
+                    return;
+                  }
+                  handleMarkerActivate("occurrence", o.id, e.clientX, e.clientY);
+                }}
                 title={o.label}
                 aria-label={o.label}
               >
                 <span
                   className="absolute -top-5 left-0 whitespace-nowrap rounded px-1 py-px text-[10px] font-bold text-white"
-                  style={{ backgroundColor: style.color }}
+                  style={{
+                    backgroundColor: selected ? SELECTED_HIGHLIGHT_COLOR : style.color,
+                  }}
                 >
                   {o.label}
                 </span>
               </button>
+              {isPicked && !isDragging ? (
+                <SelectedLocatorPing centerX={rect.x + w / 2} centerY={rect.y + h / 2} />
+              ) : null}
+              {isPicked && !isDragging && markerMode === "select" && onOccurrenceDelete ? (
+                <button
+                  type="button"
+                  className="absolute z-40 flex size-5 items-center justify-center rounded-full border border-white bg-red-600 text-white shadow hover:bg-red-700"
+                  style={{ left: rect.x + w - 9, top: rect.y - 9 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleOccurrenceDeleteClick(o);
+                  }}
+                  title={t("takeoff.viewer.deleteMarkInline")}
+                  aria-label={t("takeoff.viewer.deleteMarkInline")}
+                >
+                  <X className="size-3" />
+                </button>
+              ) : null}
+              </Fragment>
             );
           })}
 
@@ -844,15 +1299,25 @@ export function DrawingPdfViewer({
               checkmark = confirmed (counted, but still visible on the map). */}
           {pageCandidates.map((c) => {
             const color = CANDIDATE_LAYER_COLORS[c.color_layer] ?? CANDIDATE_LAYER_COLORS.unknown;
-            const selected = c.id === selectedCandidateId;
+            const isPicked = c.id === selectedCandidateId;
+            const selected = highlightAll || isPicked;
             const confirmed = c.status === "confirmed";
-            const rect = normalizedToScreenRect(toView(c.normalized_position), canvasSize);
-            const w = Math.max(10, rect.width);
-            const h = Math.max(10, rect.height);
+            const isDragging = markerDrag?.kind === "candidate" && markerDrag.id === c.id;
+            const viewRect = isDragging
+              ? {
+                  x: clamp01(markerDrag.originViewRect.x + markerDrag.dxPx / (canvasSize.width || 1)),
+                  y: clamp01(markerDrag.originViewRect.y + markerDrag.dyPx / (canvasSize.height || 1)),
+                  width: markerDrag.originViewRect.width,
+                  height: markerDrag.originViewRect.height,
+                }
+              : toView(c.normalized_position);
+            const rect = normalizedToScreenRect(viewRect, canvasSize);
+            const w = Math.max(CANDIDATE_MARKER_MIN_PX, rect.width);
+            const h = Math.max(CANDIDATE_MARKER_MIN_PX, rect.height);
             const label = c.label_suggestions[0]?.label ?? c.color_layer;
             return (
+              <Fragment key={c.id}>
               <button
-                key={c.id}
                 type="button"
                 data-testid={
                   confirmed ? "takeoff-confirmed-marker" : "takeoff-region-candidate"
@@ -860,6 +1325,9 @@ export function DrawingPdfViewer({
                 className={cn(
                   "absolute rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   selected && "z-30",
+                  selected && !isDragging && "animate-pulse",
+                  isDragging && "z-40 cursor-grabbing",
+                  markerMode === "select" && onCandidateMove && "cursor-grab",
                   (isRectDrawMode || panActive) && "pointer-events-none"
                 )}
                 style={{
@@ -867,23 +1335,98 @@ export function DrawingPdfViewer({
                   top: rect.y,
                   width: w,
                   height: h,
-                  border: `2px ${confirmed ? "solid" : "dashed"} ${color}`,
-                  backgroundColor: selected ? `${color}55` : `${color}${confirmed ? "30" : "22"}`,
-                  boxShadow: selected ? `0 0 0 3px ${color}66` : undefined,
+                  border: selected
+                    ? `3px solid ${SELECTED_HIGHLIGHT_COLOR}`
+                    : `2px ${confirmed ? "solid" : "dashed"} ${color}`,
+                  backgroundColor: selected
+                    ? `${SELECTED_HIGHLIGHT_COLOR}55`
+                    : `${color}${confirmed ? "30" : "22"}`,
+                  boxShadow: selected
+                    ? `0 0 0 4px ${SELECTED_HIGHLIGHT_COLOR}aa, 0 0 14px 4px ${SELECTED_HIGHLIGHT_COLOR}`
+                    : undefined,
                 }}
-                onClick={() => onCandidateClick?.(c.id)}
+                onPointerDown={(e) => startMarkerDrag(e, "candidate", c.id, c.normalized_position)}
+                onPointerMove={handleMarkerDragMove}
+                onPointerUp={handleMarkerDragEnd}
+                onClick={(e) => {
+                  if (suppressClickRef.current) {
+                    suppressClickRef.current = false;
+                    return;
+                  }
+                  handleMarkerActivate("candidate", c.id, e.clientX, e.clientY);
+                }}
                 title={`${label} (${confirmed ? "✓" : `${Math.round(c.confidence * 100)}%`})`}
                 aria-label={label}
               >
                 {confirmed ? (
                   <CheckCircle2
                     className="absolute -right-1.5 -top-1.5 size-3.5 rounded-full bg-white"
-                    style={{ color }}
+                    style={{ color: selected ? SELECTED_HIGHLIGHT_COLOR : color }}
                   />
                 ) : null}
               </button>
+              {isPicked && !isDragging ? (
+                <SelectedLocatorPing centerX={rect.x + w / 2} centerY={rect.y + h / 2} />
+              ) : null}
+              {isPicked && !isDragging && markerMode === "select" && onCandidateDelete ? (
+                <button
+                  type="button"
+                  className="absolute z-40 flex size-5 items-center justify-center rounded-full border border-white bg-red-600 text-white shadow hover:bg-red-700"
+                  style={{ left: rect.x + w - 9, top: rect.y - 9 }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleCandidateDeleteClick(c);
+                  }}
+                  title={t("takeoff.viewer.deleteMarkInline")}
+                  aria-label={t("takeoff.viewer.deleteMarkInline")}
+                >
+                  <X className="size-3" />
+                </button>
+              ) : null}
+              </Fragment>
             );
           })}
+
+          {/* Clustered/overlapping marks — disambiguation picker. */}
+          {overlapPicker ? (
+            <Fragment>
+              <div
+                className="fixed inset-0 z-40"
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  setOverlapPicker(null);
+                }}
+              />
+              <div
+                className="absolute z-50 min-w-[170px] max-w-[220px] rounded-md border border-border bg-popover p-1 shadow-lg"
+                style={{
+                  left: Math.max(0, Math.min(overlapPicker.x, canvasSize.width - 180)),
+                  top: Math.max(0, Math.min(overlapPicker.y, canvasSize.height - 40)),
+                }}
+              >
+                <p className="px-2 py-1 text-[10px] text-muted-foreground">
+                  {t("takeoff.viewer.overlapPickerHint")}
+                </p>
+                {overlapPicker.items.map((item) => (
+                  <button
+                    key={`${item.kind}_${item.id}`}
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+                    onClick={() => pickOverlapItem(item)}
+                  >
+                    <span
+                      className="size-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: item.color }}
+                    />
+                    <span className="truncate">{item.label}</span>
+                    {item.confirmed ? (
+                      <CheckCircle2 className="ml-auto size-3 shrink-0 text-emerald-600" />
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            </Fragment>
+          ) : null}
 
           {/* Rectangle draft while dragging */}
           {dragRect && canvasSize.width > 0 ? (

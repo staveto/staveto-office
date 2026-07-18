@@ -13,6 +13,7 @@
 import {
   classifyPixelColor,
   detectSymbolsByColorDetailed,
+  type ColorBlobRejection,
   type RasterImage,
 } from "@/lib/ai/visualSymbolCounter";
 import type { NormalizedRect } from "@/types/drawingTakeoff";
@@ -339,6 +340,18 @@ export function assessPlanQualityFromRaster(image: RasterImage): PlanQuality {
 const TEXT_CLUSTER_MIN_SUB_BLOBS = 3;
 /** Long orange blobs are candidate LED strips instead of being discarded. */
 const LED_STRIP_MIN_ASPECT = 3;
+/**
+ * A merged blob whose SHORT dimension exceeds minDim by more than this
+ * factor is too thick to be a drawn LED-strip line — it's almost always a
+ * wall-hatch band (several parallel hatch strokes merged into one bbox by
+ * color/gap proximity), which happens to also be orange-hued and elongated.
+ */
+const LED_STRIP_MAX_THICKNESS_FACTOR = 2.5;
+/**
+ * Real symbols are filled/outlined shapes with dense ink; a wall corner or
+ * hatch band merged into one bbox by color proximity is much sparser.
+ */
+const MIN_SYMBOL_DENSITY = 0.12;
 
 /**
  * Count disjoint same-color ink groups inside a page-pixel bbox using a
@@ -480,6 +493,11 @@ export function analyzeRegionRaster(input: RegionAnalyzeInput): RegionAnalyzeRes
     maxSymbolSizePx: maxDim,
     mergeGapPx,
     maxAspectRatio,
+    // Stricter than the shared default (0.03) — a wall corner/hatch band
+    // merged by color proximity is sparse ink inside a big-ish bbox, while
+    // a real symbol (filled dot, outlined circle+cross/slash) is dense.
+    // Scoped to this pipeline only; Find Similar keeps the looser default.
+    minDensity: MIN_SYMBOL_DENSITY,
   });
 
   const [rx, ry] = regionBboxPx;
@@ -585,10 +603,20 @@ export function analyzeRegionRaster(input: RegionAnalyzeInput): RegionAnalyzeRes
 
   // Long orange blobs are usually LED strips, not noise — recover them from
   // the detector's line_like rejection instead of discarding them (unless
-  // they turn out to be an orange text run: still likely_text).
+  // they turn out to be an orange text run: still likely_text). Blobs
+  // handled here (promoted OR explicitly re-rejected as too thick/text) are
+  // tracked so the generic "remaining rejections" pass below never silently
+  // drops a debug row for one of them.
+  const ledHandled = new Set<ColorBlobRejection>();
   for (const blob of rejected) {
     if (blob.color !== "orange" || blob.reason !== "line_like") continue;
     if (blob.aspect < LED_STRIP_MIN_ASPECT) continue;
+    // Too thick to be a drawn line stroke — almost always a wall-hatch band
+    // merged into one bbox, not a genuine LED strip. Leave it as a plain
+    // "line_like" debug row below instead of promoting a false candidate.
+    const shortDim = Math.min(blob.bboxLocalPx.width, blob.bboxLocalPx.height);
+    if (shortDim > minDim * LED_STRIP_MAX_THICKNESS_FACTOR) continue;
+    ledHandled.add(blob);
     if (isLikelyTextCluster(regionRaster, blob.bboxLocalPx, "orange")) {
       debugDetections.push({
         id: `led_text_${pageNumber}_${seq++}`,
@@ -673,9 +701,7 @@ export function analyzeRegionRaster(input: RegionAnalyzeInput): RegionAnalyzeRes
   // Remaining rejections (too_small/too_large/non-orange line_like/low_density)
   // are debug-only — they never become candidates.
   for (const blob of rejected) {
-    if (blob.color === "orange" && blob.reason === "line_like" && blob.aspect >= LED_STRIP_MIN_ASPECT) {
-      continue; // already recorded above (promoted or marked likely_text)
-    }
+    if (ledHandled.has(blob)) continue; // already recorded above (promoted or marked likely_text)
     const { pagePx, bboxPdf } = toPageBoxes({
       localX: blob.bboxLocalPx.x,
       localY: blob.bboxLocalPx.y,

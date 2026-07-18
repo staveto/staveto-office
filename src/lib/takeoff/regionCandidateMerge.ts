@@ -130,3 +130,46 @@ export function mergeRasterAndTemplateCandidates(params: {
     dedupedTemplateCount,
   };
 }
+
+export type DedupeOverlappingCandidatesResult = {
+  candidates: AnalyzeRegionCandidateDto[];
+  dedupedCount: number;
+};
+
+/**
+ * Dedupe a flat candidate list, e.g. results from several overlapping
+ * page-scan tiles ("Skenovať celú stranu"). Same page + color layer +
+ * high overlap ⇒ keep the higher-confidence one, union label suggestions.
+ * Unlike the raster/template merge above this never re-labels the source
+ * as "mixed" — duplicates here come from the SAME detector run twice.
+ */
+export function dedupeOverlappingCandidates(
+  allCandidates: AnalyzeRegionCandidateDto[],
+  iouThreshold: number = CANDIDATE_MERGE_IOU
+): DedupeOverlappingCandidatesResult {
+  const sorted = [...allCandidates].sort((a, b) => b.confidence - a.confidence);
+  const result: AnalyzeRegionCandidateDto[] = [];
+  let dedupedCount = 0;
+  for (const c of sorted) {
+    const dupIdx = result.findIndex(
+      (d) =>
+        d.color_layer === c.color_layer &&
+        (d.page_number ?? 0) === (c.page_number ?? 0) &&
+        normalizedRectOverlapRatio(d.normalized_position, c.normalized_position) >= iouThreshold
+    );
+    if (dupIdx >= 0) {
+      const existing = result[dupIdx]!;
+      result[dupIdx] = {
+        ...existing,
+        label_suggestions: dedupeLabelSuggestions([
+          ...existing.label_suggestions,
+          ...c.label_suggestions,
+        ]),
+      };
+      dedupedCount++;
+      continue;
+    }
+    result.push(c);
+  }
+  return { candidates: result, dedupedCount };
+}

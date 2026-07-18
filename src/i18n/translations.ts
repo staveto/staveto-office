@@ -3668,6 +3668,9 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.aiSetup.positions.tab.detail": "Detailed takeoff",
     "projects.aiSetup.positions.tab.prices": "Prices",
     "projects.aiSetup.positions.tab.pdf": "Positions in PDF",
+    "projects.aiSetup.pdf.legacyDrawingDataWarning":
+      "Older takeoff data for this PDF was found under a different drawing id (before it was added to Documents). Merge it here so quote and project always show the same candidates and confirmed symbols.",
+    "projects.aiSetup.pdf.mergeLegacyDrawingData": "Merge old data",
     "projects.aiSetup.positions.tab.review": "For review",
     "projects.aiSetup.positions.detailSubtitle":
       "Internal estimator takeoff. Used to verify quantities, prices and sources. This is not the customer quote.",
@@ -3784,6 +3787,8 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.empty.body":
       "Draw a box around one mark on the drawing. Then you can find similar marks automatically.",
     "takeoff.empty.drawRect": "Draw a box",
+    "takeoff.empty.scanHint":
+      "Or use \"Scan visible area\" / \"Scan whole page\" in the toolbar above the drawing — no drawing required.",
     "takeoff.openFromDocuments": "Open takeoff from drawing",
     "takeoff.pickDrawing.lead": "Choose a PDF drawing to mark up:",
     "takeoff.pickDrawing.empty": "This project has no PDF drawings yet. Upload one in Documents.",
@@ -3796,14 +3801,24 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.viewer.prevPage": "Previous page",
     "takeoff.viewer.nextPage": "Next page",
     "takeoff.viewer.modeSelect": "Select",
-    "takeoff.viewer.modePoint": "Mark point",
+    "takeoff.viewer.modePoint": "Add mark",
     "takeoff.viewer.modeRect": "Draw box",
     "takeoff.viewer.modeAnalyzeRegion": "Analyze region",
-    "takeoff.viewer.pointHint": "Click a symbol in the drawing to place a marker.",
+    "takeoff.viewer.pointHint":
+      "Click where the symbol is. This creates a candidate or confirmed mark.",
     "takeoff.viewer.rectHint": "Drag a rectangle around a symbol in the drawing.",
+    "takeoff.viewer.highlightAll": "Show all on plan",
+    "takeoff.viewer.highlightAllHint":
+      "All marks from the list are glowing on the plan. Anything on the drawing that is NOT glowing is still missing — mark it or scan that area.",
     "takeoff.viewer.analyzeHint":
       "Drag a rectangle over a room or section. The app finds multiple symbol candidates inside — not one mark.",
     "takeoff.viewer.analyzeLoading": "Analyzing region… finding symbol candidates.",
+    "takeoff.viewer.scanVisibleArea": "Scan visible area",
+    "takeoff.viewer.scanWholePage": "Scan whole page",
+    "takeoff.viewer.scanWholePageLoading": "Scanning the whole page in tiles… this can take a moment.",
+    "takeoff.viewer.deleteMarkInline": "Delete this mark",
+    "takeoff.viewer.overlapPickerHint": "Several marks are here — pick one:",
+    "takeoff.viewer.dragMarkHint": "Drag a mark to reposition it.",
     "takeoff.analyzeRegion.button": "Analyze region",
     "takeoff.analyzeRegion.planQuality": "Plan quality",
     "takeoff.analyzeRegion.planQualityDetail": "{{type}} · {{ocr}}",
@@ -3812,7 +3827,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.analyzeRegion.expandedNotice":
       "The area was too small, analyzing a wider neighborhood of the symbol.",
     "takeoff.analyzeRegion.emptyNotice":
-      "No candidates found. Try a larger area or use manual marking.",
+      "No candidates found. Try a larger area, scan the whole page, or add a mark manually.",
     "takeoff.analyzeRegion.failedNotice":
       "Analysis could not run. Check the PDF and try again.",
     "takeoff.analyzeRegion.summary":
@@ -3828,6 +3843,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.review.title": "Symbol candidates",
     "takeoff.review.empty": "Analyze a region to get candidates for review.",
     "takeoff.review.activeCount": "{{count}} to review",
+    "takeoff.review.sectionCandidatesHint": "Click a row to jump to its location on the plan.",
     "takeoff.review.confirmAllProbable": "Confirm all probable",
     "takeoff.review.confirm": "Confirm",
     "takeoff.review.reject": "Reject",
@@ -3850,10 +3866,35 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.review.group.led": "LED",
     "takeoff.review.group.uncertain": "Uncertain",
     "takeoff.review.group.ignored": "Ignored",
+    "takeoff.review.source.analyzeRegion": "Analyze region",
+    "takeoff.review.source.templateMatch": "Template match",
+    "takeoff.review.source.manual": "Manual",
+    "takeoff.review.source.mixed": "Analyze region + template",
+    "takeoff.review.source.ocr": "OCR",
+    "takeoff.review.source.gemini": "AI",
+    "takeoff.review.status.candidate": "Candidate",
+    "takeoff.review.status.probable": "Probable",
+    "takeoff.review.status.confirmed": "Confirmed",
+    "takeoff.review.status.rejected": "Rejected",
+    "takeoff.review.status.unknownType": "Unknown type",
+    "takeoff.review.status.needsInfo": "Needs info",
+    "takeoff.review.delete": "Delete",
+    "takeoff.review.deleteAllRejected": "Delete all",
+    "takeoff.review.deleteConfirmedTitle": "Delete confirmed symbol?",
+    "takeoff.review.deleteConfirmedBody":
+      "\"{{name}}\" will be removed and its quantity will be subtracted from the takeoff item. This cannot be undone.",
+    "takeoff.toast.candidateDeleted": "Candidate deleted.",
+    "takeoff.toast.confirmedDeleted": "Confirmed symbol deleted — quantity updated.",
+    "takeoff.toast.confirmedTypeChanged":
+      "Symbol type changed — quantity moved to the new takeoff item.",
+    "takeoff.toast.rejectedCleared": "Deleted {{count}} rejected candidates.",
     "takeoff.toast.analyzeRegionDone":
       "Found {{count}} candidates in the region — review overlays (not added to quote yet).",
     "takeoff.toast.analyzeRegionFailed": "Region analysis failed. Try a different area or mark manually.",
     "takeoff.toast.analyzeRegionTooSmall": "Draw a larger rectangle over the room or section.",
+    "takeoff.toast.scanWholePageDone":
+      "Found {{count}} candidates on the whole page — review overlays (not added to quote yet).",
+    "takeoff.toast.scanWholePageFailed": "Whole-page scan failed. Try again or scan a smaller area.",
     "takeoff.toast.candidateConfirmed": "Symbol confirmed — takeoff quantity updated.",
     "takeoff.toast.candidateRejected": "Candidate rejected — quantity unchanged.",
     "takeoff.toast.reviewFailed": "Review action failed. Try again.",
@@ -3875,6 +3916,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.review.sectionConfirmed": "Confirmed symbols",
     "takeoff.review.sectionRejected": "Rejected / hidden",
     "takeoff.review.sectionItems": "Takeoff items",
+    "takeoff.review.sectionItemsHint": "Click an item to see it highlighted on the plan.",
     "takeoff.manual.saveAsCandidate": "Save as candidate",
     "takeoff.manual.saveAndConfirm": "Save and confirm",
     "takeoff.manual.savedAsCandidate": "Saved as a candidate for review — it does not change quantities until confirmed.",
@@ -8839,6 +8881,9 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.aiSetup.positions.tab.detail": "Detailný výkaz",
     "projects.aiSetup.positions.tab.prices": "Ceny",
     "projects.aiSetup.positions.tab.pdf": "Pozície v PDF",
+    "projects.aiSetup.pdf.legacyDrawingDataWarning":
+      "Pre tento PDF sme našli staršie dáta výkazu pod iným identifikátorom výkresu (spred pridania do Dokumentov). Zlúčte ich, aby cenová ponuka a projekt vždy zobrazovali rovnakých kandidátov a potvrdené značky.",
+    "projects.aiSetup.pdf.mergeLegacyDrawingData": "Zlúčiť staré dáta",
     "projects.aiSetup.positions.tab.review": "Na kontrolu",
     "projects.aiSetup.positions.detailSubtitle":
       "Interný rozpočtársky výkaz. Slúži na kontrolu množstiev, cien a zdrojov. Nie je to zákaznícka ponuka.",
@@ -8955,6 +9000,8 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.empty.body":
       "Nakreslite rámik okolo jednej značky vo výkrese. Potom môžete vyhľadať podobné značky automaticky.",
     "takeoff.empty.drawRect": "Nakresliť rámik",
+    "takeoff.empty.scanHint":
+      "Alebo použite „Skenovať viditeľnú oblasť“ / „Skenovať celú stranu“ v paneli nástrojov nad výkresom — bez kreslenia.",
     "takeoff.openFromDocuments": "Otvoriť výkaz z výkresu",
     "takeoff.pickDrawing.lead": "Vyberte PDF výkres, ktorý chcete označovať:",
     "takeoff.pickDrawing.empty": "Projekt zatiaľ nemá žiadne PDF výkresy. Nahrajte ich v Dokumentoch.",
@@ -8967,14 +9014,24 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.viewer.prevPage": "Predchádzajúca strana",
     "takeoff.viewer.nextPage": "Ďalšia strana",
     "takeoff.viewer.modeSelect": "Výber",
-    "takeoff.viewer.modePoint": "Označiť bod",
+    "takeoff.viewer.modePoint": "Pridať značku",
     "takeoff.viewer.modeRect": "Nakresliť rámik",
     "takeoff.viewer.modeAnalyzeRegion": "Analyzovať oblasť",
-    "takeoff.viewer.pointHint": "Kliknite na značku vo výkrese a umiestnite marker.",
+    "takeoff.viewer.pointHint":
+      "Kliknite na miesto značky. Táto akcia vytvorí kandidáta alebo potvrdenú značku.",
     "takeoff.viewer.rectHint": "Ťahom nakreslite obdĺžnik okolo značky vo výkrese.",
+    "takeoff.viewer.highlightAll": "Zvýrazniť všetko na pláne",
+    "takeoff.viewer.highlightAllHint":
+      "Všetky značky zo zoznamu svietia vo výkrese. Čo vo výkrese NEsvieti, ešte chýba — označ to alebo naskenuj tú oblasť.",
     "takeoff.viewer.analyzeHint":
       "Ťahom označte miestnosť alebo časť pôdorysu. Aplikácia nájde viacero kandidátov vo vnútri — nie jednu značku.",
+    "takeoff.viewer.scanVisibleArea": "Skenovať viditeľnú oblasť",
+    "takeoff.viewer.scanWholePage": "Skenovať celú stranu",
+    "takeoff.viewer.scanWholePageLoading": "Skenujeme celú stranu po dieloch… môže to chvíľu trvať.",
     "takeoff.viewer.analyzeLoading": "Analyzujem oblasť… hľadám kandidátov značiek.",
+    "takeoff.viewer.deleteMarkInline": "Vymazať túto značku",
+    "takeoff.viewer.overlapPickerHint": "Tu je viacero značiek — vyberte jednu:",
+    "takeoff.viewer.dragMarkHint": "Značku presunieš ťahom.",
     "takeoff.analyzeRegion.button": "Analyzovať oblasť",
     "takeoff.analyzeRegion.planQuality": "Kvalita výkresu",
     "takeoff.analyzeRegion.planQualityDetail": "{{type}} · {{ocr}}",
@@ -8983,7 +9040,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.analyzeRegion.expandedNotice":
       "Oblasť bola príliš malá, analyzujeme širšie okolie značky.",
     "takeoff.analyzeRegion.emptyNotice":
-      "Nenašli sa kandidáti. Skúste väčšiu oblasť alebo použite manuálne označenie.",
+      "Nenašli sa kandidáti. Skúste väčšiu oblasť, celú stranu alebo pridajte značku ručne.",
     "takeoff.analyzeRegion.failedNotice":
       "Analýzu sa nepodarilo spustiť. Skontrolujte PDF a skúste znova.",
     "takeoff.analyzeRegion.summary":
@@ -8999,6 +9056,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.review.title": "Kandidáti značiek",
     "takeoff.review.empty": "Analyzujte oblasť a získate kandidátov na kontrolu.",
     "takeoff.review.activeCount": "{{count}} na kontrolu",
+    "takeoff.review.sectionCandidatesHint": "Kliknutím na riadok prejdete na jeho miesto vo výkrese.",
     "takeoff.review.confirmAllProbable": "Potvrdiť všetky pravdepodobné",
     "takeoff.review.confirm": "Potvrdiť",
     "takeoff.review.reject": "Odmietnuť",
@@ -9021,11 +9079,37 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.review.group.led": "LED",
     "takeoff.review.group.uncertain": "Neisté",
     "takeoff.review.group.ignored": "Ignorované",
+    "takeoff.review.source.analyzeRegion": "Analýza oblasti",
+    "takeoff.review.source.templateMatch": "Zhoda so vzorom",
+    "takeoff.review.source.manual": "Manuálne",
+    "takeoff.review.source.mixed": "Analýza + vzor",
+    "takeoff.review.source.ocr": "OCR",
+    "takeoff.review.source.gemini": "AI",
+    "takeoff.review.status.candidate": "Kandidát",
+    "takeoff.review.status.probable": "Pravdepodobné",
+    "takeoff.review.status.confirmed": "Potvrdené",
+    "takeoff.review.status.rejected": "Odmietnuté",
+    "takeoff.review.status.unknownType": "Neznámy typ",
+    "takeoff.review.status.needsInfo": "Potrebné doplniť",
+    "takeoff.review.delete": "Vymazať",
+    "takeoff.review.deleteAllRejected": "Vymazať všetky",
+    "takeoff.review.deleteConfirmedTitle": "Vymazať potvrdenú značku?",
+    "takeoff.review.deleteConfirmedBody":
+      "„{{name}}“ bude odstránená a jej množstvo sa odpočíta z položky výkazu. Túto akciu nie je možné vrátiť späť.",
+    "takeoff.toast.candidateDeleted": "Kandidát vymazaný.",
+    "takeoff.toast.confirmedDeleted": "Potvrdená značka vymazaná — množstvo aktualizované.",
+    "takeoff.toast.confirmedTypeChanged":
+      "Typ značky zmenený — množstvo presunuté do novej položky výkazu.",
+    "takeoff.toast.rejectedCleared": "Vymazaných {{count}} odmietnutých kandidátov.",
     "takeoff.toast.analyzeRegionDone":
       "V oblasti sme našli {{count}} kandidátov — skontrolujte overlay (ešte nie sú v ponuke).",
     "takeoff.toast.analyzeRegionFailed":
       "Analýza oblasti zlyhala. Skúste inú oblasť alebo označte ručne.",
     "takeoff.toast.analyzeRegionTooSmall": "Nakreslite väčší obdĺžnik cez miestnosť alebo sekciu.",
+    "takeoff.toast.scanWholePageDone":
+      "Na celej strane sme našli {{count}} kandidátov — skontrolujte overlay (ešte nie sú v ponuke).",
+    "takeoff.toast.scanWholePageFailed":
+      "Skenovanie celej strany zlyhalo. Skúste znova alebo skenujte menšiu oblasť.",
     "takeoff.toast.candidateConfirmed": "Značka potvrdená — množstvo vo výkaze aktualizované.",
     "takeoff.toast.candidateRejected": "Kandidát odmietnutý — množstvo sa nezmenilo.",
     "takeoff.toast.reviewFailed": "Akcia kontroly zlyhala. Skúste znova.",
@@ -9047,6 +9131,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.review.sectionConfirmed": "Potvrdené značky",
     "takeoff.review.sectionRejected": "Odmietnuté / skryté",
     "takeoff.review.sectionItems": "Výkaz položiek",
+    "takeoff.review.sectionItemsHint": "Kliknutím na položku ju zvýrazníte vo výkrese.",
     "takeoff.manual.saveAsCandidate": "Uložiť ako kandidáta",
     "takeoff.manual.saveAndConfirm": "Uložiť a potvrdiť",
     "takeoff.manual.savedAsCandidate": "Uložené ako kandidát na kontrolu — množstvá sa zmenia až po potvrdení.",

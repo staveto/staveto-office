@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyConfirmToTakeoffItems,
+  applyUnconfirmToTakeoffItems,
   buildManualCandidateDto,
   defaultSymbolTypeForCandidate,
   findDuplicateConfirmedSymbol,
@@ -8,6 +9,7 @@ import {
   isActiveReviewCandidate,
   normalizedRectOverlapRatio,
   sanitizeTakeoffItemForWrite,
+  translateBboxPdfForMove,
 } from "./candidateReview";
 import type { AnalyzeRegionCandidateDto, TakeoffItem } from "@/types/pdfTakeoff";
 
@@ -127,6 +129,100 @@ describe("applyConfirmToTakeoffItems", () => {
 
   it("rejected candidates are not active for review", () => {
     expect(isActiveReviewCandidate(cand({ id: "x", status: "rejected" }))).toBe(false);
+  });
+});
+
+describe("applyUnconfirmToTakeoffItems — symmetric reversal of confirm", () => {
+  function item(overrides?: Partial<TakeoffItem>): TakeoffItem {
+    return {
+      id: "t1",
+      projectId: "p1",
+      drawingId: "d1",
+      quoteId: null,
+      name: "zásuvka",
+      profession: "electrical",
+      quantity: 3,
+      unit: "ks",
+      sourceOfQuantity: "symbol_detection",
+      status: "confirmed",
+      evidenceCount: 3,
+      metadata: { symbolType: "socket" },
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      ...overrides,
+    };
+  }
+
+  it("decrements quantity/evidence when other confirmations remain", () => {
+    const { updatedItem, removeItemId } = applyUnconfirmToTakeoffItems({
+      items: [item()],
+      drawingId: "d1",
+      profession: "electrical",
+      symbolType: "socket",
+      name: "zásuvka",
+      quantityValue: 1,
+      now: "2026-01-02T00:00:00.000Z",
+    });
+    expect(removeItemId).toBeNull();
+    expect(updatedItem?.quantity).toBe(2);
+    expect(updatedItem?.evidenceCount).toBe(2);
+  });
+
+  it("removes the item entirely when quantity would drop to zero or below", () => {
+    const { updatedItem, removeItemId } = applyUnconfirmToTakeoffItems({
+      items: [item({ quantity: 1, evidenceCount: 1 })],
+      drawingId: "d1",
+      profession: "electrical",
+      symbolType: "socket",
+      name: "zásuvka",
+      quantityValue: 1,
+      now: "2026-01-02T00:00:00.000Z",
+    });
+    expect(updatedItem).toBeNull();
+    expect(removeItemId).toBe("t1");
+  });
+
+  it("never touches an item from a different drawing/profession/symbolType", () => {
+    const other = item({ id: "t2", drawingId: "d2" });
+    const { updatedItem, removeItemId } = applyUnconfirmToTakeoffItems({
+      items: [other],
+      drawingId: "d1",
+      profession: "electrical",
+      symbolType: "socket",
+      name: "zásuvka",
+      quantityValue: 1,
+      now: "2026-01-02T00:00:00.000Z",
+    });
+    expect(updatedItem).toBeNull();
+    expect(removeItemId).toBeNull();
+  });
+
+  it("round-trips with applyConfirmToTakeoffItems (confirm then unconfirm = no-op)", () => {
+    const { items: afterConfirm, updatedItem: confirmedItem } = applyConfirmToTakeoffItems({
+      items: [],
+      projectId: "p1",
+      drawingId: "d1",
+      profession: "electrical",
+      symbolType: "socket",
+      name: "zásuvka",
+      unit: "ks",
+      quantityValue: 1,
+      now: "2026-01-01T00:00:00.000Z",
+      newItemId: "t1",
+    });
+    expect(confirmedItem.quantity).toBe(1);
+
+    const { updatedItem, removeItemId } = applyUnconfirmToTakeoffItems({
+      items: afterConfirm,
+      drawingId: "d1",
+      profession: "electrical",
+      symbolType: "socket",
+      name: "zásuvka",
+      quantityValue: 1,
+      now: "2026-01-02T00:00:00.000Z",
+    });
+    expect(updatedItem).toBeNull();
+    expect(removeItemId).toBe("t1");
   });
 });
 
@@ -265,5 +361,43 @@ describe("buildManualCandidateDto — manual marks join the shared model", () =>
     });
     expect(dto.label_suggestions[0]?.label).toBe("vypínač");
     expect(dto.nearby_text).toBe("pri dverách");
+  });
+});
+
+describe("translateBboxPdfForMove — drag-to-reposition keeps bbox_pdf in sync", () => {
+  it("translates bbox_pdf stored in real PDF points by the same real-world delta", () => {
+    // 1 normalized unit == 800 pt on this page (a typical A4-ish scale).
+    const oldNormalized = { x: 0.1, y: 0.2, width: 0.02, height: 0.02 };
+    const oldBboxPdf: [number, number, number, number] = [80, 160, 96, 176]; // *800
+    const newNormalized = { x: 0.15, y: 0.22, width: 0.02, height: 0.02 };
+
+    const next = translateBboxPdfForMove(oldBboxPdf, oldNormalized, newNormalized);
+
+    // dx = 0.05 * 800 = 40pt, dy = 0.02 * 800 = 16pt.
+    expect(next[0]).toBeCloseTo(120);
+    expect(next[1]).toBeCloseTo(176);
+    expect(next[2]).toBeCloseTo(136);
+    expect(next[3]).toBeCloseTo(192);
+    // Size is preserved — this is a translation, not a resize.
+    expect(next[2] - next[0]).toBeCloseTo(oldBboxPdf[2] - oldBboxPdf[0]);
+    expect(next[3] - next[1]).toBeCloseTo(oldBboxPdf[3] - oldBboxPdf[1]);
+  });
+
+  it("translates bbox_pdf stored as a normalized 0..1 fallback the same way", () => {
+    const oldNormalized = { x: 0.3, y: 0.4, width: 0.05, height: 0.05 };
+    const oldBboxPdf: [number, number, number, number] = [0.3, 0.4, 0.35, 0.45];
+    const newNormalized = { x: 0.32, y: 0.41, width: 0.05, height: 0.05 };
+
+    const next = translateBboxPdfForMove(oldBboxPdf, oldNormalized, newNormalized);
+    expect(next[0]).toBeCloseTo(0.32);
+    expect(next[1]).toBeCloseTo(0.41);
+    expect(next[2]).toBeCloseTo(0.37);
+    expect(next[3]).toBeCloseTo(0.46);
+  });
+
+  it("is a no-op when the position does not actually change", () => {
+    const normalized = { x: 0.3, y: 0.4, width: 0.05, height: 0.05 };
+    const bboxPdf: [number, number, number, number] = [10, 20, 30, 40];
+    expect(translateBboxPdfForMove(bboxPdf, normalized, normalized)).toEqual(bboxPdf);
   });
 });

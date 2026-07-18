@@ -34,11 +34,12 @@ vi.mock("@/services/takeoff/takeoffImageService", async (importOriginal) => {
   };
 });
 
-import { analyzeDrawingRegion } from "./analyzeRegionService";
+import { analyzeDrawingRegion, buildPageScanTiles, scanWholeDrawingPage } from "./analyzeRegionService";
 import {
   createDrawingRegion,
   listSymbolTemplatesForProject,
   saveSymbolCandidates,
+  updateDrawingRegionStatus,
 } from "@/services/takeoff/pdfTakeoffRegionService";
 import {
   loadImageUrlAsRaster,
@@ -177,5 +178,90 @@ describe("analyzeDrawingRegion — Analyze Region v2 A1 template wiring", () => 
 
     expect(result.candidates).toHaveLength(2);
     expect(saveSymbolCandidates).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("buildPageScanTiles", () => {
+  it("covers the whole page (0..1) with overlap between neighboring tiles", () => {
+    const tiles = buildPageScanTiles(3, 2, 0.12);
+    expect(tiles).toHaveLength(6);
+    for (const t of tiles) {
+      expect(t.x).toBeGreaterThanOrEqual(0);
+      expect(t.y).toBeGreaterThanOrEqual(0);
+      expect(t.x + t.width).toBeLessThanOrEqual(1.0001);
+      expect(t.y + t.height).toBeLessThanOrEqual(1.0001);
+    }
+    // Neighboring tiles in the same row overlap in x.
+    const [tile0, tile1] = tiles;
+    expect(tile1!.x).toBeLessThan(tile0!.x + tile0!.width);
+  });
+});
+
+describe("scanWholeDrawingPage — Task 5 whole-page scan", () => {
+  it("tiles the page, dedupes a symbol sitting in the tile overlap band, and saves once", async () => {
+    vi.mocked(listSymbolTemplatesForProject).mockResolvedValue([]);
+    // Single green socket placed right on the col0/col1 overlap boundary
+    // (tileW ≈ 100px at width=300, 12% overlap ≈ 24px either side of x=100).
+    const pageRaster = makeColorRaster(300, 200, (set) => {
+      drawSocket(set, 94, 20, GREEN);
+    });
+    vi.mocked(renderPageRaster).mockResolvedValue({
+      raster: pageRaster,
+      pageWidthPt: pageRaster.width,
+      pageHeightPt: pageRaster.height,
+    });
+
+    const result = await scanWholeDrawingPage({
+      projectId: "p1",
+      drawingId: "d1",
+      fileUrl: "https://example.com/plan.pdf",
+      pageNumber: 1,
+    });
+
+    expect(result.summary.tiles_scanned).toBe(6);
+    // Detected in ≥2 overlapping tiles, but deduped down to one candidate.
+    expect(result.candidates).toHaveLength(1);
+    expect(result.summary.duplicates_removed).toBeGreaterThanOrEqual(1);
+    // One drawingRegion for the whole page, one save call — never per tile.
+    expect(createDrawingRegion).toHaveBeenCalledTimes(1);
+    expect(saveSymbolCandidates).toHaveBeenCalledTimes(1);
+    expect(updateDrawingRegionStatus).toHaveBeenCalledWith("p1", "reg_1", "analyzed");
+  });
+
+  it("never produces confirmed candidates — page scan output stays review-only", async () => {
+    vi.mocked(listSymbolTemplatesForProject).mockResolvedValue([]);
+    const pageRaster = makeColorRaster(300, 200, (set) => {
+      drawSocket(set, 20, 20, GREEN);
+      drawSocket(set, 220, 140, GREEN);
+    });
+    vi.mocked(renderPageRaster).mockResolvedValue({
+      raster: pageRaster,
+      pageWidthPt: pageRaster.width,
+      pageHeightPt: pageRaster.height,
+    });
+
+    const result = await scanWholeDrawingPage({
+      projectId: "p1",
+      drawingId: "d1",
+      fileUrl: "https://example.com/plan.pdf",
+      pageNumber: 1,
+    });
+
+    expect(result.candidates.length).toBeGreaterThan(0);
+    expect(result.candidates.every((c) => c.status !== "confirmed")).toBe(true);
+  });
+
+  it("throws (never saves) when the PDF page fails to render", async () => {
+    vi.mocked(renderPageRaster).mockResolvedValue(null);
+
+    await expect(
+      scanWholeDrawingPage({
+        projectId: "p1",
+        drawingId: "d1",
+        fileUrl: "https://example.com/plan.pdf",
+        pageNumber: 1,
+      })
+    ).rejects.toThrow("PDF_RENDER_FAILED");
+    expect(saveSymbolCandidates).not.toHaveBeenCalled();
   });
 });

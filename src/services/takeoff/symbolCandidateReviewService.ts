@@ -11,10 +11,12 @@
 
 import {
   applyConfirmToTakeoffItems,
+  applyUnconfirmToTakeoffItems,
   defaultLabelForSymbolType,
   defaultSymbolTypeForCandidate,
   dtoFromSymbolCandidate,
   findDuplicateConfirmedSymbol,
+  translateBboxPdfForMove,
 } from "@/lib/takeoff/candidateReview";
 import { chooseEvidenceImageUrl } from "@/lib/takeoff/takeoffImages";
 import {
@@ -31,10 +33,18 @@ import {
   createConfirmedSymbol,
   createSymbolTemplate,
   createTakeoffEvidence,
+  deleteConfirmedSymbol,
+  deleteSymbolCandidate,
+  deleteTakeoffEvidence,
+  deleteTakeoffItem,
+  getConfirmedSymbolByCandidateId,
   getSymbolCandidate,
   listConfirmedSymbolsForPage,
   listTakeoffEvidenceForConfirmedSymbol,
   listTakeoffItems,
+  updateConfirmedSymbolPosition,
+  updateConfirmedSymbolType,
+  updateSymbolCandidatePosition,
   updateSymbolCandidateStatus,
   upsertTakeoffItem,
 } from "@/services/takeoff/pdfTakeoffRegionService";
@@ -332,6 +342,198 @@ export async function markSymbolCandidateUnknownType(input: {
     status: "unknown_type",
     symbolTypeHint: "unknown",
   });
+}
+
+/**
+ * Permanently delete a NOT-YET-confirmed candidate (candidate / probable /
+ * rejected / unknown_type / needs_customer_info). Never touches takeoff
+ * quantities — those are only ever created on confirm.
+ */
+export async function deleteCandidate(input: {
+  projectId: string;
+  candidateId: string;
+}): Promise<void> {
+  const row = await getSymbolCandidate(input.projectId, input.candidateId);
+  if (row?.status === "confirmed") {
+    throw new Error("CANDIDATE_CONFIRMED_USE_UNCONFIRM");
+  }
+  await deleteSymbolCandidate(input.projectId, input.candidateId);
+}
+
+/**
+ * Delete a confirmed symbol, addressed by the CANDIDATE id it was confirmed
+ * from (the review panel/overlay only ever track candidate ids — a
+ * candidate keeps the same id through candidate → probable → confirmed).
+ * Symmetric with confirmSymbolCandidate: gives back the exact
+ * quantity/evidence it added (never touches unrelated items), removes its
+ * evidence row(s), and removes the originating candidate so it doesn't
+ * linger in a "confirmed" limbo with no backing confirmedSymbol doc.
+ */
+export async function unconfirmAndDeleteSymbol(input: {
+  projectId: string;
+  candidateId: string;
+}): Promise<{ removedTakeoffItemId: string | null; updatedTakeoffItemId: string | null }> {
+  const { projectId, candidateId } = input;
+  const confirmed = await getConfirmedSymbolByCandidateId(projectId, candidateId);
+  if (!confirmed) throw new Error("CONFIRMED_SYMBOL_NOT_FOUND");
+
+  const [evidenceRows, items] = await Promise.all([
+    listTakeoffEvidenceForConfirmedSymbol(projectId, confirmed.id),
+    listTakeoffItems(projectId, confirmed.drawingId),
+  ]);
+
+  const now = new Date().toISOString();
+  const name =
+    items.find((i) => i.metadata?.symbolType === confirmed.symbolType)?.name ??
+    defaultLabelForSymbolType(confirmed.symbolType);
+  const { updatedItem, removeItemId } = applyUnconfirmToTakeoffItems({
+    items,
+    drawingId: confirmed.drawingId,
+    profession: confirmed.profession,
+    symbolType: confirmed.symbolType,
+    name,
+    quantityValue: confirmed.quantityValue,
+    now,
+  });
+
+  if (updatedItem) {
+    await upsertTakeoffItem(updatedItem);
+  } else if (removeItemId) {
+    await deleteTakeoffItem(projectId, removeItemId).catch(() => undefined);
+  }
+
+  await Promise.all(evidenceRows.map((e) => deleteTakeoffEvidence(projectId, e.id).catch(() => undefined)));
+
+  await deleteConfirmedSymbol(projectId, confirmed.id);
+  await deleteSymbolCandidate(projectId, candidateId).catch(() => undefined);
+
+  return {
+    removedTakeoffItemId: removeItemId,
+    updatedTakeoffItemId: updatedItem?.id ?? null,
+  };
+}
+
+/**
+ * Drag-to-reposition on the plan — for a mis-placed mark (candidate OR
+ * already-confirmed symbol). Only the overlay position changes: status,
+ * quantity and evidence links are untouched. bbox_pdf is translated by the
+ * same real-world delta (see translateBboxPdfForMove) so it stays
+ * consistent with normalizedPosition regardless of which unit convention
+ * it was originally stored in.
+ */
+export async function moveCandidateOrConfirmedSymbol(input: {
+  projectId: string;
+  candidateId: string;
+  newNormalizedPosition: NormalizedRect;
+  /** Pass the already-loaded DTO to skip a redundant Firestore read. */
+  candidateDto?: AnalyzeRegionCandidateDto;
+}): Promise<void> {
+  const { projectId, candidateId, newNormalizedPosition } = input;
+  const dto =
+    input.candidateDto ??
+    (await getSymbolCandidate(projectId, candidateId).then((c) =>
+      c ? dtoFromSymbolCandidate(c) : null
+    ));
+  if (!dto) throw new Error("CANDIDATE_NOT_FOUND");
+
+  const newBboxPdf = translateBboxPdfForMove(
+    dto.bbox_pdf,
+    dto.normalized_position,
+    newNormalizedPosition
+  );
+
+  if (dto.status === "confirmed") {
+    const confirmed = await getConfirmedSymbolByCandidateId(projectId, candidateId);
+    if (!confirmed) throw new Error("CONFIRMED_SYMBOL_NOT_FOUND");
+    await updateConfirmedSymbolPosition(projectId, confirmed.id, {
+      normalizedPosition: newNormalizedPosition,
+      bboxPdf: newBboxPdf,
+    });
+    return;
+  }
+  await updateSymbolCandidatePosition(projectId, candidateId, {
+    normalizedPosition: newNormalizedPosition,
+    bboxPdf: newBboxPdf,
+  });
+}
+
+/**
+ * Retype an already-CONFIRMED symbol (e.g. a wrongly detected "light" that
+ * is actually a "switch"). Unlike changeSymbolCandidateType (which only
+ * touches the candidate row before confirmation), this must move the
+ * quantity from the old takeoff item bucket to the new one — otherwise the
+ * takeoff report would keep counting it under the wrong symbol type
+ * forever. The confirmedSymbol/evidence rows themselves are kept (never
+ * deleted) so evidence stays traceable; only their symbolType + bucket
+ * change.
+ */
+export async function changeConfirmedSymbolType(input: {
+  projectId: string;
+  candidateId: string;
+  symbol_type: string;
+}): Promise<{ confirmedSymbol: ConfirmedSymbol; takeoffItemId: string | null }> {
+  const { projectId, candidateId, symbol_type: symbolType } = input;
+  const confirmed = await getConfirmedSymbolByCandidateId(projectId, candidateId);
+  if (!confirmed) throw new Error("CONFIRMED_SYMBOL_NOT_FOUND");
+
+  const label = defaultLabelForSymbolType(symbolType);
+  const now = new Date().toISOString();
+
+  if (symbolType === confirmed.symbolType) {
+    // Same type re-applied — still refresh the candidate's display label,
+    // but there is no quantity to move.
+    await updateSymbolCandidateStatus(projectId, candidateId, {
+      labelSuggestions: [{ label, confidence: 1 }],
+      symbolTypeHint: symbolType,
+    });
+    return { confirmedSymbol: confirmed, takeoffItemId: null };
+  }
+
+  const items = await listTakeoffItems(projectId, confirmed.drawingId);
+  const oldName =
+    items.find((i) => i.metadata?.symbolType === confirmed.symbolType)?.name ??
+    defaultLabelForSymbolType(confirmed.symbolType);
+
+  const { updatedItem: reducedItem, removeItemId } = applyUnconfirmToTakeoffItems({
+    items,
+    drawingId: confirmed.drawingId,
+    profession: confirmed.profession,
+    symbolType: confirmed.symbolType,
+    name: oldName,
+    quantityValue: confirmed.quantityValue,
+    now,
+  });
+  if (reducedItem) {
+    await upsertTakeoffItem(reducedItem);
+  } else if (removeItemId) {
+    await deleteTakeoffItem(projectId, removeItemId).catch(() => undefined);
+  }
+
+  const itemsAfterRemoval = items
+    .filter((i) => i.id !== removeItemId)
+    .map((i) => (i.id === reducedItem?.id ? reducedItem : i));
+
+  const { updatedItem: newItem } = applyConfirmToTakeoffItems({
+    items: itemsAfterRemoval,
+    projectId,
+    drawingId: confirmed.drawingId,
+    profession: confirmed.profession,
+    symbolType,
+    name: label,
+    unit: confirmed.quantityUnit,
+    quantityValue: confirmed.quantityValue,
+    now,
+    newItemId: newLocalId("titem"),
+  });
+  await upsertTakeoffItem(newItem);
+
+  await updateConfirmedSymbolType(projectId, confirmed.id, symbolType);
+  await updateSymbolCandidateStatus(projectId, candidateId, {
+    labelSuggestions: [{ label, confidence: 1 }],
+    symbolTypeHint: symbolType,
+  });
+
+  return { confirmedSymbol: { ...confirmed, symbolType }, takeoffItemId: newItem.id };
 }
 
 export async function confirmAllProbableCandidates(input: {

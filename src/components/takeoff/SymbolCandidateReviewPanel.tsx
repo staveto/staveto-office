@@ -6,7 +6,7 @@
  * Confirmed candidates leave the active list; rejected stay stored but hidden.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   X,
@@ -16,6 +16,8 @@ import {
   ChevronRight,
   CheckCheck,
   Copy,
+  Trash2,
+  MapPin,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -42,7 +44,44 @@ import {
   defaultSymbolTypeForCandidate,
   groupCandidatesForReview,
 } from "@/lib/takeoff/candidateReview";
+import { SELECTED_HIGHLIGHT_COLOR } from "@/lib/takeoff/selectionHighlight";
 import { LegendOnlyBadge } from "./LegendOnlyBadge";
+
+function sourceLabelKey(source: AnalyzeRegionCandidateDto["source"]): string {
+  switch (source) {
+    case "template_match":
+      return "takeoff.review.source.templateMatch";
+    case "manual":
+      return "takeoff.review.source.manual";
+    case "mixed":
+      return "takeoff.review.source.mixed";
+    case "ocr":
+      return "takeoff.review.source.ocr";
+    case "gemini":
+      return "takeoff.review.source.gemini";
+    case "opencv":
+    default:
+      return "takeoff.review.source.analyzeRegion";
+  }
+}
+
+function statusLabelKey(status: AnalyzeRegionCandidateDto["status"]): string {
+  switch (status) {
+    case "probable":
+      return "takeoff.review.status.probable";
+    case "confirmed":
+      return "takeoff.review.status.confirmed";
+    case "rejected":
+      return "takeoff.review.status.rejected";
+    case "unknown_type":
+      return "takeoff.review.status.unknownType";
+    case "needs_customer_info":
+      return "takeoff.review.status.needsInfo";
+    case "candidate":
+    default:
+      return "takeoff.review.status.candidate";
+  }
+}
 
 const SYMBOL_TYPE_OPTIONS = [
   "socket",
@@ -70,8 +109,19 @@ type Props = {
   onConfirm: (candidateId: string, symbolType: string) => Promise<void>;
   onReject: (candidateId: string) => Promise<void>;
   onChangeType: (candidateId: string, symbolType: string) => Promise<void>;
+  /**
+   * Retype an already-CONFIRMED symbol — moves its quantity to the new
+   * takeoff item bucket. Undefined hides "Zmeniť typ" on confirmed rows.
+   */
+  onChangeConfirmedType?: (candidateId: string, symbolType: string) => Promise<void>;
   onMarkUnknown: (candidateId: string) => Promise<void>;
   onConfirmAllProbable: () => Promise<void>;
+  /** Permanently remove a candidate/probable/uncertain/rejected row. */
+  onDeleteCandidate?: (candidateId: string) => Promise<void>;
+  /** Delete a CONFIRMED symbol — reverses its quantity/evidence first. */
+  onDeleteConfirmed?: (candidateId: string) => Promise<void>;
+  /** Bulk-clear every rejected/hidden row in one action. */
+  onDeleteAllRejected?: () => Promise<void>;
   onEvidenceClick: (takeoffItemId: string) => void;
   /** Evidence thumbnails for the last clicked takeoff item (Phase 2.5). */
   evidenceThumbs?: { itemId: string; itemName: string; thumbs: EvidenceThumb[] } | null;
@@ -96,8 +146,12 @@ export function SymbolCandidateReviewPanel({
   onConfirm,
   onReject,
   onChangeType,
+  onChangeConfirmedType,
   onMarkUnknown,
   onConfirmAllProbable,
+  onDeleteCandidate,
+  onDeleteConfirmed,
+  onDeleteAllRejected,
   onEvidenceClick,
   evidenceThumbs = null,
   onEvidenceThumbClick,
@@ -113,13 +167,28 @@ export function SymbolCandidateReviewPanel({
     null
   );
   const [changeTypeValue, setChangeTypeValue] = useState("socket");
+  const [deleteConfirmedFor, setDeleteConfirmedFor] = useState<AnalyzeRegionCandidateDto | null>(
+    null
+  );
+  const [deletingAllRejected, setDeletingAllRejected] = useState(false);
+  const listRef = useRef<HTMLDivElement | null>(null);
 
-  // Clicking a confirmed marker on the map selects it here too — auto-expand
-  // the confirmed section so it's not silently hidden.
+  // Clicking a confirmed/rejected marker on the map selects it here too —
+  // auto-expand the section it lives in so the row isn't silently hidden.
   const selectedCandidate = candidates.find((c) => c.id === selectedId) ?? null;
   useEffect(() => {
     if (selectedCandidate?.status === "confirmed") setShowConfirmed(true);
+    if (selectedCandidate?.status === "rejected") setShowRejected(true);
   }, [selectedCandidate]);
+
+  // Selecting a mark on the PLAN must also make its row obvious HERE — same
+  // glow color as the plan overlay, plus auto-scroll so the row is never
+  // just off-screen below/above the visible part of a long list.
+  useEffect(() => {
+    if (!selectedId) return;
+    const row = listRef.current?.querySelector(`[data-row-id="${selectedId}"]`);
+    row?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [selectedId]);
 
   const groups = useMemo(() => groupCandidatesForReview(candidates), [candidates]);
   const activeCount = groups.reduce((n, g) => n + g.candidates.length, 0);
@@ -167,6 +236,9 @@ export function SymbolCandidateReviewPanel({
         <span className="text-xs tabular-nums text-muted-foreground">
           {t("takeoff.review.activeCount", { count: activeCount })}
         </span>
+        <span className="basis-full text-[10px] text-muted-foreground">
+          {t("takeoff.review.sectionCandidatesHint")}
+        </span>
         {canReview && probableCount > 0 ? (
           <Button
             type="button"
@@ -183,7 +255,7 @@ export function SymbolCandidateReviewPanel({
         ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 space-y-2 overflow-auto pr-0.5">
+      <div ref={listRef} className="min-h-0 flex-1 space-y-2 overflow-auto pr-0.5">
         {groups.map((group) => {
           const isCollapsed = collapsed.has(group.id);
           return (
@@ -223,10 +295,16 @@ export function SymbolCandidateReviewPanel({
                     return (
                       <div
                         key={c.id}
-                        className={cn(
-                          "border-t border-border/70 px-2.5 py-2",
-                          selected && "bg-primary/5"
-                        )}
+                        data-row-id={c.id}
+                        className="border-t border-border/70 px-2.5 py-2"
+                        style={
+                          selected
+                            ? {
+                                backgroundColor: `${SELECTED_HIGHLIGHT_COLOR}26`,
+                                boxShadow: `inset 0 0 0 2px ${SELECTED_HIGHLIGHT_COLOR}`,
+                              }
+                            : undefined
+                        }
                       >
                         <button
                           type="button"
@@ -273,7 +351,8 @@ export function SymbolCandidateReviewPanel({
                               </span>
                             </span>
                             <span className="mt-0.5 block text-[10px] text-muted-foreground">
-                              {Math.round(c.confidence * 100)}% · {c.source}
+                              {Math.round(c.confidence * 100)}% · {t(sourceLabelKey(c.source))} ·{" "}
+                              {t(statusLabelKey(c.status))}
                               {c.nearby_text ? ` · ${c.nearby_text}` : ""}
                             </span>
                           </span>
@@ -346,6 +425,20 @@ export function SymbolCandidateReviewPanel({
                                 : t("takeoff.action.findSimilar")}
                             </Button>
                           ) : null}
+                          {onDeleteCandidate ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-[11px] text-destructive hover:text-destructive"
+                              disabled={busy}
+                              data-testid="candidate-delete"
+                              onClick={() => void onDeleteCandidate(c.id)}
+                            >
+                              <Trash2 className="mr-0.5 size-3" />
+                              {t("takeoff.review.delete")}
+                            </Button>
+                          ) : null}
                         </div>
                         ) : null}
                       </div>
@@ -379,20 +472,60 @@ export function SymbolCandidateReviewPanel({
             </button>
             {showConfirmed
               ? confirmedCandidates.map((c) => (
-                  <button
+                  <div
                     key={c.id}
-                    type="button"
-                    className="flex w-full items-center gap-2 border-t border-border/70 px-2.5 py-1.5 text-left text-xs hover:bg-muted/50"
-                    onClick={() => onSelect(c.id)}
+                    data-row-id={c.id}
+                    className="flex w-full items-center gap-2 border-t border-border/70 px-2.5 py-1.5 text-xs hover:bg-muted/50"
+                    style={
+                      c.id === selectedId
+                        ? {
+                            backgroundColor: `${SELECTED_HIGHLIGHT_COLOR}26`,
+                            boxShadow: `inset 0 0 0 2px ${SELECTED_HIGHLIGHT_COLOR}`,
+                          }
+                        : undefined
+                    }
                   >
-                    <Check className="size-3 shrink-0 text-emerald-600" />
-                    <span className="min-w-0 flex-1 truncate text-foreground">
-                      {c.label_suggestions[0]?.label ?? defaultSymbolTypeForCandidate(c)}
-                    </span>
-                    <span className="shrink-0 text-[10px] text-muted-foreground">
-                      {c.source}
-                    </span>
-                  </button>
+                    <button
+                      type="button"
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      onClick={() => onSelect(c.id)}
+                    >
+                      <Check className="size-3 shrink-0 text-emerald-600" />
+                      <span className="min-w-0 flex-1 truncate text-foreground">
+                        {c.label_suggestions[0]?.label ?? defaultSymbolTypeForCandidate(c)}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">
+                        {t(sourceLabelKey(c.source))}
+                      </span>
+                    </button>
+                    {canReview && onChangeConfirmedType ? (
+                      <button
+                        type="button"
+                        className="shrink-0 rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                        disabled={busy}
+                        data-testid="confirmed-change-type"
+                        title={t("takeoff.review.changeType")}
+                        onClick={() => {
+                          setChangeTypeValue(defaultSymbolTypeForCandidate(c));
+                          setChangeTypeFor(c);
+                        }}
+                      >
+                        <Pencil className="size-3.5" />
+                      </button>
+                    ) : null}
+                    {canReview && onDeleteConfirmed ? (
+                      <button
+                        type="button"
+                        className="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        disabled={busy}
+                        data-testid="confirmed-delete"
+                        title={t("takeoff.review.delete")}
+                        onClick={() => setDeleteConfirmedFor(c)}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    ) : null}
+                  </div>
                 ))
               : null}
           </div>
@@ -404,30 +537,76 @@ export function SymbolCandidateReviewPanel({
             className="overflow-hidden rounded-lg border border-border bg-card"
             data-testid="section-rejected"
           >
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs font-semibold text-muted-foreground hover:bg-muted/50"
-              onClick={() => setShowRejected((v) => !v)}
-            >
-              {showRejected ? (
-                <ChevronDown className="size-3.5 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="size-3.5 text-muted-foreground" />
-              )}
-              <span>{t("takeoff.review.sectionRejected")}</span>
-              <span className="ml-auto tabular-nums">{rejectedCandidates.length}</span>
-            </button>
+            <div className="flex w-full items-center gap-2 px-2.5 py-1.5">
+              <button
+                type="button"
+                className="flex flex-1 items-center gap-2 text-left text-xs font-semibold text-muted-foreground hover:text-foreground"
+                onClick={() => setShowRejected((v) => !v)}
+              >
+                {showRejected ? (
+                  <ChevronDown className="size-3.5 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="size-3.5 text-muted-foreground" />
+                )}
+                <span>{t("takeoff.review.sectionRejected")}</span>
+                <span className="tabular-nums">{rejectedCandidates.length}</span>
+              </button>
+              {canReview && onDeleteAllRejected ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 shrink-0 px-1.5 text-[10px] text-destructive hover:text-destructive"
+                  disabled={busy || deletingAllRejected}
+                  data-testid="delete-all-rejected"
+                  onClick={async () => {
+                    setDeletingAllRejected(true);
+                    try {
+                      await onDeleteAllRejected();
+                    } finally {
+                      setDeletingAllRejected(false);
+                    }
+                  }}
+                >
+                  <Trash2 className="mr-0.5 size-3" />
+                  {deletingAllRejected
+                    ? t("common.loading")
+                    : t("takeoff.review.deleteAllRejected")}
+                </Button>
+              ) : null}
+            </div>
             {showRejected
               ? rejectedCandidates.map((c) => (
                   <div
                     key={c.id}
+                    data-row-id={c.id}
                     className="flex items-center gap-2 border-t border-border/70 px-2.5 py-1.5 text-xs text-muted-foreground"
+                    style={
+                      c.id === selectedId
+                        ? {
+                            backgroundColor: `${SELECTED_HIGHLIGHT_COLOR}26`,
+                            boxShadow: `inset 0 0 0 2px ${SELECTED_HIGHLIGHT_COLOR}`,
+                          }
+                        : undefined
+                    }
                   >
                     <X className="size-3 shrink-0" />
                     <span className="min-w-0 flex-1 truncate">
                       {c.label_suggestions[0]?.label ?? defaultSymbolTypeForCandidate(c)}
                     </span>
-                    <span className="shrink-0 text-[10px]">{c.source}</span>
+                    <span className="shrink-0 text-[10px]">{t(sourceLabelKey(c.source))}</span>
+                    {onDeleteCandidate ? (
+                      <button
+                        type="button"
+                        className="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        disabled={busy}
+                        data-testid="rejected-delete"
+                        title={t("takeoff.review.delete")}
+                        onClick={() => void onDeleteCandidate(c.id)}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    ) : null}
                   </div>
                 ))
               : null}
@@ -437,39 +616,46 @@ export function SymbolCandidateReviewPanel({
 
       {/* Section 4 — Výkaz položiek (evidence links) */}
       {detectionItems.length > 0 || legendItems.length > 0 ? (
-        <div className="space-y-1.5 rounded-lg border border-border bg-card p-2.5">
+        <div className="space-y-0.5 rounded-lg border border-border bg-card p-2.5">
           <p className="text-xs font-semibold text-foreground">
             {t("takeoff.review.sectionItems")}
           </p>
-          {detectionItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-xs hover:bg-muted/60"
-              data-testid="takeoff-evidence-link"
-              onClick={() => onEvidenceClick(item.id)}
-            >
-              <span className="min-w-0 flex-1 truncate text-foreground">{item.name}</span>
-              <span className="shrink-0 tabular-nums font-semibold text-foreground">
-                {item.quantity} {item.unit}
-              </span>
-              <span className="shrink-0 text-[10px] text-primary">
-                {t("takeoff.review.evidenceCount", { count: item.evidenceCount })}
-              </span>
-            </button>
-          ))}
-          {legendItems.map((item) => (
-            <div
-              key={item.id}
-              className="flex flex-wrap items-center gap-2 rounded-md px-1.5 py-1 text-xs"
-            >
-              <span className="min-w-0 flex-1 truncate text-foreground">{item.name}</span>
-              <span className="shrink-0 tabular-nums text-muted-foreground">
-                {item.quantity} {item.unit}
-              </span>
-              <LegendOnlyBadge compact />
-            </div>
-          ))}
+          <p className="mb-1 text-[10px] text-muted-foreground">
+            {t("takeoff.review.sectionItemsHint")}
+          </p>
+          <div className="divide-y divide-border/60">
+            {detectionItems.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-xs hover:bg-muted/60"
+                data-testid="takeoff-evidence-link"
+                title={t("takeoff.review.evidenceThumbHint")}
+                onClick={() => onEvidenceClick(item.id)}
+              >
+                <MapPin className="size-3 shrink-0 text-primary" />
+                <span className="min-w-0 flex-1 truncate text-foreground">{item.name}</span>
+                <span className="shrink-0 tabular-nums font-semibold text-foreground">
+                  {item.quantity} {item.unit}
+                </span>
+                <span className="shrink-0 text-[10px] text-primary">
+                  {t("takeoff.review.evidenceCount", { count: item.evidenceCount })}
+                </span>
+              </button>
+            ))}
+            {legendItems.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center gap-2 rounded-md px-1.5 py-1.5 text-xs"
+              >
+                <span className="min-w-0 flex-1 truncate text-foreground">{item.name}</span>
+                <span className="shrink-0 tabular-nums text-muted-foreground">
+                  {item.quantity} {item.unit}
+                </span>
+                <LegendOnlyBadge compact />
+              </div>
+            ))}
+          </div>
 
           {/* Evidence thumbnails for the last clicked item — bbox focus still
               works without them (thumbnails are an optional enhancement). */}
@@ -558,12 +744,56 @@ export function SymbolCandidateReviewPanel({
               disabled={busy || !changeTypeFor}
               onClick={() => {
                 if (!changeTypeFor) return;
-                void onChangeType(changeTypeFor.id, changeTypeValue).then(() =>
+                const apply =
+                  changeTypeFor.status === "confirmed" && onChangeConfirmedType
+                    ? onChangeConfirmedType
+                    : onChangeType;
+                void apply(changeTypeFor.id, changeTypeValue).then(() =>
                   setChangeTypeFor(null)
                 );
               }}
             >
               {t("takeoff.review.applyType")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!deleteConfirmedFor}
+        onOpenChange={(open) => {
+          if (!open) setDeleteConfirmedFor(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("takeoff.review.deleteConfirmedTitle")}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {t("takeoff.review.deleteConfirmedBody", {
+              name:
+                deleteConfirmedFor?.label_suggestions[0]?.label ??
+                (deleteConfirmedFor ? defaultSymbolTypeForCandidate(deleteConfirmedFor) : ""),
+            })}
+          </p>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDeleteConfirmedFor(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={busy || !deleteConfirmedFor}
+              data-testid="confirm-delete-confirmed"
+              onClick={() => {
+                if (!deleteConfirmedFor || !onDeleteConfirmed) return;
+                const id = deleteConfirmedFor.id;
+                setDeleteConfirmedFor(null);
+                void onDeleteConfirmed(id);
+              }}
+            >
+              <Trash2 className="mr-1 size-3.5" />
+              {t("takeoff.review.delete")}
             </Button>
           </DialogFooter>
         </DialogContent>
