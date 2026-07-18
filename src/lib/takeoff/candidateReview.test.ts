@@ -130,6 +130,74 @@ describe("applyConfirmToTakeoffItems", () => {
   it("rejected candidates are not active for review", () => {
     expect(isActiveReviewCandidate(cand({ id: "x", status: "rejected" }))).toBe(false);
   });
+
+  it("keeps two positions of the SAME symbol type as separate items (name-based buckets)", () => {
+    const existing: TakeoffItem = {
+      id: "t1",
+      projectId: "p1",
+      drawingId: "d1",
+      quoteId: null,
+      name: "Zásuvka 230V",
+      profession: "electrical",
+      quantity: 4,
+      unit: "ks",
+      sourceOfQuantity: "symbol_detection",
+      status: "confirmed",
+      evidenceCount: 4,
+      metadata: { symbolType: "socket" },
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const { updatedItem, created } = applyConfirmToTakeoffItems({
+      items: [existing],
+      projectId: "p1",
+      drawingId: "d1",
+      profession: "electrical",
+      symbolType: "socket",
+      name: "Zásuvka 2x pod sebou",
+      unit: "ks",
+      quantityValue: 1,
+      now: "2026-01-02T00:00:00.000Z",
+      newItemId: "t2",
+    });
+    expect(created).toBe(true);
+    expect(updatedItem.id).toBe("t2");
+    expect(updatedItem.quantity).toBe(1);
+  });
+
+  it("matches item names case/whitespace-insensitively", () => {
+    const existing: TakeoffItem = {
+      id: "t1",
+      projectId: "p1",
+      drawingId: "d1",
+      quoteId: null,
+      name: "Zásuvka 230V",
+      profession: "electrical",
+      quantity: 4,
+      unit: "ks",
+      sourceOfQuantity: "symbol_detection",
+      status: "confirmed",
+      evidenceCount: 4,
+      metadata: { symbolType: "socket" },
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const { updatedItem, created } = applyConfirmToTakeoffItems({
+      items: [existing],
+      projectId: "p1",
+      drawingId: "d1",
+      profession: "electrical",
+      symbolType: "socket",
+      name: "  zásuvka   230v ",
+      unit: "ks",
+      quantityValue: 1,
+      now: "2026-01-02T00:00:00.000Z",
+      newItemId: "t2",
+    });
+    expect(created).toBe(false);
+    expect(updatedItem.id).toBe("t1");
+    expect(updatedItem.quantity).toBe(5);
+  });
 });
 
 describe("applyUnconfirmToTakeoffItems — symmetric reversal of confirm", () => {
@@ -195,6 +263,38 @@ describe("applyUnconfirmToTakeoffItems — symmetric reversal of confirm", () =>
     });
     expect(updatedItem).toBeNull();
     expect(removeItemId).toBeNull();
+  });
+
+  it("the evidence-linked takeoffItemId wins over name/type matching", () => {
+    const generic = item(); // name "zásuvka", type socket
+    const double = item({ id: "t9", name: "Zásuvka 2x pod sebou", quantity: 2, evidenceCount: 2 });
+    const { updatedItem } = applyUnconfirmToTakeoffItems({
+      items: [generic, double],
+      drawingId: "d1",
+      profession: "electrical",
+      symbolType: "socket",
+      name: "zásuvka",
+      quantityValue: 1,
+      now: "2026-01-02T00:00:00.000Z",
+      takeoffItemId: "t9",
+    });
+    expect(updatedItem?.id).toBe("t9");
+    expect(updatedItem?.quantity).toBe(1);
+  });
+
+  it("falls back to legacy symbolType matching when no name matches", () => {
+    const legacy = item({ name: "starý názov bez zhody" });
+    const { updatedItem } = applyUnconfirmToTakeoffItems({
+      items: [legacy],
+      drawingId: "d1",
+      profession: "electrical",
+      symbolType: "socket",
+      name: "zásuvka",
+      quantityValue: 1,
+      now: "2026-01-02T00:00:00.000Z",
+    });
+    expect(updatedItem?.id).toBe("t1");
+    expect(updatedItem?.quantity).toBe(2);
   });
 
   it("round-trips with applyConfirmToTakeoffItems (confirm then unconfirm = no-op)", () => {

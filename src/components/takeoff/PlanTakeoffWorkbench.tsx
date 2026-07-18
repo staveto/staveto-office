@@ -9,7 +9,7 @@
  * never auto-confirms anything.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -48,6 +48,7 @@ import {
   findSimilarForConfirmedSymbol,
 } from "@/services/takeoff/confirmedSymbolSimilarService";
 import { analyzeDrawingRegion, scanWholeDrawingPage } from "@/services/takeoff/analyzeRegionService";
+import { scanWholeDrawingPageWithAi } from "@/services/takeoff/aiSymbolScanService";
 import {
   listTakeoffEvidenceForItem,
   listTakeoffItems,
@@ -63,6 +64,7 @@ import {
   DuplicateConfirmedSymbolError,
   markSymbolCandidateUnknownType,
   moveCandidateOrConfirmedSymbol,
+  moveConfirmedSymbolToCategory,
   rejectSymbolCandidate,
   unconfirmAndDeleteSymbol,
 } from "@/services/takeoff/symbolCandidateReviewService";
@@ -71,8 +73,13 @@ import {
   defaultLabelForSymbolType,
   dtoFromSymbolCandidate,
 } from "@/lib/takeoff/candidateReview";
+import {
+  categoryKeyForLabel,
+  categoryLabelForCandidate,
+} from "@/lib/takeoff/takeoffCategories";
 import { addTakeoffLinesToQuoteDraft } from "@/services/takeoff/takeoffQuoteService";
 import {
+  isPdfTakeoffAiScanEnabled,
   isPdfTakeoffRegionAnalyzerEnabled,
   isTakeoffDetectionDebugEnabled,
 } from "@/lib/ai/aiEstimatorFeature";
@@ -170,7 +177,7 @@ export function PlanTakeoffWorkbench({
   showFinishButton,
   onFinished,
 }: Props) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const router = useRouter();
   const quotePrecheck = mode === "quote-precheck";
   const takeoffMode = normalizeTakeoffMode(mode);
@@ -198,8 +205,10 @@ export function PlanTakeoffWorkbench({
   const [quoteMessage, setQuoteMessage] = useState<string | null>(null);
   const [finishBusy, setFinishBusy] = useState(false);
   const regionAnalyzerEnabled = isPdfTakeoffRegionAnalyzerEnabled();
+  const aiScanEnabled = isPdfTakeoffAiScanEnabled();
   const [analyzeBusy, setAnalyzeBusy] = useState(false);
   const [scanningWholePage, setScanningWholePage] = useState(false);
+  const [scanningWholePageWithAi, setScanningWholePageWithAi] = useState(false);
   const [regionCandidates, setRegionCandidates] = useState<AnalyzeRegionCandidateDto[]>([]);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [lastAnalyzeSummary, setLastAnalyzeSummary] = useState<AnalyzeRegionResponse["summary"] | null>(
@@ -238,6 +247,70 @@ export function PlanTakeoffWorkbench({
   } | null>(null);
   const [similarFromConfirmedBusy, setSimilarFromConfirmedBusy] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // Rapid category marking — the operator picks/creates a position (e.g.
+  // "Svetlo LED 12W") and click-counts its symbols on the plan. Every click
+  // creates AND confirms a mark of that category — no per-click dialog.
+  const [activeCategory, setActiveCategory] = useState<{
+    key: string;
+    label: string;
+    symbolType: string;
+  } | null>(null);
+  // "Zvýrazniť" on category rows — each toggles independently, so any
+  // combination of positions can glow on the plan at once. Mark ids are
+  // derived (not stored) so marks added later to a highlighted category
+  // start glowing immediately.
+  const [highlightedCategoryKeys, setHighlightedCategoryKeys] = useState<string[]>([]);
+
+  // Side-panel width is only meaningful in the side-by-side (xl+) layout —
+  // below that both columns stack full-width and the drag handle is hidden.
+  const RIGHT_PANEL_MIN_PX = 320;
+  const RIGHT_PANEL_MAX_PX = 900;
+  const RIGHT_PANEL_STORAGE_KEY = "takeoff.rightPanelWidthPx";
+  const [isWideLayout, setIsWideLayout] = useState(false);
+  const [rightPanelWidth, setRightPanelWidth] = useState(440);
+  const panelResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(min-width: 1280px)");
+    const update = () => setIsWideLayout(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    const saved = Number(window.localStorage.getItem(RIGHT_PANEL_STORAGE_KEY));
+    if (Number.isFinite(saved) && saved >= RIGHT_PANEL_MIN_PX && saved <= RIGHT_PANEL_MAX_PX) {
+      setRightPanelWidth(saved);
+    }
+  }, []);
+
+  const handlePanelResizeStart = useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault();
+      panelResizeRef.current = { startX: e.clientX, startWidth: rightPanelWidth };
+      const onMove = (ev: PointerEvent) => {
+        const drag = panelResizeRef.current;
+        if (!drag) return;
+        // Panel sits on the right — dragging the handle LEFT (negative delta) widens it.
+        const next = drag.startWidth + (drag.startX - ev.clientX);
+        setRightPanelWidth(Math.min(RIGHT_PANEL_MAX_PX, Math.max(RIGHT_PANEL_MIN_PX, next)));
+      };
+      const onUp = () => {
+        panelResizeRef.current = null;
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        setRightPanelWidth((w) => {
+          window.localStorage.setItem(RIGHT_PANEL_STORAGE_KEY, String(w));
+          return w;
+        });
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [rightPanelWidth]
+  );
 
   // Fullscreen review mode — Escape exits, body scroll stays locked.
   useEffect(() => {
@@ -431,6 +504,69 @@ export function PlanTakeoffWorkbench({
     [scanningWholePage, analyzeBusy, fileUrl, projectId, drawingId, formTrade, showToast, t]
   );
 
+  // "Skenovať AI (Gemini)" — explicit, paid opt-in scan using vision AI
+  // instead of the local color/template pipeline. Only ever adds review
+  // candidates (source: "gemini"); existing candidates/confirmed symbols on
+  // the page are never touched or duplicated.
+  const handleScanWholePageWithAi = useCallback(
+    async (pageNumber: number) => {
+      if (scanningWholePageWithAi || scanningWholePage || analyzeBusy) return;
+      if (!fileUrl) {
+        setAnalyzeNotice("failed");
+        return;
+      }
+      setScanningWholePageWithAi(true);
+      setSelectedCandidateId(null);
+      setAnalyzeNotice(null);
+      try {
+        const existingOnPage = regionCandidates.filter((c) => (c.page_number ?? 1) === pageNumber);
+        const result = await scanWholeDrawingPageWithAi({
+          projectId,
+          drawingId,
+          fileUrl,
+          pageNumber,
+          profession: formTrade,
+          language: locale,
+          existingCandidates: existingOnPage,
+        });
+        setRegionCandidates((prev) => [...prev, ...result.candidates]);
+        // Unlike the local scan, "0 new candidates" from AI usually means
+        // "everything it saw is already marked" rather than "found nothing"
+        // — the generic empty-region banner would be misleading here, so
+        // this state only gets the dedicated toast below, no inline notice.
+        if (result.candidates.length === 0 && result.text_like_filtered > 0) {
+          showToast(t("takeoff.toast.scanWholePageAiOnlyText", { count: result.text_like_filtered }));
+        } else {
+          showToast(
+            result.candidates.length === 0
+              ? t("takeoff.toast.scanWholePageAiEmpty")
+              : t("takeoff.toast.scanWholePageAiDone", { count: result.candidates.length })
+          );
+        }
+        setMarkerMode("select");
+        setRightTab("candidates");
+      } catch {
+        setAnalyzeNotice("failed");
+        showToast(t("takeoff.toast.scanWholePageAiFailed"));
+      } finally {
+        setScanningWholePageWithAi(false);
+      }
+    },
+    [
+      scanningWholePageWithAi,
+      scanningWholePage,
+      analyzeBusy,
+      fileUrl,
+      projectId,
+      drawingId,
+      formTrade,
+      locale,
+      regionCandidates,
+      showToast,
+      t,
+    ]
+  );
+
   const refreshTakeoffItems = useCallback(async () => {
     const items = await listTakeoffItems(projectId, drawingId);
     setTakeoffItems(items);
@@ -551,6 +687,39 @@ export function PlanTakeoffWorkbench({
       }
       setRegionCandidates((prev) => prev.filter((c) => c.status !== "rejected"));
       showToast(t("takeoff.toast.rejectedCleared", { count: removed }));
+    } finally {
+      setReviewBusy(false);
+    }
+  }, [projectId, regionCandidates, showToast, t]);
+
+  /**
+   * Delete EVERY candidate still awaiting review (candidate/probable/
+   * unknown/needs_info) — the "Kandidáti na kontrolu" section only. Never
+   * touches confirmed symbols (those need the symmetric reversal above) or
+   * already-rejected rows (use "Vymazať všetky" in that section instead).
+   * Meant for a bad/noisy scan that isn't worth reviewing row by row.
+   */
+  const handleDeleteAllCandidates = useCallback(async () => {
+    const targets = regionCandidates.filter(
+      (c) => c.status !== "rejected" && c.status !== "confirmed"
+    );
+    if (targets.length === 0) return;
+    setReviewBusy(true);
+    try {
+      let removed = 0;
+      for (const c of targets) {
+        try {
+          await deleteCandidate({ projectId, candidateId: c.id });
+          removed++;
+        } catch {
+          /* keep going — one bad row must not block the rest */
+        }
+      }
+      setRegionCandidates((prev) =>
+        prev.filter((c) => c.status === "rejected" || c.status === "confirmed")
+      );
+      setSelectedCandidateId(null);
+      showToast(t("takeoff.toast.candidatesCleared", { count: removed }));
     } finally {
       setReviewBusy(false);
     }
@@ -782,9 +951,12 @@ export function PlanTakeoffWorkbench({
 
   // "Find similar" straight from a pending/unconfirmed candidate — a manual
   // mark or single detection shouldn't need a confirm step first just to
-  // search for the same symbol elsewhere on the plan.
+  // search for the same symbol elsewhere on the plan. Pre-confirm this
+  // defaults to the current page only (the mark itself is still unverified);
+  // an already-CONFIRMED row is a trustworthy template, so its own button
+  // (see handleFindSimilarConfirmedRow below) searches the WHOLE drawing.
   const handleFindSimilarFromCandidate = useCallback(
-    async (candidateId: string) => {
+    async (candidateId: string, scope: "page" | "drawing" = "page") => {
       if (!fileUrl || similarFromConfirmedBusy) return;
       const candidate = regionCandidates.find((c) => c.id === candidateId);
       if (!candidate) return;
@@ -795,7 +967,7 @@ export function PlanTakeoffWorkbench({
           drawingId,
           candidate,
           fileUrl,
-          scope: "page",
+          scope,
         });
         if (result.unavailableReason) {
           showToast(t("takeoff.toast.similarUnavailable"));
@@ -819,6 +991,12 @@ export function PlanTakeoffWorkbench({
     [fileUrl, similarFromConfirmedBusy, projectId, drawingId, regionCandidates, showToast, t]
   );
 
+  /** "Nájsť podobné" on an already-confirmed row — always scans every page. */
+  const handleFindSimilarConfirmedRow = useCallback(
+    (candidateId: string) => void handleFindSimilarFromCandidate(candidateId, "drawing"),
+    [handleFindSimilarFromCandidate]
+  );
+
   const handleEvidenceThumbClick = useCallback((thumb: EvidenceThumb) => {
     if (!thumb.normalized) return;
     setFocusEvidence({
@@ -828,10 +1006,146 @@ export function PlanTakeoffWorkbench({
     });
   }, []);
 
+  /**
+   * One click = one counted piece. Builds a manual candidate with the active
+   * category's label/type, saves it and runs the NORMAL confirm flow
+   * (duplicate check, evidence, takeoff quantity) — identical data to
+   * confirming a detected candidate, just without the per-click dialog.
+   */
+  const handleRapidCategoryMark = useCallback(
+    async (pageNumber: number, rect: NormalizedRect) => {
+      if (!activeCategory) return;
+      const dto = buildManualCandidateDto({
+        pageNumber,
+        normalizedPosition: rect,
+        symbolType: activeCategory.symbolType,
+        label: activeCategory.label,
+        note: null,
+      });
+      // Optimistic — the mark appears under the cursor immediately.
+      setRegionCandidates((prev) => [...prev, dto]);
+      try {
+        await saveSymbolCandidates(projectId, null, drawingId, pageNumber, [dto]);
+        await handleConfirmCandidate(dto.id, activeCategory.symbolType, dto);
+      } catch {
+        setRegionCandidates((prev) => prev.filter((c) => c.id !== dto.id));
+        showToast(t("takeoff.toast.saveFailed"));
+      }
+    },
+    [activeCategory, projectId, drawingId, handleConfirmCandidate, showToast, t]
+  );
+
+  const handleStartCategoryMarking = useCallback(
+    (category: { key: string; label: string; symbolType: string }) => {
+      setActiveCategory(category);
+      setMarkerMode("point");
+      setRightTab("candidates");
+    },
+    []
+  );
+
+  const handleStopCategoryMarking = useCallback(() => {
+    setActiveCategory(null);
+    setMarkerMode("select");
+  }, []);
+
+  // Leaving point mode by ANY path (Esc, toolbar mode buttons, scan actions)
+  // always ends the rapid-marking session — no stale "still adding Svetlo"
+  // state once the cursor stops placing marks.
+  useEffect(() => {
+    if (markerMode !== "point") setActiveCategory(null);
+  }, [markerMode]);
+
+  const handleToggleHighlightCategory = useCallback((key: string) => {
+    setHighlightedCategoryKeys((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    );
+  }, []);
+
+  const highlightedCandidateIds = useMemo(() => {
+    if (highlightedCategoryKeys.length === 0) return null;
+    const keys = new Set(highlightedCategoryKeys);
+    return regionCandidates
+      .filter(
+        (c) =>
+          c.status === "confirmed" &&
+          keys.has(categoryKeyForLabel(categoryLabelForCandidate(c)))
+      )
+      .map((c) => c.id);
+  }, [highlightedCategoryKeys, regionCandidates]);
+
+  /**
+   * Move one confirmed mark to a different position/category — its
+   * quantity+evidence move buckets server-side; locally just relabel so
+   * grouping, colors and counts follow instantly.
+   */
+  const handleMoveConfirmedToCategory = useCallback(
+    async (candidateId: string, label: string) => {
+      setReviewBusy(true);
+      try {
+        await moveConfirmedSymbolToCategory({ projectId, candidateId, label });
+        patchCandidateLocal(candidateId, {
+          label_suggestions: [{ label, confidence: 1 }],
+        });
+        await refreshTakeoffItems();
+        showToast(t("takeoff.toast.markMoved", { label }));
+      } catch {
+        showToast(t("takeoff.toast.reviewFailed"));
+      } finally {
+        setReviewBusy(false);
+      }
+    },
+    [projectId, patchCandidateLocal, refreshTakeoffItems, showToast, t]
+  );
+
+  /** Rename a position — relabels every confirmed mark in it (merge on clash). */
+  const handleRenameCategory = useCallback(
+    async (categoryKey: string, newLabel: string) => {
+      const targets = regionCandidates.filter(
+        (c) =>
+          c.status === "confirmed" &&
+          categoryKeyForLabel(categoryLabelForCandidate(c)) === categoryKey
+      );
+      if (targets.length === 0) return;
+      setReviewBusy(true);
+      try {
+        for (const c of targets) {
+          try {
+            await moveConfirmedSymbolToCategory({
+              projectId,
+              candidateId: c.id,
+              label: newLabel,
+            });
+            patchCandidateLocal(c.id, {
+              label_suggestions: [{ label: newLabel, confidence: 1 }],
+            });
+          } catch {
+            /* keep going — one bad row must not block the rest */
+          }
+        }
+        await refreshTakeoffItems();
+        showToast(t("takeoff.toast.categoryRenamed", { label: newLabel }));
+      } finally {
+        setReviewBusy(false);
+      }
+    },
+    [projectId, regionCandidates, patchCandidateLocal, refreshTakeoffItems, showToast, t]
+  );
+
   const handleMarkerDrawn = useCallback(
     (pageNumber: number, rect: NormalizedRect) => {
       if (markerMode === "analyze_region") {
         void handleAnalyzeRegion(pageNumber, rect);
+        return;
+      }
+      // Rapid category marking — skip the dialog entirely.
+      if (
+        markerMode === "point" &&
+        activeCategory &&
+        regionAnalyzerEnabled &&
+        perms.allowConfirm
+      ) {
+        void handleRapidCategoryMark(pageNumber, rect);
         return;
       }
       setPendingMarker({ pageNumber, rect });
@@ -839,7 +1153,17 @@ export function PlanTakeoffWorkbench({
       setFormLabel(typeDef ? t(typeDef.labelKey) : "");
       setFormNote("");
     },
-    [formTrade, formType, t, markerMode, handleAnalyzeRegion]
+    [
+      formTrade,
+      formType,
+      t,
+      markerMode,
+      handleAnalyzeRegion,
+      activeCategory,
+      regionAnalyzerEnabled,
+      perms.allowConfirm,
+      handleRapidCategoryMark,
+    ]
   );
 
   /**
@@ -1308,9 +1632,9 @@ export function PlanTakeoffWorkbench({
         </Button>
       </div>
 
-      <div className="grid gap-3 xl:grid-cols-[minmax(0,55fr)_minmax(0,45fr)]">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-start">
         {/* Left: interactive PDF */}
-        <div>
+        <div className="min-w-0 xl:flex-1">
           {analyzeNotice ? (
             <div
               data-testid="analyze-inline-notice"
@@ -1383,15 +1707,48 @@ export function PlanTakeoffWorkbench({
                 : undefined
             }
             scanningWholePage={scanningWholePage}
+            onScanWholePageWithAi={
+              aiScanEnabled && perms.allowAnalyze && fileUrl
+                ? (pageNumber) => void handleScanWholePageWithAi(pageNumber)
+                : undefined
+            }
+            scanningWholePageWithAi={scanningWholePageWithAi}
             focusEvidence={focusEvidence}
+            highlightedCandidateIds={highlightedCandidateIds}
+            pointModeHint={
+              activeCategory
+                ? t("takeoff.category.markingBanner", {
+                    label: activeCategory.label,
+                    count: regionCandidates.filter(
+                      (c) =>
+                        c.status === "confirmed" &&
+                        categoryKeyForLabel(categoryLabelForCandidate(c)) ===
+                          activeCategory.key
+                    ).length,
+                  })
+                : null
+            }
           />
         </div>
 
+        {isWideLayout ? (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            title={t("takeoff.viewer.resizePanelHint")}
+            className="hidden w-3 shrink-0 cursor-col-resize touch-none items-center justify-center self-stretch xl:flex"
+            onPointerDown={handlePanelResizeStart}
+          >
+            <div className="h-16 w-1 rounded-full bg-border transition-colors hover:bg-primary/60" />
+          </div>
+        ) : null}
+
         {/* Right: candidates review / occurrence list + quote */}
         <div
-          className={`flex flex-col gap-3 ${
+          className={`flex min-w-0 flex-col gap-3 ${
             isFullscreen ? "max-h-[calc(100vh-100px)]" : "max-h-[720px]"
           }`}
+          style={isWideLayout ? { width: rightPanelWidth, flexShrink: 0 } : undefined}
         >
           {loading ? (
             <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
@@ -1501,6 +1858,9 @@ export function PlanTakeoffWorkbench({
                     onDeleteAllRejected={
                       perms.allowConfirm ? handleDeleteAllRejected : undefined
                     }
+                    onDeleteAllCandidates={
+                      perms.allowConfirm ? handleDeleteAllCandidates : undefined
+                    }
                     onEvidenceClick={(id) => void handleEvidenceClick(id)}
                     evidenceThumbs={evidenceThumbs}
                     onEvidenceThumbClick={handleEvidenceThumbClick}
@@ -1510,7 +1870,25 @@ export function PlanTakeoffWorkbench({
                         ? (id) => void handleFindSimilarFromCandidate(id)
                         : undefined
                     }
+                    onFindSimilarConfirmed={
+                      perms.allowAnalyze ? handleFindSimilarConfirmedRow : undefined
+                    }
                     findSimilarBusy={similarFromConfirmedBusy}
+                    activeCategoryKey={activeCategory?.key ?? null}
+                    onStartCategoryMarking={
+                      perms.allowConfirm && perms.allowEdit
+                        ? handleStartCategoryMarking
+                        : undefined
+                    }
+                    onStopCategoryMarking={handleStopCategoryMarking}
+                    highlightedCategoryKeys={highlightedCategoryKeys}
+                    onHighlightCategory={handleToggleHighlightCategory}
+                    onMoveConfirmedToCategory={
+                      perms.allowConfirm ? handleMoveConfirmedToCategory : undefined
+                    }
+                    onRenameCategory={
+                      perms.allowConfirm ? handleRenameCategory : undefined
+                    }
                   />
                 ) : (
                   <TakeoffRightPanel

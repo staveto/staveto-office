@@ -34,9 +34,18 @@ import {
   Undo2,
   CheckCircle2,
   Highlighter,
+  Sparkles,
+  Trash2,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useI18n } from "@/i18n/I18nContext";
 import { cn } from "@/lib/utils";
 import type { DrawingOccurrence, NormalizedRect } from "@/types/drawingTakeoff";
@@ -63,6 +72,7 @@ import {
 } from "@/lib/takeoff/drawingTakeoff";
 import { loadPdfJsDocument, pdfJsWorkerSrc } from "@/lib/takeoff/loadPdfJsDocument";
 import { SELECTED_HIGHLIGHT_COLOR } from "@/lib/takeoff/selectionHighlight";
+import { categoryColorForKey, categoryKeyForLabel } from "@/lib/takeoff/takeoffCategories";
 
 type PdfDocument = {
   numPages: number;
@@ -86,6 +96,8 @@ export type MarkerMode = "select" | "pan" | "point" | "rect" | "analyze_region";
 
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
+/** Arrow-key pan distance (CSS px); Shift multiplies to ~a viewport. */
+const ARROW_PAN_STEP_PX = 80;
 
 const CANDIDATE_LAYER_COLORS: Record<SymbolColorLayer, string> = {
   green: "#16A34A",
@@ -213,6 +225,15 @@ type Props = {
   onScanWholePage?: (pageNumber: number) => void;
   scanningWholePage?: boolean;
   /**
+   * "Skenovať AI (Gemini)" — vision-based whole-page detection, separate
+   * opt-in action (costs money/time per call) from the free local scan
+   * above. Understands symbol shape/context, so it catches tightly
+   * clustered/touching symbols the local color-blob pipeline merges and
+   * rejects. Always produces review-only candidates (source: "gemini").
+   */
+  onScanWholePageWithAi?: (pageNumber: number) => void;
+  scanningWholePageWithAi?: boolean;
+  /**
    * Evidence focus — jump to page + scroll/zoom bbox into view
    * when the user clicks a takeoff quantity evidence link.
    */
@@ -221,6 +242,16 @@ type Props = {
     normalized: NormalizedRect;
     token: number;
   } | null;
+  /**
+   * Highlight this subset of candidate markers (a category from the panel)
+   * with the selection glow — like "Zvýrazniť všetko", but for one group.
+   */
+  highlightedCandidateIds?: string[] | null;
+  /**
+   * Overrides the point-mode hint text — used by the rapid category-marking
+   * workflow ("Klikaním pridávate: Svetlo — 6 ks").
+   */
+  pointModeHint?: string | null;
 };
 
 const MODE_BUTTONS: Array<{ mode: MarkerMode; icon: typeof MousePointer; labelKey: string }> = [
@@ -256,7 +287,11 @@ export function DrawingPdfViewer({
   onScanVisibleArea,
   onScanWholePage,
   scanningWholePage = false,
+  onScanWholePageWithAi,
+  scanningWholePageWithAi = false,
   focusEvidence = null,
+  highlightedCandidateIds = null,
+  pointModeHint = null,
 }: Props) {
   const { t } = useI18n();
   const [doc, setDoc] = useState<PdfDocument | null>(null);
@@ -286,7 +321,10 @@ export function DrawingPdfViewer({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const renderTaskRef = useRef<{ cancel: () => void } | null>(null);
+  /** Zoom value the CURRENT canvas was actually rendered at (not just requested). */
+  const renderedZoomRef = useRef<number | null>(null);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   // A completed drag suppresses the browser's synthetic click that follows
   // pointerup, so releasing a drag never also re-triggers marker selection.
@@ -375,6 +413,7 @@ export function DrawingPdfViewer({
       const cssHeight = Math.floor(viewport.height / dpr);
       canvas.style.width = `${cssWidth}px`;
       canvas.style.height = `${cssHeight}px`;
+      renderedZoomRef.current = zoom;
       setCanvasSize({ width: cssWidth, height: cssHeight });
       const task = pdfPage.render({ canvasContext: ctx, viewport });
       renderTaskRef.current = task;
@@ -502,8 +541,137 @@ export function DrawingPdfViewer({
 
   const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Number(z.toFixed(2))));
 
+  // Changing zoom re-renders the canvas at a new pixel size, but the
+  // browser keeps the OLD scrollLeft/Top — the visible content jumps to a
+  // random-feeling spot and any scrollTo() issued in the same tick gets
+  // clamped against the old canvas. Every zoom/centering request therefore
+  // goes through a pending "view request" that is applied only AFTER the
+  // canvas has re-rendered at the target zoom (canvasSize committed).
+  const pendingViewRef = useRef<{
+    zoom: number;
+    /** View-space normalized (0..1) point on the page to anchor. */
+    anchorNorm: { x: number; y: number };
+    /** Where that point must land inside the container viewport (px). */
+    anchorViewportPx: { x: number; y: number };
+    smooth: boolean;
+  } | null>(null);
+
+  const applyPendingView = useCallback(() => {
+    const pending = pendingViewRef.current;
+    if (!pending) return;
+    if (Math.abs(pending.zoom - zoom) > 0.001) return; // zoom state not landed yet
+    // canvasSize must belong to a render AT the pending zoom — right after
+    // setZoom the state matches but the canvas is still the old one, and
+    // scrolling against it would land (and stay) in the wrong place.
+    if (Math.abs((renderedZoomRef.current ?? -1) - pending.zoom) > 0.001) return;
+    const container = scrollRef.current;
+    const overlay = overlayRef.current;
+    if (!container || !overlay || canvasSize.width === 0) return;
+    pendingViewRef.current = null;
+    // Overlay offset inside the scroll content (accounts for p-2 padding
+    // and mx-auto centering) — measured AFTER the re-render, so it's the
+    // offset that matches the new canvas size.
+    const containerRect = container.getBoundingClientRect();
+    const overlayRect = overlay.getBoundingClientRect();
+    const overlayLeft = overlayRect.left - containerRect.left + container.scrollLeft;
+    const overlayTop = overlayRect.top - containerRect.top + container.scrollTop;
+    container.scrollTo({
+      left: Math.max(
+        0,
+        overlayLeft + pending.anchorNorm.x * canvasSize.width - pending.anchorViewportPx.x
+      ),
+      top: Math.max(
+        0,
+        overlayTop + pending.anchorNorm.y * canvasSize.height - pending.anchorViewportPx.y
+      ),
+      behavior: pending.smooth ? "smooth" : "auto",
+    });
+  }, [zoom, canvasSize]);
+
+  useEffect(() => {
+    applyPendingView();
+  }, [applyPendingView]);
+
+  /** Set zoom + keep a page point anchored at a viewport position. */
+  const requestView = useCallback(
+    (
+      nextZoom: number,
+      anchorNorm: { x: number; y: number },
+      anchorViewportPx?: { x: number; y: number },
+      smooth = false
+    ) => {
+      const container = scrollRef.current;
+      const clamped = clampZoom(nextZoom);
+      const viewportPx =
+        anchorViewportPx ??
+        (container
+          ? { x: container.clientWidth / 2, y: container.clientHeight / 2 }
+          : { x: 0, y: 0 });
+      pendingViewRef.current = { zoom: clamped, anchorNorm, anchorViewportPx: viewportPx, smooth };
+      if (Math.abs(clamped - zoom) < 0.001) {
+        // No re-render coming — apply the scroll straight away.
+        applyPendingView();
+      } else {
+        setZoom(clamped);
+      }
+    },
+    [zoom, applyPendingView]
+  );
+
+  /**
+   * Zoom keeping the point under `clientPoint` (or the viewport centre)
+   * visually fixed — the standard map-like zoom, instead of letting the
+   * content drift toward the top-left on every step.
+   */
+  const zoomAt = useCallback(
+    (nextZoom: number, clientPoint?: { x: number; y: number }) => {
+      const container = scrollRef.current;
+      const overlay = overlayRef.current;
+      if (!container || !overlay || canvasSize.width === 0) {
+        setZoom(clampZoom(nextZoom));
+        return;
+      }
+      const containerRect = container.getBoundingClientRect();
+      const client =
+        clientPoint ?? {
+          x: containerRect.left + container.clientWidth / 2,
+          y: containerRect.top + container.clientHeight / 2,
+        };
+      const overlayRect = overlay.getBoundingClientRect();
+      const anchorNorm = {
+        x: clamp01((client.x - overlayRect.left) / Math.max(1, overlayRect.width)),
+        y: clamp01((client.y - overlayRect.top) / Math.max(1, overlayRect.height)),
+      };
+      requestView(nextZoom, anchorNorm, {
+        x: client.x - containerRect.left,
+        y: client.y - containerRect.top,
+      });
+    },
+    [canvasSize, requestView]
+  );
+
+  // Ctrl/Cmd + mouse wheel zooms at the cursor (matches every PDF/map tool).
+  // Native listener because React's onWheel is passive and can't preventDefault.
+  const zoomAtRef = useRef(zoomAt);
+  zoomAtRef.current = zoomAt;
+  const zoomStateRef = useRef(zoom);
+  zoomStateRef.current = zoom;
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      zoomAtRef.current(zoomStateRef.current * factor, { x: e.clientX, y: e.clientY });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
   const applyFitWidth = useCallback(() => {
     // Baseline scale is fit-width by construction.
+    pendingViewRef.current = null;
     setZoom(1);
   }, []);
 
@@ -511,23 +679,27 @@ export function DrawingPdfViewer({
     const container = scrollRef.current;
     if (!container || canvasSize.width === 0 || zoom <= 0) return;
     const baseCss = { width: canvasSize.width / zoom, height: canvasSize.height / zoom };
-    setZoom(
-      clampZoom(
-        fitPageZoom(baseCss, {
-          width: container.clientWidth,
-          height: container.clientHeight,
-        })
-      )
+    const nextZoom = clampZoom(
+      fitPageZoom(baseCss, {
+        width: container.clientWidth,
+        height: container.clientHeight,
+      })
     );
-  }, [canvasSize, zoom]);
+    // Centre the page, not just resize it — "fit" landing on a corner reads
+    // as broken zoom.
+    requestView(nextZoom, { x: 0.5, y: 0.5 });
+  }, [canvasSize, zoom, requestView]);
 
   const resetView = useCallback(() => {
+    pendingViewRef.current = null;
     setZoom(1);
     setRotation(0);
     scrollRef.current?.scrollTo({ left: 0, top: 0 });
   }, []);
 
   const rotateBy = useCallback((delta: 90 | -90) => {
+    // Anchor points are view-space; a rotation invalidates them.
+    pendingViewRef.current = null;
     setRotation((r) => nextRotation(r, delta));
   }, []);
 
@@ -558,10 +730,59 @@ export function DrawingPdfViewer({
     ) {
       return;
     }
-    if (e.key === "+" || e.key === "=") {
-      setZoom((z) => clampZoom(z + 0.25));
+    // Arrow keys pan the plan (Shift = big steps). Handled explicitly so
+    // panning works regardless of which inner element holds focus.
+    if (
+      e.key === "ArrowLeft" ||
+      e.key === "ArrowRight" ||
+      e.key === "ArrowUp" ||
+      e.key === "ArrowDown"
+    ) {
+      const container = scrollRef.current;
+      if (!container) return;
+      const step = e.shiftKey
+        ? Math.max(120, Math.round(container.clientHeight * 0.75))
+        : ARROW_PAN_STEP_PX;
+      container.scrollBy({
+        left: e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0,
+        top: e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0,
+        behavior: "auto",
+      });
+      e.preventDefault();
+      return;
+    }
+    if (e.key === "PageUp") {
+      setPage((p) => Math.max(1, p - 1));
+    } else if (e.key === "PageDown") {
+      setPage((p) => Math.min(doc?.numPages ?? p, p + 1));
+    } else if (e.key === "Escape") {
+      setOverlapPicker(null);
+      setDragRect(null);
+      dragStartRef.current = null;
+      if (highlightAll) setHighlightAll(false);
+      // Esc also leaves any marking mode — the universal "stop what I'm
+      // doing" for the rapid category-marking workflow.
+      if (markerMode !== "select") onMarkerModeChange("select");
+    } else if ((e.key === "Delete" || e.key === "Backspace") && markerMode === "select") {
+      // Delete the currently selected mark — same paths (incl. the
+      // confirmation for confirmed symbols) as the inline X button.
+      const cand = selectedCandidateId
+        ? regionCandidates.find((c) => c.id === selectedCandidateId)
+        : null;
+      const occ = selectedOccurrenceId
+        ? occurrences.find((o) => o.id === selectedOccurrenceId)
+        : null;
+      if (cand && onCandidateDelete) {
+        handleCandidateDeleteClick(cand);
+      } else if (occ && onOccurrenceDelete) {
+        handleOccurrenceDeleteClick(occ);
+      } else {
+        return;
+      }
+    } else if (e.key === "+" || e.key === "=") {
+      zoomAt(zoom * 1.25);
     } else if (e.key === "-") {
-      setZoom((z) => clampZoom(z - 0.25));
+      zoomAt(zoom / 1.25);
     } else if (e.key === "0") {
       resetView();
     } else if (e.key === "f" || e.key === "F") {
@@ -609,7 +830,14 @@ export function DrawingPdfViewer({
       };
       return;
     }
-    if (markerMode === "select" || !onMarkerDrawn || analyzingRegion || scanningWholePage) return;
+    if (
+      markerMode === "select" ||
+      !onMarkerDrawn ||
+      analyzingRegion ||
+      scanningWholePage ||
+      scanningWholePageWithAi
+    )
+      return;
     const p = localPoint(e);
     if (!p) return;
     e.preventDefault();
@@ -648,7 +876,8 @@ export function DrawingPdfViewer({
       !onMarkerDrawn ||
       !start ||
       analyzingRegion ||
-      scanningWholePage
+      scanningWholePage ||
+      scanningWholePageWithAi
     ) {
       setDragRect(null);
       return;
@@ -673,6 +902,12 @@ export function DrawingPdfViewer({
     }
   };
 
+  // Category highlight from the panel ("Zvýrazniť" on a grouped position).
+  const highlightedIdSet = useMemo(
+    () => new Set(highlightedCandidateIds ?? []),
+    [highlightedCandidateIds]
+  );
+
   // Confirmed candidates STAY on the map (solid, checkmarked) so a counted
   // symbol never visually "disappears" — only rejected ones are hidden.
   const pageCandidates = useMemo(
@@ -685,6 +920,63 @@ export function DrawingPdfViewer({
       ),
     [regionCandidates, page]
   );
+
+  // Turning "highlight all" on must actually bring everything into view —
+  // a toggle that only re-styles markers still off-screen or too zoomed-in
+  // to see looks like it did nothing. Zoom-to-fit + center the union of all
+  // markers on the current page, once per (page, on) — never fights the
+  // user's own zoom/scroll again afterwards while it stays on.
+  const lastHighlightAllFitKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!highlightAll) {
+      lastHighlightAllFitKeyRef.current = null;
+      return;
+    }
+    if (lastHighlightAllFitKeyRef.current === String(page)) return;
+    const container = scrollRef.current;
+    if (!container || canvasSize.width === 0) return;
+
+    const rects = [
+      ...pageOccurrences.map((o) => toView(o.normalizedPosition)),
+      ...pageCandidates
+        .map((c) => (c.normalized_position ? toView(c.normalized_position) : null))
+        .filter((r): r is NormalizedRect => r !== null),
+    ];
+    if (rects.length === 0) return;
+    lastHighlightAllFitKeyRef.current = String(page);
+
+    let minX = 1;
+    let minY = 1;
+    let maxX = 0;
+    let maxY = 0;
+    for (const r of rects) {
+      minX = Math.min(minX, r.x);
+      minY = Math.min(minY, r.y);
+      maxX = Math.max(maxX, r.x + r.width);
+      maxY = Math.max(maxY, r.y + r.height);
+    }
+    // canvasSize already includes the current zoom — divide it out to get
+    // zoom-independent CSS pixel dimensions of the (unzoomed) page.
+    const baseWidth = canvasSize.width / zoom;
+    const baseHeight = canvasSize.height / zoom;
+    const spanWidthPx = Math.max(1, (maxX - minX) * baseWidth);
+    const spanHeightPx = Math.max(1, (maxY - minY) * baseHeight);
+    const padPx = 96;
+    const fitZoom = Math.min(
+      (container.clientWidth - padPx) / spanWidthPx,
+      (container.clientHeight - padPx) / spanHeightPx
+    );
+    const nextZoom = Math.min(3, Math.max(0.5, fitZoom));
+    // Centre the union of all marks — via the pending-view queue so the
+    // scroll happens AFTER the canvas re-rendered at the new zoom (a direct
+    // scrollTo would be clamped against the old canvas size).
+    requestView(
+      nextZoom,
+      { x: (minX + maxX) / 2, y: (minY + maxY) / 2 },
+      undefined,
+      true
+    );
+  }, [highlightAll, page, canvasSize, zoom, pageOccurrences, pageCandidates, toView, requestView]);
 
   // ---- Marker select / drag / delete interactions ---------------------------
 
@@ -713,7 +1005,11 @@ export function DrawingPdfViewer({
         }
       }
       for (const c of pageCandidates) {
-        const color = CANDIDATE_LAYER_COLORS[c.color_layer] ?? CANDIDATE_LAYER_COLORS.unknown;
+        const catLabel = c.label_suggestions[0]?.label;
+        const color =
+          c.status === "confirmed" && catLabel
+            ? categoryColorForKey(categoryKeyForLabel(catLabel))
+            : CANDIDATE_LAYER_COLORS[c.color_layer] ?? CANDIDATE_LAYER_COLORS.unknown;
         const r = normalizedToScreenRect(toView(c.normalized_position), canvasSize);
         const box = {
           x: r.x,
@@ -823,10 +1119,19 @@ export function DrawingPdfViewer({
     [canvasSize, fromView, onOccurrenceMove, onCandidateMove]
   );
 
+  // Deleting from the plan ALWAYS asks first — via an in-app dialog, never
+  // window.confirm (browsers may silently suppress repeated native dialogs,
+  // which made the (x) look completely broken).
+  const [deleteAsk, setDeleteAsk] = useState<
+    | { kind: "occurrence"; id: string; label: string }
+    | { kind: "candidate"; candidate: AnalyzeRegionCandidateDto; label: string }
+    | null
+  >(null);
+
   const handleOccurrenceDeleteClick = useCallback(
     (o: DrawingOccurrence) => {
       if (!onOccurrenceDelete) return;
-      onOccurrenceDelete(o.id);
+      setDeleteAsk({ kind: "occurrence", id: o.id, label: o.label });
     },
     [onOccurrenceDelete]
   );
@@ -834,19 +1139,21 @@ export function DrawingPdfViewer({
   const handleCandidateDeleteClick = useCallback(
     (c: AnalyzeRegionCandidateDto) => {
       if (!onCandidateDelete) return;
-      if (c.status === "confirmed") {
-        const label = c.label_suggestions[0]?.label ?? t("takeoff.review.status.confirmed");
-        const ok = window.confirm(
-          `${t("takeoff.review.deleteConfirmedTitle")}\n${t("takeoff.review.deleteConfirmedBody", {
-            name: label,
-          })}`
-        );
-        if (!ok) return;
-      }
-      onCandidateDelete(c);
+      setDeleteAsk({
+        kind: "candidate",
+        candidate: c,
+        label: c.label_suggestions[0]?.label ?? c.color_layer,
+      });
     },
-    [onCandidateDelete, t]
+    [onCandidateDelete]
   );
+
+  const confirmDeleteAsk = useCallback(() => {
+    if (!deleteAsk) return;
+    if (deleteAsk.kind === "occurrence") onOccurrenceDelete?.(deleteAsk.id);
+    else onCandidateDelete?.(deleteAsk.candidate);
+    setDeleteAsk(null);
+  }, [deleteAsk, onOccurrenceDelete, onCandidateDelete]);
 
   const layerLabel = (key: TakeoffLayerKey) => t(`takeoff.layer.${key}`);
 
@@ -879,6 +1186,7 @@ export function DrawingPdfViewer({
 
   return (
     <div
+      ref={rootRef}
       className="overflow-hidden rounded-xl border border-border bg-card outline-none"
       tabIndex={0}
       onKeyDown={handleKeyDown}
@@ -907,7 +1215,11 @@ export function DrawingPdfViewer({
               onClick={() => onMarkerModeChange(mode)}
               aria-pressed={markerMode === mode}
               title={t(labelKey)}
-              disabled={(analyzingRegion && mode !== "analyze_region") || scanningWholePage}
+              disabled={
+                (analyzingRegion && mode !== "analyze_region") ||
+                scanningWholePage ||
+                scanningWholePageWithAi
+              }
             >
               <Icon className="size-3.5" />
               <span className="hidden lg:inline">{t(labelKey)}</span>
@@ -918,7 +1230,7 @@ export function DrawingPdfViewer({
         {/* Primary AI-detection CTAs — always visible next to the mode
             switcher so "I want AI to find symbols" never means "draw a box
             first". Both reuse analyze-region v2 and only create candidates. */}
-        {showAnalyzeRegionMode && (onScanVisibleArea || onScanWholePage) ? (
+        {showAnalyzeRegionMode && (onScanVisibleArea || onScanWholePage || onScanWholePageWithAi) ? (
           <div className="flex items-center gap-1">
             {onScanVisibleArea ? (
               <Button
@@ -927,7 +1239,7 @@ export function DrawingPdfViewer({
                 variant="outline"
                 className="h-8 border-[#e06737]/50 text-[#C9552B] hover:bg-[#e06737]/10"
                 data-testid="scan-visible-area"
-                disabled={analyzingRegion || scanningWholePage || !doc}
+                disabled={analyzingRegion || scanningWholePage || scanningWholePageWithAi || !doc}
                 onClick={handleScanVisibleArea}
                 title={t("takeoff.viewer.scanVisibleArea")}
               >
@@ -942,13 +1254,30 @@ export function DrawingPdfViewer({
                 variant="outline"
                 className="h-8 border-[#e06737]/50 text-[#C9552B] hover:bg-[#e06737]/10"
                 data-testid="scan-whole-page"
-                disabled={analyzingRegion || scanningWholePage || !doc}
+                disabled={analyzingRegion || scanningWholePage || scanningWholePageWithAi || !doc}
                 onClick={() => onScanWholePage(page)}
                 title={t("takeoff.viewer.scanWholePage")}
               >
                 <LayoutGrid className="size-3.5 lg:mr-1" />
                 <span className="hidden lg:inline">
                   {scanningWholePage ? t("common.loading") : t("takeoff.viewer.scanWholePage")}
+                </span>
+              </Button>
+            ) : null}
+            {onScanWholePageWithAi ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 border-violet-400/60 text-violet-700 hover:bg-violet-100"
+                data-testid="scan-whole-page-ai"
+                disabled={analyzingRegion || scanningWholePage || scanningWholePageWithAi || !doc}
+                onClick={() => onScanWholePageWithAi(page)}
+                title={t("takeoff.viewer.scanWholePageAi")}
+              >
+                <Sparkles className="size-3.5 lg:mr-1" />
+                <span className="hidden lg:inline">
+                  {scanningWholePageWithAi ? t("common.loading") : t("takeoff.viewer.scanWholePageAi")}
                 </span>
               </Button>
             ) : null}
@@ -961,7 +1290,8 @@ export function DrawingPdfViewer({
             variant="outline"
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => setZoom((z) => clampZoom(z - 0.25))}
+            onClick={() => zoomAt(zoom / 1.25)}
+            title={`${t("takeoff.viewer.zoomOut")} (-)`}
             aria-label={t("takeoff.viewer.zoomOut")}
           >
             <Minus className="size-4" />
@@ -974,7 +1304,8 @@ export function DrawingPdfViewer({
             variant="outline"
             size="sm"
             className="h-8 w-8 p-0"
-            onClick={() => setZoom((z) => clampZoom(z + 0.25))}
+            onClick={() => zoomAt(zoom * 1.25)}
+            title={`${t("takeoff.viewer.zoomIn")} (+)`}
             aria-label={t("takeoff.viewer.zoomIn")}
           >
             <Plus className="size-4" />
@@ -1142,6 +1473,7 @@ export function DrawingPdfViewer({
       {(markerMode !== "select" && markerMode !== "pan") ||
       analyzingRegion ||
       scanningWholePage ||
+      scanningWholePageWithAi ||
       highlightAll ||
       (markerMode === "select" &&
         (onOccurrenceMove || onCandidateMove) &&
@@ -1151,25 +1483,29 @@ export function DrawingPdfViewer({
             "border-b border-border px-3 py-1.5 text-xs text-foreground",
             highlightAll
               ? "bg-[#C400FF]/10"
-              : markerMode === "analyze_region" || analyzingRegion || scanningWholePage
-                ? "bg-[#e06737]/15"
-                : "bg-primary/10"
+              : scanningWholePageWithAi
+                ? "bg-violet-100"
+                : markerMode === "analyze_region" || analyzingRegion || scanningWholePage
+                  ? "bg-[#e06737]/15"
+                  : "bg-primary/10"
           )}
           role="status"
         >
           {highlightAll
             ? t("takeoff.viewer.highlightAllHint")
-            : scanningWholePage
-              ? t("takeoff.viewer.scanWholePageLoading")
-              : analyzingRegion
-                ? t("takeoff.viewer.analyzeLoading")
-                : markerMode === "point"
-                  ? t("takeoff.viewer.pointHint")
-                  : markerMode === "analyze_region"
-                    ? t("takeoff.viewer.analyzeHint")
-                    : markerMode === "select"
-                      ? t("takeoff.viewer.dragMarkHint")
-                      : t("takeoff.viewer.rectHint")}
+            : scanningWholePageWithAi
+              ? t("takeoff.viewer.scanWholePageAiLoading")
+              : scanningWholePage
+                ? t("takeoff.viewer.scanWholePageLoading")
+                : analyzingRegion
+                  ? t("takeoff.viewer.analyzeLoading")
+                  : markerMode === "point"
+                    ? pointModeHint ?? t("takeoff.viewer.pointHint")
+                    : markerMode === "analyze_region"
+                      ? t("takeoff.viewer.analyzeHint")
+                      : markerMode === "select"
+                        ? `${t("takeoff.viewer.dragMarkHint")} ${t("takeoff.viewer.keyboardHint")}`
+                        : t("takeoff.viewer.rectHint")}
         </p>
       ) : null}
 
@@ -1177,6 +1513,14 @@ export function DrawingPdfViewer({
       <div
         ref={scrollRef}
         className={cn("relative overflow-auto bg-muted/60 p-2", heightClassName)}
+        onPointerDown={() => {
+          // Any interaction with the plan arms the keyboard shortcuts
+          // (arrows/+/-/Del…) without requiring an explicit Tab-focus first.
+          const root = rootRef.current;
+          if (root && !root.contains(document.activeElement)) {
+            root.focus({ preventScroll: true });
+          }
+        }}
       >
         {!doc || rendering ? (
           <div
@@ -1211,6 +1555,7 @@ export function DrawingPdfViewer({
             const style = occurrenceMarkerStyle(o);
             const isPicked = o.id === selectedOccurrenceId;
             const selected = highlightAll || isPicked;
+            const glowColor = isPicked ? SELECTED_HIGHLIGHT_COLOR : style.color;
             const isDragging = markerDrag?.kind === "occurrence" && markerDrag.id === o.id;
             const viewRect = isDragging
               ? {
@@ -1242,13 +1587,13 @@ export function DrawingPdfViewer({
                   height: h,
                   opacity: style.opacity,
                   border: selected
-                    ? `3px solid ${SELECTED_HIGHLIGHT_COLOR}`
+                    ? `3px solid ${glowColor}`
                     : `2px ${style.dashed ? "dashed" : "solid"} ${style.color}`,
                   backgroundColor: selected
-                    ? `${SELECTED_HIGHLIGHT_COLOR}55`
+                    ? `${glowColor}55`
                     : `${style.color}1E`,
                   boxShadow: selected
-                    ? `0 0 0 4px ${SELECTED_HIGHLIGHT_COLOR}aa, 0 0 14px 4px ${SELECTED_HIGHLIGHT_COLOR}`
+                    ? `0 0 0 4px ${glowColor}aa, 0 0 14px 4px ${glowColor}`
                     : undefined,
                 }}
                 onPointerDown={(e) => startMarkerDrag(e, "occurrence", o.id, o.normalizedPosition)}
@@ -1267,7 +1612,7 @@ export function DrawingPdfViewer({
                 <span
                   className="absolute -top-5 left-0 whitespace-nowrap rounded px-1 py-px text-[10px] font-bold text-white"
                   style={{
-                    backgroundColor: selected ? SELECTED_HIGHLIGHT_COLOR : style.color,
+                    backgroundColor: selected ? glowColor : style.color,
                   }}
                 >
                   {o.label}
@@ -1281,6 +1626,8 @@ export function DrawingPdfViewer({
                   type="button"
                   className="absolute z-40 flex size-5 items-center justify-center rounded-full border border-white bg-red-600 text-white shadow hover:bg-red-700"
                   style={{ left: rect.x + w - 9, top: rect.y - 9 }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onPointerUp={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleOccurrenceDeleteClick(o);
@@ -1296,12 +1643,22 @@ export function DrawingPdfViewer({
           })}
 
           {/* Region analyzer candidates — dashed = pending review, solid +
-              checkmark = confirmed (counted, but still visible on the map). */}
+              checkmark = confirmed (counted, but still visible on the map).
+              Confirmed marks are colored by their CATEGORY (operator
+              position), so different socket/light/switch types are visually
+              distinct on the plan; unconfirmed keep the detection layer color. */}
           {pageCandidates.map((c) => {
-            const color = CANDIDATE_LAYER_COLORS[c.color_layer] ?? CANDIDATE_LAYER_COLORS.unknown;
-            const isPicked = c.id === selectedCandidateId;
-            const selected = highlightAll || isPicked;
             const confirmed = c.status === "confirmed";
+            const categoryLabel = c.label_suggestions[0]?.label;
+            const color = confirmed && categoryLabel
+              ? categoryColorForKey(categoryKeyForLabel(categoryLabel))
+              : CANDIDATE_LAYER_COLORS[c.color_layer] ?? CANDIDATE_LAYER_COLORS.unknown;
+            const isPicked = c.id === selectedCandidateId;
+            const selected = highlightAll || isPicked || highlightedIdSet.has(c.id);
+            // Group highlights ("Zvýrazniť všetko" / category toggles) glow in
+            // the mark's OWN category color so different positions stay
+            // distinguishable; magenta is reserved for the single picked mark.
+            const glowColor = isPicked ? SELECTED_HIGHLIGHT_COLOR : color;
             const isDragging = markerDrag?.kind === "candidate" && markerDrag.id === c.id;
             const viewRect = isDragging
               ? {
@@ -1336,13 +1693,13 @@ export function DrawingPdfViewer({
                   width: w,
                   height: h,
                   border: selected
-                    ? `3px solid ${SELECTED_HIGHLIGHT_COLOR}`
+                    ? `3px solid ${glowColor}`
                     : `2px ${confirmed ? "solid" : "dashed"} ${color}`,
                   backgroundColor: selected
-                    ? `${SELECTED_HIGHLIGHT_COLOR}55`
+                    ? `${glowColor}55`
                     : `${color}${confirmed ? "30" : "22"}`,
                   boxShadow: selected
-                    ? `0 0 0 4px ${SELECTED_HIGHLIGHT_COLOR}aa, 0 0 14px 4px ${SELECTED_HIGHLIGHT_COLOR}`
+                    ? `0 0 0 4px ${glowColor}aa, 0 0 14px 4px ${glowColor}`
                     : undefined,
                 }}
                 onPointerDown={(e) => startMarkerDrag(e, "candidate", c.id, c.normalized_position)}
@@ -1361,7 +1718,7 @@ export function DrawingPdfViewer({
                 {confirmed ? (
                   <CheckCircle2
                     className="absolute -right-1.5 -top-1.5 size-3.5 rounded-full bg-white"
-                    style={{ color: selected ? SELECTED_HIGHLIGHT_COLOR : color }}
+                    style={{ color: selected ? glowColor : color }}
                   />
                 ) : null}
               </button>
@@ -1373,6 +1730,8 @@ export function DrawingPdfViewer({
                   type="button"
                   className="absolute z-40 flex size-5 items-center justify-center rounded-full border border-white bg-red-600 text-white shadow hover:bg-red-700"
                   style={{ left: rect.x + w - 9, top: rect.y - 9 }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onPointerUp={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleCandidateDeleteClick(c);
@@ -1470,6 +1829,40 @@ export function DrawingPdfViewer({
           </span>
         ))}
       </div>
+
+      {/* Inline (x) delete — always confirm before removing anything. */}
+      <Dialog
+        open={!!deleteAsk}
+        onOpenChange={(open) => {
+          if (!open) setDeleteAsk(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("takeoff.viewer.deleteAskTitle")}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {deleteAsk?.kind === "candidate" &&
+            deleteAsk.candidate.status === "confirmed"
+              ? t("takeoff.review.deleteConfirmedBody", { name: deleteAsk.label })
+              : t("takeoff.viewer.deleteAskBody", { name: deleteAsk?.label ?? "" })}
+          </p>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setDeleteAsk(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              data-testid="viewer-confirm-delete"
+              onClick={confirmDeleteAsk}
+            >
+              <Trash2 className="mr-1 size-3.5" />
+              {t("takeoff.review.delete")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

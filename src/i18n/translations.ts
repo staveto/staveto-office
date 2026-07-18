@@ -3809,16 +3809,57 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.viewer.rectHint": "Drag a rectangle around a symbol in the drawing.",
     "takeoff.viewer.highlightAll": "Show all on plan",
     "takeoff.viewer.highlightAllHint":
-      "All marks from the list are glowing on the plan. Anything on the drawing that is NOT glowing is still missing — mark it or scan that area.",
+      "All marks from the list are glowing on the plan (view auto-zoomed to fit them). Anything on the drawing that is NOT glowing is still missing — mark it or scan that area.",
     "takeoff.viewer.analyzeHint":
       "Drag a rectangle over a room or section. The app finds multiple symbol candidates inside — not one mark.",
     "takeoff.viewer.analyzeLoading": "Analyzing region… finding symbol candidates.",
     "takeoff.viewer.scanVisibleArea": "Scan visible area",
     "takeoff.viewer.scanWholePage": "Scan whole page",
     "takeoff.viewer.scanWholePageLoading": "Scanning the whole page in tiles… this can take a moment.",
+    "takeoff.viewer.scanWholePageAi": "AI scan (Gemini)",
+    "takeoff.viewer.scanWholePageAiLoading":
+      "Asking AI vision to find every symbol on the page… this uses paid AI credits and can take up to a minute.",
     "takeoff.viewer.deleteMarkInline": "Delete this mark",
+    "takeoff.viewer.deleteAskTitle": "Delete mark?",
+    "takeoff.viewer.deleteAskBody":
+      "Do you really want to delete the mark \"{{name}}\"? This cannot be undone.",
     "takeoff.viewer.overlapPickerHint": "Several marks are here — pick one:",
     "takeoff.viewer.dragMarkHint": "Drag a mark to reposition it.",
+    "takeoff.viewer.keyboardHint":
+      "Keyboard: arrows pan (Shift = big step), +/- zoom, Ctrl+wheel zoom at cursor, PgUp/PgDn pages, Del deletes the selected mark, Esc cancels.",
+    "takeoff.viewer.resizePanelHint": "Drag to resize the side panel",
+    "takeoff.category.new": "New item",
+    "takeoff.category.newTitle": "New item (position)",
+    "takeoff.category.newHint":
+      "Name the position (e.g. \"Ceiling light LED 12W\"), pick a type and click its symbols on the plan — every click adds one piece.",
+    "takeoff.category.nameLabel": "Item name",
+    "takeoff.category.namePlaceholder": "e.g. Socket 230V double",
+    "takeoff.category.startMarking": "Start marking",
+    "takeoff.category.stopMarking": "Finish",
+    "takeoff.category.addMarks": "Add marks",
+    "takeoff.category.addMarksHint":
+      "Click symbols of this item on the plan — every click adds one piece.",
+    "takeoff.category.markingBanner":
+      "Clicking adds: {{label}} — {{count}} pcs so far. Esc or \"Finish\" ends marking.",
+    "takeoff.category.highlight": "Highlight this item's marks on the plan",
+    "takeoff.category.expandHint": "Show individual marks",
+    "takeoff.category.pieces": "{{count}} pcs",
+    "takeoff.category.pageShort": "Page {{page}}",
+    "takeoff.category.emptyHint":
+      "No items yet. Create one with \"New item\" and click its symbols on the plan.",
+    "takeoff.category.moveMark": "Move to another item",
+    "takeoff.category.moveMarkTitle": "Move mark to another item",
+    "takeoff.category.moveMarkHint":
+      "Pick the item this mark belongs to, or type a new item name. Its piece moves with it.",
+    "takeoff.category.moveMarkNewLabel": "…or a new item",
+    "takeoff.category.moveMarkAction": "Move",
+    "takeoff.category.rename": "Rename item",
+    "takeoff.category.renameTitle": "Rename item",
+    "takeoff.category.renameHint":
+      "All marks of this item get the new name. Renaming to an existing item merges them.",
+    "takeoff.category.renameAction": "Rename",
+    "takeoff.toast.markMoved": "Mark moved to \"{{label}}\".",
+    "takeoff.toast.categoryRenamed": "Item renamed to \"{{label}}\".",
     "takeoff.analyzeRegion.button": "Analyze region",
     "takeoff.analyzeRegion.planQuality": "Plan quality",
     "takeoff.analyzeRegion.planQualityDetail": "{{type}} · {{ocr}}",
@@ -3880,6 +3921,10 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.review.status.needsInfo": "Needs info",
     "takeoff.review.delete": "Delete",
     "takeoff.review.deleteAllRejected": "Delete all",
+    "takeoff.review.deleteAllCandidates": "Delete all",
+    "takeoff.review.deleteAllCandidatesTitle": "Delete all candidates to review?",
+    "takeoff.review.deleteAllCandidatesBody":
+      "This permanently deletes all {{count}} rows in \"Candidates to review\" (not confirmed symbols, not already-rejected rows). Quantities are unaffected since none of these were confirmed. This cannot be undone.",
     "takeoff.review.deleteConfirmedTitle": "Delete confirmed symbol?",
     "takeoff.review.deleteConfirmedBody":
       "\"{{name}}\" will be removed and its quantity will be subtracted from the takeoff item. This cannot be undone.",
@@ -3888,6 +3933,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.toast.confirmedTypeChanged":
       "Symbol type changed — quantity moved to the new takeoff item.",
     "takeoff.toast.rejectedCleared": "Deleted {{count}} rejected candidates.",
+    "takeoff.toast.candidatesCleared": "Deleted {{count}} candidates awaiting review.",
     "takeoff.toast.analyzeRegionDone":
       "Found {{count}} candidates in the region — review overlays (not added to quote yet).",
     "takeoff.toast.analyzeRegionFailed": "Region analysis failed. Try a different area or mark manually.",
@@ -3895,6 +3941,14 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.toast.scanWholePageDone":
       "Found {{count}} candidates on the whole page — review overlays (not added to quote yet).",
     "takeoff.toast.scanWholePageFailed": "Whole-page scan failed. Try again or scan a smaller area.",
+    "takeoff.toast.scanWholePageAiDone":
+      "AI found {{count}} new candidates on the whole page — review overlays (not added to quote yet).",
+    "takeoff.toast.scanWholePageAiEmpty":
+      "AI found no new symbols — everything it saw is already marked or confirmed.",
+    "takeoff.toast.scanWholePageAiOnlyText":
+      "AI found no real symbols — it correctly ignored {{count}} text/number/legend items on this page. Try a smaller area, or mark manually if a symbol is really missing.",
+    "takeoff.toast.scanWholePageAiFailed":
+      "AI scan failed (no answer from Gemini). Try again later or use the free scan/manual marking instead.",
     "takeoff.toast.candidateConfirmed": "Symbol confirmed — takeoff quantity updated.",
     "takeoff.toast.candidateRejected": "Candidate rejected — quantity unchanged.",
     "takeoff.toast.reviewFailed": "Review action failed. Try again.",
@@ -4000,6 +4054,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.action.delete": "Delete",
     "takeoff.action.findSimilar": "Find similar",
     "takeoff.action.findSimilarBusy": "Searching…",
+    "takeoff.review.findSimilarConfirmedHint": "Find similar in the WHOLE drawing (all pages)",
     "takeoff.addDialog.title": "New item from drawing",
     "takeoff.addDialog.save": "Save item",
     "takeoff.addDialog.unitHint": "Default unit: {{unit}}. Quantity comes from the number of confirmed marks.",
@@ -9022,16 +9077,57 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.viewer.rectHint": "Ťahom nakreslite obdĺžnik okolo značky vo výkrese.",
     "takeoff.viewer.highlightAll": "Zvýrazniť všetko na pláne",
     "takeoff.viewer.highlightAllHint":
-      "Všetky značky zo zoznamu svietia vo výkrese. Čo vo výkrese NEsvieti, ešte chýba — označ to alebo naskenuj tú oblasť.",
+      "Všetky značky zo zoznamu svietia vo výkrese (pohľad sa automaticky priblížil, aby sa všetky zmestili). Čo vo výkrese NEsvieti, ešte chýba — označ to alebo naskenuj tú oblasť.",
     "takeoff.viewer.analyzeHint":
       "Ťahom označte miestnosť alebo časť pôdorysu. Aplikácia nájde viacero kandidátov vo vnútri — nie jednu značku.",
     "takeoff.viewer.scanVisibleArea": "Skenovať viditeľnú oblasť",
     "takeoff.viewer.scanWholePage": "Skenovať celú stranu",
     "takeoff.viewer.scanWholePageLoading": "Skenujeme celú stranu po dieloch… môže to chvíľu trvať.",
+    "takeoff.viewer.scanWholePageAi": "AI skenovanie (Gemini)",
+    "takeoff.viewer.scanWholePageAiLoading":
+      "AI prehliada celú stranu a hľadá všetky značky… využíva platené AI kredity, môže trvať aj minútu.",
     "takeoff.viewer.analyzeLoading": "Analyzujem oblasť… hľadám kandidátov značiek.",
     "takeoff.viewer.deleteMarkInline": "Vymazať túto značku",
+    "takeoff.viewer.deleteAskTitle": "Vymazať značku?",
+    "takeoff.viewer.deleteAskBody":
+      "Naozaj chcete vymazať značku \"{{name}}\"? Táto akcia sa nedá vrátiť.",
     "takeoff.viewer.overlapPickerHint": "Tu je viacero značiek — vyberte jednu:",
     "takeoff.viewer.dragMarkHint": "Značku presunieš ťahom.",
+    "takeoff.viewer.keyboardHint":
+      "Klávesnica: šípky posúvajú výkres (Shift = veľký krok), +/- zoom, Ctrl+koliesko zoom na kurzor, PgUp/PgDn strany, Del zmaže vybranú značku, Esc zruší.",
+    "takeoff.viewer.resizePanelHint": "Ťahaním zmeníš šírku bočného panela",
+    "takeoff.category.new": "Nová položka",
+    "takeoff.category.newTitle": "Nová položka (pozícia)",
+    "takeoff.category.newHint":
+      "Pomenujte pozíciu (napr. \"Stropné svetlo LED 12W\"), vyberte typ a klikajte na jej symboly vo výkrese — každý klik pridá jeden kus.",
+    "takeoff.category.nameLabel": "Názov položky",
+    "takeoff.category.namePlaceholder": "napr. Zásuvka 230V dvojitá",
+    "takeoff.category.startMarking": "Začať označovať",
+    "takeoff.category.stopMarking": "Ukončiť",
+    "takeoff.category.addMarks": "Doznačiť",
+    "takeoff.category.addMarksHint":
+      "Klikajte na symboly tejto položky vo výkrese — každý klik pridá jeden kus.",
+    "takeoff.category.markingBanner":
+      "Klikaním pridávate: {{label}} — zatiaľ {{count}} ks. Esc alebo \"Ukončiť\" zastaví označovanie.",
+    "takeoff.category.highlight": "Zvýrazniť značky tejto položky vo výkrese",
+    "takeoff.category.expandHint": "Zobraziť jednotlivé značky",
+    "takeoff.category.pieces": "{{count}} ks",
+    "takeoff.category.pageShort": "Strana {{page}}",
+    "takeoff.category.emptyHint":
+      "Zatiaľ žiadne položky. Vytvorte prvú cez \"Nová položka\" a klikajte na jej symboly vo výkrese.",
+    "takeoff.category.moveMark": "Presunúť do inej položky",
+    "takeoff.category.moveMarkTitle": "Presunúť značku do inej položky",
+    "takeoff.category.moveMarkHint":
+      "Vyberte položku, do ktorej značka patrí, alebo napíšte názov novej položky. Kus sa presunie spolu s ňou.",
+    "takeoff.category.moveMarkNewLabel": "…alebo nová položka",
+    "takeoff.category.moveMarkAction": "Presunúť",
+    "takeoff.category.rename": "Premenovať položku",
+    "takeoff.category.renameTitle": "Premenovať položku",
+    "takeoff.category.renameHint":
+      "Všetky značky tejto položky dostanú nový názov. Premenovaním na existujúcu položku sa zlúčia.",
+    "takeoff.category.renameAction": "Premenovať",
+    "takeoff.toast.markMoved": "Značka presunutá do \"{{label}}\".",
+    "takeoff.toast.categoryRenamed": "Položka premenovaná na \"{{label}}\".",
     "takeoff.analyzeRegion.button": "Analyzovať oblasť",
     "takeoff.analyzeRegion.planQuality": "Kvalita výkresu",
     "takeoff.analyzeRegion.planQualityDetail": "{{type}} · {{ocr}}",
@@ -9093,6 +9189,10 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.review.status.needsInfo": "Potrebné doplniť",
     "takeoff.review.delete": "Vymazať",
     "takeoff.review.deleteAllRejected": "Vymazať všetky",
+    "takeoff.review.deleteAllCandidates": "Vymazať všetky",
+    "takeoff.review.deleteAllCandidatesTitle": "Vymazať všetkých kandidátov na kontrolu?",
+    "takeoff.review.deleteAllCandidatesBody":
+      "Natrvalo sa vymaže všetkých {{count}} riadkov v sekcii „Kandidáti na kontrolu“ (nie potvrdené značky, nie už odmietnuté riadky). Množstvá vo výkaze sa nezmenia, pretože žiadny z nich nebol potvrdený. Túto akciu nie je možné vrátiť späť.",
     "takeoff.review.deleteConfirmedTitle": "Vymazať potvrdenú značku?",
     "takeoff.review.deleteConfirmedBody":
       "„{{name}}“ bude odstránená a jej množstvo sa odpočíta z položky výkazu. Túto akciu nie je možné vrátiť späť.",
@@ -9100,6 +9200,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.toast.confirmedDeleted": "Potvrdená značka vymazaná — množstvo aktualizované.",
     "takeoff.toast.confirmedTypeChanged":
       "Typ značky zmenený — množstvo presunuté do novej položky výkazu.",
+    "takeoff.toast.candidatesCleared": "Vymazaných {{count}} kandidátov na kontrolu.",
     "takeoff.toast.rejectedCleared": "Vymazaných {{count}} odmietnutých kandidátov.",
     "takeoff.toast.analyzeRegionDone":
       "V oblasti sme našli {{count}} kandidátov — skontrolujte overlay (ešte nie sú v ponuke).",
@@ -9110,6 +9211,14 @@ export const translations: Record<Locale, Record<string, string>> = {
       "Na celej strane sme našli {{count}} kandidátov — skontrolujte overlay (ešte nie sú v ponuke).",
     "takeoff.toast.scanWholePageFailed":
       "Skenovanie celej strany zlyhalo. Skúste znova alebo skenujte menšiu oblasť.",
+    "takeoff.toast.scanWholePageAiDone":
+      "AI našla {{count}} nových kandidátov na celej strane — skontrolujte overlay (ešte nie sú v ponuke).",
+    "takeoff.toast.scanWholePageAiEmpty":
+      "AI nenašla žiadne nové značky — všetko, čo videla, je už označené alebo potvrdené.",
+    "takeoff.toast.scanWholePageAiOnlyText":
+      "AI nenašla žiadne reálne značky — správne ignorovala {{count}} textov/čísel/položiek legendy na tejto strane. Skúste menšiu oblasť, alebo označte ručne, ak tam naozaj chýba značka.",
+    "takeoff.toast.scanWholePageAiFailed":
+      "AI skenovanie zlyhalo (Gemini neodpovedala). Skúste to neskôr alebo použite bezplatné skenovanie / ručné značenie.",
     "takeoff.toast.candidateConfirmed": "Značka potvrdená — množstvo vo výkaze aktualizované.",
     "takeoff.toast.candidateRejected": "Kandidát odmietnutý — množstvo sa nezmenilo.",
     "takeoff.toast.reviewFailed": "Akcia kontroly zlyhala. Skúste znova.",
@@ -9215,6 +9324,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.action.delete": "Zmazať",
     "takeoff.action.findSimilar": "Nájsť podobné",
     "takeoff.action.findSimilarBusy": "Hľadám…",
+    "takeoff.review.findSimilarConfirmedHint": "Nájsť podobné v CELOM výkrese (všetky strany)",
     "takeoff.addDialog.title": "Nová položka z výkresu",
     "takeoff.addDialog.save": "Uložiť položku",
     "takeoff.addDialog.unitHint": "Predvolená jednotka: {{unit}}. Množstvo vzniká z počtu potvrdených značiek.",

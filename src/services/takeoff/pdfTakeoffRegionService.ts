@@ -429,6 +429,23 @@ export async function deleteTakeoffEvidence(
   await deleteDoc(doc(db, "projects", projectId, "takeoffEvidence", evidenceId));
 }
 
+/**
+ * Re-link an evidence row to a different takeoff item — used when a
+ * confirmed mark is moved to another category/position (its quantity moves
+ * buckets, and its evidence must follow so counts stay traceable).
+ */
+export async function updateTakeoffEvidenceItem(
+  projectId: string,
+  evidenceId: string,
+  takeoffItemId: string
+): Promise<void> {
+  const db = getFirestoreInstance();
+  if (!db) throw new Error("Firestore not configured");
+  await updateDoc(doc(db, "projects", projectId, "takeoffEvidence", evidenceId), {
+    takeoffItemId,
+  });
+}
+
 /** Evidence rows created by a specific confirmed symbol (duplicate-conflict lookup). */
 export async function listTakeoffEvidenceForConfirmedSymbol(
   projectId: string,

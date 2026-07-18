@@ -28,6 +28,7 @@ vi.mock("@/services/takeoff/pdfTakeoffRegionService", () => ({
   updateConfirmedSymbolType: vi.fn(),
   updateSymbolCandidatePosition: vi.fn(),
   updateConfirmedSymbolPosition: vi.fn(),
+  updateTakeoffEvidenceItem: vi.fn(),
 }));
 
 vi.mock("@/services/takeoff/takeoffImageService", () => ({
@@ -41,6 +42,7 @@ import {
   deleteCandidate,
   DuplicateConfirmedSymbolError,
   moveCandidateOrConfirmedSymbol,
+  moveConfirmedSymbolToCategory,
   rejectSymbolCandidate,
   unconfirmAndDeleteSymbol,
 } from "./symbolCandidateReviewService";
@@ -60,6 +62,7 @@ import {
   updateConfirmedSymbolType,
   updateSymbolCandidatePosition,
   updateSymbolCandidateStatus,
+  updateTakeoffEvidenceItem,
   upsertTakeoffItem,
 } from "@/services/takeoff/pdfTakeoffRegionService";
 
@@ -116,6 +119,7 @@ beforeEach(() => {
   vi.mocked(getSymbolCandidate).mockResolvedValue(candidateRow());
   vi.mocked(listTakeoffItems).mockResolvedValue([]);
   vi.mocked(listTakeoffEvidenceForConfirmedSymbol).mockResolvedValue([]);
+  vi.mocked(updateTakeoffEvidenceItem).mockResolvedValue(undefined);
   vi.mocked(upsertTakeoffItem).mockImplementation(async (item) => item);
   vi.mocked(createConfirmedSymbol).mockImplementation(
     async (input) =>
@@ -701,5 +705,160 @@ describe("moveCandidateOrConfirmedSymbol — drag-to-reposition on the plan", ()
       "cand_1",
       expect.objectContaining({ normalizedPosition: NEW_POSITION })
     );
+  });
+});
+
+describe("moveConfirmedSymbolToCategory — move a mark between positions", () => {
+  function confirmedRow(overrides?: Partial<ConfirmedSymbol>): ConfirmedSymbol {
+    return {
+      id: "csym_1",
+      candidateId: "cand_1",
+      drawingId: "d1",
+      projectId: "p1",
+      pageNumber: 2,
+      bboxPdf: [100, 100, 120, 120],
+      normalizedPosition: NORMALIZED,
+      symbolType: "socket",
+      profession: "electrical",
+      roomId: null,
+      zoneId: null,
+      quantityValue: 1,
+      quantityUnit: "ks",
+      confirmationSource: "user",
+      confidence: 0.9,
+      evidenceImageUrl: null,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      ...overrides,
+    };
+  }
+
+  const socketItem = {
+    id: "titem_socket",
+    projectId: "p1",
+    drawingId: "d1",
+    quoteId: null,
+    name: "zásuvka",
+    profession: "electrical",
+    quantity: 3,
+    unit: "ks",
+    sourceOfQuantity: "symbol_detection" as const,
+    status: "confirmed" as const,
+    evidenceCount: 3,
+    metadata: { symbolType: "socket" },
+    createdAt: "",
+    updatedAt: "",
+  };
+
+  it("throws when the candidate has no backing confirmed symbol", async () => {
+    vi.mocked(getConfirmedSymbolByCandidateId).mockResolvedValue(null);
+
+    await expect(
+      moveConfirmedSymbolToCategory({
+        projectId: "p1",
+        candidateId: "cand_missing",
+        label: "Zásuvka 2x pod sebou",
+      })
+    ).rejects.toThrow("CONFIRMED_SYMBOL_NOT_FOUND");
+  });
+
+  it("moves one piece to a NEW position item and re-links the evidence", async () => {
+    vi.mocked(getConfirmedSymbolByCandidateId).mockResolvedValue(confirmedRow());
+    vi.mocked(listTakeoffItems).mockResolvedValue([socketItem]);
+    vi.mocked(listTakeoffEvidenceForConfirmedSymbol).mockResolvedValue([
+      { id: "tev_1", takeoffItemId: "titem_socket" } as never,
+    ]);
+
+    const result = await moveConfirmedSymbolToCategory({
+      projectId: "p1",
+      candidateId: "cand_1",
+      label: "Zásuvka 2x pod sebou",
+    });
+
+    // Old item decremented (3 → 2), never deleted while evidence remains.
+    const decremented = vi
+      .mocked(upsertTakeoffItem)
+      .mock.calls.find(([i]) => i.id === "titem_socket")?.[0];
+    expect(decremented?.quantity).toBe(2);
+    expect(decremented?.evidenceCount).toBe(2);
+
+    // New position item created with the mark's piece.
+    const created = vi
+      .mocked(upsertTakeoffItem)
+      .mock.calls.find(([i]) => i.name === "Zásuvka 2x pod sebou")?.[0];
+    expect(created?.quantity).toBe(1);
+    expect(created?.evidenceCount).toBe(1);
+
+    // Evidence follows into the new bucket; candidate gets the new label.
+    expect(updateTakeoffEvidenceItem).toHaveBeenCalledWith(
+      "p1",
+      "tev_1",
+      result.takeoffItemId
+    );
+    expect(updateSymbolCandidateStatus).toHaveBeenCalledWith(
+      "p1",
+      "cand_1",
+      expect.objectContaining({
+        labelSuggestions: [{ label: "Zásuvka 2x pod sebou", confidence: 1 }],
+      })
+    );
+    // Type unchanged — no confirmedSymbol type write needed.
+    expect(updateConfirmedSymbolType).not.toHaveBeenCalled();
+  });
+
+  it("merges into an existing position when the target name already exists (case-insensitive)", async () => {
+    vi.mocked(getConfirmedSymbolByCandidateId).mockResolvedValue(confirmedRow());
+    const doubleSocketItem = {
+      ...socketItem,
+      id: "titem_double",
+      name: "Zásuvka 2x pod sebou",
+      quantity: 5,
+      evidenceCount: 5,
+    };
+    vi.mocked(listTakeoffItems).mockResolvedValue([socketItem, doubleSocketItem]);
+    vi.mocked(listTakeoffEvidenceForConfirmedSymbol).mockResolvedValue([
+      { id: "tev_1", takeoffItemId: "titem_socket" } as never,
+    ]);
+
+    const result = await moveConfirmedSymbolToCategory({
+      projectId: "p1",
+      candidateId: "cand_1",
+      label: "zásuvka 2X POD SEBOU",
+    });
+
+    expect(result.takeoffItemId).toBe("titem_double");
+    const merged = vi
+      .mocked(upsertTakeoffItem)
+      .mock.calls.find(([i]) => i.id === "titem_double")?.[0];
+    expect(merged?.quantity).toBe(6);
+    expect(merged?.evidenceCount).toBe(6);
+  });
+
+  it("removes the old item entirely when the moved mark was its only evidence", async () => {
+    vi.mocked(getConfirmedSymbolByCandidateId).mockResolvedValue(confirmedRow());
+    vi.mocked(listTakeoffItems).mockResolvedValue([
+      { ...socketItem, quantity: 1, evidenceCount: 1 },
+    ]);
+    vi.mocked(listTakeoffEvidenceForConfirmedSymbol).mockResolvedValue([
+      { id: "tev_1", takeoffItemId: "titem_socket" } as never,
+    ]);
+
+    await moveConfirmedSymbolToCategory({
+      projectId: "p1",
+      candidateId: "cand_1",
+      label: "Zásuvka 2x pod sebou",
+    });
+
+    expect(deleteTakeoffItem).toHaveBeenCalledExactlyOnceWith("p1", "titem_socket");
+  });
+
+  it("rejects an empty target label", async () => {
+    await expect(
+      moveConfirmedSymbolToCategory({
+        projectId: "p1",
+        candidateId: "cand_1",
+        label: "   ",
+      })
+    ).rejects.toThrow("CATEGORY_LABEL_REQUIRED");
   });
 });

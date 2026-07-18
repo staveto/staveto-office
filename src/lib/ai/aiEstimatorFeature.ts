@@ -93,6 +93,21 @@ export function isPdfTakeoffRegionAnalyzerEnabled(): boolean {
 }
 
 /**
+ * "Skenovať AI (Gemini)" whole-page vision detection inside /takeoff — an
+ * explicit, PAID per-click action (same detectPlanSymbols Cloud Function as
+ * the AI Estimator's "highlight all symbols"). Default ON alongside the
+ * region analyzer so the button is available wherever that cost is already
+ * accepted; set NEXT_PUBLIC_ENABLE_PDF_TAKEOFF_AI_SCAN=0 to hide just this
+ * button without disabling the free color/template pipeline.
+ */
+export function isPdfTakeoffAiScanEnabled(): boolean {
+  return (
+    isPdfTakeoffRegionAnalyzerEnabled() &&
+    process.env.NEXT_PUBLIC_ENABLE_PDF_TAKEOFF_AI_SCAN !== "0"
+  );
+}
+
+/**
  * Detection debug panel in the takeoff workbench (region crop, masks,
  * before/after candidates, thresholds). Dev builds default ON; production
  * requires NEXT_PUBLIC_TAKEOFF_DETECTION_DEBUG=1 explicitly.

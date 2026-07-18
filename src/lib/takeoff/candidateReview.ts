@@ -193,8 +193,21 @@ export function dtoFromSymbolCandidate(c: SymbolCandidate): AnalyzeRegionCandida
 }
 
 /**
- * Apply +1 quantity for a confirmed symbol onto takeoff items (same
- * project + drawing + profession + symbolType/name).
+ * Case/whitespace-insensitive item-name key. Kept local (not imported from
+ * takeoffCategories) to avoid a module cycle — takeoffCategories already
+ * imports from this file.
+ */
+function normalizeItemName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/**
+ * Apply +1 quantity for a confirmed symbol onto takeoff items.
+ *
+ * Buckets by NORMALIZED NAME (the operator's category/position), not by
+ * symbolType — two different sockets ("Zásuvka 230V" vs "Zásuvka 2x pod
+ * sebou") are separate positions with separate counts even though both are
+ * type "socket".
  */
 export function applyConfirmToTakeoffItems(params: {
   items: TakeoffItem[];
@@ -221,13 +234,14 @@ export function applyConfirmToTakeoffItems(params: {
     newItemId,
   } = params;
 
+  const nameKey = normalizeItemName(name);
   const existing = items.find(
     (i) =>
       i.drawingId === drawingId &&
       i.profession === profession &&
       i.sourceOfQuantity === "symbol_detection" &&
       i.status !== "excluded" &&
-      (i.metadata?.symbolType === symbolType || i.name === name)
+      normalizeItemName(i.name) === nameKey
   );
 
   if (existing) {
@@ -278,16 +292,35 @@ export function applyUnconfirmToTakeoffItems(params: {
   name: string;
   quantityValue: number;
   now: string;
+  /**
+   * Exact item to decrement (from the symbol's takeoffEvidence link) —
+   * takes precedence over name/type matching, so reversal always hits the
+   * item the confirm actually incremented even after renames/splits.
+   */
+  takeoffItemId?: string | null;
 }): { updatedItem: TakeoffItem | null; removeItemId: string | null } {
   const { items, drawingId, profession, symbolType, name, quantityValue, now } = params;
 
-  const existing = items.find(
-    (i) =>
-      i.drawingId === drawingId &&
-      i.profession === profession &&
-      i.sourceOfQuantity === "symbol_detection" &&
-      (i.metadata?.symbolType === symbolType || i.name === name)
-  );
+  const nameKey = normalizeItemName(name);
+  const existing =
+    (params.takeoffItemId
+      ? items.find((i) => i.id === params.takeoffItemId)
+      : undefined) ??
+    items.find(
+      (i) =>
+        i.drawingId === drawingId &&
+        i.profession === profession &&
+        i.sourceOfQuantity === "symbol_detection" &&
+        normalizeItemName(i.name) === nameKey
+    ) ??
+    // Legacy fallback — items created before name-based bucketing.
+    items.find(
+      (i) =>
+        i.drawingId === drawingId &&
+        i.profession === profession &&
+        i.sourceOfQuantity === "symbol_detection" &&
+        i.metadata?.symbolType === symbolType
+    );
   if (!existing) return { updatedItem: null, removeItemId: null };
 
   const nextQuantity = existing.quantity - quantityValue;

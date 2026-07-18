@@ -18,8 +18,13 @@ import {
   Copy,
   Trash2,
   MapPin,
+  Plus,
+  Highlighter,
+  MousePointerClick,
+  FolderInput,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -45,6 +50,11 @@ import {
   groupCandidatesForReview,
 } from "@/lib/takeoff/candidateReview";
 import { SELECTED_HIGHLIGHT_COLOR } from "@/lib/takeoff/selectionHighlight";
+import {
+  categoryKeyForLabel,
+  categoryLabelForCandidate,
+  groupConfirmedByCategory,
+} from "@/lib/takeoff/takeoffCategories";
 import { LegendOnlyBadge } from "./LegendOnlyBadge";
 
 function sourceLabelKey(source: AnalyzeRegionCandidateDto["source"]): string {
@@ -122,6 +132,8 @@ type Props = {
   onDeleteConfirmed?: (candidateId: string) => Promise<void>;
   /** Bulk-clear every rejected/hidden row in one action. */
   onDeleteAllRejected?: () => Promise<void>;
+  /** Bulk-clear every row still awaiting review (never confirmed/rejected). */
+  onDeleteAllCandidates?: () => Promise<void>;
   onEvidenceClick: (takeoffItemId: string) => void;
   /** Evidence thumbnails for the last clicked takeoff item (Phase 2.5). */
   evidenceThumbs?: { itemId: string; itemName: string; thumbs: EvidenceThumb[] } | null;
@@ -135,6 +147,40 @@ type Props = {
    */
   onFindSimilar?: (candidateId: string) => void;
   findSimilarBusy?: boolean;
+  /**
+   * Search the WHOLE drawing (every page) for symbols matching an
+   * already-CONFIRMED one — a validated mark is a trustworthy template, so
+   * this scans further than the pre-confirm "Nájsť podobné" (current page
+   * only). Undefined hides the action on confirmed rows.
+   */
+  onFindSimilarConfirmed?: (candidateId: string) => void;
+  /**
+   * Rapid category marking — the operator's primary counting workflow:
+   * pick (or create) a position, then click-count its symbols on the plan.
+   * `activeCategoryKey` marks which category is currently being clicked.
+   */
+  activeCategoryKey?: string | null;
+  onStartCategoryMarking?: (category: {
+    key: string;
+    label: string;
+    symbolType: string;
+  }) => void;
+  onStopCategoryMarking?: () => void;
+  /**
+   * Categories whose marks currently glow on the plan. The highlighter
+   * button toggles each category independently, so the operator can light
+   * up exactly the positions they're checking (one, several, or all).
+   */
+  highlightedCategoryKeys?: string[];
+  onHighlightCategory?: (key: string) => void;
+  /**
+   * Move ONE confirmed mark into a different position/category — the fix
+   * for "this socket is actually the double-socket type". Creates the
+   * target position when it doesn't exist yet.
+   */
+  onMoveConfirmedToCategory?: (candidateId: string, label: string) => Promise<void>;
+  /** Rename a whole position (relabels every mark in it; merges on name clash). */
+  onRenameCategory?: (categoryKey: string, newLabel: string) => Promise<void>;
 };
 
 export function SymbolCandidateReviewPanel({
@@ -152,17 +198,41 @@ export function SymbolCandidateReviewPanel({
   onDeleteCandidate,
   onDeleteConfirmed,
   onDeleteAllRejected,
+  onDeleteAllCandidates,
   onEvidenceClick,
   evidenceThumbs = null,
   onEvidenceThumbClick,
   canReview = true,
   onFindSimilar,
   findSimilarBusy = false,
+  onFindSimilarConfirmed,
+  activeCategoryKey = null,
+  onStartCategoryMarking,
+  onStopCategoryMarking,
+  highlightedCategoryKeys = [],
+  onHighlightCategory,
+  onMoveConfirmedToCategory,
+  onRenameCategory,
 }: Props) {
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const [showConfirmed, setShowConfirmed] = useState(false);
+  // Grouped categories make the confirmed section compact — the operator's
+  // primary working list, so it starts open.
+  const [showConfirmed, setShowConfirmed] = useState(true);
   const [showRejected, setShowRejected] = useState(false);
+  // Individual marks inside a category — collapsed by default ("Svetlo × 6"
+  // is the useful row; 6 identical child rows are detail-on-demand).
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [newCategoryOpen, setNewCategoryOpen] = useState(false);
+  const [newCategoryLabel, setNewCategoryLabel] = useState("");
+  const [newCategoryType, setNewCategoryType] = useState("light");
+  // "Presunúť do inej položky" — one mark; "Premenovať" — whole category.
+  const [moveFor, setMoveFor] = useState<AnalyzeRegionCandidateDto | null>(null);
+  const [moveNewLabel, setMoveNewLabel] = useState("");
+  const [moveBusy, setMoveBusy] = useState(false);
+  const [renameFor, setRenameFor] = useState<{ key: string; label: string } | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameBusy, setRenameBusy] = useState(false);
   const [changeTypeFor, setChangeTypeFor] = useState<AnalyzeRegionCandidateDto | null>(
     null
   );
@@ -171,13 +241,20 @@ export function SymbolCandidateReviewPanel({
     null
   );
   const [deletingAllRejected, setDeletingAllRejected] = useState(false);
+  const [deletingAllCandidates, setDeletingAllCandidates] = useState(false);
+  const [deleteAllCandidatesConfirmOpen, setDeleteAllCandidatesConfirmOpen] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
 
   // Clicking a confirmed/rejected marker on the map selects it here too —
-  // auto-expand the section it lives in so the row isn't silently hidden.
+  // auto-expand the section AND the category it lives in so the row isn't
+  // silently hidden.
   const selectedCandidate = candidates.find((c) => c.id === selectedId) ?? null;
   useEffect(() => {
-    if (selectedCandidate?.status === "confirmed") setShowConfirmed(true);
+    if (selectedCandidate?.status === "confirmed") {
+      setShowConfirmed(true);
+      const key = categoryKeyForLabel(categoryLabelForCandidate(selectedCandidate));
+      setExpandedCategories((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
+    }
     if (selectedCandidate?.status === "rejected") setShowRejected(true);
   }, [selectedCandidate]);
 
@@ -195,6 +272,10 @@ export function SymbolCandidateReviewPanel({
   const confirmedCandidates = useMemo(
     () => candidates.filter((c) => c.status === "confirmed"),
     [candidates]
+  );
+  const confirmedCategories = useMemo(
+    () => groupConfirmedByCategory(confirmedCandidates),
+    [confirmedCandidates]
   );
   const rejectedCandidates = useMemo(
     () => candidates.filter((c) => c.status === "rejected"),
@@ -217,7 +298,10 @@ export function SymbolCandidateReviewPanel({
     confirmedCandidates.length === 0 &&
     rejectedCandidates.length === 0 &&
     detectionItems.length === 0 &&
-    legendItems.length === 0
+    legendItems.length === 0 &&
+    // With category marking available, the "empty" state still needs the
+    // primary CTA — the operator starts by creating their first position.
+    !(canReview && onStartCategoryMarking)
   ) {
     return (
       <div className="rounded-lg border border-dashed border-border bg-muted/40 px-3 py-4 text-center text-xs text-muted-foreground">
@@ -251,6 +335,25 @@ export function SymbolCandidateReviewPanel({
           >
             <CheckCheck className="mr-1 size-3.5" />
             {t("takeoff.review.confirmAllProbable")}
+          </Button>
+        ) : null}
+        {canReview && onDeleteAllCandidates && activeCount > 0 ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className={cn(
+              "h-7 text-xs text-destructive hover:text-destructive",
+              probableCount === 0 && "ml-auto"
+            )}
+            disabled={busy || deletingAllCandidates}
+            data-testid="delete-all-candidates"
+            onClick={() => setDeleteAllCandidatesConfirmOpen(true)}
+          >
+            <Trash2 className="mr-1 size-3.5" />
+            {deletingAllCandidates
+              ? t("common.loading")
+              : t("takeoff.review.deleteAllCandidates")}
           </Button>
         ) : null}
       </div>
@@ -449,84 +552,253 @@ export function SymbolCandidateReviewPanel({
           );
         })}
 
-        {/* Section 2 — Potvrdené značky */}
-        {confirmedCandidates.length > 0 ? (
+        {/* Section 2 — Potvrdené značky, grouped into operator categories
+            (positions). One row per position: color chip + label + piece
+            count + "Doznačiť" to click-count more of the same symbol. */}
+        {confirmedCandidates.length > 0 || (canReview && onStartCategoryMarking) ? (
           <div
             className="overflow-hidden rounded-lg border border-emerald-600/30 bg-card"
             data-testid="section-confirmed"
           >
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-xs font-semibold text-foreground hover:bg-muted/50"
-              onClick={() => setShowConfirmed((v) => !v)}
-            >
-              {showConfirmed ? (
-                <ChevronDown className="size-3.5 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="size-3.5 text-muted-foreground" />
-              )}
-              <span>{t("takeoff.review.sectionConfirmed")}</span>
-              <span className="ml-auto tabular-nums text-muted-foreground">
-                {confirmedCandidates.length}
-              </span>
-            </button>
+            <div className="flex w-full items-center gap-2 px-2.5 py-1.5">
+              <button
+                type="button"
+                className="flex min-w-0 flex-1 items-center gap-2 text-left text-xs font-semibold text-foreground hover:bg-muted/50"
+                onClick={() => setShowConfirmed((v) => !v)}
+              >
+                {showConfirmed ? (
+                  <ChevronDown className="size-3.5 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="size-3.5 text-muted-foreground" />
+                )}
+                <span>{t("takeoff.review.sectionConfirmed")}</span>
+                <span className="tabular-nums text-muted-foreground">
+                  {confirmedCandidates.length}
+                </span>
+              </button>
+              {canReview && onStartCategoryMarking ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-6 shrink-0 px-1.5 text-[10px]"
+                  disabled={busy}
+                  data-testid="new-category"
+                  onClick={() => {
+                    setNewCategoryLabel("");
+                    setNewCategoryOpen(true);
+                  }}
+                >
+                  <Plus className="mr-0.5 size-3" />
+                  {t("takeoff.category.new")}
+                </Button>
+              ) : null}
+            </div>
+            {showConfirmed && confirmedCategories.length === 0 ? (
+              <p className="border-t border-border/70 px-2.5 py-2 text-[11px] text-muted-foreground">
+                {t("takeoff.category.emptyHint")}
+              </p>
+            ) : null}
             {showConfirmed
-              ? confirmedCandidates.map((c) => (
-                  <div
-                    key={c.id}
-                    data-row-id={c.id}
-                    className="flex w-full items-center gap-2 border-t border-border/70 px-2.5 py-1.5 text-xs hover:bg-muted/50"
-                    style={
-                      c.id === selectedId
-                        ? {
-                            backgroundColor: `${SELECTED_HIGHLIGHT_COLOR}26`,
-                            boxShadow: `inset 0 0 0 2px ${SELECTED_HIGHLIGHT_COLOR}`,
+              ? confirmedCategories.map((cat) => {
+                  const expanded = expandedCategories.has(cat.key);
+                  const isActive = activeCategoryKey === cat.key;
+                  const isHighlighted = highlightedCategoryKeys.includes(cat.key);
+                  return (
+                    <div key={cat.key} className="border-t border-border/70">
+                      <div
+                        className={cn(
+                          "flex items-center gap-1.5 px-2.5 py-1.5 text-xs",
+                          isActive && "bg-primary/10"
+                        )}
+                        data-testid="category-row"
+                      >
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 items-center gap-2 text-left hover:opacity-80"
+                          onClick={() =>
+                            setExpandedCategories((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(cat.key)) next.delete(cat.key);
+                              else next.add(cat.key);
+                              return next;
+                            })
                           }
-                        : undefined
-                    }
-                  >
-                    <button
-                      type="button"
-                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                      onClick={() => onSelect(c.id)}
-                    >
-                      <Check className="size-3 shrink-0 text-emerald-600" />
-                      <span className="min-w-0 flex-1 truncate text-foreground">
-                        {c.label_suggestions[0]?.label ?? defaultSymbolTypeForCandidate(c)}
-                      </span>
-                      <span className="shrink-0 text-[10px] text-muted-foreground">
-                        {t(sourceLabelKey(c.source))}
-                      </span>
-                    </button>
-                    {canReview && onChangeConfirmedType ? (
-                      <button
-                        type="button"
-                        className="shrink-0 rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                        disabled={busy}
-                        data-testid="confirmed-change-type"
-                        title={t("takeoff.review.changeType")}
-                        onClick={() => {
-                          setChangeTypeValue(defaultSymbolTypeForCandidate(c));
-                          setChangeTypeFor(c);
-                        }}
-                      >
-                        <Pencil className="size-3.5" />
-                      </button>
-                    ) : null}
-                    {canReview && onDeleteConfirmed ? (
-                      <button
-                        type="button"
-                        className="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        disabled={busy}
-                        data-testid="confirmed-delete"
-                        title={t("takeoff.review.delete")}
-                        onClick={() => setDeleteConfirmedFor(c)}
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
-                    ) : null}
-                  </div>
-                ))
+                          title={t("takeoff.category.expandHint")}
+                        >
+                          {expanded ? (
+                            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+                          )}
+                          <span
+                            className="size-3 shrink-0 rounded-sm border border-black/10"
+                            style={{ backgroundColor: cat.color }}
+                            aria-hidden
+                          />
+                          <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                            {cat.label}
+                          </span>
+                          <span className="shrink-0 tabular-nums font-semibold text-foreground">
+                            {t("takeoff.category.pieces", { count: cat.candidates.length })}
+                          </span>
+                        </button>
+                        {onHighlightCategory ? (
+                          <button
+                            type="button"
+                            className={cn(
+                              "shrink-0 rounded p-1",
+                              isHighlighted
+                                ? "bg-[#C400FF]/15 text-[#C400FF]"
+                                : "text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                            )}
+                            data-testid="category-highlight"
+                            title={t("takeoff.category.highlight")}
+                            onClick={() => onHighlightCategory(cat.key)}
+                          >
+                            <Highlighter className="size-3.5" />
+                          </button>
+                        ) : null}
+                        {canReview && onRenameCategory ? (
+                          <button
+                            type="button"
+                            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                            disabled={busy || renameBusy}
+                            data-testid="category-rename"
+                            title={t("takeoff.category.rename")}
+                            onClick={() => {
+                              setRenameValue(cat.label);
+                              setRenameFor({ key: cat.key, label: cat.label });
+                            }}
+                          >
+                            <Pencil className="size-3.5" />
+                          </button>
+                        ) : null}
+                        {canReview && onStartCategoryMarking ? (
+                          isActive ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="h-6 shrink-0 px-1.5 text-[10px]"
+                              data-testid="category-stop-marking"
+                              onClick={() => onStopCategoryMarking?.()}
+                            >
+                              {t("takeoff.category.stopMarking")}
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="h-6 shrink-0 px-1.5 text-[10px]"
+                              disabled={busy}
+                              data-testid="category-add-marks"
+                              title={t("takeoff.category.addMarksHint")}
+                              onClick={() =>
+                                onStartCategoryMarking({
+                                  key: cat.key,
+                                  label: cat.label,
+                                  symbolType: cat.symbolType,
+                                })
+                              }
+                            >
+                              <MousePointerClick className="mr-0.5 size-3" />
+                              {t("takeoff.category.addMarks")}
+                            </Button>
+                          )
+                        ) : null}
+                      </div>
+                      {expanded
+                        ? cat.candidates.map((c) => (
+                            <div
+                              key={c.id}
+                              data-row-id={c.id}
+                              className="flex w-full items-center gap-2 border-t border-border/40 py-1.5 pl-8 pr-2.5 text-xs hover:bg-muted/50"
+                              style={
+                                c.id === selectedId
+                                  ? {
+                                      backgroundColor: `${SELECTED_HIGHLIGHT_COLOR}26`,
+                                      boxShadow: `inset 0 0 0 2px ${SELECTED_HIGHLIGHT_COLOR}`,
+                                    }
+                                  : undefined
+                              }
+                            >
+                              <button
+                                type="button"
+                                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                                onClick={() => onSelect(c.id)}
+                                title={t("takeoff.review.sectionCandidatesHint")}
+                              >
+                                <Check className="size-3 shrink-0 text-emerald-600" />
+                                <span className="min-w-0 flex-1 truncate text-foreground">
+                                  {t("takeoff.category.pageShort", {
+                                    page: c.page_number ?? 1,
+                                  })}
+                                </span>
+                                <span className="shrink-0 text-[10px] text-muted-foreground">
+                                  {t(sourceLabelKey(c.source))}
+                                </span>
+                              </button>
+                              {canReview && onMoveConfirmedToCategory ? (
+                                <button
+                                  type="button"
+                                  className="shrink-0 rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                                  disabled={busy || moveBusy}
+                                  data-testid="confirmed-move-category"
+                                  title={t("takeoff.category.moveMark")}
+                                  onClick={() => {
+                                    setMoveNewLabel("");
+                                    setMoveFor(c);
+                                  }}
+                                >
+                                  <FolderInput className="size-3.5" />
+                                </button>
+                              ) : null}
+                              {canReview && onChangeConfirmedType ? (
+                                <button
+                                  type="button"
+                                  className="shrink-0 rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                                  disabled={busy}
+                                  data-testid="confirmed-change-type"
+                                  title={t("takeoff.review.changeType")}
+                                  onClick={() => {
+                                    setChangeTypeValue(defaultSymbolTypeForCandidate(c));
+                                    setChangeTypeFor(c);
+                                  }}
+                                >
+                                  <Pencil className="size-3.5" />
+                                </button>
+                              ) : null}
+                              {canReview && onFindSimilarConfirmed ? (
+                                <button
+                                  type="button"
+                                  className="shrink-0 rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                                  disabled={busy || findSimilarBusy}
+                                  data-testid="confirmed-find-similar"
+                                  title={t("takeoff.review.findSimilarConfirmedHint")}
+                                  onClick={() => onFindSimilarConfirmed(c.id)}
+                                >
+                                  <Copy className="size-3.5" />
+                                </button>
+                              ) : null}
+                              {canReview && onDeleteConfirmed ? (
+                                <button
+                                  type="button"
+                                  className="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                  disabled={busy}
+                                  data-testid="confirmed-delete"
+                                  title={t("takeoff.review.delete")}
+                                  onClick={() => setDeleteConfirmedFor(c)}
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </button>
+                              ) : null}
+                            </div>
+                          ))
+                        : null}
+                    </div>
+                  );
+                })
               : null}
           </div>
         ) : null}
@@ -794,6 +1066,281 @@ export function SymbolCandidateReviewPanel({
             >
               <Trash2 className="mr-1 size-3.5" />
               {t("takeoff.review.delete")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteAllCandidatesConfirmOpen} onOpenChange={setDeleteAllCandidatesConfirmOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("takeoff.review.deleteAllCandidatesTitle")}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {t("takeoff.review.deleteAllCandidatesBody", { count: activeCount })}
+          </p>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleteAllCandidatesConfirmOpen(false)}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={busy || deletingAllCandidates || !onDeleteAllCandidates}
+              data-testid="confirm-delete-all-candidates"
+              onClick={async () => {
+                if (!onDeleteAllCandidates) return;
+                setDeleteAllCandidatesConfirmOpen(false);
+                setDeletingAllCandidates(true);
+                try {
+                  await onDeleteAllCandidates();
+                } finally {
+                  setDeletingAllCandidates(false);
+                }
+              }}
+            >
+              <Trash2 className="mr-1 size-3.5" />
+              {t("takeoff.review.deleteAllCandidates")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Presunúť značku do inej položky — pick existing or type a new name. */}
+      <Dialog
+        open={!!moveFor}
+        onOpenChange={(open) => {
+          if (!open) setMoveFor(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("takeoff.category.moveMarkTitle")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              {t("takeoff.category.moveMarkHint")}
+            </p>
+            <div className="max-h-48 space-y-1 overflow-auto">
+              {confirmedCategories
+                .filter(
+                  (cat) =>
+                    !moveFor ||
+                    cat.key !== categoryKeyForLabel(categoryLabelForCandidate(moveFor))
+                )
+                .map((cat) => (
+                  <button
+                    key={cat.key}
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-md border border-border px-2 py-1.5 text-left text-xs hover:bg-muted/60"
+                    disabled={moveBusy}
+                    data-testid="move-category-option"
+                    onClick={async () => {
+                      if (!moveFor || !onMoveConfirmedToCategory) return;
+                      setMoveBusy(true);
+                      try {
+                        await onMoveConfirmedToCategory(moveFor.id, cat.label);
+                        setMoveFor(null);
+                      } finally {
+                        setMoveBusy(false);
+                      }
+                    }}
+                  >
+                    <span
+                      className="size-3 shrink-0 rounded-sm border border-black/10"
+                      style={{ backgroundColor: cat.color }}
+                      aria-hidden
+                    />
+                    <span className="min-w-0 flex-1 truncate text-foreground">
+                      {cat.label}
+                    </span>
+                    <span className="shrink-0 tabular-nums text-muted-foreground">
+                      {t("takeoff.category.pieces", { count: cat.candidates.length })}
+                    </span>
+                  </button>
+                ))}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="move-new-label" className="text-xs text-muted-foreground">
+                {t("takeoff.category.moveMarkNewLabel")}
+              </Label>
+              <Input
+                id="move-new-label"
+                value={moveNewLabel}
+                placeholder={t("takeoff.category.namePlaceholder")}
+                onChange={(e) => setMoveNewLabel(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setMoveFor(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              disabled={moveBusy || !moveNewLabel.trim()}
+              data-testid="move-category-new"
+              onClick={async () => {
+                if (!moveFor || !onMoveConfirmedToCategory) return;
+                setMoveBusy(true);
+                try {
+                  await onMoveConfirmedToCategory(moveFor.id, moveNewLabel.trim());
+                  setMoveFor(null);
+                } finally {
+                  setMoveBusy(false);
+                }
+              }}
+            >
+              <FolderInput className="mr-1 size-3.5" />
+              {t("takeoff.category.moveMarkAction")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Premenovať položku — relabels every mark; merges on name clash. */}
+      <Dialog
+        open={!!renameFor}
+        onOpenChange={(open) => {
+          if (!open) setRenameFor(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("takeoff.category.renameTitle")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              {t("takeoff.category.renameHint")}
+            </p>
+            <Label htmlFor="rename-category" className="text-xs text-muted-foreground">
+              {t("takeoff.category.nameLabel")}
+            </Label>
+            <Input
+              id="rename-category"
+              value={renameValue}
+              autoFocus
+              onChange={(e) => setRenameValue(e.target.value)}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setRenameFor(null)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                renameBusy ||
+                !renameValue.trim() ||
+                (renameFor
+                  ? categoryKeyForLabel(renameValue) === renameFor.key
+                  : true)
+              }
+              data-testid="rename-category-apply"
+              onClick={async () => {
+                if (!renameFor || !onRenameCategory) return;
+                setRenameBusy(true);
+                try {
+                  await onRenameCategory(renameFor.key, renameValue.trim());
+                  setRenameFor(null);
+                } finally {
+                  setRenameBusy(false);
+                }
+              }}
+            >
+              {t("takeoff.category.renameAction")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Nová položka — create a category and start click-counting it. */}
+      <Dialog open={newCategoryOpen} onOpenChange={setNewCategoryOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("takeoff.category.newTitle")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">{t("takeoff.category.newHint")}</p>
+            <div className="space-y-1.5">
+              <Label htmlFor="new-category-label" className="text-xs text-muted-foreground">
+                {t("takeoff.category.nameLabel")}
+              </Label>
+              <Input
+                id="new-category-label"
+                value={newCategoryLabel}
+                autoFocus
+                placeholder={t("takeoff.category.namePlaceholder")}
+                onChange={(e) => setNewCategoryLabel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && newCategoryLabel.trim()) {
+                    e.preventDefault();
+                    setNewCategoryOpen(false);
+                    onStartCategoryMarking?.({
+                      key: categoryKeyForLabel(newCategoryLabel),
+                      label: newCategoryLabel.trim(),
+                      symbolType: newCategoryType,
+                    });
+                  }
+                }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">
+                {t("takeoff.review.symbolType")}
+              </Label>
+              <Select
+                value={newCategoryType}
+                onValueChange={(value) => {
+                  if (value) setNewCategoryType(value);
+                }}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SYMBOL_TYPE_OPTIONS.map((opt) => {
+                    const key =
+                      opt === "led_strip"
+                        ? "takeoff.type.ledStrip"
+                        : opt === "distribution_board"
+                          ? "takeoff.type.distributionBoard"
+                          : opt === "unknown"
+                            ? "takeoff.type.unknown"
+                            : `takeoff.type.${opt}`;
+                    return (
+                      <SelectItem key={opt} value={opt}>
+                        {t(key)}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setNewCategoryOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              disabled={!newCategoryLabel.trim()}
+              data-testid="new-category-start"
+              onClick={() => {
+                setNewCategoryOpen(false);
+                onStartCategoryMarking?.({
+                  key: categoryKeyForLabel(newCategoryLabel),
+                  label: newCategoryLabel.trim(),
+                  symbolType: newCategoryType,
+                });
+              }}
+            >
+              <MousePointerClick className="mr-1 size-3.5" />
+              {t("takeoff.category.startMarking")}
             </Button>
           </DialogFooter>
         </DialogContent>

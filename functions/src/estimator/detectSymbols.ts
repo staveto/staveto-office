@@ -55,19 +55,43 @@ export type DetectPlanSymbolsResult = {
   symbols: DetectedPlanSymbol[];
 };
 
-const SYMBOL_RULES = `What counts as ONE symbol:
-- A drawing symbol is a compact graphic mark: circle with cross/strokes (light),
-  semicircle with pins (socket), small shape with hooks/arrows (switch), rectangle
-  with hatch (distribution board), etc.
+const SYMBOL_RULES = `What counts as ONE symbol (STN/electrical drawing convention):
+- A drawing symbol is a compact GRAPHICAL ICON drawn with lines/curves — NOT
+  letters, NOT words, NOT digits. Examples: circle with cross/strokes (light),
+  semicircle with pins/hooks (socket), small shape with hooks/arrows (switch),
+  zigzag/coil (LED strip cross-section), rectangle with hatch (distribution
+  board).
 - A symbol often consists of SEVERAL strokes and can mix colors (e.g. a colored
-  cross + a dark circle). Always return the box around the COMPLETE symbol,
-  including its connection stub, never a single line of it.
-NOT symbols (never box these):
-- walls, room outlines, furniture, doors/windows
-- dimension lines, dimension arrows and dimension numbers
-- room names, area labels, mounting-height texts (e.g. "v-560mm"), any plain text
+  cross + a dark circle). Always return the box around the COMPLETE icon,
+  including its connection stub, but ONLY the icon itself — never a single
+  line of it, and never any text next to it.
+- A real symbol's box is roughly square/compact (width ≈ height). A box that
+  is much wider than it is tall (or vice versa) is almost always a TEXT LABEL
+  or a line, not a symbol — reject it, EXCEPT for genuinely drawn LED-strip
+  lines, which are legitimately elongated.
+
+STRICTLY NEVER box any of the following, even if they sit right next to,
+overlap, or touch a real symbol icon:
+- ANY readable text: single words, short phrases, room names, item
+  descriptions (e.g. "Zásuvky v nábytku", "Visiace svietidlo", "LED pás"),
+  full sentences, notes, or labels of any language.
+- ANY number or digit on its own — dimension numbers, mounting-height texts
+  (e.g. "v-560mm"), reference/index numbers used to link a symbol to a
+  legend row (e.g. a small "04", "16", "37" printed near or inside a circle).
+  A bare number is NEVER a symbol, no matter how it is styled or colored.
+- An itemized schedule/legend embedded IN or NEXT TO the floor plan — a list
+  of numbered rows grouped under room-name headers (e.g. "04 Visiace
+  svietidlo", "05 LED pás v svietidle...") describing installed items. This
+  is a TABLE, not a set of symbols — skip EVERY row of it entirely, even
+  though it looks similar to a legend and is spread across multiple areas.
+- walls, room outlines, furniture, doors/windows, appliance outlines
+- dimension lines, dimension arrows, leader lines and their labels
 - the legend table, title block or drawing frame
-- hatching or fills`;
+- hatching or fills
+
+Self-check before returning each box: "Is this a drawn graphical icon made of
+lines/curves, or is it text/digits I can read?" If you can read it as words or
+numbers, DO NOT include it — no exceptions.`;
 
 function legendBlock(entries?: Array<{ label?: string; description: string }>): string {
   if (!entries?.length) return "";
@@ -179,8 +203,12 @@ ${legendBlock(req.legendEntries)}
 
 Task: detect EVERY installation symbol on the plan (sockets, switches, lights,
 LED outlets, junction/installation boxes, distribution boards, ...). One entry
-per symbol occurrence. Do NOT include symbols drawn inside the legend table or
-title block. Maximum ${req.maxSymbols} entries, most confident first.
+per symbol occurrence — a drawn graphical icon only. Do NOT include anything
+from a legend table, item schedule, title block or drawing frame, and do NOT
+include any text, word, or number by itself (see rules above). When in doubt
+whether something is a symbol icon or text/a number, SKIP it — a missed
+symbol is far better than a false one. Maximum ${req.maxSymbols} entries,
+most confident first.
 
 Return JSON array:
 [{"box_2d": [ymin, xmin, ymax, xmax], "name": "short name in ${langName}", "category": one of ${JSON.stringify(

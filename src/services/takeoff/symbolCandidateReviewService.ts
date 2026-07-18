@@ -46,6 +46,7 @@ import {
   updateConfirmedSymbolType,
   updateSymbolCandidatePosition,
   updateSymbolCandidateStatus,
+  updateTakeoffEvidenceItem,
   upsertTakeoffItem,
 } from "@/services/takeoff/pdfTakeoffRegionService";
 
@@ -377,14 +378,17 @@ export async function unconfirmAndDeleteSymbol(input: {
   const confirmed = await getConfirmedSymbolByCandidateId(projectId, candidateId);
   if (!confirmed) throw new Error("CONFIRMED_SYMBOL_NOT_FOUND");
 
-  const [evidenceRows, items] = await Promise.all([
+  const [evidenceRows, items, candidateRow] = await Promise.all([
     listTakeoffEvidenceForConfirmedSymbol(projectId, confirmed.id),
     listTakeoffItems(projectId, confirmed.drawingId),
+    getSymbolCandidate(projectId, candidateId).catch(() => null),
   ]);
 
   const now = new Date().toISOString();
+  // The candidate's label is the mark's category/position name; the evidence
+  // link pins the EXACT item to decrement (survives renames/splits).
   const name =
-    items.find((i) => i.metadata?.symbolType === confirmed.symbolType)?.name ??
+    candidateRow?.labelSuggestions?.[0]?.label?.trim() ||
     defaultLabelForSymbolType(confirmed.symbolType);
   const { updatedItem, removeItemId } = applyUnconfirmToTakeoffItems({
     items,
@@ -394,6 +398,7 @@ export async function unconfirmAndDeleteSymbol(input: {
     name,
     quantityValue: confirmed.quantityValue,
     now,
+    takeoffItemId: evidenceRows[0]?.takeoffItemId ?? null,
   });
 
   if (updatedItem) {
@@ -489,9 +494,13 @@ export async function changeConfirmedSymbolType(input: {
     return { confirmedSymbol: confirmed, takeoffItemId: null };
   }
 
-  const items = await listTakeoffItems(projectId, confirmed.drawingId);
+  const [items, evidenceRows, candidateRow] = await Promise.all([
+    listTakeoffItems(projectId, confirmed.drawingId),
+    listTakeoffEvidenceForConfirmedSymbol(projectId, confirmed.id),
+    getSymbolCandidate(projectId, candidateId).catch(() => null),
+  ]);
   const oldName =
-    items.find((i) => i.metadata?.symbolType === confirmed.symbolType)?.name ??
+    candidateRow?.labelSuggestions?.[0]?.label?.trim() ||
     defaultLabelForSymbolType(confirmed.symbolType);
 
   const { updatedItem: reducedItem, removeItemId } = applyUnconfirmToTakeoffItems({
@@ -502,6 +511,7 @@ export async function changeConfirmedSymbolType(input: {
     name: oldName,
     quantityValue: confirmed.quantityValue,
     now,
+    takeoffItemId: evidenceRows[0]?.takeoffItemId ?? null,
   });
   if (reducedItem) {
     await upsertTakeoffItem(reducedItem);
@@ -527,6 +537,13 @@ export async function changeConfirmedSymbolType(input: {
   });
   await upsertTakeoffItem(newItem);
 
+  // Evidence follows the quantity into the new bucket — keeps counts traceable.
+  await Promise.all(
+    evidenceRows.map((e) =>
+      updateTakeoffEvidenceItem(projectId, e.id, newItem.id).catch(() => undefined)
+    )
+  );
+
   await updateConfirmedSymbolType(projectId, confirmed.id, symbolType);
   await updateSymbolCandidateStatus(projectId, candidateId, {
     labelSuggestions: [{ label, confidence: 1 }],
@@ -534,6 +551,91 @@ export async function changeConfirmedSymbolType(input: {
   });
 
   return { confirmedSymbol: { ...confirmed, symbolType }, takeoffItemId: newItem.id };
+}
+
+/**
+ * Move a CONFIRMED mark into a different category/position (e.g. a mark
+ * counted under "Zásuvka" that is actually "Zásuvka 2x pod sebou"). Moves
+ * exactly this mark's quantity from its current takeoff item to the target
+ * position's item (created when missing), re-links its evidence, and
+ * relabels the candidate so panel grouping and plan colors follow.
+ * Also the batch primitive behind "rename category" (called per mark).
+ */
+export async function moveConfirmedSymbolToCategory(input: {
+  projectId: string;
+  candidateId: string;
+  /** Target position name — its normalized form is the category key. */
+  label: string;
+  /** Optional new symbol type (kept unchanged when omitted). */
+  symbol_type?: string;
+}): Promise<{ takeoffItemId: string }> {
+  const { projectId, candidateId } = input;
+  const label = input.label.trim();
+  if (!label) throw new Error("CATEGORY_LABEL_REQUIRED");
+
+  const confirmed = await getConfirmedSymbolByCandidateId(projectId, candidateId);
+  if (!confirmed) throw new Error("CONFIRMED_SYMBOL_NOT_FOUND");
+  const symbolType = input.symbol_type?.trim() || confirmed.symbolType;
+  const now = new Date().toISOString();
+
+  const [items, evidenceRows, candidateRow] = await Promise.all([
+    listTakeoffItems(projectId, confirmed.drawingId),
+    listTakeoffEvidenceForConfirmedSymbol(projectId, confirmed.id),
+    getSymbolCandidate(projectId, candidateId).catch(() => null),
+  ]);
+  const oldName =
+    candidateRow?.labelSuggestions?.[0]?.label?.trim() ||
+    defaultLabelForSymbolType(confirmed.symbolType);
+
+  const { updatedItem: reducedItem, removeItemId } = applyUnconfirmToTakeoffItems({
+    items,
+    drawingId: confirmed.drawingId,
+    profession: confirmed.profession,
+    symbolType: confirmed.symbolType,
+    name: oldName,
+    quantityValue: confirmed.quantityValue,
+    now,
+    takeoffItemId: evidenceRows[0]?.takeoffItemId ?? null,
+  });
+  if (reducedItem) {
+    await upsertTakeoffItem(reducedItem);
+  } else if (removeItemId) {
+    await deleteTakeoffItem(projectId, removeItemId).catch(() => undefined);
+  }
+
+  const itemsAfterRemoval = items
+    .filter((i) => i.id !== removeItemId)
+    .map((i) => (i.id === reducedItem?.id ? reducedItem : i));
+
+  const { updatedItem: newItem } = applyConfirmToTakeoffItems({
+    items: itemsAfterRemoval,
+    projectId,
+    drawingId: confirmed.drawingId,
+    profession: confirmed.profession,
+    symbolType,
+    name: label,
+    unit: confirmed.quantityUnit,
+    quantityValue: confirmed.quantityValue,
+    now,
+    newItemId: newLocalId("titem"),
+  });
+  await upsertTakeoffItem(newItem);
+
+  await Promise.all(
+    evidenceRows.map((e) =>
+      updateTakeoffEvidenceItem(projectId, e.id, newItem.id).catch(() => undefined)
+    )
+  );
+
+  if (symbolType !== confirmed.symbolType) {
+    await updateConfirmedSymbolType(projectId, confirmed.id, symbolType);
+  }
+  await updateSymbolCandidateStatus(projectId, candidateId, {
+    labelSuggestions: [{ label, confidence: 1 }],
+    symbolTypeHint: symbolType,
+  });
+
+  return { takeoffItemId: newItem.id };
 }
 
 export async function confirmAllProbableCandidates(input: {
