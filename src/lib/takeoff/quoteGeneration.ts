@@ -66,6 +66,8 @@ export function buildQuoteLinesFromOccurrences(
       unit,
       quantity: group.length,
       source: "drawing_detection",
+      sourceOfQuantity: "symbol_detection",
+      evidenceCount: group.length,
       status: "draft",
     });
 

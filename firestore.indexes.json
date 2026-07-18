@@ -88,6 +88,14 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "confirmedSymbols",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "drawingId", "order": "ASCENDING" },
+        { "fieldPath": "pageNumber", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

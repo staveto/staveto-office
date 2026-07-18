@@ -173,14 +173,31 @@ function blobsOverlapOrNear(a: Blob, b: Blob, gap: number): boolean {
   );
 }
 
+/** A merged same-color blob that failed a filter, with the reason (debug only). */
+export type ColorBlobRejection = {
+  bboxLocalPx: { x: number; y: number; width: number; height: number };
+  color: VisualColorHint;
+  pixels: number;
+  aspect: number;
+  reason: "too_small" | "too_large" | "line_like" | "low_density";
+};
+
+export type ColorDetectionDetailedResult = {
+  accepted: VisualSymbolDetection[];
+  rejected: ColorBlobRejection[];
+};
+
 /**
  * Detect small repeated colored symbols via connected components.
- * Returns raw detections (before NMS/merging with OCR occurrences).
+ * Returns accepted detections AND every rejected blob with its reason —
+ * used by the region analyzer's debug panel. `detectSymbolsByColor` below
+ * delegates here and returns only `.accepted`, so its public behavior is
+ * unchanged for all existing callers.
  */
-export function detectSymbolsByColor(
+export function detectSymbolsByColorDetailed(
   image: RasterImage,
   options: ColorDetectionOptions = {}
-): VisualSymbolDetection[] {
+): ColorDetectionDetailedResult {
   const {
     page = 1,
     minSymbolSizePx = 5,
@@ -278,17 +295,35 @@ export function detectSymbolsByColor(
 
   // 4) Size/shape filter + detection rows.
   const detections: VisualSymbolDetection[] = [];
+  const rejected: ColorBlobRejection[] = [];
   let seq = 0;
   for (const b of merged) {
     const w = b.maxX - b.minX + 1;
     const h = b.maxY - b.minY + 1;
     const dim = Math.max(w, h);
-    if (dim < minSymbolSizePx || dim > maxSymbolSizePx) continue;
     const aspect = Math.max(w, h) / Math.max(1, Math.min(w, h));
-    if (aspect > maxAspectRatio) continue; // cable / LED line / dimension line
+    const bboxLocalPx = { x: b.minX, y: b.minY, width: w, height: h };
+
+    if (dim < minSymbolSizePx) {
+      rejected.push({ bboxLocalPx, color: b.color, pixels: b.pixels, aspect, reason: "too_small" });
+      continue;
+    }
+    if (dim > maxSymbolSizePx) {
+      rejected.push({ bboxLocalPx, color: b.color, pixels: b.pixels, aspect, reason: "too_large" });
+      continue;
+    }
+    if (aspect > maxAspectRatio) {
+      // cable / LED line / dimension line
+      rejected.push({ bboxLocalPx, color: b.color, pixels: b.pixels, aspect, reason: "line_like" });
+      continue;
+    }
 
     const density = b.pixels / (w * h);
-    if (density < 0.03) continue; // scattered noise
+    if (density < 0.03) {
+      // scattered noise
+      rejected.push({ bboxLocalPx, color: b.color, pixels: b.pixels, aspect, reason: "low_density" });
+      continue;
+    }
 
     const template = pickTemplateForColor(templates, b.color);
     const matchScore = Math.min(1, 0.35 + Math.min(density * 1.6, 0.45) + (template ? 0.1 : 0));
@@ -312,7 +347,18 @@ export function detectSymbolsByColor(
       possibleMeaning: template?.label,
     });
   }
-  return detections;
+  return { accepted: detections, rejected };
+}
+
+/**
+ * Detect small repeated colored symbols via connected components.
+ * Returns raw detections (before NMS/merging with OCR occurrences).
+ */
+export function detectSymbolsByColor(
+  image: RasterImage,
+  options: ColorDetectionOptions = {}
+): VisualSymbolDetection[] {
+  return detectSymbolsByColorDetailed(image, options).accepted;
 }
 
 // ---------------------------------------------------------------------------

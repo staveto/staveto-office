@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Loader2 } from "lucide-react";
+import Link from "next/link";
+import { Plus, Trash2, Loader2, Ruler } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -42,6 +43,7 @@ import {
   type QuoteDraftItemCategory,
 } from "@/lib/projects";
 import { QUOTE_DRAFT_UNITS } from "@/lib/quoteDraftItems";
+import { takeoffRoute } from "@/lib/takeoff/takeoffMode";
 import { updateDraftJobFields } from "@/services/projects";
 import { upsertQuoteFromProject } from "@/services/quotes";
 import { useWorkspace } from "@/context/WorkspaceContext";
@@ -284,6 +286,25 @@ function CategoryTable({
                         onBlur={() => flushSave(item.id)}
                         className="h-8 min-w-[140px]"
                       />
+                      {/* Evidence deep link — opens the shared takeoff tool. */}
+                      {item.sourceDrawingId &&
+                      item.sourceOfQuantity === "symbol_detection" &&
+                      (item.evidenceCount ?? 0) > 0 ? (
+                        <Link
+                          href={takeoffRoute({
+                            projectId,
+                            drawingId: item.sourceDrawingId,
+                            mode: "quote",
+                          })}
+                          className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                          data-testid="quote-item-evidence-link"
+                        >
+                          <Ruler className="size-3" aria-hidden />
+                          {t("takeoff.quote.evidenceLink", {
+                            count: item.evidenceCount ?? 0,
+                          })}
+                        </Link>
+                      ) : null}
                     </TableCell>
                     <TableCell>
                       <Input

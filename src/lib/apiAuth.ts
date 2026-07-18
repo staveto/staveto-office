@@ -220,3 +220,40 @@ export function guardOrgOwnerOrAdmin(
 ): Promise<NextResponse | null> {
   return guardOrg(() => assertOrgOwnerOrAdmin(orgId, uid, email));
 }
+
+/**
+ * Mirrors Firestore `canAccessProjectId`: project owner, or member of the
+ * project's linked org (orgId, falling back to workspaceId).
+ */
+export async function assertProjectAccess(
+  projectId: string,
+  uid: string,
+  email?: string
+): Promise<boolean> {
+  const db = getAdminDb();
+  if (!db) throw new AdminUnavailableError();
+
+  try {
+    const snap = await db.doc(`projects/${projectId}`).get();
+    if (!snap.exists) return false;
+    const data = snap.data() as Record<string, unknown>;
+    if (data.ownerId === uid) return true;
+    const linkedOrg =
+      (typeof data.orgId === "string" && data.orgId) ||
+      (typeof data.workspaceId === "string" && data.workspaceId) ||
+      null;
+    if (!linkedOrg) return false;
+    return assertOrgMemberActive(linkedOrg, uid, email);
+  } catch (err) {
+    if (err instanceof AdminUnavailableError) throw err;
+    return rethrowAsAdminUnavailable("assertProjectAccess", err);
+  }
+}
+
+export function guardProjectAccess(
+  projectId: string,
+  uid: string,
+  email?: string
+): Promise<NextResponse | null> {
+  return guardOrg(() => assertProjectAccess(projectId, uid, email));
+}

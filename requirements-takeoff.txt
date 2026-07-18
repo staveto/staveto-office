@@ -1,0 +1,7 @@
+# Machine-level optional Python packages (NOT for Next.js).
+# Prefer the isolated worker venv:
+#   cd services/takeoff-analyzer-worker && pip install -r requirements.txt
+#
+# Do not install PyMuPDF (AGPL). Do not pip-install these into the Next.js app.
+pypdfium2==5.12.1
+# See services/takeoff-analyzer-worker/requirements.txt for the full worker set.

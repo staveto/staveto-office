@@ -66,6 +66,104 @@ export function pointToNormalizedRect(
   );
 }
 
+export type EvidenceFocusTarget = {
+  scrollLeft: number;
+  scrollTop: number;
+  /** True when the evidence box is too small to read — viewer should zoom in. */
+  zoomBump: boolean;
+};
+
+/**
+ * Evidence link click → scroll target that centers the evidence bbox in the
+ * viewer viewport (plus a zoom hint for tiny marks).
+ */
+export function computeEvidenceFocusTarget(
+  normalized: NormalizedRect,
+  canvas: CanvasSize,
+  viewport: { width: number; height: number },
+  minReadablePx = 28
+): EvidenceFocusTarget {
+  const rect = normalizedToScreenRect(normalized, canvas);
+  return {
+    scrollLeft: Math.max(0, rect.x + rect.width / 2 - viewport.width / 2),
+    scrollTop: Math.max(0, rect.y + rect.height / 2 - viewport.height / 2),
+    zoomBump: rect.width < minReadablePx || rect.height < minReadablePx,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// View rotation (90° steps)
+//
+// Normalized coordinates (0..1) are ALWAYS stored relative to the unrotated
+// page. Rotation is a view-only transform: overlays are mapped page→view
+// before drawing, and pointer input is mapped view→page before storing.
+// ---------------------------------------------------------------------------
+
+export type ViewRotation = 0 | 90 | 180 | 270;
+
+export function nextRotation(current: ViewRotation, delta: 90 | -90): ViewRotation {
+  return (((current + delta) % 360) + 360) % 360 as ViewRotation;
+}
+
+/** Page-space normalized rect → view-space normalized rect at `rotation` (clockwise). */
+export function rotateNormalizedRect(
+  rect: NormalizedRect,
+  rotation: ViewRotation
+): NormalizedRect {
+  switch (rotation) {
+    case 90:
+      return { x: 1 - rect.y - rect.height, y: rect.x, width: rect.height, height: rect.width };
+    case 180:
+      return {
+        x: 1 - rect.x - rect.width,
+        y: 1 - rect.y - rect.height,
+        width: rect.width,
+        height: rect.height,
+      };
+    case 270:
+      return { x: rect.y, y: 1 - rect.x - rect.width, width: rect.height, height: rect.width };
+    default:
+      return rect;
+  }
+}
+
+/** View-space normalized rect → page-space normalized rect (inverse of rotate). */
+export function unrotateNormalizedRect(
+  rect: NormalizedRect,
+  rotation: ViewRotation
+): NormalizedRect {
+  return rotateNormalizedRect(rect, (((360 - rotation) % 360) as ViewRotation));
+}
+
+// ---------------------------------------------------------------------------
+// Fit calculations
+//
+// The viewer's baseline scale is fit-width: zoom = 1 renders the page as wide
+// as the scroll container. `baseCss` is the page's CSS size at zoom = 1.
+// ---------------------------------------------------------------------------
+
+/** Zoom that makes the whole page fit inside the viewport (fit page). */
+export function fitPageZoom(
+  baseCss: CanvasSize,
+  viewport: { width: number; height: number },
+  paddingPx = 16
+): number {
+  if (baseCss.width <= 0 || baseCss.height <= 0) return 1;
+  const zw = (viewport.width - paddingPx) / baseCss.width;
+  const zh = (viewport.height - paddingPx) / baseCss.height;
+  return Math.max(0.1, Math.min(zw, zh));
+}
+
+/** Zoom that makes the page exactly as wide as the viewport (fit width). */
+export function fitWidthZoom(
+  baseCss: CanvasSize,
+  viewport: { width: number },
+  paddingPx = 16
+): number {
+  if (baseCss.width <= 0) return 1;
+  return Math.max(0.1, (viewport.width - paddingPx) / baseCss.width);
+}
+
 /** Normalize a drag rectangle (any corner order) into positive width/height. */
 export function normalizeDragRect(
   start: { x: number; y: number },

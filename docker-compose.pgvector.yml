@@ -1,0 +1,23 @@
+# Local Postgres + pgvector for takeoff embeddings / similarity search.
+# Requires Docker Desktop. Start:
+#   docker compose -f docker-compose.pgvector.yml up -d
+services:
+  pgvector:
+    image: pgvector/pgvector:pg16
+    container_name: staveto-pgvector
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: staveto
+      POSTGRES_PASSWORD: staveto
+      POSTGRES_DB: staveto_takeoff
+    volumes:
+      - staveto_pgvector_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U staveto -d staveto_takeoff"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  staveto_pgvector_data:

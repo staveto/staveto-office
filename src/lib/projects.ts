@@ -300,6 +300,26 @@ function toQuoteDraftItemDoc(
       : typeof data.quantity === "number" && Number.isFinite(data.quantity)
         ? data.quantity
         : 1;
+  const sourceOfQuantity =
+    data.sourceOfQuantity === "symbol_detection" ||
+    data.sourceOfQuantity === "measured_line" ||
+    data.sourceOfQuantity === "measured_area" ||
+    data.sourceOfQuantity === "legend_only" ||
+    data.sourceOfQuantity === "manual" ||
+    data.sourceOfQuantity === "estimate_rule" ||
+    data.sourceOfQuantity === "route_calculation" ||
+    data.sourceOfQuantity === "imported_dwg"
+      ? data.sourceOfQuantity
+      : undefined;
+  const takeoffStatus =
+    data.takeoffStatus === "draft" ||
+    data.takeoffStatus === "needs_review" ||
+    data.takeoffStatus === "confirmed" ||
+    data.takeoffStatus === "legend_only" ||
+    data.takeoffStatus === "customer_question" ||
+    data.takeoffStatus === "excluded"
+      ? data.takeoffStatus
+      : undefined;
   return {
     id,
     projectId,
@@ -313,6 +333,16 @@ function toQuoteDraftItemDoc(
       (typeof data.description === "string" && data.description) ||
       undefined,
     customerVisible,
+    sourceOfQuantity,
+    evidenceCount:
+      typeof data.evidenceCount === "number" && data.evidenceCount >= 0
+        ? data.evidenceCount
+        : undefined,
+    sourceDrawingId:
+      typeof data.sourceDrawingId === "string" && data.sourceDrawingId
+        ? data.sourceDrawingId
+        : undefined,
+    takeoffStatus,
     createdAt: toStr(data.createdAt),
     updatedAt: toStr(data.updatedAt),
   };
@@ -1025,6 +1055,10 @@ export async function createQuoteDraftItem(
     unitPrice,
     note: input.note?.trim() || null,
     customerVisible: input.customerVisible === false ? false : true,
+    ...(input.sourceOfQuantity ? { sourceOfQuantity: input.sourceOfQuantity } : {}),
+    ...(typeof input.evidenceCount === "number" ? { evidenceCount: input.evidenceCount } : {}),
+    ...(input.sourceDrawingId ? { sourceDrawingId: input.sourceDrawingId } : {}),
+    ...(input.takeoffStatus ? { takeoffStatus: input.takeoffStatus } : {}),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });

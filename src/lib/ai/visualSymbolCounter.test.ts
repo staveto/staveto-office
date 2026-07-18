@@ -4,6 +4,7 @@ import {
   bboxIoU,
   classifyPixelColor,
   detectSymbolsByColor,
+  detectSymbolsByColorDetailed,
   getSeedVisualTemplates,
   matchVisualTemplate,
   mergeVisualDetectionsWithOccurrences,
@@ -128,6 +129,51 @@ describe("color/shape detection", () => {
     expect(detections).toHaveLength(1);
     expect(detections[0].normalizedPoint).toBe("unknown");
     expect(detections[0].needsReview).toBe(true);
+  });
+});
+
+describe("detectSymbolsByColorDetailed", () => {
+  it("returns the same accepted list as detectSymbolsByColor (no behavior change)", () => {
+    const img = whiteImage(200, 120);
+    paintRect(img, 20, 20, 12, 12, RED);
+    paintRect(img, 80, 40, 12, 12, GREEN);
+    const plain = detectSymbolsByColor(img, { page: 1 });
+    const detailed = detectSymbolsByColorDetailed(img, { page: 1 });
+    expect(detailed.accepted).toEqual(plain);
+  });
+
+  it("reports too_small for scattered specks below the size threshold", () => {
+    const img = whiteImage(100, 100);
+    paintRect(img, 10, 10, 2, 2, GREEN);
+    const { accepted, rejected } = detectSymbolsByColorDetailed(img, {
+      page: 1,
+      minSymbolSizePx: 5,
+    });
+    expect(accepted).toHaveLength(0);
+    expect(rejected.some((r) => r.reason === "too_small" && r.color === "green")).toBe(true);
+  });
+
+  it("reports too_large for oversized blobs", () => {
+    const img = whiteImage(300, 300);
+    paintRect(img, 10, 10, 150, 150, RED);
+    const { accepted, rejected } = detectSymbolsByColorDetailed(img, {
+      page: 1,
+      minSymbolSizePx: 4,
+      maxSymbolSizePx: 90,
+    });
+    expect(accepted).toHaveLength(0);
+    expect(rejected.some((r) => r.reason === "too_large")).toBe(true);
+  });
+
+  it("reports line_like for elongated blobs (cable/LED/dimension lines)", () => {
+    const img = whiteImage(300, 100);
+    paintRect(img, 10, 50, 200, 3, RED);
+    const { accepted, rejected } = detectSymbolsByColorDetailed(img, {
+      page: 1,
+      maxSymbolSizePx: 250, // large enough to pass the size gate, not the aspect gate
+    });
+    expect(accepted).toHaveLength(0);
+    expect(rejected.some((r) => r.reason === "line_like" && r.color === "red")).toBe(true);
   });
 });
 

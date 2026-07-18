@@ -68,6 +68,17 @@ export function dedupeQuotesByProject(quotes: QuoteDoc[]): QuoteDoc[] {
   return [...standalone, ...byProject.values()];
 }
 
+/** Quantity provenance on quote lines (additive — optional on legacy rows). */
+export type QuoteSourceOfQuantity =
+  | "symbol_detection"
+  | "measured_line"
+  | "measured_area"
+  | "legend_only"
+  | "manual"
+  | "estimate_rule"
+  | "route_calculation"
+  | "imported_dwg";
+
 export type QuoteItemLine = {
   id: string;
   category?: QuoteDraftItemCategory;
@@ -76,6 +87,18 @@ export type QuoteItemLine = {
   unit: string;
   unitPrice: number;
   total: number;
+  /** How the quantity was obtained — legend_only is never plan-confirmed. */
+  sourceOfQuantity?: QuoteSourceOfQuantity;
+  /** Number of linked plan evidence bboxes (confirmed symbols). */
+  evidenceCount?: number;
+  /** takeoff/review status when sourced from takeoff pipeline. */
+  takeoffStatus?:
+    | "draft"
+    | "needs_review"
+    | "confirmed"
+    | "legend_only"
+    | "customer_question"
+    | "excluded";
 };
 
 export type QuoteDoc = {
@@ -108,6 +131,9 @@ export type QuoteItemInput = {
   qty: number;
   unit: string;
   unitPrice: number;
+  sourceOfQuantity?: QuoteSourceOfQuantity;
+  evidenceCount?: number;
+  takeoffStatus?: QuoteItemLine["takeoffStatus"];
 };
 
 export type CreateQuoteInput = {
@@ -142,6 +168,23 @@ function toStr(raw: unknown): string | undefined {
   return undefined;
 }
 
+const SOURCE_OF_QUANTITY_SET = new Set<QuoteSourceOfQuantity>([
+  "symbol_detection",
+  "measured_line",
+  "measured_area",
+  "legend_only",
+  "manual",
+  "estimate_rule",
+  "route_calculation",
+  "imported_dwg",
+]);
+
+function parseSourceOfQuantity(raw: unknown): QuoteSourceOfQuantity | undefined {
+  return typeof raw === "string" && SOURCE_OF_QUANTITY_SET.has(raw as QuoteSourceOfQuantity)
+    ? (raw as QuoteSourceOfQuantity)
+    : undefined;
+}
+
 function parseQuoteItems(raw: unknown): QuoteItemLine[] {
   if (!Array.isArray(raw)) return [];
   return raw.map((row, index) => {
@@ -150,6 +193,16 @@ function parseQuoteItems(raw: unknown): QuoteItemLine[] {
     const unitPrice = typeof item.unitPrice === "number" ? item.unitPrice : 0;
     const category =
       item.category === "work" ? "work" : item.category === "material" ? "material" : undefined;
+    const takeoffStatusRaw = item.takeoffStatus;
+    const takeoffStatus =
+      takeoffStatusRaw === "draft" ||
+      takeoffStatusRaw === "needs_review" ||
+      takeoffStatusRaw === "confirmed" ||
+      takeoffStatusRaw === "legend_only" ||
+      takeoffStatusRaw === "customer_question" ||
+      takeoffStatusRaw === "excluded"
+        ? takeoffStatusRaw
+        : undefined;
     return {
       id: (item.id as string) || `line_${index}`,
       category,
@@ -161,6 +214,12 @@ function parseQuoteItems(raw: unknown): QuoteItemLine[] {
         typeof item.total === "number"
           ? item.total
           : computeItemTotal(qty, unitPrice),
+      sourceOfQuantity: parseSourceOfQuantity(item.sourceOfQuantity),
+      evidenceCount:
+        typeof item.evidenceCount === "number" && item.evidenceCount >= 0
+          ? item.evidenceCount
+          : undefined,
+      takeoffStatus,
     };
   });
 }
@@ -207,6 +266,9 @@ export function buildQuoteItemLines(inputs: QuoteItemInput[]): QuoteItemLine[] {
       unit: item.unit.trim() || "ks",
       unitPrice,
       total: computeItemTotal(qty, unitPrice),
+      sourceOfQuantity: item.sourceOfQuantity,
+      evidenceCount: item.evidenceCount,
+      takeoffStatus: item.takeoffStatus,
     };
   });
 }

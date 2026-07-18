@@ -79,6 +79,29 @@ export function isAiEstimatorDebugEnabled(): boolean {
   );
 }
 
+/**
+ * PDF Takeoff Region Analyzer — multi-candidate color/contour detection for
+ * a user-drawn region. Default ON with the estimator flow; set
+ * NEXT_PUBLIC_ENABLE_PDF_TAKEOFF_REGION_ANALYZER=0 to hide the button.
+ */
+export function isPdfTakeoffRegionAnalyzerEnabled(): boolean {
+  if (isEmergencyAiKillSwitch()) return false;
+  return (
+    isAiEstimatorFlowEnabled() &&
+    process.env.NEXT_PUBLIC_ENABLE_PDF_TAKEOFF_REGION_ANALYZER !== "0"
+  );
+}
+
+/**
+ * Detection debug panel in the takeoff workbench (region crop, masks,
+ * before/after candidates, thresholds). Dev builds default ON; production
+ * requires NEXT_PUBLIC_TAKEOFF_DETECTION_DEBUG=1 explicitly.
+ */
+export function isTakeoffDetectionDebugEnabled(): boolean {
+  if (process.env.NEXT_PUBLIC_TAKEOFF_DETECTION_DEBUG === "1") return true;
+  return process.env.NODE_ENV === "development";
+}
+
 export function logAiEstimatorDebug(
   event: string,
   payload: Record<string, unknown>

@@ -26,12 +26,23 @@ export type AddToQuoteResult = {
  */
 export async function addTakeoffLinesToQuoteDraft(
   projectId: string,
-  lines: TakeoffQuoteLine[]
+  lines: TakeoffQuoteLine[],
+  /** Drawing the lines came from — stored for evidence deep links. */
+  drawingId?: string
 ): Promise<AddToQuoteResult> {
   const existing = await listProjectQuoteDraftItems(projectId);
   const fresh = newLinesAgainstExisting(lines, existing);
 
   for (const line of fresh) {
+    const sourceOfQuantity =
+      line.sourceOfQuantity ??
+      (line.source === "rule_derived"
+        ? "estimate_rule"
+        : line.source === "legend_only"
+          ? "legend_only"
+          : line.source === "drawing_detection" || line.source === "symbol_detection"
+            ? "symbol_detection"
+            : "manual");
     await createQuoteDraftItem(projectId, {
       category: line.category,
       name: line.name,
@@ -41,7 +52,14 @@ export async function addTakeoffLinesToQuoteDraft(
       note:
         line.source === "rule_derived"
           ? "Odvodená položka z výkresu — skontrolujte."
-          : "Z výkresu (takeoff).",
+          : sourceOfQuantity === "legend_only"
+            ? "Legenda — neoverené v pôdoryse."
+            : "Z výkresu (takeoff).",
+      sourceOfQuantity,
+      evidenceCount: line.evidenceCount ?? line.sourceOccurrenceIds.length,
+      ...(drawingId ? { sourceDrawingId: drawingId } : {}),
+      takeoffStatus:
+        sourceOfQuantity === "legend_only" ? "legend_only" : line.status === "needs_review" ? "needs_review" : "draft",
     });
   }
 

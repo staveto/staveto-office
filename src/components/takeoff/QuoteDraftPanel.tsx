@@ -15,6 +15,7 @@ import {
   buildQuoteLinesFromOccurrences,
   confirmedOccurrences,
 } from "@/lib/takeoff/quoteGeneration";
+import { LegendOnlyBadge } from "./LegendOnlyBadge";
 
 type Props = {
   occurrences: DrawingOccurrence[];
@@ -66,6 +67,11 @@ export function QuoteDraftPanel({ occurrences, onAddToQuote, busy, resultMessage
               {line.source === "rule_derived" ? (
                 <span className="ml-1 rounded bg-violet-500/15 px-1 text-[10px] font-semibold text-violet-700 dark:text-violet-300">
                   {t("takeoff.quote.ruleDerived")}
+                </span>
+              ) : null}
+              {line.sourceOfQuantity === "legend_only" || line.source === "legend_only" ? (
+                <span className="ml-1 inline-block align-middle">
+                  <LegendOnlyBadge compact />
                 </span>
               ) : null}
             </span>

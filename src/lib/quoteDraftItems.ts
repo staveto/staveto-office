@@ -5,6 +5,17 @@
 
 export type QuoteDraftItemCategory = "material" | "work";
 
+/** Honest quantity provenance — legend_only is never plan-confirmed. */
+export type QuoteDraftSourceOfQuantity =
+  | "symbol_detection"
+  | "measured_line"
+  | "measured_area"
+  | "legend_only"
+  | "manual"
+  | "estimate_rule"
+  | "route_calculation"
+  | "imported_dwg";
+
 export type QuoteDraftItemDoc = {
   id: string;
   projectId: string;
@@ -16,6 +27,17 @@ export type QuoteDraftItemDoc = {
   note?: string;
   /** When false, hidden from customer-facing quote / PDF. */
   customerVisible?: boolean;
+  sourceOfQuantity?: QuoteDraftSourceOfQuantity;
+  evidenceCount?: number;
+  /** Drawing the quantity evidence lives on — enables evidence deep links. */
+  sourceDrawingId?: string;
+  takeoffStatus?:
+    | "draft"
+    | "needs_review"
+    | "confirmed"
+    | "legend_only"
+    | "customer_question"
+    | "excluded";
   createdAt?: string;
   updatedAt?: string;
 };
@@ -28,6 +50,10 @@ export type QuoteDraftItemInput = {
   unitPrice: number;
   note?: string;
   customerVisible?: boolean;
+  sourceOfQuantity?: QuoteDraftSourceOfQuantity;
+  evidenceCount?: number;
+  sourceDrawingId?: string;
+  takeoffStatus?: QuoteDraftItemDoc["takeoffStatus"];
 };
 
 export const QUOTE_DRAFT_DEFAULT_UNIT = "ks";

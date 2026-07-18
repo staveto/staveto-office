@@ -41,6 +41,8 @@ import { EstimatorDocumentConflictsPanel } from "@/components/ai-estimator/Estim
 import { EstimatorDocumentSwitcher } from "@/components/ai-estimator/EstimatorDocumentSwitcher";
 import { EstimatorLinkedTakeoffTable } from "@/components/ai-estimator/EstimatorLinkedTakeoffTable";
 import { EstimatorPdfEvidenceViewer } from "@/components/ai-estimator/EstimatorPdfEvidenceViewer";
+import { PlanTakeoffWorkbench } from "@/components/takeoff/PlanTakeoffWorkbench";
+import { isPdfTakeoffRegionAnalyzerEnabled } from "@/lib/ai/aiEstimatorFeature";
 import { EstimatorMarkingChecklist } from "@/components/ai-estimator/EstimatorMarkingChecklist";
 import {
   EstimatorPriceDrawer,
@@ -172,6 +174,8 @@ export function AiSetupMaterialStep({
   // PDF-first by default: "Rozpoznať značku" — click the plan, then classify.
   const [markMode, setMarkMode] = useState(true);
   const [pdfFullscreen, setPdfFullscreen] = useState(false);
+  // One shared PDF takeoff tool for quote + project + documents.
+  const sharedTakeoffEnabled = isPdfTakeoffRegionAnalyzerEnabled();
 
   const update = (id: string, patch: Partial<AiSetupMaterialRow>) => {
     onMaterialsChange(
@@ -694,7 +698,21 @@ export function AiSetupMaterialStep({
       ) : null}
 
       {/* --------------------------- Pozície v PDF ------------------------- */}
-      {subTab === "pdf" && evidence ? (
+      {/* Shared takeoff tool (one source of truth): quote flow uses the SAME
+          PlanTakeoffWorkbench + takeoff data as project/documents. The legacy
+          estimator marking stays only as fallback when the analyzer is off. */}
+      {subTab === "pdf" && evidence && sharedTakeoffEnabled ? (
+        <div className="space-y-3" data-testid="quote-shared-takeoff">
+          <PlanTakeoffWorkbench
+            projectId={evidence.projectId}
+            drawingId={evidence.activeDocument?.fileId ?? evidence.fileName ?? "drawing"}
+            fileName={evidence.fileName ?? "plan.pdf"}
+            fileUrl={evidence.fileUrl}
+            mode="quote"
+          />
+        </div>
+      ) : null}
+      {subTab === "pdf" && evidence && !sharedTakeoffEnabled ? (
         <div className="space-y-3">
           <div className="flex justify-end">
             <Button
@@ -721,8 +739,8 @@ export function AiSetupMaterialStep({
         </div>
       ) : null}
 
-      {/* Fullscreen marking dialog */}
-      {evidence ? (
+      {/* Fullscreen marking dialog (legacy fallback only) */}
+      {evidence && !sharedTakeoffEnabled ? (
         <Dialog open={pdfFullscreen} onOpenChange={setPdfFullscreen}>
           <DialogContent
             className="fixed inset-2 top-2 left-2 h-[calc(100vh-1rem)] w-[calc(100vw-1rem)] max-w-none translate-x-0 translate-y-0 gap-0 overflow-hidden p-3 sm:max-w-none"

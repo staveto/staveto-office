@@ -27,6 +27,7 @@ import { resolveProjectDocumentUrl } from "@/lib/projectDocumentPreview";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { useI18n } from "@/i18n/I18nContext";
 import { ProjectDocumentPreviewDialog } from "./ProjectDocumentPreviewDialog";
+import { takeoffRoute } from "@/lib/takeoff/takeoffMode";
 import { po } from "./overview/poStyles";
 import { cn } from "@/lib/utils";
 
@@ -379,8 +380,13 @@ export function ProjectDocumentsTab({
                         </button>
                         {(doc.mimeType ?? "").toLowerCase() === "application/pdf" ? (
                           <Link
-                            href={`/app/projects/${project.id}/takeoff?doc=${doc.id}`}
+                            href={takeoffRoute({
+                              projectId: project.id,
+                              drawingId: doc.id,
+                              mode: "project",
+                            })}
                             className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-[var(--po-primary)] hover:underline"
+                            data-testid={`open-in-takeoff-${doc.id}`}
                           >
                             <Ruler className="size-3.5" aria-hidden />
                             {t("takeoff.openFromDocuments")}

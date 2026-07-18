@@ -67,6 +67,48 @@ service firebase.storage {
         && request.resource.size < 25 * 1024 * 1024;
     }
 
+    // Mirrors firestore.rules canAccessProjectId: project owner, or active
+    // member of the project's linked org (orgId, falling back to workspaceId).
+    function takeoffProjectData(projectId) {
+      return firestore.get(/databases/(default)/documents/projects/$(projectId)).data;
+    }
+
+    function canAccessTakeoffProject(projectId) {
+      return isSignedIn()
+        && firestore.exists(/databases/(default)/documents/projects/$(projectId))
+        && (
+          takeoffProjectData(projectId).ownerId == request.auth.uid
+          || (
+            takeoffProjectData(projectId).get('orgId', '') != ''
+            && takeoffProjectData(projectId).get('orgId', '') != null
+            && isOrgMemberActive(takeoffProjectData(projectId).orgId)
+          )
+          || (
+            takeoffProjectData(projectId).get('workspaceId', '') != ''
+            && takeoffProjectData(projectId).get('workspaceId', '') != null
+            && isOrgMemberActive(takeoffProjectData(projectId).workspaceId)
+          )
+        );
+    }
+
+    // Takeoff images contain drawing/evidence crops and must follow project
+    // access, not global signed-in access.
+    //
+    // Deployment note: these rules read projects/{projectId} (and the linked
+    // organization docs) via cross-service firestore.get(). This requires the
+    // Firebase Rules cross-service feature (rules_version = '2', enabled for
+    // all current projects) and bills one Firestore read per check. There is
+    // no rules-unit-testing setup in this repo — verify after deploy that a
+    // non-member signed-in user gets storage/unauthorized on these paths.
+    match /projects/{projectId}/drawings/{drawingId}/takeoff/{kind}/{fileName} {
+      allow read: if canAccessTakeoffProject(projectId);
+      allow write: if canAccessTakeoffProject(projectId)
+        && kind in ['candidates', 'evidence', 'templates', 'regions']
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if canAccessTakeoffProject(projectId);
+    }
+
     // Problem photos (mobile: projects/{projectId}/problems/{problemId}/{fileName})
     match /projects/{projectId}/problems/{problemId}/{allPaths=**} {
       allow read: if isSignedIn();

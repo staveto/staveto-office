@@ -1,0 +1,269 @@
+import { describe, expect, it } from "vitest";
+import {
+  applyConfirmToTakeoffItems,
+  buildManualCandidateDto,
+  defaultSymbolTypeForCandidate,
+  findDuplicateConfirmedSymbol,
+  groupCandidatesForReview,
+  isActiveReviewCandidate,
+  normalizedRectOverlapRatio,
+  sanitizeTakeoffItemForWrite,
+} from "./candidateReview";
+import type { AnalyzeRegionCandidateDto, TakeoffItem } from "@/types/pdfTakeoff";
+
+function cand(
+  partial: Partial<AnalyzeRegionCandidateDto> & Pick<AnalyzeRegionCandidateDto, "id">
+): AnalyzeRegionCandidateDto {
+  return {
+    page_number: 1,
+    bbox_pdf: [0.1, 0.1, 0.12, 0.12],
+    bbox_px: [10, 10, 30, 30],
+    color_layer: "green",
+    kind: "symbol_candidate",
+    label_suggestions: [{ label: "zásuvka", confidence: 0.8 }],
+    nearby_text: null,
+    confidence: 0.8,
+    source: "opencv",
+    status: "probable",
+    preview_image_url: null,
+    normalized_position: { x: 0.1, y: 0.1, width: 0.02, height: 0.02 },
+    ...partial,
+  };
+}
+
+describe("candidateReview grouping", () => {
+  it("groups by sockets / switches / lights / uncertain and hides rejected", () => {
+    const groups = groupCandidatesForReview([
+      cand({ id: "g1", color_layer: "green" }),
+      cand({ id: "r1", color_layer: "red", label_suggestions: [{ label: "vypínač", confidence: 0.7 }] }),
+      cand({
+        id: "o1",
+        color_layer: "orange",
+        label_suggestions: [{ label: "svetlo", confidence: 0.7 }],
+      }),
+      cand({ id: "u1", color_layer: "unknown", confidence: 0.3, status: "candidate" }),
+      cand({ id: "x1", status: "rejected" }),
+      cand({ id: "c1", status: "confirmed" }),
+    ]);
+    const ids = Object.fromEntries(groups.map((g) => [g.id, g.candidates.map((c) => c.id)]));
+    expect(ids.sockets).toContain("g1");
+    expect(ids.switches).toContain("r1");
+    expect(ids.lights).toContain("o1");
+    expect(ids.uncertain).toContain("u1");
+    expect(groups.every((g) => !g.candidates.some((c) => c.id === "x1" || c.id === "c1"))).toBe(
+      true
+    );
+  });
+
+  it("defaultSymbolTypeForCandidate maps color layers", () => {
+    expect(defaultSymbolTypeForCandidate(cand({ id: "a", color_layer: "green" }))).toBe("socket");
+    expect(defaultSymbolTypeForCandidate(cand({ id: "b", color_layer: "red" }))).toBe("switch");
+    expect(
+      defaultSymbolTypeForCandidate(
+        cand({
+          id: "c",
+          color_layer: "orange",
+          label_suggestions: [{ label: "LED pás", confidence: 0.6 }],
+        })
+      )
+    ).toBe("led_strip");
+  });
+});
+
+describe("applyConfirmToTakeoffItems", () => {
+  it("creates a takeoff item with source_of_quantity = symbol_detection", () => {
+    const { updatedItem, created, items } = applyConfirmToTakeoffItems({
+      items: [],
+      projectId: "p1",
+      drawingId: "d1",
+      profession: "electrical",
+      symbolType: "socket",
+      name: "zásuvka",
+      unit: "ks",
+      quantityValue: 1,
+      now: "2026-01-01T00:00:00.000Z",
+      newItemId: "t1",
+    });
+    expect(created).toBe(true);
+    expect(updatedItem.sourceOfQuantity).toBe("symbol_detection");
+    expect(updatedItem.quantity).toBe(1);
+    expect(updatedItem.evidenceCount).toBe(1);
+    expect(items).toHaveLength(1);
+  });
+
+  it("increments quantity and evidence on the same symbol type", () => {
+    const existing: TakeoffItem = {
+      id: "t1",
+      projectId: "p1",
+      drawingId: "d1",
+      quoteId: null,
+      name: "zásuvka",
+      profession: "electrical",
+      quantity: 2,
+      unit: "ks",
+      sourceOfQuantity: "symbol_detection",
+      status: "confirmed",
+      evidenceCount: 2,
+      metadata: { symbolType: "socket" },
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const { updatedItem, created } = applyConfirmToTakeoffItems({
+      items: [existing],
+      projectId: "p1",
+      drawingId: "d1",
+      profession: "electrical",
+      symbolType: "socket",
+      name: "zásuvka",
+      unit: "ks",
+      quantityValue: 1,
+      now: "2026-01-02T00:00:00.000Z",
+      newItemId: "t2",
+    });
+    expect(created).toBe(false);
+    expect(updatedItem.quantity).toBe(3);
+    expect(updatedItem.evidenceCount).toBe(3);
+  });
+
+  it("rejected candidates are not active for review", () => {
+    expect(isActiveReviewCandidate(cand({ id: "x", status: "rejected" }))).toBe(false);
+  });
+});
+
+describe("duplicate protection (confirmed symbols)", () => {
+  const sym = (
+    id: string,
+    rect: { x: number; y: number; width: number; height: number },
+    drawingId = "d1",
+    pageNumber = 1
+  ) => ({ id, drawingId, pageNumber, normalizedPosition: rect });
+
+  it("computes IoU: identical = 1, disjoint = 0", () => {
+    const a = { x: 0.1, y: 0.1, width: 0.05, height: 0.05 };
+    expect(normalizedRectOverlapRatio(a, a)).toBeCloseTo(1);
+    expect(
+      normalizedRectOverlapRatio(a, { x: 0.5, y: 0.5, width: 0.05, height: 0.05 })
+    ).toBe(0);
+  });
+
+  it("finds an overlapping confirmed symbol above threshold", () => {
+    const existing = [sym("c1", { x: 0.1, y: 0.1, width: 0.04, height: 0.04 })];
+    const hit = findDuplicateConfirmedSymbol({
+      existing,
+      drawingId: "d1",
+      pageNumber: 1,
+      // Nearly identical box → IoU way above 0.5.
+      normalizedPosition: { x: 0.101, y: 0.101, width: 0.04, height: 0.04 },
+    });
+    expect(hit?.id).toBe("c1");
+  });
+
+  it("ignores symbols on other pages/drawings or with small overlap", () => {
+    const rect = { x: 0.1, y: 0.1, width: 0.04, height: 0.04 };
+    expect(
+      findDuplicateConfirmedSymbol({
+        existing: [sym("p2", rect, "d1", 2)],
+        drawingId: "d1",
+        pageNumber: 1,
+        normalizedPosition: rect,
+      })
+    ).toBeNull();
+    expect(
+      findDuplicateConfirmedSymbol({
+        existing: [sym("d2", rect, "d2", 1)],
+        drawingId: "d1",
+        pageNumber: 1,
+        normalizedPosition: rect,
+      })
+    ).toBeNull();
+    expect(
+      findDuplicateConfirmedSymbol({
+        existing: [sym("far", { x: 0.13, y: 0.13, width: 0.04, height: 0.04 })],
+        drawingId: "d1",
+        pageNumber: 1,
+        normalizedPosition: rect,
+      })
+    ).toBeNull();
+  });
+});
+
+describe("takeoff item write invariants", () => {
+  const baseItem: TakeoffItem = {
+    id: "t1",
+    projectId: "p1",
+    drawingId: "d1",
+    quoteId: null,
+    name: "zásuvka",
+    profession: "electrical",
+    quantity: 1,
+    unit: "ks",
+    sourceOfQuantity: "symbol_detection",
+    status: "confirmed",
+    evidenceCount: 1,
+    metadata: { symbolType: "socket" },
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("throws when sourceOfQuantity is missing", () => {
+    const broken = { ...baseItem, sourceOfQuantity: undefined } as unknown as TakeoffItem;
+    expect(() => sanitizeTakeoffItemForWrite(broken)).toThrow(
+      "TAKEOFF_ITEM_MISSING_SOURCE_OF_QUANTITY"
+    );
+  });
+
+  it("legend_only is never stored as confirmed", () => {
+    const sanitized = sanitizeTakeoffItemForWrite({
+      ...baseItem,
+      sourceOfQuantity: "legend_only",
+      status: "confirmed",
+    });
+    expect(sanitized.status).toBe("legend_only");
+  });
+
+  it("passes valid items through unchanged", () => {
+    expect(sanitizeTakeoffItemForWrite(baseItem)).toEqual(baseItem);
+  });
+});
+
+describe("buildManualCandidateDto — manual marks join the shared model", () => {
+  const rect = { x: 0.3, y: 0.4, width: 0.02, height: 0.03 };
+
+  it("creates a manual/probable candidate that never carries a quantity", () => {
+    const dto = buildManualCandidateDto({
+      pageNumber: 2,
+      normalizedPosition: rect,
+      symbolType: "socket",
+      label: "Zásuvka obývačka",
+    });
+    expect(dto.id.startsWith("cand_")).toBe(true);
+    expect(dto.source).toBe("manual");
+    expect(dto.status).toBe("probable"); // review needed — not confirmed
+    expect(dto.page_number).toBe(2);
+    expect(dto.normalized_position).toEqual(rect);
+    expect(dto.label_suggestions[0]?.label).toBe("Zásuvka obývačka");
+    // Manual candidates are reviewable through the standard grouping.
+    expect(isActiveReviewCandidate(dto)).toBe(true);
+  });
+
+  it("maps symbol type to the matching color layer", () => {
+    const mk = (symbolType: string) =>
+      buildManualCandidateDto({ pageNumber: 1, normalizedPosition: rect, symbolType });
+    expect(mk("socket").color_layer).toBe("green");
+    expect(mk("switch").color_layer).toBe("red");
+    expect(mk("light").color_layer).toBe("orange");
+    expect(mk("led_strip").color_layer).toBe("orange");
+    expect(mk("generic").color_layer).toBe("unknown");
+  });
+
+  it("falls back to the default label and keeps the note as nearby text", () => {
+    const dto = buildManualCandidateDto({
+      pageNumber: 1,
+      normalizedPosition: rect,
+      symbolType: "switch",
+      note: "pri dverách",
+    });
+    expect(dto.label_suggestions[0]?.label).toBe("vypínač");
+    expect(dto.nearby_text).toBe("pri dverách");
+  });
+});

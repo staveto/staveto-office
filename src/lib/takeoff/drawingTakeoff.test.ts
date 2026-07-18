@@ -5,6 +5,10 @@ import {
   screenToNormalizedRect,
   pointToNormalizedRect,
   normalizeDragRect,
+  computeEvidenceFocusTarget,
+  fitPageZoom,
+  fitWidthZoom,
+  nextRotation,
   occurrenceColor,
   occurrenceMarkerStyle,
   occurrenceLayer,
@@ -12,8 +16,11 @@ import {
   aggregateByType,
   countByStatus,
   groupByTrade,
+  rotateNormalizedRect,
   typesForTrade,
   defaultUnitFor,
+  unrotateNormalizedRect,
+  type ViewRotation,
 } from "./drawingTakeoff";
 import {
   buildQuoteLinesFromOccurrences,
@@ -92,6 +99,53 @@ describe("coordinate conversion", () => {
       width: 60,
       height: 40,
     });
+  });
+});
+
+describe("evidence click → viewer zoom/scroll target", () => {
+  const canvas = { width: 1000, height: 800 };
+  const viewport = { width: 400, height: 300 };
+
+  it("centers the evidence bbox in the viewport", () => {
+    // Rendered bbox: x=500, y=400, 100x80 → center (550, 440).
+    const target = computeEvidenceFocusTarget(
+      { x: 0.5, y: 0.5, width: 0.1, height: 0.1 },
+      canvas,
+      viewport
+    );
+    expect(target.scrollLeft).toBeCloseTo(550 - 200);
+    expect(target.scrollTop).toBeCloseTo(440 - 150);
+    expect(target.zoomBump).toBe(false);
+  });
+
+  it("clamps scroll to non-negative for evidence near the page origin", () => {
+    const target = computeEvidenceFocusTarget(
+      { x: 0.01, y: 0.01, width: 0.05, height: 0.05 },
+      canvas,
+      viewport
+    );
+    expect(target.scrollLeft).toBe(0);
+    expect(target.scrollTop).toBe(0);
+  });
+
+  it("requests a zoom bump for tiny evidence marks", () => {
+    const target = computeEvidenceFocusTarget(
+      { x: 0.4, y: 0.4, width: 0.01, height: 0.01 }, // 10x8 px — unreadable
+      canvas,
+      viewport
+    );
+    expect(target.zoomBump).toBe(true);
+  });
+
+  it("scroll target scales with zoom (larger canvas)", () => {
+    const normalized = { x: 0.5, y: 0.5, width: 0.1, height: 0.1 };
+    const base = computeEvidenceFocusTarget(normalized, canvas, viewport);
+    const zoomed = computeEvidenceFocusTarget(
+      normalized,
+      { width: 2000, height: 1600 },
+      viewport
+    );
+    expect(zoomed.scrollLeft).toBeCloseTo(base.scrollLeft * 2 + viewport.width / 2);
   });
 });
 
@@ -241,5 +295,99 @@ describe("quote generation from confirmed occurrences", () => {
     expect(fresh.find((l) => l.name === "Vypínač")).toBeDefined();
     // manual entries are never returned/modified
     expect(fresh.find((l) => l.name === "Moja ručná položka")).toBeUndefined();
+  });
+});
+
+describe("view rotation (coordinate conversion)", () => {
+  const rect = { x: 0.1, y: 0.2, width: 0.3, height: 0.1 };
+
+  it("nextRotation cycles through 0/90/180/270 both directions", () => {
+    expect(nextRotation(0, 90)).toBe(90);
+    expect(nextRotation(270, 90)).toBe(0);
+    expect(nextRotation(0, -90)).toBe(270);
+    expect(nextRotation(90, -90)).toBe(0);
+  });
+
+  it("rotate 90° maps page rect to the expected view rect", () => {
+    const v = rotateNormalizedRect(rect, 90);
+    // clockwise: (x,y) → (1 - y - h, x), dimensions swap
+    expect(v.x).toBeCloseTo(1 - rect.y - rect.height);
+    expect(v.y).toBeCloseTo(rect.x);
+    expect(v.width).toBeCloseTo(rect.height);
+    expect(v.height).toBeCloseTo(rect.width);
+  });
+
+  it("rotate 180° mirrors both axes and keeps dimensions", () => {
+    const v = rotateNormalizedRect(rect, 180);
+    expect(v.x).toBeCloseTo(1 - rect.x - rect.width);
+    expect(v.y).toBeCloseTo(1 - rect.y - rect.height);
+    expect(v.width).toBeCloseTo(rect.width);
+    expect(v.height).toBeCloseTo(rect.height);
+  });
+
+  it("unrotate is the exact inverse for every rotation", () => {
+    for (const rotation of [0, 90, 180, 270] as ViewRotation[]) {
+      const roundTrip = unrotateNormalizedRect(
+        rotateNormalizedRect(rect, rotation),
+        rotation
+      );
+      expect(roundTrip.x).toBeCloseTo(rect.x);
+      expect(roundTrip.y).toBeCloseTo(rect.y);
+      expect(roundTrip.width).toBeCloseTo(rect.width);
+      expect(roundTrip.height).toBeCloseTo(rect.height);
+    }
+  });
+
+  it("marker drawn in a rotated view lands on the correct page position", () => {
+    // Simulates the viewer: user draws in view space at 90°, we store page space.
+    const drawnInView = rotateNormalizedRect(rect, 90);
+    const stored = unrotateNormalizedRect(drawnInView, 90);
+    expect(stored.x).toBeCloseTo(rect.x);
+    expect(stored.y).toBeCloseTo(rect.y);
+  });
+
+  it("analyze-region bbox drawn at 0/90/180/270 maps to the same unrotated page rect", () => {
+    // Regression: the viewer converts every drawn analyze rect from view space
+    // to page space via unrotateNormalizedRect before analysis runs.
+    const pageRect = { x: 0.37, y: 0.12, width: 0.08, height: 0.05 };
+    for (const rotation of [0, 90, 180, 270] as ViewRotation[]) {
+      const drawnInView = rotateNormalizedRect(pageRect, rotation);
+      const analyzed = unrotateNormalizedRect(drawnInView, rotation);
+      expect(analyzed.x).toBeCloseTo(pageRect.x);
+      expect(analyzed.y).toBeCloseTo(pageRect.y);
+      expect(analyzed.width).toBeCloseTo(pageRect.width);
+      expect(analyzed.height).toBeCloseTo(pageRect.height);
+    }
+  });
+
+  it("rotation 270: drawn view rect maps to the expected page coordinates", () => {
+    // At 270° view rotation the inverse mapping is (x,y,w,h) → (1-y-h, x, h, w).
+    const drawn = { x: 0.2, y: 0.6, width: 0.1, height: 0.3 };
+    const page = unrotateNormalizedRect(drawn, 270);
+    expect(page.x).toBeCloseTo(1 - drawn.y - drawn.height); // 0.1
+    expect(page.y).toBeCloseTo(drawn.x); // 0.2
+    expect(page.width).toBeCloseTo(drawn.height); // 0.3
+    expect(page.height).toBeCloseTo(drawn.width); // 0.1
+  });
+});
+
+describe("fit calculations (left edge stays reachable)", () => {
+  const baseCss = { width: 1000, height: 700 }; // page CSS size at zoom = 1
+
+  it("fitWidthZoom fills the viewport width minus padding", () => {
+    expect(fitWidthZoom(baseCss, { width: 1016 })).toBeCloseTo(1);
+    expect(fitWidthZoom(baseCss, { width: 516 })).toBeCloseTo(0.5);
+  });
+
+  it("fitPageZoom picks the smaller of width/height fit", () => {
+    // Height is the constraint: (366-16)/700 = 0.5 < (1016-16)/1000 = 1
+    expect(fitPageZoom(baseCss, { width: 1016, height: 366 })).toBeCloseTo(0.5);
+    // Width is the constraint
+    expect(fitPageZoom(baseCss, { width: 516, height: 2000 })).toBeCloseTo(0.5);
+  });
+
+  it("fit zoom is always positive even for degenerate inputs", () => {
+    expect(fitPageZoom({ width: 0, height: 0 }, { width: 800, height: 600 })).toBe(1);
+    expect(fitWidthZoom(baseCss, { width: 0 })).toBeGreaterThan(0);
   });
 });

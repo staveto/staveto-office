@@ -122,9 +122,23 @@ export type TakeoffQuoteLineSource =
   | "manual"
   | "drawing_detection"
   | "rule_derived"
-  | "estimate";
+  | "estimate"
+  /** Aligned with SourceOfQuantity — preferred for new takeoff→quote rows. */
+  | "symbol_detection"
+  | "measured_line"
+  | "measured_area"
+  | "legend_only"
+  | "estimate_rule"
+  | "route_calculation"
+  | "imported_dwg";
 
-export type TakeoffQuoteLineStatus = "draft" | "needs_review" | "confirmed";
+export type TakeoffQuoteLineStatus =
+  | "draft"
+  | "needs_review"
+  | "confirmed"
+  | "legend_only"
+  | "customer_question"
+  | "excluded";
 
 /**
  * Rich quote line built from confirmed occurrences (+ assembly rules).
@@ -152,7 +166,22 @@ export type TakeoffQuoteLine = {
   riskPercent?: number;
   total?: number;
   source: TakeoffQuoteLineSource;
+  /**
+   * Honest quantity provenance (Phase 1+). Prefer this over mapping `source`
+   * when present. Legend-only must never be treated as plan-confirmed.
+   */
+  sourceOfQuantity?:
+    | "symbol_detection"
+    | "measured_line"
+    | "measured_area"
+    | "legend_only"
+    | "manual"
+    | "estimate_rule"
+    | "route_calculation"
+    | "imported_dwg";
   status: TakeoffQuoteLineStatus;
+  /** Confirmed plan evidence count (symbol bboxes). */
+  evidenceCount?: number;
   note?: string;
 };
 

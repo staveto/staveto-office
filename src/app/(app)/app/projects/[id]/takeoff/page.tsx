@@ -26,6 +26,7 @@ import {
 } from "@/lib/projectDocumentPreview";
 import { PlanTakeoffWorkbench } from "@/components/takeoff/PlanTakeoffWorkbench";
 import { visualTakeoffResumeHref } from "@/lib/takeoff/visualTakeoffResume";
+import { decodeBboxParam, parseTakeoffMode } from "@/lib/takeoff/takeoffMode";
 
 function isPdfDocument(doc: ProjectDocumentRecord): boolean {
   if (getProjectDocumentPreviewKind(doc.mimeType) === "pdf") return true;
@@ -39,16 +40,26 @@ export default function ProjectTakeoffPage() {
   const { t } = useI18n();
   const { user } = useAuth();
   const projectId = params.id as string;
-  const docId = searchParams.get("doc");
+  const docId = searchParams.get("doc") ?? searchParams.get("drawingId");
   const returnToParam = searchParams.get("returnTo");
   const modeParam = searchParams.get("mode");
+  const quoteId = searchParams.get("quoteId");
+  const documentIdParam = searchParams.get("documentId");
+  const pageParam = Number(searchParams.get("page") ?? "");
+  const initialPage =
+    Number.isFinite(pageParam) && pageParam >= 1 ? Math.floor(pageParam) : undefined;
+  const initialBbox = decodeBboxParam(searchParams.get("bbox"));
   const returnTo =
     returnToParam === "new-project-proposal" ||
     returnToParam === "quote-review" ||
     returnToParam === "documents"
       ? returnToParam
       : "documents";
-  const mode = modeParam === "quote-precheck" ? "quote-precheck" : "default";
+  // Legacy "quote-precheck" is kept; new modes: quote|project|document|readonly.
+  const mode =
+    modeParam === "quote-precheck"
+      ? ("quote-precheck" as const)
+      : parseTakeoffMode(modeParam) ?? ("default" as const);
 
   const [project, setProject] = useState<ProjectDoc | null>(null);
   const [documents, setDocuments] = useState<ProjectDocumentRecord[]>([]);
@@ -248,6 +259,10 @@ export default function ProjectTakeoffPage() {
           fileName={activeDoc.fileName}
           fileUrl={fileUrl}
           mode={mode}
+          quoteId={quoteId}
+          documentId={documentIdParam ?? activeDoc.id}
+          initialPage={initialPage}
+          initialBbox={initialBbox}
           returnTo={returnTo}
           showFinishButton={mode === "quote-precheck"}
           onFinished={(dest) => router.push(dest)}
