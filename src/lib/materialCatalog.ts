@@ -10,6 +10,8 @@ export const MATERIAL_UNITS: MaterialUnit[] = [
   "m",
   "m2",
   "m3",
+  "cm",
+  "km",
   "kg",
   "g",
   "l",

@@ -5,7 +5,6 @@ import {
   getFirestoreInstance,
   doc,
   updateDoc,
-  deleteDoc,
   serverTimestamp,
 } from "@/lib/firebase";
 import type { ProjectDoc } from "@/lib/projects";
@@ -18,6 +17,7 @@ import {
 import type { WorkspaceRole } from "@/types/workspace";
 import { canManageCompanyOperations } from "@/lib/workspaceProduct";
 import { updateDraftJobStatus } from "./projectService";
+import { purgeProjectCompletely } from "./purgeProjectData";
 
 export type UpdateProjectBasicsInput = {
   name: string;
@@ -114,11 +114,8 @@ export async function unarchiveProject(projectId: string): Promise<void> {
 }
 
 export async function deleteProject(projectId: string): Promise<void> {
-  const db = getFirestoreInstance();
-  if (!db) throw new Error("Firestore not configured");
-
   try {
-    await deleteDoc(doc(db, "projects", projectId));
+    await purgeProjectCompletely(projectId);
   } catch (e) {
     permissionError(e);
   }

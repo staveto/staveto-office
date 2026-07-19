@@ -266,6 +266,14 @@ export default function ProjectTakeoffPage() {
           returnTo={returnTo}
           showFinishButton={mode === "quote-precheck"}
           onFinished={(dest) => router.push(dest)}
+          documents={pdfDocuments.map((d) => ({ id: d.id, fileName: d.fileName }))}
+          onSelectDocument={(id) => {
+            const q = new URLSearchParams(searchParams.toString());
+            q.set("doc", id);
+            q.delete("page");
+            q.delete("bbox");
+            router.replace(`/app/projects/${projectId}/takeoff?${q.toString()}`);
+          }}
         />
       )}
     </div>

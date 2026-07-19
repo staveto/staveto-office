@@ -206,6 +206,125 @@ export type TakeoffEvidence = {
   createdAt: string;
 };
 
+/** A point on the PDF page in normalized 0..1 page fractions (page-space, unrotated). */
+export type NormalizedPoint = {
+  x: number;
+  y: number;
+};
+
+/**
+ * Scale calibration of one PDF page — the user marks a known real-world
+ * length with two points. All measurement lengths on that page derive from
+ * `metersPerPdfPoint`. One calibration per (drawingId, pageNumber).
+ */
+export type DrawingScaleCalibration = {
+  id: string;
+  projectId: string;
+  drawingId: string;
+  pageNumber: number;
+  pointA: NormalizedPoint;
+  pointB: NormalizedPoint;
+  /** Page size in PDF points (page-space, i.e. before any view rotation). */
+  pageWidthPt: number;
+  pageHeightPt: number;
+  /** Real length the user entered, in meters. */
+  realLengthM: number;
+  /** Distance |A−B| in PDF points at calibration time. */
+  pdfDistancePt: number;
+  metersPerPdfPoint: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CableRunStatus = "draft" | "review" | "checked" | "approved";
+
+export type CableInstallationType =
+  | "groove"
+  | "surface_trunking"
+  | "conduit"
+  | "ceiling"
+  | "drywall"
+  | "floor"
+  | "other";
+
+/**
+ * A cable route measured as a polyline on the plan. Lengths are derived
+ * from the page's scale calibration; `finalLengthM` additionally includes
+ * vertical drops, reserves and rounding (see cableMeasurement.ts).
+ */
+export type CableRun = {
+  id: string;
+  projectId: string;
+  drawingId: string;
+  pageNumber: number;
+  name: string;
+  circuitName?: string;
+  /** Optional link to a workspace catalog item (price source at export). */
+  cableTypeId?: string;
+  cableTypeName: string;
+  installationType: CableInstallationType;
+  /** Polyline vertices in normalized page coordinates (≥ 2 points). */
+  points: NormalizedPoint[];
+  /**
+   * "Pen-up" jumps: indexes `i` whose segment points[i-1]→points[i] is a
+   * skip (drawn dashed, NOT counted into the length). Lets one run continue
+   * elsewhere on the plan while staying a single quote position.
+   */
+  gapIndexes?: number[];
+  /** 2D route length on the plan (m), from calibration. */
+  measured2dLengthM: number;
+  /** Vertical drops/rises not visible on the floor plan (m). */
+  verticalLengthM: number;
+  /** Fixed extra reserve (m), e.g. connection slack. */
+  fixedReserveM: number;
+  /** Percentual reserve applied on top of route + vertical + fixed. */
+  reservePercent: number;
+  /** Rounding step for the purchasable length (m), e.g. 1. */
+  roundingStepM: number;
+  /** Final purchase length (m) — what goes into the quote. */
+  finalLengthM: number;
+  status: CableRunStatus;
+  catalogItemId?: string;
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Simple two-point length measurement (informational, not quote data). */
+export type DrawingMeasurement = {
+  id: string;
+  projectId: string;
+  drawingId: string;
+  pageNumber: number;
+  type: "length";
+  pointA: NormalizedPoint;
+  pointB: NormalizedPoint;
+  measuredLengthM: number;
+  label?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+/** Free-form drawing annotation — designer notes, NOT takeoff data. */
+export type DrawingAnnotationKind = "text" | "note" | "rect" | "ellipse";
+
+export type DrawingAnnotation = {
+  id: string;
+  projectId: string;
+  drawingId: string;
+  pageNumber: number;
+  kind: DrawingAnnotationKind;
+  /** Normalized 0..1 page rect (anchor point + size for text/note). */
+  normalizedPosition: NormalizedRect;
+  /** Text content (text/note kinds); empty for bare shapes. */
+  text: string;
+  /** CSS color of the annotation. */
+  color: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+};
+
 export type TakeoffRfi = {
   id: string;
   projectId: string;

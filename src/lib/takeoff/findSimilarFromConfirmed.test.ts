@@ -77,6 +77,38 @@ describe("buildSimilarCandidates", () => {
     expect(out).toHaveLength(0);
   });
 
+  it("blocks a proposal covering a SMALL existing point mark inside a bigger match box", () => {
+    // Rapid category marking stores tiny point rects — IoU between a tiny
+    // point and a normal-size proposal is near 0, so exclusion must use
+    // coverage over the smaller rect instead.
+    const tinyPointMark: ExistingRect[] = [
+      { pageNumber: 1, normalizedPosition: { x: 0.305, y: 0.305, width: 0.004, height: 0.004 } },
+    ];
+    const out = buildSimilarCandidates({
+      matches: [match(0.3, 0.3), match(0.6, 0.6)],
+      sourceSymbol: SOURCE,
+      confirmedSymbols: tinyPointMark,
+      existingCandidates: [],
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0]!.normalized_position.x).toBeCloseTo(0.6);
+  });
+
+  it("excludes matches overlapping legacy manual occurrence marks", () => {
+    const occ: ExistingRect[] = [
+      { pageNumber: 1, normalizedPosition: { x: 0.5, y: 0.5, width: 0.02, height: 0.02 } },
+    ];
+    const out = buildSimilarCandidates({
+      matches: [match(0.5, 0.5), match(0.7, 0.7)],
+      sourceSymbol: SOURCE,
+      confirmedSymbols: [],
+      existingCandidates: [],
+      existingOccurrences: occ,
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0]!.normalized_position.x).toBeCloseTo(0.7);
+  });
+
   it("excludes the source symbol itself and dedupes overlapping matches", () => {
     const out = buildSimilarCandidates({
       matches: [

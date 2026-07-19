@@ -749,6 +749,15 @@ function positionHasBbox(p: EstimatorPosition): boolean {
   return p.evidenceAnchors.some((a) => a.bbox != null);
 }
 
+/** AI / technical-report quantity with no plan mark — not usable for PDF-first quote. */
+export function isUnmarkedAiEstimatePosition(p: EstimatorPosition): boolean {
+  if (p.reviewStatus === "ignored" || p.reviewStatus === "excluded") return false;
+  if (positionHasBbox(p)) return false;
+  return (
+    p.quantitySource === "ai_estimate" || p.quantitySource === "technical_report"
+  );
+}
+
 function positionMatchesDocument(
   p: EstimatorPosition,
   documentId: string,
@@ -1662,12 +1671,18 @@ export function positionsBlockFixedQuote(
     );
   }
 
-  const needsReview = active.filter((p) => p.reviewStatus === "needs_review");
+  // Unmarked AI estimates are not part of a PDF-first quote — don't block on them.
+  const needsReview = active.filter(
+    (p) => p.reviewStatus === "needs_review" && !isUnmarkedAiEstimatePosition(p)
+  );
   if (needsReview.length > 0) {
     reasons.push(`${needsReview.length} pozícií čaká na kontrolu.`);
   }
   const priceMissing = active.filter(
-    (p) => p.priceStatus === "price_missing" && p.category !== "labor"
+    (p) =>
+      p.priceStatus === "price_missing" &&
+      p.category !== "labor" &&
+      !isUnmarkedAiEstimatePosition(p)
   );
   if (priceMissing.length > 0) {
     reasons.push(`${priceMissing.length} pozícií nemá cenu.`);
@@ -1675,7 +1690,8 @@ export function positionsBlockFixedQuote(
   const aiCritical = active.filter(
     (p) =>
       (p.quantitySource === "ai_estimate" || p.quantitySource === "technical_report") &&
-      CRITICAL_CATEGORIES.has(p.category)
+      CRITICAL_CATEGORIES.has(p.category) &&
+      !isUnmarkedAiEstimatePosition(p)
   );
   if (aiCritical.length > 0) {
     reasons.push(

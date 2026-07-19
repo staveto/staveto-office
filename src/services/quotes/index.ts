@@ -1,6 +1,7 @@
 export {
   createQuoteFromProject,
   upsertQuoteFromProject,
+  refreshLinkedDraftQuoteFromProject,
   createStandaloneQuote,
   saveQuote,
   setQuoteStatus,

@@ -182,6 +182,104 @@ describe("resolveCanonicalDrawingId — quote and project must agree on one draw
     expect(result.remapped).toBe(false);
   });
 
+  it("remaps to the project's ONLY PDF document even when the file name differs (rename-safe)", async () => {
+    vi.mocked(listProjectDocuments).mockResolvedValue([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      projectDoc("doc_only_pdf", "06_Znacenie_elektrika 2.pdf") as any,
+    ]);
+
+    const result = await resolveCanonicalDrawingId({
+      projectId: "p1",
+      fileId: "ai_draft_renamed",
+      fileName: "elektrika-final.pdf",
+    });
+
+    expect(result.canonicalDrawingId).toBe("doc_only_pdf");
+    expect(result.remapped).toBe(true);
+  });
+
+  it("single-PDF fallback recognizes a PDF by file extension when mimeType is generic", async () => {
+    vi.mocked(listProjectDocuments).mockResolvedValue([
+      {
+        ...projectDoc("doc_octet_pdf", "plan.pdf"),
+        mimeType: "application/octet-stream",
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+    ]);
+
+    const result = await resolveCanonicalDrawingId({
+      projectId: "p1",
+      fileId: "ai_draft_z",
+      fileName: "iny-nazov.pdf",
+    });
+
+    expect(result.canonicalDrawingId).toBe("doc_octet_pdf");
+    expect(result.remapped).toBe(true);
+  });
+
+  it("resolves when the quote's legacy drawingId is a plain FILE NAME (multi-doc estimator off)", async () => {
+    vi.mocked(listProjectDocuments).mockResolvedValue([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      projectDoc("doc_real", "06_Znacenie_elektrika 2.pdf") as any,
+    ]);
+
+    // Historically the quote keyed takeoff data on the bare file name.
+    const result = await resolveCanonicalDrawingId({
+      projectId: "p1",
+      fileId: "06_Znacenie_elektrika 2.pdf",
+      fileName: "06_Znacenie_elektrika 2.pdf",
+    });
+
+    expect(result.canonicalDrawingId).toBe("doc_real");
+    expect(result.remapped).toBe(true);
+    expect(result.canonicalDocument?.fileName).toBe("06_Znacenie_elektrika 2.pdf");
+  });
+
+  it("does NOT guess between multiple PDF documents when no name matches", async () => {
+    vi.mocked(listProjectDocuments).mockResolvedValue([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      projectDoc("doc_a", "prizemie.pdf") as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      projectDoc("doc_b", "poschodie.pdf") as any,
+    ]);
+
+    const result = await resolveCanonicalDrawingId({
+      projectId: "p1",
+      fileId: "ai_draft_x",
+      fileName: "nezname.pdf",
+    });
+
+    expect(result.canonicalDrawingId).toBe("ai_draft_x");
+    expect(result.remapped).toBe(false);
+  });
+
+  it("reuses a previously stored alias mapping even after the document was renamed", async () => {
+    vi.mocked(listProjectDocuments).mockResolvedValue([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      projectDoc("doc_target", "old-name.pdf") as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      projectDoc("doc_other", "another.pdf") as any,
+    ]);
+    firestoreDocs.set("projects/p1/drawingAliases/ai_draft_stable", {
+      aliasId: "ai_draft_stable",
+      canonicalDrawingId: "doc_target",
+      projectId: "p1",
+      source: "quote_ai_file",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const result = await resolveCanonicalDrawingId({
+      projectId: "p1",
+      fileId: "ai_draft_stable",
+      // name no longer matches any document — alias must still win
+      fileName: "renamed-since.pdf",
+    });
+
+    expect(result.canonicalDrawingId).toBe("doc_target");
+    expect(result.remapped).toBe(true);
+  });
+
   it("never throws when Firestore lookups fail — resolution degrades to the original fileId", async () => {
     vi.mocked(listProjectDocuments).mockRejectedValue(new Error("firestore down"));
 

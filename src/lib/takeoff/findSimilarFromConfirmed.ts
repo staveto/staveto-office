@@ -18,6 +18,7 @@ import type {
 } from "@/types/pdfTakeoff";
 import {
   defaultLabelForSymbolType,
+  normalizedRectCoverageRatio,
   normalizedRectOverlapRatio,
 } from "@/lib/takeoff/candidateReview";
 import { normalizedRectToBBoxPdf } from "@/lib/takeoff/regionAnalyzer";
@@ -45,12 +46,15 @@ const MAX_LINE_ASPECT = 6;
 function overlapsAny(
   match: SimilarMatchInput,
   existing: ExistingRect[],
-  iou = EXCLUSION_IOU
+  coverage = EXCLUSION_IOU
 ): boolean {
+  // Coverage (intersection over the smaller rect) instead of IoU: an
+  // existing small point mark inside a bigger proposed box must block the
+  // proposal even though their IoU is tiny.
   return existing.some(
     (e) =>
       e.pageNumber === match.pageNumber &&
-      normalizedRectOverlapRatio(e.normalizedPosition, match.normalizedPosition) >= iou
+      normalizedRectCoverageRatio(e.normalizedPosition, match.normalizedPosition) >= coverage
   );
 }
 
@@ -69,6 +73,8 @@ export function buildSimilarCandidates(params: {
   };
   confirmedSymbols: ExistingRect[];
   existingCandidates: ExistingRect[];
+  /** Legacy manual marks (drawingOccurrences) — also block proposals. */
+  existingOccurrences?: ExistingRect[];
   threshold?: number;
   maxResults?: number;
   /** PDF page size in points — bbox_pdf is emitted in points when known. */
@@ -80,6 +86,7 @@ export function buildSimilarCandidates(params: {
     sourceSymbol,
     confirmedSymbols,
     existingCandidates,
+    existingOccurrences = [],
     threshold = FIND_SIMILAR_DEFAULT_THRESHOLD,
     maxResults = FIND_SIMILAR_MAX_RESULTS,
     pageWidthPt,
@@ -104,6 +111,7 @@ export function buildSimilarCandidates(params: {
     if (overlapsAny(m, [sourceRect], 0.4)) continue;
     if (overlapsAny(m, confirmedSymbols)) continue;
     if (overlapsAny(m, existingCandidates)) continue;
+    if (overlapsAny(m, existingOccurrences)) continue;
     // Dedupe against already-accepted (higher-score) matches.
     if (
       accepted.some(

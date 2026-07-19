@@ -24,6 +24,8 @@ export default defineConfig({
       "src/lib/takeoff/**/*.test.ts",
       "src/services/takeoff/**/*.test.ts",
       "src/services/projects/**/*.test.ts",
+      "src/services/materials/**/*.test.ts",
+      "src/components/projects/setup/**/*.test.ts",
     ],
   },
   resolve: {

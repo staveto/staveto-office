@@ -258,18 +258,22 @@ export function buildQuoteItemLines(inputs: QuoteItemInput[]): QuoteItemLine[] {
   return inputs.map((item, index) => {
     const qty = item.qty > 0 ? item.qty : 1;
     const unitPrice = item.unitPrice >= 0 ? item.unitPrice : 0;
-    return {
+    // Firestore rejects `undefined` in nested maps — only set optional fields when present.
+    const line: QuoteItemLine = {
       id: `line_${Date.now()}_${index}`,
-      category: item.category,
       name: item.name.trim(),
       qty,
-      unit: item.unit.trim() || "ks",
+      unit: (item.unit ?? "").trim() || "ks",
       unitPrice,
       total: computeItemTotal(qty, unitPrice),
-      sourceOfQuantity: item.sourceOfQuantity,
-      evidenceCount: item.evidenceCount,
-      takeoffStatus: item.takeoffStatus,
     };
+    if (item.category) line.category = item.category;
+    if (item.sourceOfQuantity) line.sourceOfQuantity = item.sourceOfQuantity;
+    if (typeof item.evidenceCount === "number" && item.evidenceCount >= 0) {
+      line.evidenceCount = item.evidenceCount;
+    }
+    if (item.takeoffStatus) line.takeoffStatus = item.takeoffStatus;
+    return line;
   });
 }
 
@@ -544,8 +548,10 @@ export async function updateQuote(
 
   if (input.title !== undefined) update.title = input.title.trim();
   if (input.clientName !== undefined) update.clientName = input.clientName.trim();
-  if (input.clientEmail !== undefined) update.clientEmail = input.clientEmail.trim() || null;
-  if (input.notes !== undefined) update.notes = input.notes.trim() || null;
+  if (input.clientEmail !== undefined) {
+    update.clientEmail = (input.clientEmail ?? "").trim() || null;
+  }
+  if (input.notes !== undefined) update.notes = (input.notes ?? "").trim() || null;
   if (input.status !== undefined) update.status = input.status;
 
   const vatPercent = input.vatPercent ?? existing.vatPercent;

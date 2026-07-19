@@ -45,7 +45,7 @@ export async function resolveProjectQuoteLineItems(
   if (work.hours > 0 && work.hourlyRate > 0) {
     lines.push({
       category: "work",
-      name: "Arbeit",
+      name: "Práca",
       qty: work.hours,
       unit: "h",
       unitPrice: work.hourlyRate,
@@ -56,19 +56,43 @@ export async function resolveProjectQuoteLineItems(
     if (totals.materialCost > 0) {
       lines.push({
         category: "material",
-        name: "Material",
+        name: "Materiál",
         qty: 1,
-        unit: "Stk",
+        unit: "ks",
         unitPrice: totals.materialCost,
       });
     }
     if (totals.workCost > 0) {
       lines.push({
         category: "work",
-        name: "Arbeit",
+        name: "Práca",
         qty: 1,
         unit: "h",
         unitPrice: totals.workCost,
+      });
+    }
+  }
+
+  // Mirror the draft calculation so the official quote's grand total matches
+  // the draft preview ("Náhľad ponuky"): other costs and margin are part of
+  // the price the customer sees, not silent bookkeeping.
+  if (lines.length > 0) {
+    if (totals.otherCosts > 0) {
+      lines.push({
+        category: "work",
+        name: "Ostatné náklady",
+        qty: 1,
+        unit: "ks",
+        unitPrice: totals.otherCosts,
+      });
+    }
+    if (totals.marginAmount > 0) {
+      lines.push({
+        category: "work",
+        name: `Prirážka ${calc.marginPercent} %`,
+        qty: 1,
+        unit: "ks",
+        unitPrice: totals.marginAmount,
       });
     }
   }
@@ -92,13 +116,27 @@ export type ProjectQuoteDisplayLine = {
   lineTotal: number;
 };
 
+export type ProjectQuoteDisplayLabels = {
+  workLine: string;
+  materialSummary: string;
+  materialUnit: string;
+};
+
+const DEFAULT_DISPLAY_LABELS: ProjectQuoteDisplayLabels = {
+  workLine: "Práca",
+  materialSummary: "Materiál",
+  materialUnit: "ks",
+};
+
 /** Full quote lines for UI/PDF preview (materials + work, incl. AI hints). */
 export function buildProjectQuoteDisplayLines(
   project: ProjectDoc,
   quoteItems: Awaited<ReturnType<typeof listProjectQuoteDraftItems>>,
   tasks: Awaited<ReturnType<typeof listProjectTasks>>,
-  suggestions: MaterialSuggestionDoc[] = []
+  suggestions: MaterialSuggestionDoc[] = [],
+  labels: Partial<ProjectQuoteDisplayLabels> = {}
 ): ProjectQuoteDisplayLine[] {
+  const L = { ...DEFAULT_DISPLAY_LABELS, ...labels };
   const meta = parseAiSetupMeta(project.quoteDraftNotes);
   const materials = resolveSetupMaterialRows(quoteItems, suggestions, []);
   const work = meta?.workEstimate ?? workEstimateFromQuoteItems(quoteItems, tasks);
@@ -123,7 +161,7 @@ export function buildProjectQuoteDisplayLines(
     lines.push({
       id: work.quoteItemId ?? "work-line",
       category: "work",
-      name: "Arbeit",
+      name: L.workLine,
       qty: work.hours,
       unit: "h",
       unitPrice: work.hourlyRate,
@@ -138,9 +176,9 @@ export function buildProjectQuoteDisplayLines(
       lines.push({
         id: "material-summary",
         category: "material",
-        name: "Material",
+        name: L.materialSummary,
         qty: 1,
-        unit: "Stk",
+        unit: L.materialUnit,
         unitPrice: totals.materialCost,
         lineTotal: totals.materialCost,
       });
@@ -149,7 +187,7 @@ export function buildProjectQuoteDisplayLines(
       lines.push({
         id: "work-summary",
         category: "work",
-        name: "Arbeit",
+        name: L.workLine,
         qty: 1,
         unit: "h",
         unitPrice: totals.workCost,
@@ -159,4 +197,20 @@ export function buildProjectQuoteDisplayLines(
   }
 
   return lines;
+}
+
+/** Map legacy/generic work line names (DE/EN) to the active UI language. */
+export function localizeGenericQuoteLineName(
+  name: string,
+  category: "material" | "work" | string,
+  labels: { workLine: string; materialSummary: string }
+): string {
+  const trimmed = name.trim();
+  if (category === "work" && /^(Arbeit|Labor|Work|Práca)$/i.test(trimmed)) {
+    return labels.workLine;
+  }
+  if (category === "material" && /^(Material|Materiál)$/i.test(trimmed)) {
+    return labels.materialSummary;
+  }
+  return name;
 }

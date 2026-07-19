@@ -39,10 +39,14 @@ import type {
 } from "@/types/pdfTakeoff";
 import {
   createDrawingRegion,
+  listConfirmedSymbolsForDrawing,
+  listSymbolCandidatesForDrawing,
   listSymbolTemplatesForProject,
   saveSymbolCandidates,
   updateDrawingRegionStatus,
 } from "@/services/takeoff/pdfTakeoffRegionService";
+import { listDrawingOccurrences } from "@/services/takeoff/drawingOccurrenceService";
+import { normalizedRectCoverageRatio } from "@/lib/takeoff/candidateReview";
 import {
   createCandidatePreviewImage,
   createRegionImage,
@@ -281,6 +285,53 @@ export type AnalyzeRegionClientResponse = AnalyzeRegionResponse & {
   region_expanded?: boolean;
 };
 
+/** Coverage (intersection over the smaller rect) above which a spot counts as already marked. */
+const EXISTING_MARK_COVERAGE = 0.3;
+
+/**
+ * Drop new detections landing on spots that already carry ANY mark —
+ * pending/confirmed candidates, confirmed symbols or legacy manual
+ * occurrence marks. Best-effort: any fetch failure keeps all detections
+ * (analysis must never fail because exclusion data could not load).
+ */
+async function filterOutExistingMarks(
+  candidates: AnalyzeRegionCandidateDto[],
+  projectId: string,
+  drawingId: string,
+  pageNumber: number
+): Promise<{ candidates: AnalyzeRegionCandidateDto[]; removedCount: number }> {
+  if (candidates.length === 0) return { candidates, removedCount: 0 };
+  let existing: Array<{ pageNumber: number; rect: NormalizedRect }> = [];
+  try {
+    const [existingCandidates, confirmedSymbols, occurrences] = await Promise.all([
+      listSymbolCandidatesForDrawing(projectId, drawingId).catch(() => []),
+      listConfirmedSymbolsForDrawing(projectId, drawingId).catch(() => []),
+      listDrawingOccurrences(projectId, drawingId).catch(() => []),
+    ]);
+    existing = [
+      ...existingCandidates
+        .filter((c) => c.status !== "rejected")
+        .map((c) => ({ pageNumber: c.pageNumber, rect: c.normalizedPosition })),
+      ...confirmedSymbols.map((s) => ({ pageNumber: s.pageNumber, rect: s.normalizedPosition })),
+      ...occurrences
+        .filter((o) => o.status !== "rejected")
+        .map((o) => ({ pageNumber: o.pageNumber, rect: o.normalizedPosition })),
+    ];
+  } catch {
+    return { candidates, removedCount: 0 };
+  }
+  if (existing.length === 0) return { candidates, removedCount: 0 };
+  const kept = candidates.filter(
+    (c) =>
+      !existing.some(
+        (e) =>
+          e.pageNumber === pageNumber &&
+          normalizedRectCoverageRatio(e.rect, c.normalized_position) >= EXISTING_MARK_COVERAGE
+      )
+  );
+  return { candidates: kept, removedCount: candidates.length - kept.length };
+}
+
 /**
  * Analyze a user-drawn (or viewport-visible) region and persist candidates
  * (review-only — never confirms, never touches takeoffItems/evidence).
@@ -350,7 +401,15 @@ export async function analyzeDrawingRegion(
       normalizedBbox,
       regionIdPrefix: `cand_${region.id}`,
     });
-    const candidates = core.candidates;
+    // Spots that already carry a mark (candidate/confirmed/manual) never get
+    // a second overlapping proposal.
+    const existingFilter = await filterOutExistingMarks(
+      core.candidates,
+      projectId,
+      drawingId,
+      pageNumber
+    );
+    const candidates = existingFilter.candidates;
 
     const regionImageUrl = await createRegionImage({
       projectId,
@@ -532,7 +591,15 @@ export async function scanWholeDrawingPage(
     }
 
     const deduped = dedupeOverlappingCandidates(allCandidates);
-    const finalCandidates = deduped.candidates;
+    // Spots that already carry a mark (candidate/confirmed/manual) never get
+    // a second overlapping proposal.
+    const existingFilter = await filterOutExistingMarks(
+      deduped.candidates,
+      projectId,
+      drawingId,
+      pageNumber
+    );
+    const finalCandidates = existingFilter.candidates;
 
     await saveSymbolCandidates(projectId, region.id, drawingId, pageNumber, finalCandidates);
     await updateDrawingRegionStatus(projectId, region.id, "analyzed");
@@ -552,7 +619,7 @@ export async function scanWholeDrawingPage(
         ignored_text_or_dimensions: 0,
         needs_review: finalCandidates.length,
         tiles_scanned: tiles.length,
-        duplicates_removed: deduped.dedupedCount,
+        duplicates_removed: deduped.dedupedCount + existingFilter.removedCount,
       },
       candidates: finalCandidates,
       debug: lastDebugBase

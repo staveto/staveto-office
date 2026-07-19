@@ -25,6 +25,7 @@ vi.mock("@/services/takeoff/takeoffImageService", () => ({
 
 vi.mock("@/services/ai/detectPlanSymbolsService", () => ({
   detectAllSymbolsOnCanvas: vi.fn(),
+  detectSymbolAtCanvasPoint: vi.fn(),
 }));
 
 vi.mock("@/services/takeoff/ocrAdapter", () => ({
@@ -37,9 +38,16 @@ import {
   updateDrawingRegionStatus,
 } from "@/services/takeoff/pdfTakeoffRegionService";
 import { renderPageRaster } from "@/services/takeoff/takeoffImageService";
-import { detectAllSymbolsOnCanvas } from "@/services/ai/detectPlanSymbolsService";
+import {
+  detectAllSymbolsOnCanvas,
+  detectSymbolAtCanvasPoint,
+} from "@/services/ai/detectPlanSymbolsService";
 import { runOcrOnRasterRegion } from "@/services/takeoff/ocrAdapter";
-import { AiScanUnavailableError, scanWholeDrawingPageWithAi } from "./aiSymbolScanService";
+import {
+  AiScanUnavailableError,
+  identifySymbolWithAi,
+  scanWholeDrawingPageWithAi,
+} from "./aiSymbolScanService";
 
 function fakeRaster(width = 300, height = 200): RasterImage {
   return { width, height, data: new Uint8ClampedArray(width * height * 4).fill(255) };
@@ -272,5 +280,61 @@ describe("scanWholeDrawingPageWithAi", () => {
     // box a number on its own).
     expect(result.candidates).toHaveLength(1);
     expect(result.text_like_filtered).toBe(0);
+  });
+});
+
+describe("identifySymbolWithAi", () => {
+  const IDENTIFY_PARAMS = {
+    fileUrl: "https://example.com/plan.pdf",
+    pageNumber: 1,
+    normalizedPosition: { x: 0.4, y: 0.4, width: 0.02, height: 0.02 },
+  };
+
+  it("asks click-mode detection at the mark's center and returns name/category/confidence", async () => {
+    vi.mocked(detectSymbolAtCanvasPoint).mockResolvedValue({
+      bbox: { x: 0.4, y: 0.4, width: 0.02, height: 0.02 },
+      name: "Sériový vypínač",
+      category: "switch",
+      confidence: "high",
+    });
+
+    const result = await identifySymbolWithAi(IDENTIFY_PARAMS);
+
+    expect(result).toEqual({
+      name: "Sériový vypínač",
+      category: "switch",
+      confidence: "high",
+      // AI's tight bbox of the whole symbol — used by identify-before-marking
+      // to create a correctly-sized mark.
+      normalizedPosition: { x: 0.4, y: 0.4, width: 0.02, height: 0.02 },
+    });
+    // Raster is 300x200 (fakeRaster) → mark center (0.41, 0.41) in canvas px.
+    expect(detectSymbolAtCanvasPoint).toHaveBeenCalledTimes(1);
+    const callArg = vi.mocked(detectSymbolAtCanvasPoint).mock.calls[0]![0];
+    expect(callArg.clickCanvasPx.x).toBeCloseTo(0.41 * 300, 6);
+    expect(callArg.clickCanvasPx.y).toBeCloseTo(0.41 * 200, 6);
+    expect(callArg.language).toBe("sk");
+    // Read-only: identification never persists anything.
+    expect(saveSymbolCandidates).not.toHaveBeenCalled();
+    expect(createDrawingRegion).not.toHaveBeenCalled();
+  });
+
+  it("returns null when the model sees no symbol near the mark", async () => {
+    vi.mocked(detectSymbolAtCanvasPoint).mockResolvedValue(null);
+
+    await expect(identifySymbolWithAi(IDENTIFY_PARAMS)).resolves.toBeNull();
+  });
+
+  it("throws AiScanUnavailableError when the page fails to render", async () => {
+    vi.mocked(renderPageRaster).mockResolvedValue(null);
+
+    await expect(identifySymbolWithAi(IDENTIFY_PARAMS)).rejects.toThrow(AiScanUnavailableError);
+    expect(detectSymbolAtCanvasPoint).not.toHaveBeenCalled();
+  });
+
+  it("throws AiScanUnavailableError when the AI call fails", async () => {
+    vi.mocked(detectSymbolAtCanvasPoint).mockRejectedValue(new Error("quota exceeded"));
+
+    await expect(identifySymbolWithAi(IDENTIFY_PARAMS)).rejects.toThrow(AiScanUnavailableError);
   });
 });

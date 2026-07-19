@@ -12,6 +12,18 @@ export type AiSetupMaterialRow = {
   id: string;
   suggestionId?: string;
   quoteItemId?: string;
+  /**
+   * Live link to a PDF takeoff item (projects/{id}/takeoffItems) — the row's
+   * qty/unit mirror the marks confirmed on the plan until the quote is done.
+   */
+  takeoffItemId?: string;
+  /** Backing projects/{id}/materials doc — lets "clear AI rows" delete it. */
+  projectMaterialId?: string;
+  /**
+   * User deliberately added this row (manual form / own catalog). Kept when
+   * PDF mirror prunes AI/quote leftovers that have no takeoffItemId.
+   */
+  userOwned?: boolean;
   name: string;
   qty: number;
   unit: string;
@@ -53,6 +65,12 @@ export type AiSetupPersistedMeta = {
   workEstimate?: AiSetupWorkEstimate;
   calculation?: AiSetupCalculation;
   projectFacts?: AiProjectFactsPersisted;
+  /**
+   * Set when the user explicitly deleted AI-suggested material rows.
+   * The auto-sync must respect it and never regenerate rows from the
+   * estimator session/attachments again — "vymazal som a je to preč".
+   */
+  aiRowsClearedAt?: string;
 };
 
 export type AiSetupTotals = {

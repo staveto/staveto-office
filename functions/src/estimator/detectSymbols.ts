@@ -20,14 +20,19 @@ const requestSchema = z.object({
   imageBase64: z.string().min(100).max(4_000_000),
   mimeType: z.enum(["image/png", "image/jpeg"]).default("image/png"),
   mode: z.enum(["click", "all"]).default("click"),
+  // NOTE: optional fields are .nullish() — the Firebase callable client SDK
+  // serializes `undefined` as null, so a strict .optional() would reject
+  // requests from clients that include an unset key.
   /** Click position normalized 0..1 within the sent image (click mode). */
-  click: z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }).optional(),
+  click: z
+    .object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) })
+    .nullish(),
   language: z.enum(["sk", "de", "en"]).default("sk"),
   /** Optional legend rows from the same drawing — highest-priority context. */
   legendEntries: z
     .array(z.object({ label: z.string().optional(), description: z.string() }))
     .max(80)
-    .optional(),
+    .nullish(),
   maxSymbols: z.number().int().min(1).max(200).default(120),
 });
 
@@ -93,7 +98,58 @@ Self-check before returning each box: "Is this a drawn graphical icon made of
 lines/curves, or is it text/digits I can read?" If you can read it as words or
 numbers, DO NOT include it — no exceptions.`;
 
-function legendBlock(entries?: Array<{ label?: string; description: string }>): string {
+/**
+ * STN reference catalog — Slovak installation drawings use STN 33 2130 +
+ * STN EN 60617 symbol graphics. Naming per this catalog is what electricians
+ * order material by ("radenie" of switches), so exact names matter.
+ */
+const STN_CATALOG = `STN symbol reference (Slovak drawings follow STN 33 2130 / STN EN 60617).
+When the graphics match, use the EXACT type name — electricians buy material
+by these designations:
+
+Switches — the "radenie" number is read from the strokes/hooks on the circle:
+- "Vypínač č.1 (jednopólový)": circle with ONE stroke ending in ONE hook.
+- "Vypínač č.2 (dvojpólový)": circle with one stroke, TWO parallel hooks/ticks.
+- "Prepínač č.5 (sériový)": circle with TWO strokes/hooks on the same side
+  (controls two circuits from one place, a.k.a. lustrový).
+- "Prepínač č.6 (striedavý)": circle with one stroke whose end has a hook AND
+  a second tick across it (stairs — one circuit from two places).
+- "Prepínač č.7 (krížový)": circle with strokes/hooks on BOTH sides (cross
+  switch — one circuit from three or more places).
+- "Tlačidlo": small filled dot / circle-in-circle, often with "T".
+- Combined variants exist (e.g. č.6+6, č.5A dvojitý) — name what you see.
+
+Sockets (semicircle on a stub):
+- "Zásuvka 230V jednoduchá": ONE semicircle with one stroke.
+- "Zásuvka 230V dvojitá": doubled semicircle or two strokes (2× under one
+  cover; drawings often label it "2x pod sebou" / "vedľa seba").
+- "Zásuvka 400V (trojfázová)": semicircle with three strokes or "3f/400V".
+- IP44/wet-room variants may add a small roof/hatch over the semicircle.
+
+Lights:
+- "Svietidlo stropné": circle with an inscribed × cross.
+- "Svietidlo nástenné": circle with × on a short wall stub / half circle.
+- "Žiarivkové svietidlo": elongated rectangle with a center line.
+- "LED pás": elongated drawn line/zigzag along a wall or ceiling detail.
+- "Visiace svietidlo": circle-cross with a hanging mark.
+
+Other:
+- "Rozvádzač": hatched/filled rectangle.
+- "Inštalačná krabica": small circle/dot on a wiring route.
+- "Vývod (káblový)": short stub with an open end / arrow.
+
+Rules for using this catalog:
+- COUNT the hooks/strokes before naming a switch — never answer just
+  "vypínač" when the radenie is readable from the icon.
+- If the strokes are NOT clearly countable (small/blurry crop), return the
+  generic type ("Vypínač — radenie nečitateľné") with confidence "low" —
+  do NOT guess a specific radenie.
+- A number printed NEXT TO a symbol is usually a legend index, NOT the
+  radenie — read the radenie only from the icon's own strokes/hooks.`;
+
+function legendBlock(
+  entries?: Array<{ label?: string; description: string }> | null
+): string {
   if (!entries?.length) return "";
   return `\nProject legend (helps you name symbols):\n${entries
     .map((e) => `- ${e.label ? `${e.label}: ` : ""}${e.description}`)
@@ -183,15 +239,22 @@ The user clicked at point (x=${cx}, y=${cy}) in a 0-1000 coordinate system
 (x grows right, y grows down).
 
 ${SYMBOL_RULES}
+
+${STN_CATALOG}
 ${legendBlock(req.legendEntries)}
 
 Task: find the ONE complete drawing symbol that contains or is nearest to the
 clicked point. Return a TIGHT bounding box around the WHOLE symbol (all strokes
 that belong to it), excluding surrounding walls, dimension lines and text.
 
+Name the symbol as PRECISELY as the graphics allow, using the STN reference
+above (e.g. "Prepínač č.6 (striedavý)", "Zásuvka 230V dvojitá") — a generic
+name like "vypínač" is only acceptable with confidence "low" when the
+distinguishing strokes are unreadable.
+
 Return JSON array with exactly one element (or [] when there is no symbol near
 the point, only walls/text/dimensions):
-[{"box_2d": [ymin, xmin, ymax, xmax], "name": "short name in ${langName}", "category": one of ${JSON.stringify(
+[{"box_2d": [ymin, xmin, ymax, xmax], "name": "precise STN type name in ${langName}", "category": one of ${JSON.stringify(
       CATEGORIES
     )}, "confidence": "high"|"medium"|"low"}]
 Coordinates are 0-1000 relative to the image. JSON only.`;
@@ -199,6 +262,8 @@ Coordinates are 0-1000 relative to the image. JSON only.`;
     prompt = `You see an electrical/construction floor plan (or a part of one).
 
 ${SYMBOL_RULES}
+
+${STN_CATALOG}
 ${legendBlock(req.legendEntries)}
 
 Task: detect EVERY installation symbol on the plan (sockets, switches, lights,

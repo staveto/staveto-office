@@ -37,6 +37,7 @@ import {
   confirmPosition,
   excludePositionFromQuote,
   ignorePosition,
+  isUnmarkedAiEstimatePosition,
   linkPositionsToMaterialRows,
   markPositionCustomerSupplied,
   positionsBlockFixedQuote,
@@ -105,12 +106,19 @@ export function useEstimatorPositions(input: {
   materials: AiSetupMaterialRow[];
   currency?: string;
   enabled: boolean;
+  /**
+   * When true (PDF-first takeoff / user cleared AI rows), permanently ignore
+   * AI estimates that have no mark on the plan so they don't resurrect under
+   * "Na kontrolu".
+   */
+  dismissUnmarkedAiEstimates?: boolean;
   /** Sync an applied price back into the editable material row (quote totals). */
   onMaterialPriceApplied?: (materialRowId: string, unitPrice: number) => void;
   /** Soft-remove linked material from quote when position is ignored/excluded. */
   onMaterialRowExcluded?: (materialRowId: string) => void;
 }) {
   const { project, workspace, userId, materials, enabled } = input;
+  const dismissUnmarkedAiEstimates = input.dismissUnmarkedAiEstimates === true;
   const currency = input.currency ?? "EUR";
   const multiDocEnabled = isAiMultiDocumentEstimatorEnabled();
 
@@ -240,6 +248,33 @@ export function useEstimatorPositions(input: {
       setPositions((prev) => applyOverrides(linkPositionsToMaterialRows(prev, materialRowsForBuild)));
     }
   }, [enabled, loading, materialRowsForBuild, fileName, currency, applyOverrides]);
+
+  // Dismiss resurrected AI suggestions without a PDF mark (user already cleared
+  // them / PDF takeoff is source of truth). Persists via overrides + snapshot.
+  useEffect(() => {
+    if (!enabled || loading || !dismissUnmarkedAiEstimates) return;
+    setPositions((prev) => {
+      let changed = false;
+      const next = prev.map((p) => {
+        if (!isUnmarkedAiEstimatePosition(p)) return p;
+        changed = true;
+        const ignored = ignorePosition(
+          p,
+          "Odstránené — AI návrh bez značky v PDF (už vymazané)."
+        );
+        overridesRef.current.set(ignored.positionCode, {
+          reviewStatus: ignored.reviewStatus,
+          reviewReason: ignored.reviewReason,
+        });
+        if (ignored.linkedMaterialRowId) {
+          input.onMaterialRowExcluded?.(ignored.linkedMaterialRowId);
+        }
+        return ignored;
+      });
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onMaterialRowExcluded is stable enough; avoid re-loop
+  }, [enabled, loading, dismissUnmarkedAiEstimates, positions.length]);
 
   // Resolve uploaded files for viewer (single-PDF or multi-document).
   useEffect(() => {

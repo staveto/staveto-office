@@ -31,6 +31,13 @@ import type {
 import type {
   AnalyzeRegionCandidateDto,
   AnalyzeRegionResponse,
+  CableInstallationType,
+  CableRun,
+  DrawingAnnotation,
+  DrawingAnnotationKind,
+  DrawingMeasurement,
+  DrawingScaleCalibration,
+  NormalizedPoint,
   TakeoffItem,
 } from "@/types/pdfTakeoff";
 import { defaultUnitFor, typesForTrade } from "@/lib/takeoff/drawingTakeoff";
@@ -48,13 +55,47 @@ import {
   findSimilarForConfirmedSymbol,
 } from "@/services/takeoff/confirmedSymbolSimilarService";
 import { analyzeDrawingRegion, scanWholeDrawingPage } from "@/services/takeoff/analyzeRegionService";
-import { scanWholeDrawingPageWithAi } from "@/services/takeoff/aiSymbolScanService";
 import {
+  identifySymbolWithAi,
+  scanWholeDrawingPageWithAi,
+  symbolTypeForAiCategory,
+  type IdentifySymbolResult,
+} from "@/services/takeoff/aiSymbolScanService";
+import {
+  deleteTakeoffItem,
   listTakeoffEvidenceForItem,
   listTakeoffItems,
   listSymbolCandidatesForDrawing,
   saveSymbolCandidates,
+  updateSymbolCandidateStatus,
+  upsertTakeoffItem,
+  watchTakeoffItems,
 } from "@/services/takeoff/pdfTakeoffRegionService";
+import {
+  createDrawingAnnotation,
+  deleteDrawingAnnotation,
+  updateDrawingAnnotation,
+  watchDrawingAnnotations,
+} from "@/services/takeoff/drawingAnnotationsService";
+import {
+  deleteCableRun,
+  deleteDrawingMeasurement,
+  deleteScaleCalibration,
+  upsertCableRun,
+  upsertDrawingMeasurement,
+  upsertScaleCalibration,
+  watchCableRuns,
+  watchDrawingMeasurements,
+  watchScaleCalibrations,
+} from "@/services/takeoff/drawingMeasurementsService";
+import {
+  CABLE_RUN_DEFAULTS,
+  cableRunGroupKey,
+  computeCableRunTotals,
+  convertCableRunsToTakeoffItems,
+  polylineLengthMeters,
+} from "@/lib/takeoff/cableMeasurement";
+import { CableRunsPanel } from "./CableRunsPanel";
 import {
   changeConfirmedSymbolType,
   changeSymbolCandidateType,
@@ -146,6 +187,9 @@ type Props = {
   returnTo?: TakeoffReturnTo;
   showFinishButton?: boolean;
   onFinished?: (destination: string) => void;
+  /** Sibling PDF documents for the viewer's left rail (stacked switcher). */
+  documents?: Array<{ id: string; fileName: string }>;
+  onSelectDocument?: (documentId: string) => void;
 };
 
 type PendingMarker = { pageNumber: number; rect: NormalizedRect };
@@ -176,6 +220,8 @@ export function PlanTakeoffWorkbench({
   returnTo = "documents",
   showFinishButton,
   onFinished,
+  documents = [],
+  onSelectDocument,
 }: Props) {
   const { t, locale } = useI18n();
   const router = useRouter();
@@ -209,6 +255,19 @@ export function PlanTakeoffWorkbench({
   const [analyzeBusy, setAnalyzeBusy] = useState(false);
   const [scanningWholePage, setScanningWholePage] = useState(false);
   const [scanningWholePageWithAi, setScanningWholePageWithAi] = useState(false);
+  // "Čo je táto značka?" — AI identification dialog. Two entry points:
+  // an existing mark (candidateId) or a bare click in "identify" mode
+  // BEFORE any mark exists (candidateId null + point).
+  const [identifyFor, setIdentifyFor] = useState<{
+    candidateId: string | null;
+    /** Where the user clicked in identify mode (no mark exists yet). */
+    point?: { pageNumber: number; clickedRect: NormalizedRect };
+    busy: boolean;
+    result: IdentifySymbolResult | null;
+    failed: boolean;
+    /** Underlying error message — shown small under the failure text. */
+    failedDetail?: string;
+  } | null>(null);
   const [regionCandidates, setRegionCandidates] = useState<AnalyzeRegionCandidateDto[]>([]);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
   const [lastAnalyzeSummary, setLastAnalyzeSummary] = useState<AnalyzeRegionResponse["summary"] | null>(
@@ -261,22 +320,31 @@ export function PlanTakeoffWorkbench({
   // start glowing immediately.
   const [highlightedCategoryKeys, setHighlightedCategoryKeys] = useState<string[]>([]);
 
-  // Side-panel width is only meaningful in the side-by-side (xl+) layout —
-  // below that both columns stack full-width and the drag handle is hidden.
+  // Side-panel width is only meaningful in the side-by-side layout — below
+  // that both columns stack full-width and the drag handle is hidden.
+  // IMPORTANT: wide vs stacked is decided by the CONTAINER width, not the
+  // viewport — embedded in a narrow quote column the viewport can be huge
+  // while the workbench itself has ~600px; side-by-side there would squeeze
+  // the PDF into a useless sliver next to the fixed-width panel.
   const RIGHT_PANEL_MIN_PX = 320;
   const RIGHT_PANEL_MAX_PX = 900;
+  /** Minimum container width for PDF + panel side by side (PDF keeps ≥560px). */
+  const WIDE_LAYOUT_MIN_CONTAINER_PX = 1024;
   const RIGHT_PANEL_STORAGE_KEY = "takeoff.rightPanelWidthPx";
   const [isWideLayout, setIsWideLayout] = useState(false);
   const [rightPanelWidth, setRightPanelWidth] = useState(440);
   const panelResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const layoutContainerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const mq = window.matchMedia("(min-width: 1280px)");
-    const update = () => setIsWideLayout(mq.matches);
+    const el = layoutContainerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const update = () =>
+      setIsWideLayout(el.clientWidth >= WIDE_LAYOUT_MIN_CONTAINER_PX);
     update();
-    mq.addEventListener("change", update);
-    return () => mq.removeEventListener("change", update);
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
   useEffect(() => {
@@ -519,7 +587,23 @@ export function PlanTakeoffWorkbench({
       setSelectedCandidateId(null);
       setAnalyzeNotice(null);
       try {
-        const existingOnPage = regionCandidates.filter((c) => (c.page_number ?? 1) === pageNumber);
+        // Everything already marked on this page blocks duplicate proposals:
+        // candidates + confirmed marks AND legacy manual occurrence marks.
+        const existingOnPage = [
+          ...regionCandidates.filter((c) => (c.page_number ?? 1) === pageNumber),
+          ...occurrences
+            .filter((o) => o.pageNumber === pageNumber)
+            .map((o) => ({
+              page_number: o.pageNumber,
+              // Occurrence statuses don't map 1:1 to candidate statuses —
+              // for duplicate-blocking only "rejected or not" matters.
+              status:
+                o.status === "rejected"
+                  ? ("rejected" as const)
+                  : ("confirmed" as const),
+              normalized_position: o.normalizedPosition,
+            })),
+        ];
         const result = await scanWholeDrawingPageWithAi({
           projectId,
           drawingId,
@@ -562,6 +646,7 @@ export function PlanTakeoffWorkbench({
       formTrade,
       locale,
       regionCandidates,
+      occurrences,
       showToast,
       t,
     ]
@@ -571,6 +656,349 @@ export function PlanTakeoffWorkbench({
     const items = await listTakeoffItems(projectId, drawingId);
     setTakeoffItems(items);
   }, [projectId, drawingId]);
+
+  // Live takeoff-items mirror — quantities edited from the quote "Výkaz a
+  // ceny" (or any other surface sharing the canonical drawingId) show up in
+  // this panel's item list immediately, not only after a local action.
+  useEffect(() => {
+    if (!regionAnalyzerEnabled) return;
+    return watchTakeoffItems(projectId, drawingId, setTakeoffItems);
+  }, [regionAnalyzerEnabled, projectId, drawingId]);
+
+  // Designer annotations (text/notes/shapes) — live, shared across quote
+  // and Documents views via the canonical drawingId. Never takeoff data.
+  const [annotations, setAnnotations] = useState<DrawingAnnotation[]>([]);
+  useEffect(() => {
+    return watchDrawingAnnotations(projectId, drawingId, setAnnotations);
+  }, [projectId, drawingId]);
+
+  const handleAnnotationCreate = useCallback(
+    (input: {
+      kind: DrawingAnnotationKind;
+      pageNumber: number;
+      normalized: NormalizedRect;
+      text: string;
+    }) => {
+      void createDrawingAnnotation({
+        projectId,
+        drawingId,
+        pageNumber: input.pageNumber,
+        kind: input.kind,
+        normalizedPosition: input.normalized,
+        text: input.text,
+      }).catch(() => showToast(t("takeoff.toast.saveFailed")));
+    },
+    [projectId, drawingId, showToast, t]
+  );
+
+  const handleAnnotationUpdate = useCallback(
+    (annotationId: string, patch: { text: string }) => {
+      void updateDrawingAnnotation(projectId, annotationId, patch).catch(() =>
+        showToast(t("takeoff.toast.saveFailed"))
+      );
+    },
+    [projectId, showToast, t]
+  );
+
+  const handleAnnotationDelete = useCallback(
+    (annotationId: string) => {
+      void deleteDrawingAnnotation(projectId, annotationId).catch(() =>
+        showToast(t("takeoff.toast.saveFailed"))
+      );
+    },
+    [projectId, showToast, t]
+  );
+
+  // ---- Measure tool (scale calibration, lengths, cable runs) ---------------
+
+  const [calibrations, setCalibrations] = useState<DrawingScaleCalibration[]>([]);
+  const [drawingMeasurements, setDrawingMeasurements] = useState<DrawingMeasurement[]>([]);
+  const [cableRuns, setCableRuns] = useState<CableRun[]>([]);
+  const [selectedCableRunId, setSelectedCableRunId] = useState<string | null>(null);
+  /** Highlight filter for routes — non-empty fades all other routes. */
+  const [highlightedCableRunIds, setHighlightedCableRunIds] = useState<string[]>([]);
+  /** One-shot request forwarded to the viewer: open vertex editing. */
+  const [cableRunEditRequest, setCableRunEditRequest] = useState<{
+    runId: string;
+    requestId: number;
+  } | null>(null);
+  const [cableExportBusy, setCableExportBusy] = useState(false);
+  const [cableExportMessage, setCableExportMessage] = useState<string | null>(null);
+  const [viewerPage, setViewerPage] = useState(initialPage ?? 1);
+
+  useEffect(() => {
+    return watchScaleCalibrations(projectId, drawingId, setCalibrations);
+  }, [projectId, drawingId]);
+  useEffect(() => {
+    return watchDrawingMeasurements(projectId, drawingId, setDrawingMeasurements);
+  }, [projectId, drawingId]);
+  useEffect(() => {
+    return watchCableRuns(projectId, drawingId, setCableRuns);
+  }, [projectId, drawingId]);
+
+  const calibrationForPage = useCallback(
+    (pageNumber: number) =>
+      calibrations.find((c) => c.pageNumber === pageNumber) ?? null,
+    [calibrations]
+  );
+
+  const handleCalibrationSave = useCallback(
+    (input: {
+      pageNumber: number;
+      pointA: NormalizedPoint;
+      pointB: NormalizedPoint;
+      pageWidthPt: number;
+      pageHeightPt: number;
+      realLengthM: number;
+      pdfDistancePt: number;
+      metersPerPdfPoint: number;
+    }) => {
+      void (async () => {
+        try {
+          const saved = await upsertScaleCalibration(projectId, {
+            projectId,
+            drawingId,
+            ...input,
+          });
+          // Re-scale everything already measured on this page — a changed
+          // calibration must not leave stale lengths behind.
+          const pageRuns = cableRuns.filter((r) => r.pageNumber === input.pageNumber);
+          for (const run of pageRuns) {
+            const totals = computeCableRunTotals(run, saved);
+            if (!totals) continue;
+            await upsertCableRun(projectId, {
+              ...run,
+              measured2dLengthM: totals.measured2dLengthM,
+              finalLengthM: totals.finalLengthM,
+            });
+          }
+          const pageMeasurements = drawingMeasurements.filter(
+            (m) => m.pageNumber === input.pageNumber
+          );
+          for (const m of pageMeasurements) {
+            const lengthM = polylineLengthMeters([m.pointA, m.pointB], saved);
+            if (lengthM === null) continue;
+            await upsertDrawingMeasurement(projectId, {
+              ...m,
+              measuredLengthM: Math.round(lengthM * 100) / 100,
+            });
+          }
+          showToast(t("takeoff.measure.toastScaleSaved"));
+        } catch {
+          showToast(t("takeoff.toast.saveFailed"));
+        }
+      })();
+    },
+    [projectId, drawingId, cableRuns, drawingMeasurements, showToast, t]
+  );
+
+  const handleCalibrationReset = useCallback(
+    (pageNumber: number) => {
+      void deleteScaleCalibration(projectId, drawingId, pageNumber).catch(() =>
+        showToast(t("takeoff.toast.saveFailed"))
+      );
+    },
+    [projectId, drawingId, showToast, t]
+  );
+
+  const handleMeasurementCreate = useCallback(
+    (input: {
+      pageNumber: number;
+      pointA: NormalizedPoint;
+      pointB: NormalizedPoint;
+      measuredLengthM: number;
+    }) => {
+      void upsertDrawingMeasurement(projectId, {
+        projectId,
+        drawingId,
+        pageNumber: input.pageNumber,
+        type: "length",
+        pointA: input.pointA,
+        pointB: input.pointB,
+        measuredLengthM: input.measuredLengthM,
+      }).catch(() => showToast(t("takeoff.toast.saveFailed")));
+    },
+    [projectId, drawingId, showToast, t]
+  );
+
+  const handleMeasurementDelete = useCallback(
+    (measurementId: string) => {
+      void deleteDrawingMeasurement(projectId, measurementId).catch(() =>
+        showToast(t("takeoff.toast.saveFailed"))
+      );
+    },
+    [projectId, showToast, t]
+  );
+
+  const handleCableRunDrawn = useCallback(
+    (pageNumber: number, points: NormalizedPoint[], gapIndexes: number[] = []) => {
+      const calibration = calibrationForPage(pageNumber);
+      if (!calibration) {
+        showToast(t("takeoff.measure.scaleMissing"));
+        return;
+      }
+      const draft = {
+        points,
+        gapIndexes,
+        verticalLengthM: CABLE_RUN_DEFAULTS.verticalLengthM,
+        fixedReserveM: CABLE_RUN_DEFAULTS.fixedReserveM,
+        reservePercent: CABLE_RUN_DEFAULTS.reservePercent,
+        roundingStepM: CABLE_RUN_DEFAULTS.roundingStepM,
+      };
+      const totals = computeCableRunTotals(draft, calibration);
+      if (!totals) {
+        showToast(t("takeoff.measure.scaleMissing"));
+        return;
+      }
+      const pageRunCount = cableRuns.filter((r) => r.pageNumber === pageNumber).length;
+      void upsertCableRun(projectId, {
+        projectId,
+        drawingId,
+        pageNumber,
+        name: `${t("takeoff.measure.defaultRunName")} ${pageRunCount + 1}`,
+        cableTypeName: CABLE_RUN_DEFAULTS.cableTypeName,
+        installationType: CABLE_RUN_DEFAULTS.installationType,
+        points,
+        gapIndexes,
+        measured2dLengthM: totals.measured2dLengthM,
+        verticalLengthM: CABLE_RUN_DEFAULTS.verticalLengthM,
+        fixedReserveM: CABLE_RUN_DEFAULTS.fixedReserveM,
+        reservePercent: CABLE_RUN_DEFAULTS.reservePercent,
+        roundingStepM: CABLE_RUN_DEFAULTS.roundingStepM,
+        finalLengthM: totals.finalLengthM,
+        status: "draft",
+      })
+        .then((run) => {
+          setSelectedCableRunId(run.id);
+          showToast(
+            t("takeoff.measure.toastRunSaved", {
+              length: String(totals.finalLengthM),
+            })
+          );
+        })
+        .catch(() => showToast(t("takeoff.toast.saveFailed")));
+    },
+    [projectId, drawingId, cableRuns, calibrationForPage, showToast, t]
+  );
+
+  const handleCableRunUpdate = useCallback(
+    (runId: string, patch: Partial<CableRun>) => {
+      const current = cableRuns.find((r) => r.id === runId);
+      if (!current) return;
+      const merged: CableRun = { ...current, ...patch };
+      const calibration = calibrationForPage(merged.pageNumber);
+      const totals = computeCableRunTotals(merged, calibration);
+      if (totals) {
+        merged.measured2dLengthM = totals.measured2dLengthM;
+        merged.finalLengthM = totals.finalLengthM;
+      }
+      // Optimistic local echo — typing in the panel must not lag on the
+      // Firestore roundtrip.
+      setCableRuns((prev) => prev.map((r) => (r.id === runId ? merged : r)));
+      void upsertCableRun(projectId, merged).catch(() =>
+        showToast(t("takeoff.toast.saveFailed"))
+      );
+    },
+    [projectId, cableRuns, calibrationForPage, showToast, t]
+  );
+
+  const handleCableRunDelete = useCallback(
+    (runId: string) => {
+      setSelectedCableRunId((prev) => (prev === runId ? null : prev));
+      setHighlightedCableRunIds((prev) => prev.filter((id) => id !== runId));
+      void deleteCableRun(projectId, runId).catch(() =>
+        showToast(t("takeoff.toast.saveFailed"))
+      );
+    },
+    [projectId, showToast, t]
+  );
+
+  /**
+   * What the quote currently contains per cable group — lets the panel show
+   * "V ponuke / preniesť / neschválené" so nothing silently goes missing.
+   */
+  const exportedCableGroupQuantities = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const item of takeoffItems) {
+      const md = item.metadata;
+      if (!md || md.sourceType !== "cable_run_group") continue;
+      const key = cableRunGroupKey({
+        cableTypeName:
+          typeof md.cableTypeName === "string" ? md.cableTypeName : item.name,
+        installationType: (typeof md.installationType === "string"
+          ? md.installationType
+          : "other") as CableInstallationType,
+        catalogItemId:
+          typeof md.catalogItemId === "string" ? md.catalogItemId : undefined,
+      });
+      map[key] = Math.round(((map[key] ?? 0) + item.quantity) * 100) / 100;
+    }
+    return map;
+  }, [takeoffItems]);
+
+  const handleToggleCableRunHighlight = useCallback((runId: string) => {
+    setHighlightedCableRunIds((prev) =>
+      prev.includes(runId) ? prev.filter((id) => id !== runId) : [...prev, runId]
+    );
+  }, []);
+
+  /** Panel's "Upraviť na pláne" — select the run and ask the viewer to edit. */
+  const handleCableRunEditOnPlan = useCallback((runId: string) => {
+    setSelectedCableRunId(runId);
+    setCableRunEditRequest({ runId, requestId: Date.now() });
+  }, []);
+
+  /**
+   * "Pridať schválené do ponuky" — approved cable runs become quote takeoff
+   * items via the existing takeoffItems mechanism. Idempotent: item ids are
+   * deterministic per (cableType, installation, catalog) group, and stale
+   * cable-run items from a previous export are removed.
+   */
+  const handleExportApprovedCableRuns = useCallback(() => {
+    setCableExportBusy(true);
+    setCableExportMessage(null);
+    void (async () => {
+      try {
+        const approved = cableRuns.filter((r) => r.status === "approved");
+        const pages = [...new Set(approved.map((r) => r.pageNumber))];
+        const items = pages.flatMap((pageNumber) =>
+          convertCableRunsToTakeoffItems(
+            approved.filter((r) => r.pageNumber === pageNumber),
+            { projectId, drawingId, pageNumber }
+          )
+        );
+        const newIds = new Set(items.map((i) => i.id));
+        // Preserve createdAt of previously exported groups.
+        const existing = takeoffItems.filter(
+          (i) => i.metadata?.sourceType === "cable_run_group"
+        );
+        const existingById = new Map(existing.map((i) => [i.id, i]));
+        for (const item of items) {
+          const prev = existingById.get(item.id);
+          await upsertTakeoffItem(
+            prev ? { ...item, createdAt: prev.createdAt } : item
+          );
+        }
+        // Remove leftovers from earlier exports (e.g. a run un-approved).
+        for (const stale of existing) {
+          if (!newIds.has(stale.id)) {
+            await deleteTakeoffItem(projectId, stale.id).catch(() => undefined);
+          }
+        }
+        const totalM = items.reduce((sum, i) => sum + i.quantity, 0);
+        setCableExportMessage(
+          t("takeoff.measure.exportDone", {
+            count: String(items.length),
+            length: String(Math.round(totalM * 100) / 100),
+          })
+        );
+      } catch {
+        showToast(t("takeoff.toast.saveFailed"));
+      } finally {
+        setCableExportBusy(false);
+      }
+    })();
+  }, [projectId, drawingId, cableRuns, takeoffItems, showToast, t]);
 
   const patchCandidateLocal = useCallback(
     (id: string, patch: Partial<AnalyzeRegionCandidateDto>) => {
@@ -1132,6 +1560,148 @@ export function PlanTakeoffWorkbench({
     [projectId, regionCandidates, patchCandidateLocal, refreshTakeoffItems, showToast, t]
   );
 
+  /**
+   * "Čo je táto značka?" — send the neighborhood of ONE mark to Gemini and
+   * show its identification (name/type) in a dialog. Answers the operator's
+   * "which switch type is this when there is no legend?" question in-app.
+   */
+  const handleIdentifySymbol = useCallback(
+    async (candidateId: string) => {
+      const candidate = regionCandidates.find((c) => c.id === candidateId);
+      if (!candidate || !fileUrl) return;
+      setSelectedCandidateId(candidateId);
+      setIdentifyFor({ candidateId, busy: true, result: null, failed: false });
+      try {
+        const result = await identifySymbolWithAi({
+          fileUrl,
+          pageNumber: candidate.page_number ?? 1,
+          normalizedPosition: candidate.normalized_position,
+          language: locale,
+        });
+        setIdentifyFor((prev) =>
+          prev?.candidateId === candidateId
+            ? { candidateId, busy: false, result, failed: false }
+            : prev
+        );
+      } catch (err) {
+        setIdentifyFor((prev) =>
+          prev?.candidateId === candidateId
+            ? {
+                candidateId,
+                busy: false,
+                result: null,
+                failed: true,
+                failedDetail: err instanceof Error ? err.message : String(err),
+              }
+            : prev
+        );
+      }
+    },
+    [regionCandidates, fileUrl, locale]
+  );
+
+  /**
+   * "Zistiť značku (AI)" toolbar mode — identify BEFORE marking. The click
+   * creates nothing; AI answers "what is this?" and the dialog then offers
+   * to create the mark pre-filled with the AI name/type/bbox.
+   */
+  const handleIdentifyAtPoint = useCallback(
+    async (pageNumber: number, clickedRect: NormalizedRect) => {
+      if (!fileUrl) return;
+      const entry = {
+        candidateId: null,
+        point: { pageNumber, clickedRect },
+        busy: true,
+        result: null,
+        failed: false,
+      };
+      setIdentifyFor(entry);
+      try {
+        const result = await identifySymbolWithAi({
+          fileUrl,
+          pageNumber,
+          normalizedPosition: clickedRect,
+          language: locale,
+        });
+        setIdentifyFor((prev) =>
+          prev === entry ? { ...entry, busy: false, result } : prev
+        );
+      } catch (err) {
+        setIdentifyFor((prev) =>
+          prev === entry
+            ? {
+                ...entry,
+                busy: false,
+                failed: true,
+                failedDetail: err instanceof Error ? err.message : String(err),
+              }
+            : prev
+        );
+      }
+    },
+    [fileUrl, locale]
+  );
+
+  /**
+   * Take the AI answer over as the mark's position name: confirmed marks
+   * move to that category (quantities follow), unconfirmed candidates just
+   * get the label so a later confirm buckets them under it.
+   */
+  const handleApplyIdentifiedName = useCallback(async () => {
+    if (!identifyFor?.result) return;
+    const { candidateId, point, result } = identifyFor;
+
+    // Identify-before-marking: no mark exists yet — open the normal "add
+    // marker" dialog pre-filled with the AI answer (name, type, tight bbox),
+    // so the user reviews and saves/confirms through the standard flow.
+    if (candidateId === null) {
+      setIdentifyFor(null);
+      if (!point) return;
+      const aiRect = result.normalizedPosition;
+      const rect =
+        aiRect && aiRect.width > 0 && aiRect.height > 0 ? aiRect : point.clickedRect;
+      const mappedType = symbolTypeForAiCategory(result.category);
+      if (mappedType && typesForTrade(formTrade).some((d) => d.id === mappedType)) {
+        setFormType(mappedType);
+      }
+      setFormLabel(result.name);
+      setFormNote("");
+      setPendingMarker({ pageNumber: point.pageNumber, rect });
+      return;
+    }
+
+    const candidate = regionCandidates.find((c) => c.id === candidateId);
+    setIdentifyFor(null);
+    if (!candidate) return;
+    if (candidate.status === "confirmed") {
+      await handleMoveConfirmedToCategory(candidateId, result.name);
+      return;
+    }
+    setReviewBusy(true);
+    try {
+      await updateSymbolCandidateStatus(projectId, candidateId, {
+        labelSuggestions: [{ label: result.name, confidence: 1 }],
+      });
+      patchCandidateLocal(candidateId, {
+        label_suggestions: [{ label: result.name, confidence: 1 }],
+      });
+      showToast(t("takeoff.toast.markMoved", { label: result.name }));
+    } catch {
+      showToast(t("takeoff.toast.reviewFailed"));
+    } finally {
+      setReviewBusy(false);
+    }
+  }, [
+    identifyFor,
+    regionCandidates,
+    projectId,
+    formTrade,
+    handleMoveConfirmedToCategory,
+    patchCandidateLocal,
+    showToast,
+    t,
+  ]);
+
   const handleMarkerDrawn = useCallback(
     (pageNumber: number, rect: NormalizedRect) => {
       if (markerMode === "analyze_region") {
@@ -1292,11 +1862,21 @@ export function PlanTakeoffWorkbench({
           );
           return;
         }
-        // Skip candidates overlapping existing occurrences on the same page.
-        const existing = occurrences.filter((o) => o.pageNumber === reference.pageNumber);
+        // Skip proposals overlapping ANY existing mark on the same page —
+        // legacy occurrences AND new-model candidates/confirmed symbols.
+        const existingRects = [
+          ...occurrences
+            .filter((o) => o.pageNumber === reference.pageNumber)
+            .map((o) => o.normalizedPosition),
+          ...regionCandidates
+            .filter(
+              (c) =>
+                (c.page_number ?? 1) === reference.pageNumber && c.status !== "rejected"
+            )
+            .map((c) => c.normalized_position),
+        ];
         const overlapsExisting = (rect: NormalizedRect) =>
-          existing.some((o) => {
-            const a = o.normalizedPosition;
+          existingRects.some((a) => {
             const ix =
               Math.min(a.x + a.width, rect.x + rect.width) - Math.max(a.x, rect.x);
             const iy =
@@ -1330,7 +1910,7 @@ export function PlanTakeoffWorkbench({
         setFindSimilarBusy(false);
       }
     },
-    [fileUrl, projectId, drawingId, occurrences, showToast, t]
+    [fileUrl, projectId, drawingId, occurrences, regionCandidates, showToast, t]
   );
 
   const handleBulkCandidates = useCallback(
@@ -1632,9 +2212,14 @@ export function PlanTakeoffWorkbench({
         </Button>
       </div>
 
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-start">
+      <div
+        ref={layoutContainerRef}
+        className={
+          isWideLayout ? "flex flex-row items-start gap-3" : "flex flex-col gap-3"
+        }
+      >
         {/* Left: interactive PDF */}
-        <div className="min-w-0 xl:flex-1">
+        <div className={isWideLayout ? "min-w-0 flex-1" : "min-w-0"}>
           {analyzeNotice ? (
             <div
               data-testid="analyze-inline-notice"
@@ -1713,8 +2298,20 @@ export function PlanTakeoffWorkbench({
                 : undefined
             }
             scanningWholePageWithAi={scanningWholePageWithAi}
+            onIdentifyPoint={
+              aiScanEnabled && perms.allowAnalyze && fileUrl
+                ? (pageNumber, rect) => void handleIdentifyAtPoint(pageNumber, rect)
+                : undefined
+            }
+            identifyingSymbol={identifyFor?.busy ?? false}
             focusEvidence={focusEvidence}
             highlightedCandidateIds={highlightedCandidateIds}
+            onClearHighlights={() => {
+              setHighlightedCategoryKeys([]);
+              setSelectedCandidateId(null);
+              setSelectedId(null);
+              setFocusEvidence(null);
+            }}
             pointModeHint={
               activeCategory
                 ? t("takeoff.category.markingBanner", {
@@ -1728,6 +2325,29 @@ export function PlanTakeoffWorkbench({
                   })
                 : null
             }
+            annotations={annotations}
+            onAnnotationCreate={perms.allowEdit ? handleAnnotationCreate : undefined}
+            onAnnotationUpdate={perms.allowEdit ? handleAnnotationUpdate : undefined}
+            onAnnotationDelete={perms.allowEdit ? handleAnnotationDelete : undefined}
+            documents={documents}
+            activeDocumentId={documentId ?? drawingId}
+            onSelectDocument={onSelectDocument}
+            onPageChange={setViewerPage}
+            calibrations={calibrations}
+            measurements={drawingMeasurements}
+            cableRuns={cableRuns}
+            selectedCableRunId={selectedCableRunId}
+            onCableRunClick={(id) =>
+              setSelectedCableRunId((prev) => (prev === id ? null : id))
+            }
+            onCableRunDrawn={perms.allowEdit ? handleCableRunDrawn : undefined}
+            onCableRunEdit={perms.allowEdit ? handleCableRunUpdate : undefined}
+            highlightedCableRunIds={highlightedCableRunIds}
+            cableRunEditRequest={perms.allowEdit ? cableRunEditRequest : null}
+            onCalibrationSave={perms.allowEdit ? handleCalibrationSave : undefined}
+            onCalibrationReset={perms.allowEdit ? handleCalibrationReset : undefined}
+            onMeasurementCreate={perms.allowEdit ? handleMeasurementCreate : undefined}
+            onMeasurementDelete={perms.allowEdit ? handleMeasurementDelete : undefined}
           />
         </div>
 
@@ -1736,16 +2356,21 @@ export function PlanTakeoffWorkbench({
             role="separator"
             aria-orientation="vertical"
             title={t("takeoff.viewer.resizePanelHint")}
-            className="hidden w-3 shrink-0 cursor-col-resize touch-none items-center justify-center self-stretch xl:flex"
+            className="flex w-3 shrink-0 cursor-col-resize touch-none items-center justify-center self-stretch"
             onPointerDown={handlePanelResizeStart}
           >
             <div className="h-16 w-1 rounded-full bg-border transition-colors hover:bg-primary/60" />
           </div>
         ) : null}
 
-        {/* Right: candidates review / occurrence list + quote */}
+        {/* Right: candidates review / occurrence list + quote.
+            Card surface — embedded on gray pages (quote setup) the lists
+            otherwise float on the page background with too little contrast. */}
         <div
-          className={`flex min-w-0 flex-col gap-3 ${
+          // overflow-y-auto is the safety net: if every panel is expanded at
+          // once the column scrolls instead of letting panels paint over
+          // each other.
+          className={`flex min-w-0 flex-col gap-3 overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-sm ${
             isFullscreen ? "max-h-[calc(100vh-100px)]" : "max-h-[720px]"
           }`}
           style={isWideLayout ? { width: rightPanelWidth, flexShrink: 0 } : undefined}
@@ -1835,7 +2460,10 @@ export function PlanTakeoffWorkbench({
                   </Button>
                 </div>
               ) : null}
-              <div className="min-h-0 flex-1">
+              {/* min-h keeps the candidate list usable even when the cable
+                  and quote panels below are expanded — the column scrolls
+                  rather than squeezing this list to nothing. */}
+              <div className="min-h-[240px] flex-1">
                 {regionAnalyzerEnabled && rightTab === "candidates" ? (
                   <SymbolCandidateReviewPanel
                     candidates={regionCandidates}
@@ -1874,6 +2502,12 @@ export function PlanTakeoffWorkbench({
                       perms.allowAnalyze ? handleFindSimilarConfirmedRow : undefined
                     }
                     findSimilarBusy={similarFromConfirmedBusy}
+                    onIdentifySymbol={
+                      aiScanEnabled && perms.allowAnalyze && fileUrl
+                        ? (id) => void handleIdentifySymbol(id)
+                        : undefined
+                    }
+                    identifyBusy={identifyFor?.busy ?? false}
                     activeCategoryKey={activeCategory?.key ?? null}
                     onStartCategoryMarking={
                       perms.allowConfirm && perms.allowEdit
@@ -1883,12 +2517,14 @@ export function PlanTakeoffWorkbench({
                     onStopCategoryMarking={handleStopCategoryMarking}
                     highlightedCategoryKeys={highlightedCategoryKeys}
                     onHighlightCategory={handleToggleHighlightCategory}
+                    onSetHighlightedCategories={setHighlightedCategoryKeys}
                     onMoveConfirmedToCategory={
                       perms.allowConfirm ? handleMoveConfirmedToCategory : undefined
                     }
                     onRenameCategory={
                       perms.allowConfirm ? handleRenameCategory : undefined
                     }
+                    persistKey={`${projectId}:${drawingId}`}
                   />
                 ) : (
                   <TakeoffRightPanel
@@ -1903,6 +2539,29 @@ export function PlanTakeoffWorkbench({
                   />
                 )}
               </div>
+              {perms.allowEdit || cableRuns.length > 0 ? (
+                <CableRunsPanel
+                  runs={cableRuns}
+                  selectedRunId={selectedCableRunId}
+                  onSelectRun={setSelectedCableRunId}
+                  onStartNewRun={
+                    perms.allowEdit ? () => setMarkerMode("measure_cable") : undefined
+                  }
+                  hasCalibration={Boolean(calibrationForPage(viewerPage))}
+                  onUpdateRun={perms.allowEdit ? handleCableRunUpdate : undefined}
+                  onDeleteRun={perms.allowEdit ? handleCableRunDelete : undefined}
+                  onEditRunOnPlan={perms.allowEdit ? handleCableRunEditOnPlan : undefined}
+                  highlightedRunIds={highlightedCableRunIds}
+                  onToggleRunHighlight={handleToggleCableRunHighlight}
+                  onSetHighlightedRuns={setHighlightedCableRunIds}
+                  onExportApproved={
+                    perms.allowCreateQuoteItems ? handleExportApprovedCableRuns : undefined
+                  }
+                  exportBusy={cableExportBusy}
+                  exportMessage={cableExportMessage}
+                  exportedGroupQuantities={exportedCableGroupQuantities}
+                />
+              ) : null}
               {perms.allowCreateQuoteItems ? (
                 <QuoteDraftPanel
                   occurrences={occurrences}
@@ -1915,6 +2574,87 @@ export function PlanTakeoffWorkbench({
           )}
         </div>
       </div>
+
+      {/* "Čo je táto značka?" — AI identification result */}
+      <Dialog
+        open={!!identifyFor}
+        onOpenChange={(open) => {
+          if (!open) setIdentifyFor(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("takeoff.identify.title")}</DialogTitle>
+          </DialogHeader>
+          {identifyFor?.busy ? (
+            <p className="text-sm text-muted-foreground">
+              {t("takeoff.identify.busy")}
+            </p>
+          ) : identifyFor?.result ? (
+            <div className="space-y-2">
+              <p className="text-base font-semibold">{identifyFor.result.name}</p>
+              <p className="text-sm text-muted-foreground">
+                {t("takeoff.identify.category")}: {identifyFor.result.category}
+                {" · "}
+                {t("takeoff.identify.confidence")}:{" "}
+                {t(`takeoff.identify.confidence_${identifyFor.result.confidence}`)}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t("takeoff.identify.applyHint")}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <p className="text-sm text-muted-foreground">
+                {identifyFor?.failed
+                  ? t("takeoff.identify.failed")
+                  : t("takeoff.identify.empty")}
+              </p>
+              {identifyFor?.failed && identifyFor.failedDetail ? (
+                <p className="break-words font-mono text-[11px] leading-relaxed text-muted-foreground/80">
+                  {identifyFor.failedDetail}
+                </p>
+              ) : null}
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIdentifyFor(null)}
+            >
+              {t("common.close")}
+            </Button>
+            {identifyFor?.failed ? (
+              <Button
+                type="button"
+                data-testid="identify-retry"
+                onClick={() => {
+                  const { candidateId, point } = identifyFor;
+                  if (candidateId !== null) {
+                    void handleIdentifySymbol(candidateId);
+                  } else if (point) {
+                    void handleIdentifyAtPoint(point.pageNumber, point.clickedRect);
+                  }
+                }}
+              >
+                {t("takeoff.identify.retry")}
+              </Button>
+            ) : null}
+            {identifyFor?.result ? (
+              <Button
+                type="button"
+                data-testid="identify-apply"
+                onClick={() => void handleApplyIdentifiedName()}
+              >
+                {identifyFor.candidateId === null
+                  ? t("takeoff.identify.createMark")
+                  : t("takeoff.identify.apply")}
+              </Button>
+            ) : null}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Add marker dialog */}
       <Dialog

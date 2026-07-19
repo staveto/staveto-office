@@ -8,8 +8,9 @@
  * The detailed takeoff is a first-class tab, not hidden under the summary.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  BookOpen,
   ClipboardList,
   Crosshair,
   Euro,
@@ -43,11 +44,27 @@ import { EstimatorLinkedTakeoffTable } from "@/components/ai-estimator/Estimator
 import { EstimatorPdfEvidenceViewer } from "@/components/ai-estimator/EstimatorPdfEvidenceViewer";
 import { PlanTakeoffWorkbench } from "@/components/takeoff/PlanTakeoffWorkbench";
 import { isPdfTakeoffRegionAnalyzerEnabled } from "@/lib/ai/aiEstimatorFeature";
+import { isUnmarkedAiEstimatePosition } from "@/lib/ai/estimatorPositions";
+import { resolveProjectDocumentUrl } from "@/lib/projectDocumentPreview";
 import {
   resolveCanonicalDrawingId,
   type ResolveCanonicalDrawingIdResult,
 } from "@/services/takeoff/drawingIdentityService";
 import { mergeTakeoffDrawingData } from "@/services/takeoff/takeoffDrawingMergeService";
+import {
+  updateTakeoffItemQuantity,
+  updateTakeoffItemUnit,
+  watchTakeoffItems,
+} from "@/services/takeoff/pdfTakeoffRegionService";
+import { mergeTakeoffItemsIntoMaterialRows } from "./takeoffQuoteMirror";
+import type { TakeoffItem } from "@/types/pdfTakeoff";
+import { CatalogItemPickerDialog } from "./CatalogItemPickerDialog";
+import type { CatalogItemDoc } from "@/services/materials";
+import {
+  deleteProjectMaterial,
+  updateMaterialSuggestion,
+} from "@/services/materials/projectMaterialsService";
+import { deleteQuoteDraftItem } from "@/lib/projects";
 import { EstimatorMarkingChecklist } from "@/components/ai-estimator/EstimatorMarkingChecklist";
 import {
   EstimatorPriceDrawer,
@@ -113,9 +130,16 @@ type Props = {
   applyingFacts?: boolean;
   /** Evidence-linked positions (interactive PDF review). Optional — flag-gated. */
   evidence?: EstimatorPositionsApi;
+  /** Stable project id for takeoff↔quote mirror (must not depend on evidence flag). */
+  projectId?: string;
   currency?: string;
   subTab: MaterialSubTab;
   onSubTabChange: (tab: MaterialSubTab) => void;
+  /**
+   * The user deleted AI rows — the parent persists this so the estimator
+   * auto-sync never regenerates (resurrects) them on a later reload.
+   */
+  onAiRowsCleared?: () => void;
 };
 
 const GROUP_ORDER = ["socket", "switch", "lighting", "cable", "install", "labor", "other"];
@@ -129,9 +153,19 @@ type SummaryRow = {
   needsQty: boolean;
 };
 
+function isKeptWithPdfMirror(r: AiSetupMaterialRow): boolean {
+  return Boolean(r.takeoffItemId || r.userOwned);
+}
+
 function buildSummary(rows: AiSetupMaterialRow[]): { group: string; items: SummaryRow[] }[] {
+  const included = rows.filter((r) => r.included && r.name.trim());
+  // When PDF mirror rows exist, show only PDF-linked + deliberate user adds.
+  // Quote/AI leftovers without a label ("svetlo", qty 0 facts, …) stay out.
+  const hasPdfMirror = included.some((r) => r.takeoffItemId);
+  const forSummary = hasPdfMirror ? included.filter(isKeptWithPdfMirror) : included;
+
   const byGroup = new Map<string, Map<string, SummaryRow>>();
-  for (const m of rows.filter((r) => r.included && r.name.trim())) {
+  for (const m of forSummary) {
     const group = m.group || inferMaterialGroup(m.name);
     const key = `${m.name.trim().toLowerCase()}|${normalizeSetupUnit(m.unit)}`;
     const groupMap = byGroup.get(group) ?? new Map<string, SummaryRow>();
@@ -169,12 +203,13 @@ export function AiSetupMaterialStep({
   onApplyFactsToMaterials,
   applyingFacts,
   evidence,
+  projectId: projectIdProp,
   currency = "EUR",
   subTab,
   onSubTabChange,
+  onAiRowsCleared,
 }: Props) {
   const { t } = useI18n();
-  const [showEditRows, setShowEditRows] = useState(false);
   const [pricePosition, setPricePosition] = useState<EstimatorPosition | null>(null);
   // PDF-first by default: "Rozpoznať značku" — click the plan, then classify.
   const [markMode, setMarkMode] = useState(true);
@@ -184,39 +219,82 @@ export function AiSetupMaterialStep({
 
   // Canonical drawing identity — quote takeoff must key on the SAME
   // drawingId Project Documents would use for the same PDF (task: fix
-  // quote/project drawing identity mismatch). Resolution is best-effort and
-  // never destructive; it falls back to the AI-draft fileId immediately and
-  // upgrades once resolved so the workbench never blocks on it.
+  // quote/project drawing identity mismatch).
+  //
+  // The quote flow historically keyed data on `activeDocument.fileId`, and —
+  // when the multi-document estimator is OFF (activeDocument == null) — on
+  // the plain FILE NAME. Both differ from the Documents flow's document id,
+  // so resolution must run for whichever key the quote would have used.
   const activeFileId = evidence?.activeDocument?.fileId ?? null;
   const activeFileName = evidence?.activeDocument?.fileName ?? evidence?.fileName ?? null;
-  const [canonicalDrawingId, setCanonicalDrawingId] = useState<string | null>(null);
+  /** The drawingId the quote flow would use WITHOUT canonical resolution. */
+  const quoteLegacyDrawingId = activeFileId ?? activeFileName;
+  const [drawingIdentity, setDrawingIdentity] = useState<{
+    /** Which quoteLegacyDrawingId this resolution belongs to (staleness guard). */
+    forKey: string;
+    drawingId: string;
+    /** Documents-flow file (same URL + name /takeoff renders), when matched. */
+    file: { url: string; fileName: string } | null;
+  } | null>(null);
   const [drawingAliasWarning, setDrawingAliasWarning] =
     useState<ResolveCanonicalDrawingIdResult | null>(null);
   const [mergingLegacyDrawingData, setMergingLegacyDrawingData] = useState(false);
   useEffect(() => {
-    if (!activeFileId || !evidence?.projectId || !sharedTakeoffEnabled) {
-      setCanonicalDrawingId(null);
+    if (!quoteLegacyDrawingId || !evidence?.projectId || !sharedTakeoffEnabled) {
+      setDrawingIdentity(null);
       setDrawingAliasWarning(null);
       return;
     }
     let cancelled = false;
-    resolveCanonicalDrawingId({
-      projectId: evidence.projectId,
-      fileId: activeFileId,
-      fileName: activeFileName,
-    })
-      .then((result) => {
+    const projectId = evidence.projectId;
+    (async () => {
+      try {
+        const result = await resolveCanonicalDrawingId({
+          projectId,
+          fileId: quoteLegacyDrawingId,
+          fileName: activeFileName,
+        });
         if (cancelled) return;
-        setCanonicalDrawingId(result.canonicalDrawingId);
         setDrawingAliasWarning(result.hasLegacyDataUnderAlias ? result : null);
-      })
-      .catch(() => {
-        if (!cancelled) setCanonicalDrawingId(null);
-      });
+        let file: { url: string; fileName: string } | null = null;
+        if (result.canonicalDocument) {
+          const url = await resolveProjectDocumentUrl({
+            projectId,
+            storagePath: result.canonicalDocument.storagePath,
+          }).catch(() => null);
+          if (url) file = { url, fileName: result.canonicalDocument.fileName };
+        }
+        if (!cancelled) {
+          setDrawingIdentity({
+            forKey: quoteLegacyDrawingId,
+            drawingId: result.canonicalDrawingId,
+            file,
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          // Resolution failed — keep the historical key so data stays where
+          // the quote always stored it (never invent a third id).
+          setDrawingIdentity({
+            forKey: quoteLegacyDrawingId,
+            drawingId: quoteLegacyDrawingId,
+            file: null,
+          });
+        }
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [activeFileId, activeFileName, evidence?.projectId, sharedTakeoffEnabled]);
+  }, [quoteLegacyDrawingId, activeFileName, evidence?.projectId, sharedTakeoffEnabled]);
+  // Workbench mounts only once the identity for the CURRENT file is known —
+  // mounting earlier would flash a dataset Project Documents doesn't use.
+  const drawingIdentityReady =
+    !quoteLegacyDrawingId || drawingIdentity?.forKey === quoteLegacyDrawingId;
+  const canonicalDrawingId =
+    drawingIdentity?.forKey === quoteLegacyDrawingId ? drawingIdentity.drawingId : null;
+  const canonicalFile =
+    drawingIdentity?.forKey === quoteLegacyDrawingId ? drawingIdentity.file : null;
 
   const handleMergeLegacyDrawingData = async () => {
     if (!drawingAliasWarning?.aliasFileId || !evidence?.projectId || mergingLegacyDrawingData) return;
@@ -234,7 +312,260 @@ export function AiSetupMaterialStep({
     }
   };
 
+  // ---- Takeoff ↔ quote mirror --------------------------------------------
+  // While the quote is a draft, marks confirmed on the PDF ("Pozície v PDF"
+  // and the Documents takeoff — same canonical drawingId) stream straight
+  // into the material rows: Súhrn/Detailný výkaz/Náhľad ponuky always show
+  // the components + counts marked on the plan. Reverse direction: a qty
+  // edit on a linked row writes back to the takeoff item, so the PDF panel
+  // shows the same number.
+  const materialsRef = useRef(materials);
+  materialsRef.current = materials;
+  const onMaterialsChangeRef = useRef(onMaterialsChange);
+  onMaterialsChangeRef.current = onMaterialsChange;
+  /** Linked rows with a not-yet-flushed local qty edit (see debounce below). */
+  const pendingQtyWritesRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  /** Last takeoff snapshot — re-applied when parent replaces materials after load. */
+  const lastTakeoffItemsRef = useRef<TakeoffItem[]>([]);
+  const mirrorProjectId = projectIdProp?.trim() || evidence?.projectId?.trim() || "";
+
+  const applyTakeoffMirror = useCallback(
+    (items: TakeoffItem[], baseRows: AiSetupMaterialRow[]) => {
+      const sourceNote = t("projects.aiSetup.material.takeoffMirrorSource");
+      const { rows, changed } = mergeTakeoffItemsIntoMaterialRows({
+        rows: baseRows,
+        items,
+        sourceNote,
+        preserveQtyItemIds: new Set(pendingQtyWritesRef.current.keys()),
+      });
+      if (changed) onMaterialsChangeRef.current(rows);
+      return changed;
+    },
+    [t]
+  );
+
+  useEffect(() => {
+    if (!sharedTakeoffEnabled || !mirrorProjectId) return;
+    // Whole-project watch (drawingId: null) on purpose: the quote must show
+    // EVERY component marked in ANY project PDF — including marks stored
+    // under a legacy alias drawingId the canonical resolver can't see.
+    return watchTakeoffItems(mirrorProjectId, null, (items) => {
+      lastTakeoffItemsRef.current = items;
+      applyTakeoffMirror(items, materialsRef.current);
+    });
+  }, [sharedTakeoffEnabled, mirrorProjectId, applyTakeoffMirror]);
+
+  // Parent load / auto-sync calls setMaterials(quoteRows) AFTER the first
+  // takeoff snapshot — that wiped mirrored PDF rows and the watch did not
+  // re-fire. Re-merge whenever materials change while we still have items.
+  useEffect(() => {
+    if (!sharedTakeoffEnabled || !mirrorProjectId) return;
+    const items = lastTakeoffItemsRef.current;
+    if (items.length === 0) return;
+    applyTakeoffMirror(items, materials);
+  }, [materials, sharedTakeoffEnabled, mirrorProjectId, applyTakeoffMirror]);
+
+  // "Vymazať AI návrhy" — AI suggestion/project-material rows, PLUS orphan
+  // duplicates that share a name with a PDF-linked row but have no
+  // takeoffItemId (e.g. leftover "Svetlo × 3" / "zásuvka × 4" next to the
+  // real PDF counts). Catalog picks with a unique name are kept.
+  const pdfLinkedNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const m of materials) {
+      if (!m.takeoffItemId || !m.name.trim()) continue;
+      names.add(m.name.trim().toLowerCase());
+    }
+    return names;
+  }, [materials]);
+  const isOrphanPdfDuplicate = (m: AiSetupMaterialRow) => {
+    if (m.takeoffItemId || !m.name.trim()) return false;
+    // Name-only: unit mismatches must not leave "Nie z PDF" twins beside PDF.
+    return pdfLinkedNames.has(m.name.trim().toLowerCase());
+  };
+  const hasPdfMirrorRows = materials.some((m) => m.takeoffItemId);
+  const isClearableAiRow = (m: AiSetupMaterialRow) => {
+    if (m.takeoffItemId || m.userOwned) return false;
+    // With PDF marks: anything not from the plan and not user-owned is junk
+    // (AI suggestions, quote twins, unlabeled "svetlo", zero-qty facts, …).
+    if (hasPdfMirrorRows) return true;
+    return Boolean(m.suggestionId || m.projectMaterialId) || isOrphanPdfDuplicate(m);
+  };
+  const [clearAiAsk, setClearAiAsk] = useState(false);
+  const [clearingAiRows, setClearingAiRows] = useState(false);
+  const aiRowsCount = materials.filter(isClearableAiRow).length;
+
+  /** Delete rows from the quote AND their backing docs so they stay gone after reload. */
+  const deleteMaterialRowsPersistent = async (removed: AiSetupMaterialRow[]) => {
+    const projectId = mirrorProjectId || evidence?.projectId;
+    const removedIds = new Set(removed.map((r) => r.id));
+    onMaterialsChange(materials.filter((m) => !removedIds.has(m.id)));
+    if (!projectId) return;
+    await Promise.allSettled(
+      removed.flatMap((row) => {
+        const ops: Promise<unknown>[] = [];
+        if (row.suggestionId) {
+          ops.push(
+            updateMaterialSuggestion(projectId, row.suggestionId, { status: "rejected" })
+          );
+        }
+        if (row.projectMaterialId) {
+          ops.push(deleteProjectMaterial(projectId, row.projectMaterialId));
+        }
+        if (row.quoteItemId) {
+          ops.push(deleteQuoteDraftItem(projectId, row.quoteItemId));
+        }
+        return ops;
+      })
+    );
+  };
+
+  const handleClearAiRows = async () => {
+    if (clearingAiRows) return;
+    setClearingAiRows(true);
+    try {
+      await deleteMaterialRowsPersistent(materials.filter(isClearableAiRow));
+      // Persist the decision AFTER the deletes: the auto-sync must never
+      // regenerate these rows from the estimator session again.
+      onAiRowsCleared?.();
+    } finally {
+      setClearingAiRows(false);
+      setClearAiAsk(false);
+    }
+  };
+
+  // With PDF marks present, auto-drop AI/quote leftovers — never userOwned
+  // (manual / catalog) or takeoff-linked rows.
+  const pruningAiRef = useRef(false);
+  useEffect(() => {
+    if (!sharedTakeoffEnabled || !hasPdfMirrorRows || pruningAiRef.current) return;
+    const junk = materials.filter(isClearableAiRow);
+    if (junk.length === 0) return;
+    pruningAiRef.current = true;
+    void deleteMaterialRowsPersistent(junk)
+      .then(() => onAiRowsCleared?.())
+      .finally(() => {
+        pruningAiRef.current = false;
+      });
+  }, [materials, sharedTakeoffEnabled, hasPdfMirrorRows]);
+
+  // Per-item delete in the quick summary — one summary line aggregates all
+  // material rows with the same name+unit; deleting removes exactly those.
+  // Takeoff-linked rows are excluded (the PDF mirror would recreate them) —
+  // those are managed by removing marks in the PDF.
+  const [deleteRowAsk, setDeleteRowAsk] = useState<{ title: string; unit: string } | null>(null);
+  const [deletingRow, setDeletingRow] = useState(false);
+
+  const rowsForSummaryItem = (title: string, unit: string) =>
+    materials.filter(
+      (m) =>
+        m.name.trim().toLowerCase() === title.trim().toLowerCase() &&
+        normalizeSetupUnit(m.unit) === unit
+    );
+
+  const handleDeleteSummaryItem = async () => {
+    if (!deleteRowAsk || deletingRow) return;
+    const matched = rowsForSummaryItem(deleteRowAsk.title, deleteRowAsk.unit).filter(
+      (m) => !m.takeoffItemId
+    );
+    setDeletingRow(true);
+    try {
+      await deleteMaterialRowsPersistent(matched);
+      // A manual delete is a decision too — auto-sync must not undo it when
+      // the list ends up looking "sparse" afterwards.
+      onAiRowsCleared?.();
+    } finally {
+      setDeletingRow(false);
+      setDeleteRowAsk(null);
+    }
+  };
+
+  // "Pridať z katalógu" — insert own products/works from the saved price
+  // list (Materiál → Vlastné položky). The row is a copy; no link back.
+  const [catalogPickerOpen, setCatalogPickerOpen] = useState(false);
+
+  // Manual position added straight from the quick summary.
+  const [manualAddOpen, setManualAddOpen] = useState(false);
+  const [manualDraft, setManualDraft] = useState<{
+    name: string;
+    qty: string;
+    unit: MaterialUnit;
+    price: string;
+  }>({ name: "", qty: "1", unit: "pcs", price: "" });
+  const manualDraftValid =
+    manualDraft.name.trim().length > 0 &&
+    Number.isFinite(Number(manualDraft.qty)) &&
+    Number(manualDraft.qty) > 0;
+  const handleManualAdd = () => {
+    if (!manualDraftValid) return;
+    const price = Number(manualDraft.price);
+    onMaterialsChangeRef.current([
+      ...materialsRef.current,
+      {
+        id: newLocalId(),
+        name: manualDraft.name.trim(),
+        qty: Number(manualDraft.qty),
+        unit: manualDraft.unit,
+        price: Number.isFinite(price) && price >= 0 ? price : 0,
+        included: true,
+        customerVisible: true,
+        userOwned: true,
+        group: inferMaterialGroup(manualDraft.name),
+      },
+    ]);
+    setManualAddOpen(false);
+    setManualDraft({ name: "", qty: "1", unit: "pcs", price: "" });
+  };
+  const handlePickCatalogItem = (item: CatalogItemDoc) => {
+    onMaterialsChangeRef.current([
+      ...materialsRef.current,
+      {
+        id: newLocalId(),
+        name: item.name,
+        qty: 1,
+        unit: item.unit,
+        price: item.unitPrice,
+        included: true,
+        customerVisible: true,
+        userOwned: true,
+        sourceNote: t("materials.catalog.sourceNote"),
+        group: item.kind === "work" ? "labor" : inferMaterialGroup(item.name),
+      },
+    ]);
+  };
+
+  /** Debounced write-back of a qty correction to the linked takeoff item. */
+  const scheduleTakeoffQtyWriteBack = (takeoffItemId: string, qty: number) => {
+    const projectId = evidence?.projectId;
+    if (!projectId) return;
+    const timers = pendingQtyWritesRef.current;
+    const prev = timers.get(takeoffItemId);
+    if (prev) clearTimeout(prev);
+    timers.set(
+      takeoffItemId,
+      setTimeout(() => {
+        timers.delete(takeoffItemId);
+        void updateTakeoffItemQuantity(projectId, takeoffItemId, qty).catch(
+          () => undefined
+        );
+      }, 600)
+    );
+  };
+
   const update = (id: string, patch: Partial<AiSetupMaterialRow>) => {
+    const row = materials.find((m) => m.id === id);
+    if (row?.takeoffItemId && patch.qty != null && patch.qty !== row.qty) {
+      scheduleTakeoffQtyWriteBack(row.takeoffItemId, patch.qty);
+    }
+    // The takeoff item owns the unit of a linked row — write the change back
+    // or the next mirror snapshot would revert the picker to the old unit.
+    if (row?.takeoffItemId && patch.unit != null && patch.unit !== row.unit) {
+      const pid = evidence?.projectId;
+      if (pid) {
+        void updateTakeoffItemUnit(pid, row.takeoffItemId, patch.unit).catch(
+          () => undefined
+        );
+      }
+    }
     onMaterialsChange(
       materials.map((m) => {
         if (m.id !== id) return m;
@@ -247,12 +578,42 @@ export function AiSetupMaterialStep({
 
   const summary = useMemo(() => buildSummary(materials), [materials]);
   const includedMaterials = materials.filter((m) => m.included && m.name.trim());
-  const missingPricesFromMaterials = includedMaterials.filter((m) => !(m.price > 0)).length;
-  // When PDF evidence is active, Ceny counts only plan-backed (accepted) positions.
-  const missingPrices =
-    evidence?.summary != null ? evidence.summary.priceMissing : missingPricesFromMaterials;
-  const materialsMetric =
-    evidence?.summary != null ? evidence.summary.withBbox : includedMaterials.length;
+  const takeoffLinkedCount = includedMaterials.filter((m) => m.takeoffItemId).length;
+  // Price badge / Ceny list: only PDF marks (+ deliberate user adds).
+  const pricingRelevantMaterials =
+    sharedTakeoffEnabled && takeoffLinkedCount > 0
+      ? includedMaterials.filter(isKeptWithPdfMirror)
+      : includedMaterials;
+  const missingPricesFromMaterials = pricingRelevantMaterials.filter(
+    (m) => !(m.price > 0)
+  ).length;
+  // Rows mirrored from the PDF výkaz exist ONLY as material rows — the
+  // estimator summary can't see them, so their missing prices must be added
+  // on top or the Ceny badge would claim "done" while PDF rows have no price.
+  const takeoffRowsMissingPrices = includedMaterials.filter(
+    (m) => m.takeoffItemId && !(m.price > 0)
+  ).length;
+  // Shared takeoff (PlanTakeoffWorkbench) is the source of truth: estimator
+  // evidence.summary stays at 0 even when PDF marks + cables are mirrored
+  // into materials — never show a fake "0 pozícií" in that mode.
+  const useMaterialMetrics =
+    sharedTakeoffEnabled ||
+    !evidence?.summary ||
+    (evidence.summary.total === 0 && includedMaterials.length > 0);
+  const missingPrices = useMaterialMetrics
+    ? missingPricesFromMaterials
+    : evidence!.summary.priceMissing + takeoffRowsMissingPrices;
+  const materialsMetric = useMaterialMetrics
+    ? takeoffLinkedCount > 0
+      ? takeoffLinkedCount
+      : includedMaterials.length
+    : evidence!.summary.withBbox;
+  const positionsTotalMetric = useMaterialMetrics
+    ? pricingRelevantMaterials.length
+    : evidence!.summary.total;
+  const needsReviewMetric = useMaterialMetrics
+    ? pricingRelevantMaterials.filter((m) => m.qty <= 0 || !(m.price > 0)).length
+    : (evidence?.summary?.needsReview ?? 0);
 
   const grouped = GROUP_ORDER.map((group) => ({
     group,
@@ -264,12 +625,14 @@ export function AiSetupMaterialStep({
     const all = evidence?.positions ?? [];
     return all.filter((p) => {
       if (p.reviewStatus === "ignored" || p.reviewStatus === "excluded") return false;
+      // PDF-first: AI estimates without a plan mark don't belong in review.
+      if (sharedTakeoffEnabled && isUnmarkedAiEstimatePosition(p)) return false;
       if (p.reviewStatus === "needs_review") return true;
       if (p.priceStatus === "price_missing" && p.category !== "labor") return true;
       if (similarCandidateAnchors(p).length > 0) return true;
       return false;
     });
-  }, [evidence?.positions]);
+  }, [evidence?.positions, sharedTakeoffEnabled]);
   const hasPdfTab = Boolean(evidence);
 
   const TABS: { id: MaterialSubTab; labelKey: string; badge?: number }[] = [
@@ -287,6 +650,35 @@ export function AiSetupMaterialStep({
   ];
 
   const openPriceDrawer = (position: EstimatorPosition) => setPricePosition(position);
+
+  // Ceny tab rows. With PDF takeoff active: only PDF-linked (+ userOwned).
+  // Unlabeled leftovers are pruned from materials, not just hidden.
+  const [priceRowQuery, setPriceRowQuery] = useState("");
+  const [priceRowSort, setPriceRowSort] = useState<
+    "unpricedFirst" | "name" | "totalDesc" | "priceDesc"
+  >("unpricedFirst");
+  const normalizeSearch = (s: string) =>
+    s
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase();
+  const priceRows = [...pricingRelevantMaterials]
+    .filter(
+      (m) =>
+        !priceRowQuery.trim() ||
+        normalizeSearch(m.name).includes(normalizeSearch(priceRowQuery))
+    )
+    .sort((a, b) => {
+      if (priceRowSort === "name") return a.name.localeCompare(b.name);
+      if (priceRowSort === "totalDesc") return b.price * b.qty - a.price * a.qty;
+      if (priceRowSort === "priceDesc") return b.price - a.price;
+      const aPriced = a.price > 0 ? 1 : 0;
+      const bPriced = b.price > 0 ? 1 : 0;
+      if (aPriced !== bPriced) return aPriced - bPriced;
+      return a.name.localeCompare(b.name);
+    });
+  const formatRowTotal = (value: number) =>
+    new Intl.NumberFormat(undefined, { style: "currency", currency }).format(value);
 
   const editableRowsBlock = (
     <div className="space-y-6">
@@ -326,12 +718,24 @@ export function AiSetupMaterialStep({
                     />
                   </div>
                   <div className="flex-1 min-w-0 space-y-3">
-                    <Input
-                      value={m.name}
-                      onChange={(e) => update(m.id, { name: e.target.value })}
-                      className="h-11 text-base font-semibold border-[#CBD5E1]"
-                      placeholder={t("projects.aiSetup.material.namePlaceholder")}
-                    />
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={m.name}
+                        onChange={(e) => update(m.id, { name: e.target.value })}
+                        className="h-11 text-base font-semibold border-[#CBD5E1]"
+                        placeholder={t("projects.aiSetup.material.namePlaceholder")}
+                      />
+                      {m.takeoffItemId ? (
+                        <span
+                          className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[#BFDBFE] bg-[#EFF6FF] px-2 py-0.5 text-[10px] font-semibold text-[#1E40AF]"
+                          title={t("projects.aiSetup.material.takeoffLinkedHint")}
+                          data-testid="takeoff-linked-badge"
+                        >
+                          <Crosshair className="size-3" />
+                          PDF
+                        </span>
+                      ) : null}
+                    </div>
                     {m.sourceNote?.trim() ? (
                       <p className="text-xs text-[#64748B] leading-relaxed border-l-2 border-[#1D376A]/30 pl-2">
                         {m.sourceNote}
@@ -423,30 +827,30 @@ export function AiSetupMaterialStep({
           </ul>
         </section>
       ))}
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="border-[#CBD5E1]"
-        onClick={() =>
-          onMaterialsChange([
-            ...materials,
-            {
-              id: newLocalId(),
-              name: "",
-              qty: 1,
-              unit: "pcs",
-              price: 0,
-              included: true,
-              customerVisible: true,
-              group: "other",
-            },
-          ])
-        }
-      >
-        <Plus className="size-4 mr-1" />
-        {t("projects.aiSetup.material.add")}
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="border-[#CBD5E1]"
+          data-testid="detail-add-manual"
+          onClick={() => setManualAddOpen(true)}
+        >
+          <Plus className="size-4 mr-1" />
+          {t("projects.aiSetup.material.add")}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="border-[#CBD5E1]"
+          data-testid="detail-add-catalog"
+          onClick={() => setCatalogPickerOpen(true)}
+        >
+          <BookOpen className="size-4 mr-1" />
+          {t("materials.catalog.pickerButton")}
+        </Button>
+      </div>
     </div>
   );
 
@@ -498,7 +902,7 @@ export function AiSetupMaterialStep({
         </div>
         <div className="flex flex-wrap gap-2 text-sm">
           <Metric
-            value={positionsSummary?.total ?? includedMaterials.length}
+            value={positionsTotalMetric}
             label={t("projects.aiSetup.positions.metric.total")}
           />
           <Metric
@@ -511,11 +915,16 @@ export function AiSetupMaterialStep({
             tone={missingPrices > 0 ? "warning" : "default"}
           />
           <Metric
-            value={positionsSummary?.needsReview ?? 0}
+            value={needsReviewMetric}
             label={t("projects.aiSetup.positions.metric.needsReview")}
-            tone={(positionsSummary?.needsReview ?? 0) > 0 ? "warning" : "default"}
+            tone={needsReviewMetric > 0 ? "warning" : "default"}
           />
-          {positionsSummary && positionsSummary.withBbox > 0 ? (
+          {takeoffLinkedCount > 0 ? (
+            <Metric
+              value={takeoffLinkedCount}
+              label={t("projects.aiSetup.positions.metric.pdfLinked")}
+            />
+          ) : positionsSummary && positionsSummary.withBbox > 0 ? (
             <Metric
               value={positionsSummary.annotations}
               label={t("projects.aiSetup.positions.metric.pdfLinked")}
@@ -541,10 +950,21 @@ export function AiSetupMaterialStep({
             type="button"
             variant="outline"
             className="h-10 border-[#CBD5E1] px-4"
-            onClick={() => onSubTabChange("detail")}
+            data-testid="ready-add-manual"
+            onClick={() => setManualAddOpen(true)}
           >
             <Plus className="size-4 mr-1.5" />
             {t("projects.aiSetup.positions.action.addManual")}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10 border-[#CBD5E1] px-4"
+            onClick={() => setCatalogPickerOpen(true)}
+            data-testid="open-catalog-picker"
+          >
+            <BookOpen className="size-4 mr-1.5" />
+            {t("materials.catalog.pickerButton")}
           </Button>
           <Button
             type="button"
@@ -634,22 +1054,92 @@ export function AiSetupMaterialStep({
           {materials.length === 0 ? (
             <div className="rounded-xl border border-dashed border-[#CBD5E1] bg-[#F8FAFC] px-4 py-10 text-center">
               <p className="text-sm text-[#64748B]">{t("projects.aiSetup.material.empty")}</p>
-            </div>
-          ) : (
-            <div className="rounded-2xl border-2 border-[#CBD5E1] bg-white p-4 sm:p-5 space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h4 className="text-sm font-bold text-[#0F2A4D]">
-                  {t("projects.aiSetup.material.summaryTitle")}
-                </h4>
+              <div className="mt-3 flex flex-wrap justify-center gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   className="border-[#CBD5E1]"
-                  onClick={() => onSubTabChange("detail")}
+                  onClick={() => setManualAddOpen(true)}
                 >
-                  {t("projects.aiSetup.positions.action.openDetail")}
+                  <Plus className="mr-1 size-3.5" />
+                  {t("projects.aiSetup.material.addManualRow")}
                 </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="border-[#CBD5E1]"
+                  onClick={() => setCatalogPickerOpen(true)}
+                >
+                  <BookOpen className="mr-1 size-3.5" />
+                  {t("materials.catalog.pickerButton")}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border-2 border-[#CBD5E1] bg-white p-4 sm:p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <h4 className="text-sm font-bold text-[#0F2A4D]">
+                    {t("projects.aiSetup.material.summaryTitle")}
+                  </h4>
+                  {sharedTakeoffEnabled ? (
+                    <p className="mt-0.5 text-[11px] text-[#64748B] leading-relaxed">
+                      {t("projects.aiSetup.material.summaryFromPdfHint", {
+                        pdf: String(takeoffLinkedCount),
+                        total: String(includedMaterials.length),
+                      })}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="border-[#CBD5E1]"
+                    data-testid="summary-add-manual"
+                    onClick={() => setManualAddOpen(true)}
+                  >
+                    <Plus className="mr-1 size-3.5" />
+                    {t("projects.aiSetup.material.addManualRow")}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="border-[#CBD5E1]"
+                    data-testid="summary-add-catalog"
+                    onClick={() => setCatalogPickerOpen(true)}
+                  >
+                    <BookOpen className="mr-1 size-3.5" />
+                    {t("materials.catalog.pickerButton")}
+                  </Button>
+                  {aiRowsCount > 0 ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="border-red-200 text-red-700 hover:bg-red-50"
+                      data-testid="clear-ai-rows"
+                      disabled={clearingAiRows}
+                      onClick={() => setClearAiAsk(true)}
+                    >
+                      <Trash2 className="mr-1 size-3.5" />
+                      {t("projects.aiSetup.material.clearAiRows", { count: aiRowsCount })}
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="border-[#CBD5E1]"
+                    onClick={() => onSubTabChange("detail")}
+                  >
+                    {t("projects.aiSetup.positions.action.openDetail")}
+                  </Button>
+                </div>
               </div>
               <div className="space-y-4">
                 {summary.map(({ group, items }) => (
@@ -658,32 +1148,252 @@ export function AiSetupMaterialStep({
                       {t(materialGroupLabelKey(group))}
                     </p>
                     <ul className="space-y-1.5">
-                      {items.map((item) => (
-                        <li
-                          key={`${item.title}-${item.unit}`}
-                          className="flex flex-wrap justify-between gap-2 text-sm text-[#334155]"
-                        >
-                          <span className="font-medium text-[#0F2A4D]">{item.title}</span>
-                          <span className="tabular-nums text-[#64748B]">
-                            {item.needsQty
-                              ? t("projects.aiSetup.material.qtyMissing")
-                              : `${item.qty} ${setupUnitLabel(item.unit, t)}`}
-                            {item.priceMissing ? (
-                              <span className="ml-2 text-amber-700">
-                                · {t("projects.aiSetup.material.priceMissingShort")}
-                              </span>
-                            ) : null}
-                          </span>
-                        </li>
-                      ))}
+                      {items.map((item) => {
+                        const matchedRows = rowsForSummaryItem(item.title, item.unit);
+                        const deletableRows = matchedRows.filter((m) => !m.takeoffItemId);
+                        const isTakeoffLinked = matchedRows.some((m) => m.takeoffItemId);
+                        // Own rows (manual/catalog) get their qty edited right
+                        // here; PDF rows are counted on the plan instead.
+                        const qtyEditableRow =
+                          !isTakeoffLinked && matchedRows.length === 1 ? matchedRows[0] : null;
+                        return (
+                          <li
+                            key={`${item.title}-${item.unit}`}
+                            className="group flex flex-wrap items-center justify-between gap-2 text-sm text-[#334155]"
+                          >
+                            <span className="font-medium text-[#0F2A4D]">
+                              {item.title}
+                              {isTakeoffLinked ? (
+                                <span
+                                  className="ml-1.5 inline-flex items-center gap-0.5 rounded border border-[#BFDBFE] bg-[#EFF6FF] px-1 py-px align-middle text-[10px] font-semibold text-[#1E40AF]"
+                                  data-testid="summary-row-pdf-badge"
+                                  title={t("projects.aiSetup.material.takeoffLinkedHint")}
+                                >
+                                  <Crosshair className="size-2.5" />
+                                  PDF
+                                </span>
+                              ) : null}
+                            </span>
+                            <span className="flex items-center gap-1 tabular-nums text-[#64748B]">
+                              {qtyEditableRow ? (
+                                <>
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    step={1}
+                                    value={qtyEditableRow.qty || ""}
+                                    placeholder="0"
+                                    aria-label={`${t("projects.aiSetup.col.qty")}: ${item.title}`}
+                                    onChange={(e) =>
+                                      update(qtyEditableRow.id, {
+                                        qty: Number(e.target.value) || 0,
+                                      })
+                                    }
+                                    className={cn(
+                                      "h-7 w-16 px-2 text-right tabular-nums",
+                                      !(qtyEditableRow.qty > 0) &&
+                                        "border-amber-400 bg-amber-50"
+                                    )}
+                                    data-testid="summary-row-qty"
+                                  />
+                                  <span>{setupUnitLabel(item.unit, t)}</span>
+                                </>
+                              ) : item.needsQty ? (
+                                t("projects.aiSetup.material.qtyMissing")
+                              ) : (
+                                `${item.qty} ${setupUnitLabel(item.unit, t)}`
+                              )}
+                              {item.priceMissing ? (
+                                <span className="ml-1 text-amber-700">
+                                  · {t("projects.aiSetup.material.priceMissingShort")}
+                                </span>
+                              ) : null}
+                              {deletableRows.length > 0 ? (
+                                <button
+                                  type="button"
+                                  className="ml-1 rounded p-0.5 text-[#94A3B8] opacity-60 transition-opacity hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
+                                  data-testid="summary-row-delete"
+                                  title={t("projects.aiSetup.material.deleteRow")}
+                                  aria-label={`${t("projects.aiSetup.material.deleteRow")}: ${item.title}`}
+                                  onClick={() =>
+                                    setDeleteRowAsk({ title: item.title, unit: item.unit })
+                                  }
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </button>
+                              ) : null}
+                            </span>
+                          </li>
+                        );
+                      })}
                     </ul>
                   </section>
                 ))}
               </div>
             </div>
           )}
+          <Dialog
+            open={deleteRowAsk != null}
+            onOpenChange={(open) => {
+              if (!open) setDeleteRowAsk(null);
+            }}
+          >
+            <DialogContent className="sm:max-w-md">
+              <DialogTitle>{t("projects.aiSetup.material.deleteRowTitle")}</DialogTitle>
+              <p className="text-sm text-[#334155]">
+                {t("projects.aiSetup.material.deleteRowBody", {
+                  name: deleteRowAsk?.title ?? "",
+                })}
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={deletingRow}
+                  onClick={() => setDeleteRowAsk(null)}
+                >
+                  {t("common.cancel")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  data-testid="summary-row-delete-confirm"
+                  disabled={deletingRow}
+                  onClick={() => void handleDeleteSummaryItem()}
+                >
+                  {deletingRow
+                    ? t("common.loading")
+                    : t("projects.aiSetup.material.deleteRowConfirm")}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={clearAiAsk} onOpenChange={setClearAiAsk}>
+            <DialogContent className="sm:max-w-md">
+              <DialogTitle>{t("projects.aiSetup.material.clearAiRowsTitle")}</DialogTitle>
+              <p className="text-sm text-[#334155]">
+                {t("projects.aiSetup.material.clearAiRowsBody", { count: aiRowsCount })}
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={clearingAiRows}
+                  onClick={() => setClearAiAsk(false)}
+                >
+                  {t("common.cancel")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  data-testid="clear-ai-rows-confirm"
+                  disabled={clearingAiRows}
+                  onClick={() => void handleClearAiRows()}
+                >
+                  {clearingAiRows
+                    ? t("common.loading")
+                    : t("projects.aiSetup.material.clearAiRowsConfirm")}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       ) : null}
+
+      {/* Manual + catalog — always mounted (detail / Ceny / summary all open them). */}
+      <Dialog open={manualAddOpen} onOpenChange={setManualAddOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogTitle>{t("projects.aiSetup.material.addManualRow")}</DialogTitle>
+          <div className="space-y-3">
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold text-[#64748B]">
+                {t("projects.aiSetup.material.manualName")}
+              </span>
+              <Input
+                value={manualDraft.name}
+                onChange={(e) =>
+                  setManualDraft((prev) => ({ ...prev, name: e.target.value }))
+                }
+                placeholder={t("projects.aiSetup.positions.manualNamePlaceholder")}
+                autoFocus
+                data-testid="manual-row-name"
+              />
+            </label>
+            <div className="grid grid-cols-3 gap-3">
+              <label className="block space-y-1">
+                <span className="text-xs font-semibold text-[#64748B]">
+                  {t("projects.aiSetup.material.manualQty")}
+                </span>
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={manualDraft.qty}
+                  onChange={(e) =>
+                    setManualDraft((prev) => ({ ...prev, qty: e.target.value }))
+                  }
+                />
+              </label>
+              <label className="block space-y-1">
+                <span className="text-xs font-semibold text-[#64748B]">
+                  {t("projects.aiSetup.material.manualUnit")}
+                </span>
+                <Select
+                  value={manualDraft.unit}
+                  onValueChange={(v) =>
+                    setManualDraft((prev) => ({ ...prev, unit: v as MaterialUnit }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AI_SETUP_MATERIAL_UNITS.map((u) => (
+                      <SelectItem key={u} value={u}>
+                        {setupUnitLabel(u, t)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+              <label className="block space-y-1">
+                <span className="text-xs font-semibold text-[#64748B]">
+                  {t("projects.aiSetup.prices.unitPrice")}
+                </span>
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={manualDraft.price}
+                  onChange={(e) =>
+                    setManualDraft((prev) => ({ ...prev, price: e.target.value }))
+                  }
+                  placeholder="0.00"
+                />
+              </label>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setManualAddOpen(false)}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              disabled={!manualDraftValid}
+              onClick={handleManualAdd}
+              data-testid="manual-row-save"
+            >
+              <Plus className="mr-1 size-3.5" />
+              {t("projects.aiSetup.material.addManualRowConfirm")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <CatalogItemPickerDialog
+        open={catalogPickerOpen}
+        onOpenChange={setCatalogPickerOpen}
+        onPick={handlePickCatalogItem}
+      />
 
       {/* -------------------------- Detailný výkaz ------------------------- */}
       {subTab === "detail" ? (
@@ -703,7 +1413,10 @@ export function AiSetupMaterialStep({
               {t("projects.aiSetup.positions.detailSubtitle")}
             </p>
           </div>
-          {takeoffTableProps ? (
+          {/* Positions table only when the estimator session actually has
+              positions — otherwise it's an empty shell that hides the real
+              rows (PDF-mirrored + manual + catalog) rendered right below. */}
+          {takeoffTableProps && evidence && evidence.positions.length > 0 ? (
             <EstimatorLinkedTakeoffTable {...takeoffTableProps} />
           ) : null}
           {evidence ? (
@@ -713,28 +1426,14 @@ export function AiSetupMaterialStep({
               }}
             />
           ) : null}
-          <div className="border-t border-[#E2E8F0] pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="border-[#CBD5E1]"
-              onClick={() => setShowEditRows((v) => !v)}
-              aria-expanded={showEditRows}
-            >
-              {t("projects.aiSetup.positions.editRows")}
-            </Button>
-            {showEditRows || !takeoffTableProps ? (
-              <div className="mt-4">{editableRowsBlock}</div>
-            ) : null}
-          </div>
+          <div className="border-t border-[#E2E8F0] pt-4">{editableRowsBlock}</div>
         </div>
       ) : null}
 
       {/* ------------------------------- Ceny ------------------------------ */}
       {subTab === "prices" ? (
         <div className="space-y-4">
-          {missingPrices === 0 && (evidence?.summary.priceMissing ?? 0) === 0 ? (
+          {missingPrices === 0 ? (
             <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
               {t("projects.aiSetup.positions.pricesAllDone")}
             </p>
@@ -743,14 +1442,206 @@ export function AiSetupMaterialStep({
               {t("projects.aiSetup.positions.pricesLead")}
             </p>
           )}
-          {takeoffTableProps ? (
+          {/* Every quote row (PDF-mirrored + manual/catalog) with inline
+              qty/unit/price. PDF rows keep qty read-only — the marks on the
+              plan own it; the rest is editable right here. Table-style grid:
+              one aligned totals column + zebra rows. */}
+          {takeoffTableProps && includedMaterials.length > 0 ? (
+            <div
+              className="rounded-xl border border-[#CBD5E1] bg-white"
+              data-testid="takeoff-price-rows"
+            >
+              <div className="flex flex-wrap items-center gap-3 border-b border-[#E2E8F0] px-4 py-3">
+                <div className="min-w-[200px] flex-1">
+                  <p className="text-sm font-bold text-[#0F2A4D]">
+                    {t("projects.aiSetup.prices.takeoffRowsTitle")}
+                  </p>
+                  <p className="mt-0.5 text-xs text-[#64748B] leading-relaxed">
+                    {t("projects.aiSetup.prices.takeoffRowsSubtitle")}
+                  </p>
+                </div>
+                <Input
+                  value={priceRowQuery}
+                  onChange={(e) => setPriceRowQuery(e.target.value)}
+                  placeholder={t("projects.aiSetup.prices.searchPlaceholder")}
+                  className="h-9 w-48"
+                  data-testid="price-rows-search"
+                />
+                <Select
+                  value={priceRowSort}
+                  onValueChange={(v) => setPriceRowSort(v as typeof priceRowSort)}
+                >
+                  <SelectTrigger className="h-9 w-52" data-testid="price-rows-sort">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unpricedFirst">
+                      {t("projects.aiSetup.prices.sortUnpricedFirst")}
+                    </SelectItem>
+                    <SelectItem value="name">
+                      {t("projects.aiSetup.prices.sortName")}
+                    </SelectItem>
+                    <SelectItem value="totalDesc">
+                      {t("projects.aiSetup.prices.sortTotalDesc")}
+                    </SelectItem>
+                    <SelectItem value="priceDesc">
+                      {t("projects.aiSetup.prices.sortPriceDesc")}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="overflow-x-auto">
+                <div className="min-w-[680px]">
+                  {/* Header row — same grid template as data rows so the
+                      totals column lines up perfectly. */}
+                  <div className="grid grid-cols-[minmax(220px,1fr)_88px_96px_112px_110px] items-center gap-x-3 border-b border-[#E2E8F0] bg-[#F8FAFC] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#64748B]">
+                    <span>{t("projects.aiSetup.prices.colItem")}</span>
+                    <span className="text-right">{t("projects.aiSetup.col.qty")}</span>
+                    <span>{t("projects.aiSetup.col.unit")}</span>
+                    <span className="text-right">
+                      {t("projects.aiSetup.prices.unitPrice")}
+                    </span>
+                    <span className="text-right">
+                      {t("projects.aiSetup.prices.colTotal")}
+                    </span>
+                  </div>
+                  {priceRows.length === 0 ? (
+                    <p className="px-4 py-6 text-center text-xs text-[#64748B]">
+                      {t("projects.aiSetup.prices.noRowsMatch")}
+                    </p>
+                  ) : (
+                    <ul>
+                      {priceRows.map((m) => {
+                        const orphanDup = isOrphanPdfDuplicate(m);
+                        return (
+                        <li
+                          key={m.id}
+                          className={cn(
+                            "grid grid-cols-[minmax(220px,1fr)_88px_96px_112px_110px] items-center gap-x-3 border-b border-[#F1F5F9] px-4 py-2 last:border-b-0",
+                            orphanDup
+                              ? "bg-amber-50/80"
+                              : "odd:bg-white even:bg-[#F8FAFC] hover:bg-[#EFF6FF]/60"
+                          )}
+                        >
+                          <div className="min-w-0 py-0.5">
+                            <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-[#0F2A4D]">
+                              <span className="min-w-0 whitespace-normal break-words">
+                                {m.name}
+                              </span>
+                              {m.takeoffItemId ? (
+                                <span
+                                  className="inline-flex shrink-0 items-center gap-0.5 rounded border border-[#BFDBFE] bg-[#EFF6FF] px-1 py-px text-[10px] font-semibold text-[#1E40AF]"
+                                  title={t(
+                                    "projects.aiSetup.material.takeoffLinkedHint"
+                                  )}
+                                >
+                                  <Crosshair className="size-2.5" />
+                                  PDF
+                                </span>
+                              ) : orphanDup ? (
+                                <span
+                                  className="inline-flex shrink-0 items-center rounded border border-amber-300 bg-amber-50 px-1 py-px text-[10px] font-semibold text-amber-800"
+                                  title={t(
+                                    "projects.aiSetup.prices.orphanDuplicateHint"
+                                  )}
+                                >
+                                  {t("projects.aiSetup.prices.orphanDuplicateBadge")}
+                                </span>
+                              ) : null}
+                              {orphanDup ? (
+                                <button
+                                  type="button"
+                                  className="shrink-0 rounded p-0.5 text-amber-800 hover:bg-amber-100"
+                                  data-testid="price-row-delete-orphan"
+                                  title={t("projects.aiSetup.material.deleteRow")}
+                                  onClick={() =>
+                                    void deleteMaterialRowsPersistent([m])
+                                  }
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </button>
+                              ) : null}
+                            </p>
+                          </div>
+                          <Input
+                            type="number"
+                            min={0}
+                            step={m.unit === "pcs" || m.unit === "set" ? 1 : 0.01}
+                            value={m.qty || ""}
+                            placeholder="0"
+                            onChange={(e) =>
+                              update(m.id, { qty: Number(e.target.value) || 0 })
+                            }
+                            className={cn(
+                              "h-9 w-full text-right tabular-nums",
+                              !(m.qty > 0) && "border-amber-400 bg-amber-50"
+                            )}
+                            data-testid="price-row-qty"
+                            title={
+                              m.takeoffItemId
+                                ? t("projects.aiSetup.prices.takeoffQtyEditHint")
+                                : undefined
+                            }
+                          />
+                          <Select
+                            value={normalizeSetupUnit(m.unit)}
+                            onValueChange={(v) =>
+                              update(m.id, { unit: v as MaterialUnit })
+                            }
+                          >
+                            <SelectTrigger
+                              className="h-9 w-full"
+                              data-testid="takeoff-price-row-unit"
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {AI_SETUP_MATERIAL_UNITS.map((u) => (
+                                <SelectItem key={u} value={u}>
+                                  {setupUnitLabel(u, t)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="number"
+                            min={0}
+                            step={0.01}
+                            value={m.price || ""}
+                            placeholder="0"
+                            onChange={(e) =>
+                              update(m.id, { price: Number(e.target.value) || 0 })
+                            }
+                            className={cn(
+                              "h-9 w-full text-right tabular-nums",
+                              !(m.price > 0) && "border-amber-400 bg-amber-50"
+                            )}
+                          />
+                          <span className="text-right text-sm font-semibold tabular-nums text-[#0F2A4D]">
+                            {m.price > 0 && m.qty > 0
+                              ? formatRowTotal(m.price * m.qty)
+                              : "—"}
+                          </span>
+                        </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
+          {/* Legacy estimator position table — only when shared PDF takeoff is
+              OFF. With shared takeoff the "Položky ponuky" grid above already
+              lists every mirrored takeoff row; the estimator table stays empty
+              (0 positions) and only confused users with "no filter match". */}
+          {!sharedTakeoffEnabled && takeoffTableProps ? (
             <EstimatorLinkedTakeoffTable
               {...takeoffTableProps}
               initialQuickFilter="price_missing"
             />
-          ) : (
-            editableRowsBlock
-          )}
+          ) : null}
+          {!sharedTakeoffEnabled && !takeoffTableProps ? editableRowsBlock : null}
         </div>
       ) : null}
 
@@ -783,13 +1674,22 @@ export function AiSetupMaterialStep({
               </Button>
             </div>
           ) : null}
-          <PlanTakeoffWorkbench
-            projectId={evidence.projectId}
-            drawingId={canonicalDrawingId ?? evidence.activeDocument?.fileId ?? evidence.fileName ?? "drawing"}
-            fileName={evidence.fileName ?? "plan.pdf"}
-            fileUrl={evidence.fileUrl}
-            mode="quote"
-          />
+          {!drawingIdentityReady ? (
+            // Don't mount the workbench with the interim fileId/fileName —
+            // it would flash a different dataset than Project Documents uses.
+            <div className="flex h-40 items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
+              {t("common.loading")}
+            </div>
+          ) : (
+            <PlanTakeoffWorkbench
+              key={canonicalDrawingId ?? quoteLegacyDrawingId ?? "drawing"}
+              projectId={evidence.projectId}
+              drawingId={canonicalDrawingId ?? quoteLegacyDrawingId ?? "drawing"}
+              fileName={canonicalFile?.fileName ?? evidence.fileName ?? "plan.pdf"}
+              fileUrl={canonicalFile?.url ?? evidence.fileUrl}
+              mode="quote"
+            />
+          )}
         </div>
       ) : null}
       {subTab === "pdf" && evidence && !sharedTakeoffEnabled ? (
@@ -857,8 +1757,8 @@ export function AiSetupMaterialStep({
                 {t("projects.aiSetup.positions.blockedTitle")}
               </p>
               <ul className="mt-1.5 list-disc space-y-0.5 pl-5 text-xs text-amber-900">
-                {evidence.quoteSafety.reasons.map((r) => (
-                  <li key={r}>{r}</li>
+                {evidence.quoteSafety.reasons.map((r, i) => (
+                  <li key={`${r}-${i}`}>{r}</li>
                 ))}
               </ul>
             </div>
@@ -2065,13 +2965,18 @@ function SymbolDraftClassifierCard({
   );
   const [scope, setScope] = useState<SymbolDraftScope>("buy_install");
 
-  // When AI updates possibleTypes, prefer the new top suggestion.
-  useEffect(() => {
+  // When AI updates possibleTypes, prefer the new top suggestion — state is
+  // adjusted during render (no effect → no cascading re-render).
+  const possibleTypesKey = draft.possibleTypes.join("|");
+  const [lastPossibleTypesKey, setLastPossibleTypesKey] = useState(possibleTypesKey);
+  if (possibleTypesKey !== lastPossibleTypesKey) {
+    setLastPossibleTypesKey(possibleTypesKey);
     const next = suggested[0];
-    if (!next) return;
-    setCategory(next);
-    setUnit(next === "led_strip" || next === "cable" ? "m" : "ks");
-  }, [draft.possibleTypes.join("|")]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (next) {
+      setCategory(next);
+      setUnit(next === "led_strip" || next === "cable" ? "m" : "ks");
+    }
+  }
 
   const pickType = (c: SymbolDraftCategory) => {
     setCategory(c);

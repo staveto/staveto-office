@@ -22,6 +22,7 @@ import {
   Highlighter,
   MousePointerClick,
   FolderInput,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -155,6 +156,13 @@ type Props = {
    */
   onFindSimilarConfirmed?: (candidateId: string) => void;
   /**
+   * "Čo je táto značka?" — ask AI vision to identify the symbol under one
+   * mark (name + type), for plans without a legend. Undefined hides the
+   * action (feature flag off / no permission).
+   */
+  onIdentifySymbol?: (candidateId: string) => void;
+  identifyBusy?: boolean;
+  /**
    * Rapid category marking — the operator's primary counting workflow:
    * pick (or create) a position, then click-count its symbols on the plan.
    * `activeCategoryKey` marks which category is currently being clicked.
@@ -173,6 +181,8 @@ type Props = {
    */
   highlightedCategoryKeys?: string[];
   onHighlightCategory?: (key: string) => void;
+  /** Replace the highlighted set at once — "Zvýrazniť všetky" / clear all. */
+  onSetHighlightedCategories?: (keys: string[]) => void;
   /**
    * Move ONE confirmed mark into a different position/category — the fix
    * for "this socket is actually the double-socket type". Creates the
@@ -181,7 +191,42 @@ type Props = {
   onMoveConfirmedToCategory?: (candidateId: string, label: string) => Promise<void>;
   /** Rename a whole position (relabels every mark in it; merges on name clash). */
   onRenameCategory?: (categoryKey: string, newLabel: string) => Promise<void>;
+  /**
+   * Persist the panel's view state (open sections, expanded categories)
+   * under this key — pass the canonical drawingId so the quote flow and the
+   * project/documents flow show the SAME panel for the same PDF instead of
+   * each starting from its own defaults.
+   */
+  persistKey?: string | null;
 };
+
+type PanelViewState = {
+  showConfirmed: boolean;
+  showRejected: boolean;
+  /** "Výkaz položiek" section — optional for backward-compatible storage. */
+  showItems?: boolean;
+  expandedCategories: string[];
+  collapsedGroups: string[];
+};
+
+function loadPanelViewState(key: string | null | undefined): PanelViewState | null {
+  if (!key || typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(`takeoff.reviewPanel.${key}`);
+    return raw ? (JSON.parse(raw) as PanelViewState) : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePanelViewState(key: string | null | undefined, state: PanelViewState) {
+  if (!key || typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(`takeoff.reviewPanel.${key}`, JSON.stringify(state));
+  } catch {
+    /* storage full/blocked — view state is a nice-to-have */
+  }
+}
 
 export function SymbolCandidateReviewPanel({
   candidates,
@@ -206,23 +251,48 @@ export function SymbolCandidateReviewPanel({
   onFindSimilar,
   findSimilarBusy = false,
   onFindSimilarConfirmed,
+  onIdentifySymbol,
+  identifyBusy = false,
   activeCategoryKey = null,
   onStartCategoryMarking,
   onStopCategoryMarking,
   highlightedCategoryKeys = [],
   onHighlightCategory,
+  onSetHighlightedCategories,
   onMoveConfirmedToCategory,
   onRenameCategory,
+  persistKey = null,
 }: Props) {
   const { t } = useI18n();
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // View state is restored per drawing (persistKey) so the SAME PDF shows
+  // the SAME panel whether it's opened from the quote or from Documents.
+  const [initialViewState] = useState(() => loadPanelViewState(persistKey));
+  const [collapsed, setCollapsed] = useState<Set<string>>(
+    () => new Set(initialViewState?.collapsedGroups ?? [])
+  );
   // Grouped categories make the confirmed section compact — the operator's
   // primary working list, so it starts open.
-  const [showConfirmed, setShowConfirmed] = useState(true);
-  const [showRejected, setShowRejected] = useState(false);
+  const [showConfirmed, setShowConfirmed] = useState(
+    initialViewState?.showConfirmed ?? true
+  );
+  const [showRejected, setShowRejected] = useState(
+    initialViewState?.showRejected ?? false
+  );
+  const [showItems, setShowItems] = useState(initialViewState?.showItems ?? true);
   // Individual marks inside a category — collapsed by default ("Svetlo × 6"
   // is the useful row; 6 identical child rows are detail-on-demand).
-  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
+    () => new Set(initialViewState?.expandedCategories ?? [])
+  );
+  useEffect(() => {
+    savePanelViewState(persistKey, {
+      showConfirmed,
+      showRejected,
+      showItems,
+      expandedCategories: [...expandedCategories],
+      collapsedGroups: [...collapsed],
+    });
+  }, [persistKey, showConfirmed, showRejected, showItems, expandedCategories, collapsed]);
   const [newCategoryOpen, setNewCategoryOpen] = useState(false);
   const [newCategoryLabel, setNewCategoryLabel] = useState("");
   const [newCategoryType, setNewCategoryType] = useState("light");
@@ -263,8 +333,23 @@ export function SymbolCandidateReviewPanel({
   // just off-screen below/above the visible part of a long list.
   useEffect(() => {
     if (!selectedId) return;
-    const row = listRef.current?.querySelector(`[data-row-id="${selectedId}"]`);
-    row?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const list = listRef.current;
+    const row = list?.querySelector(`[data-row-id="${selectedId}"]`);
+    if (!list || !(row instanceof HTMLElement)) return;
+    // Scroll ONLY the panel's own list container. scrollIntoView would also
+    // scroll every ancestor including the window — which yanked the whole
+    // screen whenever a mark was placed/selected on the plan.
+    const rowRect = row.getBoundingClientRect();
+    const listRect = list.getBoundingClientRect();
+    if (rowRect.top >= listRect.top && rowRect.bottom <= listRect.bottom) return;
+    list.scrollTo({
+      top:
+        list.scrollTop +
+        (rowRect.top - listRect.top) -
+        list.clientHeight / 2 +
+        rowRect.height / 2,
+      behavior: "smooth",
+    });
   }, [selectedId]);
 
   const groups = useMemo(() => groupCandidatesForReview(candidates), [candidates]);
@@ -288,8 +373,13 @@ export function SymbolCandidateReviewPanel({
       (c.status === "probable" || c.confidence >= 0.55)
   ).length;
 
+  // Everything that belongs in the quote mirror — symbols, exported cable
+  // routes, and manual takeoff rows. Legend-only stays separate (not quote).
   const detectionItems = takeoffItems.filter(
-    (i) => i.sourceOfQuantity === "symbol_detection"
+    (i) =>
+      i.status !== "excluded" &&
+      i.sourceOfQuantity !== "legend_only" &&
+      i.name.trim() !== ""
   );
   const legendItems = takeoffItems.filter((i) => i.sourceOfQuantity === "legend_only");
 
@@ -528,6 +618,21 @@ export function SymbolCandidateReviewPanel({
                                 : t("takeoff.action.findSimilar")}
                             </Button>
                           ) : null}
+                          {onIdentifySymbol ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-[11px]"
+                              disabled={busy || identifyBusy}
+                              data-testid="candidate-identify-ai"
+                              title={t("takeoff.identify.hint")}
+                              onClick={() => onIdentifySymbol(c.id)}
+                            >
+                              <Sparkles className="mr-0.5 size-3" />
+                              {t("takeoff.identify.action")}
+                            </Button>
+                          ) : null}
                           {onDeleteCandidate ? (
                             <Button
                               type="button"
@@ -576,6 +681,35 @@ export function SymbolCandidateReviewPanel({
                   {confirmedCandidates.length}
                 </span>
               </button>
+              {onSetHighlightedCategories && confirmedCategories.length > 0 ? (
+                (() => {
+                  const allOn =
+                    highlightedCategoryKeys.length > 0 &&
+                    confirmedCategories.every((c) =>
+                      highlightedCategoryKeys.includes(c.key)
+                    );
+                  return (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={allOn ? "default" : "outline"}
+                      className="h-6 shrink-0 px-1.5 text-[10px]"
+                      data-testid="highlight-all-categories"
+                      title={t("takeoff.category.highlightAllHint")}
+                      onClick={() =>
+                        onSetHighlightedCategories(
+                          allOn ? [] : confirmedCategories.map((c) => c.key)
+                        )
+                      }
+                    >
+                      <Highlighter className="mr-0.5 size-3" />
+                      {allOn
+                        ? t("takeoff.category.highlightAllOff")
+                        : t("takeoff.category.highlightAll")}
+                    </Button>
+                  );
+                })()
+              ) : null}
               {canReview && onStartCategoryMarking ? (
                 <Button
                   type="button"
@@ -615,7 +749,7 @@ export function SymbolCandidateReviewPanel({
                       >
                         <button
                           type="button"
-                          className="flex min-w-0 flex-1 items-center gap-2 text-left hover:opacity-80"
+                          className="flex min-w-0 items-center gap-1 text-left hover:opacity-80"
                           onClick={() =>
                             setExpandedCategories((prev) => {
                               const next = new Set(prev);
@@ -631,11 +765,42 @@ export function SymbolCandidateReviewPanel({
                           ) : (
                             <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
                           )}
-                          <span
-                            className="size-3 shrink-0 rounded-sm border border-black/10"
-                            style={{ backgroundColor: cat.color }}
-                            aria-hidden
-                          />
+                        </button>
+                        {/* The color chip toggles the category's glow on the
+                            plan — the most direct "show me these" control. */}
+                        <button
+                          type="button"
+                          className={cn(
+                            "size-4 shrink-0 rounded-sm border transition-shadow",
+                            isHighlighted
+                              ? "border-transparent"
+                              : "border-black/10 opacity-80 hover:opacity-100",
+                            onHighlightCategory ? "cursor-pointer" : "cursor-default"
+                          )}
+                          style={{
+                            backgroundColor: cat.color,
+                            boxShadow: isHighlighted
+                              ? `0 0 0 2px white, 0 0 0 4px ${cat.color}`
+                              : undefined,
+                          }}
+                          data-testid="category-color-toggle"
+                          title={t("takeoff.category.highlight")}
+                          aria-pressed={isHighlighted}
+                          onClick={() => onHighlightCategory?.(cat.key)}
+                        />
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 items-center gap-2 text-left hover:opacity-80"
+                          onClick={() =>
+                            setExpandedCategories((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(cat.key)) next.delete(cat.key);
+                              else next.add(cat.key);
+                              return next;
+                            })
+                          }
+                          title={t("takeoff.category.expandHint")}
+                        >
                           <span className="min-w-0 flex-1 truncate font-medium text-foreground">
                             {cat.label}
                           </span>
@@ -648,10 +813,14 @@ export function SymbolCandidateReviewPanel({
                             type="button"
                             className={cn(
                               "shrink-0 rounded p-1",
-                              isHighlighted
-                                ? "bg-[#C400FF]/15 text-[#C400FF]"
-                                : "text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                              !isHighlighted &&
+                                "text-muted-foreground hover:bg-primary/10 hover:text-primary"
                             )}
+                            style={
+                              isHighlighted
+                                ? { color: cat.color, backgroundColor: `${cat.color}22` }
+                                : undefined
+                            }
                             data-testid="category-highlight"
                             title={t("takeoff.category.highlight")}
                             onClick={() => onHighlightCategory(cat.key)}
@@ -781,6 +950,18 @@ export function SymbolCandidateReviewPanel({
                                   <Copy className="size-3.5" />
                                 </button>
                               ) : null}
+                              {onIdentifySymbol ? (
+                                <button
+                                  type="button"
+                                  className="shrink-0 rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                                  disabled={busy || identifyBusy}
+                                  data-testid="confirmed-identify-ai"
+                                  title={t("takeoff.identify.hint")}
+                                  onClick={() => onIdentifySymbol(c.id)}
+                                >
+                                  <Sparkles className="size-3.5" />
+                                </button>
+                              ) : null}
                               {canReview && onDeleteConfirmed ? (
                                 <button
                                   type="button"
@@ -886,14 +1067,36 @@ export function SymbolCandidateReviewPanel({
         ) : null}
       </div>
 
-      {/* Section 4 — Výkaz položiek (evidence links) */}
+      {/* Section 4 — Výkaz položiek (evidence links). Collapsible + capped
+          height with internal scroll so a long list never bleeds over the
+          panels rendered below (e.g. Káble a trasy). */}
       {detectionItems.length > 0 || legendItems.length > 0 ? (
-        <div className="space-y-0.5 rounded-lg border border-border bg-card p-2.5">
-          <p className="text-xs font-semibold text-foreground">
-            {t("takeoff.review.sectionItems")}
-          </p>
+        <div
+          className="flex max-h-[420px] min-h-0 shrink-0 flex-col overflow-hidden rounded-lg border border-border bg-card"
+          data-testid="section-items"
+        >
+          <button
+            type="button"
+            className="flex w-full shrink-0 items-center gap-2 px-2.5 py-1.5 text-left text-xs font-semibold text-foreground hover:bg-muted/50"
+            onClick={() => setShowItems((v) => !v)}
+          >
+            {showItems ? (
+              <ChevronDown className="size-3.5 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="size-3.5 text-muted-foreground" />
+            )}
+            <span>{t("takeoff.review.sectionItems")}</span>
+            <span className="ml-auto tabular-nums text-muted-foreground">
+              {detectionItems.length + legendItems.length}
+            </span>
+          </button>
+          {showItems ? (
+            <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto border-t border-border/70 p-2.5 pt-1.5">
           <p className="mb-1 text-[10px] text-muted-foreground">
             {t("takeoff.review.sectionItemsHint")}
+            {detectionItems.length + legendItems.length > 6
+              ? ` · ${t("takeoff.review.sectionItemsScrollHint")}`
+              : ""}
           </p>
           <div className="divide-y divide-border/60">
             {detectionItems.map((item) => (
@@ -910,9 +1113,15 @@ export function SymbolCandidateReviewPanel({
                 <span className="shrink-0 tabular-nums font-semibold text-foreground">
                   {item.quantity} {item.unit}
                 </span>
-                <span className="shrink-0 text-[10px] text-primary">
-                  {t("takeoff.review.evidenceCount", { count: item.evidenceCount })}
-                </span>
+                {item.sourceOfQuantity === "route_calculation" ? (
+                  <span className="shrink-0 rounded bg-emerald-100 px-1 text-[10px] font-semibold text-emerald-800">
+                    {t("takeoff.review.sourceCable")}
+                  </span>
+                ) : (
+                  <span className="shrink-0 text-[10px] text-primary">
+                    {t("takeoff.review.evidenceCount", { count: item.evidenceCount })}
+                  </span>
+                )}
               </button>
             ))}
             {legendItems.map((item) => (
@@ -960,6 +1169,8 @@ export function SymbolCandidateReviewPanel({
                     </button>
                   ))}
               </div>
+            </div>
+          ) : null}
             </div>
           ) : null}
         </div>

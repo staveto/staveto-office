@@ -35,6 +35,9 @@ export function parseAiSetupMeta(notes?: string | null): AiSetupPersistedMeta | 
     if (meta.projectFacts) {
       result.projectFacts = meta.projectFacts as AiProjectFactsPersisted;
     }
+    if (typeof meta.aiRowsClearedAt === "string" && meta.aiRowsClearedAt) {
+      result.aiRowsClearedAt = meta.aiRowsClearedAt;
+    }
     return Object.keys(result).length > 0 ? result : null;
   } catch {
     return null;
@@ -116,7 +119,7 @@ export function inferMaterialGroup(name: string, categoryHint?: string | null): 
   if (cat === "labor" || cat === "travel") return "labor";
   const n = name.toLowerCase();
   if (/zásuv|zasuv|socket|schuko/.test(n)) return "socket";
-  if (/vypína|vypina|prepína|switch|stmieva/.test(n)) return "switch";
+  if (/vypína|vypina|prepína|spína|spina|switch|stmieva/.test(n)) return "switch";
   if (/led|sviet|osvet|pás|pas|liš|podsviet|visiace|nástenn|stropn/.test(n)) return "lighting";
   if (/kábel|kabel|cyky|nym|cable|kabeláž/.test(n)) return "cable";
   if (/rozvád|rozvad|krabica/.test(n)) return "install";
@@ -173,6 +176,7 @@ export function applyProjectFactsToMaterialRows(
 export function materialRowsFromProjectMaterials(materials: ProjectMaterialDoc[]): AiSetupMaterialRow[] {
   return materials.map((m) => ({
     id: newLocalId(),
+    projectMaterialId: m.id,
     name: m.name,
     qty: m.quantity > 0 ? m.quantity : 0,
     unit: normalizeSetupUnit(m.unit),
@@ -189,15 +193,20 @@ export const AI_SETUP_MATERIAL_UNITS: MaterialUnit[] = [
   "m",
   "m2",
   "m3",
+  "cm",
+  "km",
   "kg",
   "l",
   "pack",
   "set",
+  "hour",
   "other",
 ];
 
 const LEGACY_UNIT_ALIASES: Record<string, MaterialUnit> = {
   ks: "pcs",
+  // "bežný meter" from Slovak price lists
+  bm: "m",
   stk: "pcs",
   stück: "pcs",
   stck: "pcs",
@@ -235,9 +244,11 @@ export function resolveSetupMaterialRows(
   projectMaterials: ProjectMaterialDoc[]
 ): AiSetupMaterialRow[] {
   const fromQuote = materialRowsFromQuoteItems(quoteItems).filter((r) => r.name.trim());
-  const fromSuggestions = materialRowsFromSuggestions(suggestions).filter((r) =>
-    r.name.trim()
-  );
+  // Rejected suggestions were explicitly thrown away (e.g. "clear AI rows")
+  // — they must never come back as material rows.
+  const fromSuggestions = materialRowsFromSuggestions(
+    suggestions.filter((s) => s.status !== "rejected")
+  ).filter((r) => r.name.trim());
   const fromProject = materialRowsFromProjectMaterials(projectMaterials).filter((r) =>
     r.name.trim()
   );
@@ -251,7 +262,13 @@ export function resolveSetupMaterialRows(
   return mergeQuoteRowsWithAiHints(fromQuote, aiSource);
 }
 
-/** Quote items are the saved source of truth; enrich zero prices from AI hints. */
+/**
+ * Quote items are the saved source of truth; enrich zero prices from AI hints.
+ * Qty: any saved quantity (including 1 — e.g. one distribution board) wins.
+ * Only fill qty from AI when the quote row has no quantity yet (0 / empty).
+ * (Previously `qty > 1` treated 1 as a placeholder and kept overwriting the
+ * user's "1" with stale AI counts like 79.76.)
+ */
 function mergeQuoteRowsWithAiHints(
   fromQuote: AiSetupMaterialRow[],
   aiSource: AiSetupMaterialRow[]
@@ -262,11 +279,12 @@ function mergeQuoteRowsWithAiHints(
   const merged = fromQuote.map((row) => {
     const ai = aiByName.get(row.name.trim().toLowerCase());
     if (!ai) return row;
+    const quoteHasQty = row.qty > 0;
     return {
       ...row,
       price: row.price > 0 ? row.price : ai.price,
-      qty: row.qty > 1 ? row.qty : ai.qty > 0 ? ai.qty : row.qty,
-      unit: row.qty > 1 ? row.unit : ai.qty > 1 ? ai.unit : row.unit,
+      qty: quoteHasQty ? row.qty : ai.qty > 0 ? ai.qty : row.qty,
+      unit: quoteHasQty ? row.unit : ai.qty > 0 ? ai.unit : row.unit,
       suggestionId: row.suggestionId ?? ai.suggestionId,
       sourceNote: row.sourceNote?.trim() || ai.sourceNote,
       confidence: row.confidence ?? ai.confidence,

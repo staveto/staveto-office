@@ -57,6 +57,11 @@ function stripUndefined<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+/** Alias ids may be legacy FILE NAMES — "/" would break the Firestore path. */
+function safeAliasDocId(aliasId: string): string {
+  return aliasId.replace(/\//g, "_");
+}
+
 /** Best-effort legacy-data probe under an old drawingId (used to decide whether to warn). */
 export async function countLegacyTakeoffData(
   projectId: string,
@@ -92,8 +97,9 @@ export async function upsertDrawingAlias(
   const db = getFirestoreInstance();
   if (!db) throw new Error("Firestore not configured");
   const now = new Date().toISOString();
+  const aliasDocId = safeAliasDocId(alias.aliasId);
   const existing = await getDoc(
-    doc(db, "projects", alias.projectId, "drawingAliases", alias.aliasId)
+    doc(db, "projects", alias.projectId, "drawingAliases", aliasDocId)
   );
   const record: DrawingAlias = {
     ...alias,
@@ -103,7 +109,7 @@ export async function upsertDrawingAlias(
     updatedAt: now,
   };
   await setDoc(
-    doc(db, "projects", alias.projectId, "drawingAliases", alias.aliasId),
+    doc(db, "projects", alias.projectId, "drawingAliases", aliasDocId),
     stripUndefined(record)
   );
   return record;
@@ -115,7 +121,9 @@ export async function getDrawingAlias(
 ): Promise<DrawingAlias | null> {
   const db = getFirestoreInstance();
   if (!db) return null;
-  const snap = await getDoc(doc(db, "projects", projectId, "drawingAliases", aliasFileId));
+  const snap = await getDoc(
+    doc(db, "projects", projectId, "drawingAliases", safeAliasDocId(aliasFileId))
+  );
   if (!snap.exists()) return null;
   return snap.data() as DrawingAlias;
 }
@@ -143,18 +151,35 @@ export type ResolveCanonicalDrawingIdResult = {
   /** True when takeoff data exists under aliasFileId that a merge would pick up. */
   hasLegacyDataUnderAlias: boolean;
   legacyDataCounts?: DrawingAlias["legacyDataCounts"];
+  /**
+   * The matched project document (when canonical id is a Documents doc).
+   * Lets callers render the EXACT same file the Documents flow renders
+   * instead of a possibly different quote-side copy.
+   */
+  canonicalDocument?: {
+    id: string;
+    fileName: string;
+    mimeType: string;
+    storagePath: string;
+  };
 };
 
 /**
  * Resolve the quote flow's AI-draft `fileId` to the SAME canonical
  * drawingId that Project Documents / /takeoff would use for the same PDF.
  *
- * Matching is by exact document id (covers the common case where a document
- * was uploaded from the Documents tab and mirrored 1:1 into aiDraftFiles —
- * fileId already equals a real document id, nothing to do) and by file name
- * (covers the "imported from AI draft into Documents" case, where the new
- * project document got a different id). Both are best-effort and never
- * destructive — on any doubt this falls back to the original fileId.
+ * Matching order (all best-effort, never destructive — on any doubt this
+ * falls back to the original fileId):
+ *  1. exact document id — fileId already IS a project document (1:1 mirror);
+ *  2. previously stored drawingAliases record — stable across renames and
+ *     sessions once a mapping was established;
+ *  3. exact file-name match — the "imported from AI draft into Documents"
+ *     case where the new project document got a different id;
+ *  4. single-PDF fallback — when the project has exactly ONE PDF document,
+ *     the quote's plan and that document are the same physical file in
+ *     practice (the quote flow only ever works with the project's plan);
+ *     without this, a mere file rename would fragment takeoff data between
+ *     quote and Documents forever.
  */
 export async function resolveCanonicalDrawingId(
   params: ResolveCanonicalDrawingIdParams
@@ -171,16 +196,47 @@ export async function resolveCanonicalDrawingId(
     return { canonicalDrawingId: fileId, remapped: false, hasLegacyDataUnderAlias: false };
   }
 
-  // fileId already IS a real document id (same-id mirror case) — canonical.
-  if (documents.some((d) => d.id === fileId)) {
-    return { canonicalDrawingId: fileId, remapped: false, hasLegacyDataUnderAlias: false };
+  const toCanonicalDocument = (d: (typeof documents)[number]) => ({
+    id: d.id,
+    fileName: d.fileName,
+    mimeType: d.mimeType,
+    storagePath: d.storagePath,
+  });
+
+  // 1. fileId already IS a real document id (same-id mirror case) — canonical.
+  const directMatch = documents.find((d) => d.id === fileId);
+  if (directMatch) {
+    return {
+      canonicalDrawingId: fileId,
+      remapped: false,
+      hasLegacyDataUnderAlias: false,
+      canonicalDocument: toCanonicalDocument(directMatch),
+    };
   }
 
+  // 2. Stored alias from an earlier resolution — reuse when still valid.
+  const storedAlias = await getDrawingAlias(projectId, fileId).catch(() => null);
+  const aliasTarget =
+    storedAlias && documents.some((d) => d.id === storedAlias.canonicalDrawingId)
+      ? documents.find((d) => d.id === storedAlias.canonicalDrawingId)
+      : undefined;
+
+  // 3. Exact file-name match.
   const normalizedName = fileName?.trim().toLowerCase();
-  const match = normalizedName
+  const nameMatch = normalizedName
     ? documents.find((d) => d.fileName?.trim().toLowerCase() === normalizedName)
     : undefined;
 
+  // 4. Single-PDF fallback — one plan in Documents ⇒ same physical file.
+  // Same PDF detection the /takeoff page uses: mimeType OR .pdf file name.
+  const pdfDocuments = documents.filter(
+    (d) =>
+      d.mimeType === "application/pdf" ||
+      (d.fileName ?? "").toLowerCase().endsWith(".pdf")
+  );
+  const singlePdfMatch = pdfDocuments.length === 1 ? pdfDocuments[0] : undefined;
+
+  const match = aliasTarget ?? nameMatch ?? singlePdfMatch;
   if (!match) {
     return { canonicalDrawingId: fileId, remapped: false, hasLegacyDataUnderAlias: false };
   }
@@ -204,5 +260,6 @@ export async function resolveCanonicalDrawingId(
     aliasFileId: fileId,
     hasLegacyDataUnderAlias,
     legacyDataCounts,
+    canonicalDocument: toCanonicalDocument(match),
   };
 }

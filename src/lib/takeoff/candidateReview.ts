@@ -352,6 +352,24 @@ export function normalizedRectOverlapRatio(
 }
 
 /**
+ * Intersection over the SMALLER rect's area (0..1). Unlike IoU this stays
+ * high when one rect sits inside a much bigger one — the exact shape of
+ * "a proposed box covering an existing small manual point mark", which IoU
+ * scores near 0 and lets through as a duplicate.
+ */
+export function normalizedRectCoverageRatio(
+  a: NormalizedRect,
+  b: NormalizedRect
+): number {
+  const ix = Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x));
+  const iy = Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+  const inter = ix * iy;
+  if (inter <= 0) return 0;
+  const minArea = Math.min(a.width * a.height, b.width * b.height);
+  return minArea > 0 ? inter / minArea : 0;
+}
+
+/**
  * Translate a stored bbox_pdf the SAME real-world distance the marker was
  * dragged, expressed in normalized (0..1 page) coordinates.
  *

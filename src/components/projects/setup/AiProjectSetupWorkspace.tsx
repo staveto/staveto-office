@@ -10,7 +10,10 @@ import { listProjectTasks, type ProjectDoc } from "@/lib/projects";
 import { listMaterialSuggestions, listProjectMaterials } from "@/services/materials/projectMaterialsService";
 import { listProjectQuoteDraftItems } from "@/lib/projects";
 import { updateDraftJobFields, updateDraftJobStatus } from "@/services/projects/projectService";
-import { upsertQuoteFromProject } from "@/services/quotes";
+import {
+  refreshLinkedDraftQuoteFromProject,
+  upsertQuoteFromProject,
+} from "@/services/quotes";
 import { AiSetupStepper } from "./AiSetupStepper";
 import { AiSetupSummaryPanel } from "./AiSetupSummaryPanel";
 import { AiSetupOverviewStep } from "./AiSetupOverviewStep";
@@ -22,6 +25,7 @@ import { syncEstimatorMaterialsToProject } from "@/services/ai/aiEstimatorServic
 import {
   isAiEstimatorFlowEnabled,
   isAiEvidencePdfViewerEnabled,
+  isPdfTakeoffRegionAnalyzerEnabled,
 } from "@/lib/ai/aiEstimatorFeature";
 import { useEstimatorPositions } from "./useEstimatorPositions";
 import type { MaterialSubTab } from "./AiSetupMaterialStep";
@@ -41,7 +45,6 @@ import { loadAiSetupProjectContext, mergeAttachmentContextIntoProjectFacts } fro
 import { useActiveWorkspaceContext } from "@/hooks/useActiveWorkspaceContext";
 import { AiSetupQualityGatePanel } from "./AiSetupQualityGatePanel";
 import { AiSetupProductSourcingPanel } from "./AiSetupProductSourcingPanel";
-import { AiSetupPurchaseListPanel } from "./AiSetupPurchaseListPanel";
 import {
   composeElectricalCustomerQuote,
   takeoffFromMaterialLikeRows,
@@ -59,7 +62,6 @@ import {
 } from "@/lib/products/productSourcingTypes";
 import {
   applyProductSelectionToQuote,
-  buildInternalPurchaseList,
   markSelectionCustomerSupplied,
   markSelectionExcluded,
   matchProductsForTakeoffItems,
@@ -157,6 +159,9 @@ export function AiProjectSetupWorkspace({
     resolveOfferDocumentMeta(project.quoteDraftNotes)
   );
   const [projectFacts, setProjectFacts] = useState<AiProjectFactsPersisted | undefined>();
+  // "User deleted AI rows" — persisted; blocks the sparse-materials auto-sync
+  // from regenerating suggestions the user explicitly threw away.
+  const [aiRowsClearedAt, setAiRowsClearedAt] = useState<string | null>(null);
   const [applyingFacts, setApplyingFacts] = useState(false);
   const [loadingMaterials, setLoadingMaterials] = useState(false);
   const [productSelections, setProductSelections] = useState<MaterialProductSelection[]>([]);
@@ -227,6 +232,7 @@ export function AiProjectSetupWorkspace({
         if (!cancelled) {
           setMaterials(materialRows);
           setProjectFacts(loadedFacts);
+          setAiRowsClearedAt(meta?.aiRowsClearedAt ?? null);
         }
 
         setWorkEstimate(meta?.workEstimate ?? workEstimateFromQuoteItems(quoteItems, tasks));
@@ -240,10 +246,14 @@ export function AiProjectSetupWorkspace({
         setDocumentMeta(resolveOfferDocumentMeta(project.quoteDraftNotes, loadedFacts));
 
         // Silently hydrate sparse materials from estimator session / attachments.
+        // NEVER when the user explicitly cleared the AI rows — materials look
+        // sparse precisely BECAUSE they deleted them, and regenerating here is
+        // how deleted rows kept "coming back".
         const shouldAutoSync =
           isAiEstimatorFlowEnabled() &&
           !!activeWorkspace &&
           !autoSyncedRef.current &&
+          !meta?.aiRowsClearedAt &&
           (materialsLookSparse(materialRows) || materialsLookUncounted(materialRows));
 
         if (shouldAutoSync && !cancelled) {
@@ -367,6 +377,10 @@ export function AiProjectSetupWorkspace({
     materials,
     currency,
     enabled: evidenceEnabled,
+    // PDF takeoff is source of truth — don't keep resurrecting AI rows the
+    // user already deleted (or that never had a mark on the plan).
+    dismissUnmarkedAiEstimates:
+      isPdfTakeoffRegionAnalyzerEnabled() || Boolean(aiRowsClearedAt),
     onMaterialPriceApplied: handleMaterialPriceApplied,
     onMaterialRowExcluded: handleMaterialRowExcluded,
   });
@@ -394,6 +408,12 @@ export function AiProjectSetupWorkspace({
       let changed = false;
       const next = prev.map((m) => {
         if (!excludeIds.has(m.id) || !m.included) return m;
+        // Only AI-originated rows may be auto-dropped for missing PDF
+        // evidence. Rows the user created deliberately (manual add, own
+        // catalog picks, previously saved quote items) have no backing
+        // suggestion/material doc and MUST stay in the quote.
+        const aiOriginated = !!m.suggestionId || !!m.projectMaterialId;
+        if (!aiOriginated) return m;
         changed = true;
         return { ...m, included: false };
       });
@@ -512,11 +532,6 @@ export function AiProjectSetupWorkspace({
     productSourcingOn,
     productSelections,
   ]);
-
-  const purchaseList = useMemo(
-    () => (productSourcingOn ? buildInternalPurchaseList(productSelections) : []),
-    [productSourcingOn, productSelections]
-  );
 
   const pricingReady = useMemo(
     () =>
@@ -652,7 +667,12 @@ export function AiProjectSetupWorkspace({
       const calc = calcOverride ?? calculation;
       const facts = factsOverride ?? projectFacts;
       const notes = serializeAiSetupMeta(
-        { workEstimate, calculation: calc, projectFacts: facts },
+        {
+          workEstimate,
+          calculation: calc,
+          projectFacts: facts,
+          ...(aiRowsClearedAt ? { aiRowsClearedAt } : {}),
+        },
         undefined,
         documentMeta
       );
@@ -662,8 +682,37 @@ export function AiProjectSetupWorkspace({
       });
       onProjectUpdated(updated);
     },
-    [calculation, documentMeta, onProjectUpdated, project.id, projectFacts, workEstimate]
+    [aiRowsClearedAt, calculation, documentMeta, onProjectUpdated, project.id, projectFacts, workEstimate]
   );
+
+  /**
+   * The user deleted AI material rows — remember it permanently so neither
+   * the sparse-materials auto-sync nor a later reload resurrects them.
+   */
+  const markAiRowsCleared = useCallback(async () => {
+    const ts = new Date().toISOString();
+    setAiRowsClearedAt(ts);
+    autoSyncedRef.current = true;
+    try {
+      const notes = serializeAiSetupMeta(
+        {
+          workEstimate,
+          calculation,
+          projectFacts,
+          aiRowsClearedAt: ts,
+        },
+        undefined,
+        documentMeta
+      );
+      const updated = await updateDraftJobFields(project.id, {
+        quoteDraftVatPercent: calculation.vatPercent,
+        quoteDraftNotes: notes,
+      });
+      onProjectUpdated(updated);
+    } catch {
+      // Flag stays in state for this session; next persistMeta retries.
+    }
+  }, [calculation, documentMeta, onProjectUpdated, project.id, projectFacts, workEstimate]);
 
   const handleProjectFactsChange = useCallback(
     (facts: AiProjectFactsPersisted) => {
@@ -683,6 +732,60 @@ export function AiProjectSetupWorkspace({
     []
   );
 
+  /** Best-effort: push current draft into the linked draft quote doc. */
+  const refreshLinkedQuote = useCallback(() => {
+    if (!activeWorkspace) return;
+    void refreshLinkedDraftQuoteFromProject(activeWorkspace, userId, project.id).catch(() => {
+      // Read-time refresh on the quotes list covers transient failures.
+    });
+  }, [activeWorkspace, userId, project.id]);
+
+  // Auto-persist výkaz edits (materials) to quoteItems and refresh the linked
+  // quote, so /app/quotes never shows a stale snapshot even when the user
+  // leaves without clicking through the steps or saving explicitly.
+  //
+  // Generation token: if the user edits again while a sync is in flight, the
+  // stale write must NOT call setMaterials — that was reverting qty (e.g. set
+  // "Osadenie rozvádzača" to 1, then ~2.5s later an older sync put 79.76 back).
+  const materialsSyncKeyRef = useRef<string | null>(null);
+  const materialsSyncGenRef = useRef(0);
+  useEffect(() => {
+    if (loading) {
+      materialsSyncKeyRef.current = null;
+      return;
+    }
+    const key = JSON.stringify(
+      materials.map((m) => [m.name, m.qty, m.unit, m.price, m.included, m.customerVisible])
+    );
+    if (materialsSyncKeyRef.current === null) {
+      // Baseline right after load — nothing changed yet.
+      materialsSyncKeyRef.current = key;
+      return;
+    }
+    if (materialsSyncKeyRef.current === key) return;
+
+    const gen = ++materialsSyncGenRef.current;
+    const snapshot = materials;
+    const timer = setTimeout(async () => {
+      try {
+        // Never prune on auto-persist — a stale snapshot must not delete
+        // catalog/manual quote lines the user added after this sync started.
+        const synced = await syncMaterialRowsToQuoteItems(project.id, snapshot, {
+          pruneMissing: false,
+        });
+        // A newer edit bumped the generation — drop this result so we never
+        // put an older qty/price back into the form.
+        if (gen !== materialsSyncGenRef.current) return;
+        materialsSyncKeyRef.current = key;
+        setMaterials(synced);
+        refreshLinkedQuote();
+      } catch {
+        // Non-draft jobs / offline — the explicit save still covers this.
+      }
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [materials, loading, project.id, refreshLinkedQuote]);
+
   const applyFactsToMaterials = useCallback(() => {
     if (!projectFacts) return;
     setApplyingFacts(true);
@@ -700,9 +803,12 @@ export function AiProjectSetupWorkspace({
     setSaving(true);
     setError(null);
     try {
-      const synced = await syncMaterialRowsToQuoteItems(project.id, materials);
+      const synced = await syncMaterialRowsToQuoteItems(project.id, materials, {
+        pruneMissing: true,
+      });
       setMaterials(synced);
       await persistMeta();
+      refreshLinkedQuote();
       setActiveStep("work");
     } catch (e) {
       setError(e instanceof Error ? e.message : t("projects.aiSetup.saveError"));
@@ -722,6 +828,7 @@ export function AiProjectSetupWorkspace({
       );
       setWorkEstimate(synced);
       await persistMeta();
+      refreshLinkedQuote();
       setActiveStep("price");
     } catch (e) {
       setError(e instanceof Error ? e.message : t("projects.aiSetup.saveError"));
@@ -736,6 +843,7 @@ export function AiProjectSetupWorkspace({
       const frozen = freezeCalculationForSave(calculation, totals);
       setCalculation(frozen);
       await persistMeta(frozen);
+      refreshLinkedQuote();
       setActiveStep("offer");
     } catch (e) {
       setError(e instanceof Error ? e.message : t("projects.aiSetup.saveError"));
@@ -748,7 +856,9 @@ export function AiProjectSetupWorkspace({
     setSaving(true);
     setError(null);
     try {
-      const syncedMaterials = await syncMaterialRowsToQuoteItems(project.id, materials);
+      const syncedMaterials = await syncMaterialRowsToQuoteItems(project.id, materials, {
+        pruneMissing: true,
+      });
       setMaterials(syncedMaterials);
       const syncedWork = await syncWorkEstimateToQuoteItems(
         project.id,
@@ -762,7 +872,11 @@ export function AiProjectSetupWorkspace({
       setCalculation(frozen);
 
       const notes = serializeAiSetupMeta(
-        { workEstimate: syncedWork, calculation: frozen },
+        {
+          workEstimate: syncedWork,
+          calculation: frozen,
+          ...(aiRowsClearedAt ? { aiRowsClearedAt } : {}),
+        },
         undefined,
         documentMeta
       );
@@ -805,7 +919,9 @@ export function AiProjectSetupWorkspace({
     setExportingPdf(true);
     setError(null);
     try {
-      const syncedMaterials = await syncMaterialRowsToQuoteItems(project.id, materials);
+      const syncedMaterials = await syncMaterialRowsToQuoteItems(project.id, materials, {
+        pruneMissing: true,
+      });
       setMaterials(syncedMaterials);
       await syncWorkEstimateToQuoteItems(
         project.id,
@@ -816,6 +932,7 @@ export function AiProjectSetupWorkspace({
       const frozen = freezeCalculationForSave(calculation, finalTotals);
       setCalculation(frozen);
       await persistMeta(frozen);
+      refreshLinkedQuote();
       window.open(`/app/projects/${project.id}/print?setup=ai`, "_blank", "noopener,noreferrer");
     } catch (e) {
       setError(e instanceof Error ? e.message : t("projects.aiSetup.saveError"));
@@ -910,9 +1027,11 @@ export function AiProjectSetupWorkspace({
               onApplyFactsToMaterials={applyFactsToMaterials}
               applyingFacts={applyingFacts}
               evidence={evidenceEnabled ? estimatorPositions : undefined}
+              projectId={project.id}
               currency={currency}
               subTab={materialSubTab}
               onSubTabChange={setMaterialSubTab}
+              onAiRowsCleared={() => void markAiRowsCleared()}
             />
           ) : null}
           {activeStep === "work" ? (
@@ -983,11 +1102,6 @@ export function AiProjectSetupWorkspace({
                 title: s.titleSk,
                 lineCount: s.lines.length,
               }))}
-              purchaseListSlot={
-                productSourcingOn ? (
-                  <AiSetupPurchaseListPanel lines={purchaseList} currency={currency} />
-                ) : undefined
-              }
             />
           ) : null}
           </div>

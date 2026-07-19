@@ -40,6 +40,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "sidebar.section.equipment": "Equipment",
     "sidebar.section.materials": "Materials",
     "sidebar.item.materials.overview": "Materials overview",
+    "sidebar.item.materials.catalog": "My items",
     "sidebar.item.materials.rental": "Tool rental",
     "sidebar.item.equipment.list": "My equipment",
     "sidebar.section.team": "Team",
@@ -1818,6 +1819,8 @@ export const translations: Record<Locale, Record<string, string>> = {
     "materials.unit.m": "m",
     "materials.unit.m2": "m²",
     "materials.unit.m3": "m³",
+    "materials.unit.cm": "cm",
+    "materials.unit.km": "km",
     "materials.unit.kg": "kg",
     "materials.unit.g": "g",
     "materials.unit.l": "l",
@@ -1851,6 +1854,57 @@ export const translations: Record<Locale, Record<string, string>> = {
     "materials.category.discount": "Discount",
     "materials.category.other_material": "Other material",
     "materials.category.unknown": "Unknown",
+    "materials.catalog.title": "My items",
+    "materials.catalog.lead":
+      "Your own price list of products and works. Create items once and insert them into any quote with one click.",
+    "materials.catalog.addProduct": "Add product",
+    "materials.catalog.addWork": "Add work",
+    "materials.catalog.filterAll": "All",
+    "materials.catalog.filterProducts": "Products",
+    "materials.catalog.filterWorks": "Works",
+    "materials.catalog.searchPlaceholder": "Search by name…",
+    "materials.catalog.emptyTitle": "No items yet",
+    "materials.catalog.emptyBody":
+      "Create your first product or work item — e.g. \"Socket outlet installation\" with your hourly or per-piece rate. You'll insert it into quotes with one click.",
+    "materials.catalog.noMatches": "Nothing matches the search.",
+    "materials.catalog.colName": "Item",
+    "materials.catalog.colUnit": "Unit",
+    "materials.catalog.colPrice": "Price / unit",
+    "materials.catalog.kindProduct": "Product",
+    "materials.catalog.kindWork": "Work",
+    "materials.catalog.newTitle": "New item",
+    "materials.catalog.editTitle": "Edit item",
+    "materials.catalog.fieldName": "Name",
+    "materials.catalog.fieldPrice": "Price per unit (€)",
+    "materials.catalog.fieldDescription": "Description (optional)",
+    "materials.catalog.namePlaceholderProduct": "e.g. Socket outlet 230V premium",
+    "materials.catalog.namePlaceholderWork": "e.g. Socket outlet installation",
+    "materials.catalog.descriptionPlaceholder": "Note for you — supplier, model…",
+    "materials.catalog.deleteTitle": "Delete item?",
+    "materials.catalog.deleteBody":
+      "\"{{name}}\" will be removed from the price list. Quotes that already use it keep their copies.",
+    "materials.catalog.loadError": "Could not load the price list.",
+    "materials.catalog.saveError": "Saving failed. Try again.",
+    "materials.catalog.pickerButton": "Add from my items",
+    "materials.catalog.pickerTitle": "Add from my items",
+    "materials.catalog.pickerEmpty":
+      "Your price list is empty. Create products and works in Material → My items first.",
+    "materials.catalog.pickerOpenCatalog": "Open my items",
+    "materials.catalog.pickerAdd": "Add",
+    "materials.catalog.pickerAddedCount": "Added to the quote: {{count}}",
+    "materials.catalog.sourceNote": "My items",
+    "materials.catalog.importCsv": "Import price list (CSV)",
+    "materials.catalog.csvBody":
+      "Upload your price list as a CSV file with columns: name; unit; price (optionally type and description). Slovak units (ks, bm, hod…) and decimal commas are understood. Items you already have are skipped.",
+    "materials.catalog.csvSample": "Download sample CSV",
+    "materials.catalog.csvChooseFile": "Choose CSV file…",
+    "materials.catalog.csvPreviewCount": "{{count}} items ready to import",
+    "materials.catalog.csvNoRows": "No valid items found in the file. Check the column format.",
+    "materials.catalog.csvErrors": "{{count}} rows skipped:",
+    "materials.catalog.csvDefaultKind": "Type for rows without one",
+    "materials.catalog.importConfirm": "Import",
+    "materials.catalog.importDone":
+      "Price list imported: {{created}} items added, {{skipped}} already existed.",
     "materials.overview.title": "Materials overview",
     "materials.overview.subtitle": "Used materials across company projects",
     "materials.overview.totalSpend": "Total spend",
@@ -2179,7 +2233,8 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.actions.markPaused": "Pause project",
     "projects.actions.rejectConcept": "Reject concept",
     "projects.deleteConfirm.title": "Delete project?",
-    "projects.deleteConfirm.body": "This permanently removes the project. This cannot be undone.",
+    "projects.deleteConfirm.body":
+      "This permanently removes the project, takeoff data, quote lines, documents and related files. This cannot be undone.",
     "projects.archiveConfirm.title": "Archive project?",
     "projects.archiveConfirm.body": "The project will be hidden from active lists. You can restore it from the archive later.",
     "projects.toast.archived": "Project archived.",
@@ -3321,6 +3376,21 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.aiSetup.material.layersHint":
       "Summary is for the estimator. Full raw takeoff is under “Detailed takeoff” — not the customer quote.",
     "projects.aiSetup.material.summaryTitle": "Quick summary",
+    "projects.aiSetup.material.takeoffMirrorSource": "From PDF takeoff (marked symbols)",
+    "projects.aiSetup.material.takeoffMirrorHint":
+      "Mirrored with the PDF takeoff — {{count}} items follow the symbols marked on the plan and update automatically until the quote is finished. Click to open the PDF.",
+    "projects.aiSetup.material.takeoffLinkedHint":
+      "Quantity is linked to the PDF takeoff — it counts the marks confirmed on the plan. Editing the quantity here also updates the takeoff.",
+    "projects.aiSetup.material.clearAiRows": "Delete AI suggestions ({{count}})",
+    "projects.aiSetup.material.clearAiRowsTitle": "Delete AI-suggested items?",
+    "projects.aiSetup.material.clearAiRowsBody":
+      "This removes {{count}} AI-suggested items only. Your catalog picks and manually added rows stay, as do items linked to PDF marks. This cannot be undone.",
+    "projects.aiSetup.material.clearAiRowsConfirm": "Delete items",
+    "projects.aiSetup.material.deleteRow": "Delete item",
+    "projects.aiSetup.material.deleteRowTitle": "Delete this item?",
+    "projects.aiSetup.material.deleteRowBody":
+      "“{{name}}” will be removed from the quote. If part of its quantity comes from marks on the plan, that part stays — remove the marks in the PDF instead. This cannot be undone.",
+    "projects.aiSetup.material.deleteRowConfirm": "Delete item",
     "projects.aiSetup.material.detailTitle": "Detailed takeoff items",
     "projects.aiSetup.material.showDetail": "Show detailed takeoff",
     "projects.aiSetup.material.hideDetail": "Hide detailed takeoff",
@@ -3353,6 +3423,17 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.aiSetup.work.checklistHint":
       "Adjust hours above to cover this scope. Exact metres and board types still need a site check.",
     "projects.aiSetup.material.empty": "No material suggestions. Add your own line.",
+    "projects.aiSetup.material.addManualRow": "Add item",
+    "projects.aiSetup.material.addManualRowConfirm": "Add",
+    "projects.aiSetup.material.manualName": "Name",
+    "projects.aiSetup.material.manualQty": "Quantity",
+    "projects.aiSetup.material.manualUnit": "Unit",
+    "quotes.managedByProject.title": "This quote is managed in the job",
+    "quotes.managedByProject.body":
+      "Items, prices and totals mirror the job's quote draft automatically. Edit them in one place — the quote preparation inside the job.",
+    "quotes.managedByProject.cta": "Edit in job",
+    "quotes.managedByProject.itemsHint":
+      "Read-only view — the list updates automatically from the job.",
     "projects.aiSetup.material.add": "Add material",
     "projects.aiSetup.material.sparseHint":
       "Only a few generic material lines were saved. Reload the takeoff from the drawing / AI session.",
@@ -3774,6 +3855,25 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.aiSetup.positions.pricesLead":
       "Rows without a price keep the quote preliminary. Add prices from catalog or manually.",
     "projects.aiSetup.positions.pricesAllDone": "All positions have a price or are marked as customer supplied.",
+    "projects.aiSetup.prices.takeoffRowsTitle": "Quote items",
+    "projects.aiSetup.prices.takeoffRowsSubtitle":
+      "Only items marked on the PDF. Extra AI/old rows without the PDF badge are removed automatically. Add your own items with the buttons above if needed.",
+    "projects.aiSetup.prices.unitPrice": "Price / unit",
+    "projects.aiSetup.prices.colItem": "Item",
+    "projects.aiSetup.prices.colTotal": "Total",
+    "projects.aiSetup.prices.searchPlaceholder": "Search item…",
+    "projects.aiSetup.prices.sortUnpricedFirst": "Unpriced first",
+    "projects.aiSetup.prices.sortName": "Name (A–Z)",
+    "projects.aiSetup.prices.sortTotalDesc": "Highest total",
+    "projects.aiSetup.prices.sortPriceDesc": "Highest price / unit",
+    "projects.aiSetup.prices.noRowsMatch": "No items match your search.",
+    "projects.aiSetup.prices.takeoffQtyEditHint":
+      "Linked to the PDF takeoff — changing quantity also updates the výkaz item.",
+    "projects.aiSetup.prices.orphanDuplicateBadge": "Not from PDF",
+    "projects.aiSetup.prices.orphanDuplicateHint":
+      "Extra row with the same name as a PDF item — leftover AI/old data, not from your marks. Delete it; the PDF row above already has the real count.",
+    "projects.aiSetup.material.summaryFromPdfHint":
+      "{{pdf}} of {{total}} rows come from the PDF výkaz (marks + exported cable routes). Approve cable routes and use “Add approved to quote”, then they appear here. “Delete AI suggestions” removes only AI rows — catalog and manual items stay.",
 
     // --- Plan Takeoff Workbench ---
     "takeoff.pageTitle": "Plan takeoff",
@@ -3805,11 +3905,140 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.viewer.modeRect": "Draw box",
     "takeoff.viewer.modeAnalyzeRegion": "Analyze region",
     "takeoff.viewer.pointHint":
-      "Click where the symbol is. This creates a candidate or confirmed mark.",
+      "Click where the symbol is. This creates a candidate or confirmed mark. Pan with the middle mouse button or Space+drag.",
     "takeoff.viewer.rectHint": "Drag a rectangle around a symbol in the drawing.",
     "takeoff.viewer.highlightAll": "Show all on plan",
     "takeoff.viewer.highlightAllHint":
       "All marks from the list are glowing on the plan (view auto-zoomed to fit them). Anything on the drawing that is NOT glowing is still missing — mark it or scan that area.",
+    "takeoff.viewer.hideHighlights": "Hide highlights",
+    "takeoff.viewer.hideHighlightsHint":
+      "Turn off all mark highlights on the plan (both \"Show all\" and highlighted categories).",
+    "takeoff.viewer.hideMarks": "Hide marks",
+    "takeoff.viewer.showMarks": "Show marks",
+    "takeoff.viewer.hideMarksHint":
+      "Temporarily hide all marks so you can read the bare drawing. Your takeoff is untouched — toggle again to bring the marks back.",
+    "takeoff.annotate.text": "Add text",
+    "takeoff.annotate.note": "Sticky note",
+    "takeoff.annotate.rect": "Rectangle",
+    "takeoff.annotate.ellipse": "Ellipse",
+    "takeoff.annotate.hint":
+      "Annotation tool: click (text/note) or drag (shape) to place a designer note on the plan. Annotations never change quantities.",
+    "takeoff.annotate.newTextTitle": "Add text to the plan",
+    "takeoff.annotate.newNoteTitle": "Add a note",
+    "takeoff.annotate.textPlaceholder": "Write the note…",
+    "takeoff.annotate.editTitle": "Annotation",
+    "takeoff.annotate.shapeEditHint": "A drawn shape has no text. You can delete it here.",
+    "takeoff.annotate.shapeTitle": "Shape annotation",
+    "takeoff.rail.title": "Pages",
+    "takeoff.rail.collapse": "Hide the pages panel",
+    "takeoff.rail.expand": "Show the pages panel",
+    "takeoff.measure.title": "Measure",
+    "takeoff.measure.calibrate": "Calibrate scale",
+    "takeoff.measure.setScale": "Set scale",
+    "takeoff.measure.editScale": "Edit scale",
+    "takeoff.measure.resetScale": "Reset scale",
+    "takeoff.measure.length": "Measure length",
+    "takeoff.measure.cableRun": "Measure cable route",
+    "takeoff.measure.cancel": "Cancel measuring",
+    "takeoff.measure.scaleSet": "Scale set",
+    "takeoff.measure.scaleMissing": "Set the drawing scale first.",
+    "takeoff.measure.scaleLabel": "Scale: {{length}} m",
+    "takeoff.measure.calibrateHint":
+      "Scale calibration: click two points with a known real distance (e.g. a dimensioned wall), then enter the real length.",
+    "takeoff.measure.lengthHint":
+      "Length measurement: click point A, then point B. The distance is computed from the drawing scale and saved.",
+    "takeoff.measure.cableHint":
+      "Cable route: every click adds a route point. Enter or double-click finishes the route, Backspace removes the last point, Esc cancels.",
+    "takeoff.measure.calibrateDialogTitle": "Set the drawing scale",
+    "takeoff.measure.calibrateDialogBody":
+      "Enter the real length of the marked line. You can use meters or millimeters.",
+    "takeoff.measure.calibrateInputPlaceholder": "e.g. 1770 mm or 1.77 m",
+    "takeoff.measure.calibrateInputInvalid":
+      "Enter the length as a number in m or mm, e.g. 1770 mm or 1.77 m.",
+    "takeoff.measure.calibratePointsTooClose":
+      "The calibration points are too close together — pick two more distant points.",
+    "takeoff.measure.hideMeasurements": "Hide measurements",
+    "takeoff.measure.showMeasurements": "Show measurements",
+    "takeoff.measure.hideMeasurementsHint":
+      "Temporarily hide all measurements and cable routes from the plan. Nothing is deleted.",
+    "takeoff.measure.cablesAndRoutes": "Cables and routes",
+    "takeoff.measure.addRoute": "New route",
+    "takeoff.measure.addRouteHint":
+      "Start drawing a cable route on the plan — every click adds a point.",
+    "takeoff.measure.emptyRuns":
+      "No cable routes yet. Set the drawing scale, then click \"New route\" and draw the route on the plan.",
+    "takeoff.measure.selectRunHint": "Show and edit this route",
+    "takeoff.measure.routeLength": "Route",
+    "takeoff.measure.finalLength": "Total",
+    "takeoff.measure.runName": "Route name",
+    "takeoff.measure.circuitName": "Circuit",
+    "takeoff.measure.circuitPlaceholder": "e.g. Kitchen sockets",
+    "takeoff.measure.cableType": "Cable type",
+    "takeoff.measure.cableTypeCustom": "Custom cable type",
+    "takeoff.measure.catalogGroup": "From catalog",
+    "takeoff.measure.installationType": "Installation",
+    "takeoff.measure.verticalLength": "Vertical drops (m)",
+    "takeoff.measure.fixedReserve": "Fixed reserve (m)",
+    "takeoff.measure.reservePercent": "Reserve (%)",
+    "takeoff.measure.roundingStep": "Rounding (m)",
+    "takeoff.measure.status": "Status",
+    "takeoff.measure.approve": "Approve for quote",
+    "takeoff.measure.summaryByCableType": "Summary by cable type",
+    "takeoff.measure.addApprovedToQuote": "Add approved to quote",
+    "takeoff.measure.exportNoneApproved":
+      "Only routes with the \"Approved for quote\" status are exported.",
+    "takeoff.measure.exportDone":
+      "{{count}} item(s) transferred to the quote ({{length}} m in total).",
+    "takeoff.measure.defaultRunName": "New cable route",
+    "takeoff.measure.finishRun": "Finish route",
+    "takeoff.measure.finishRunNext": "Finish + next",
+    "takeoff.measure.finishRunNextHint":
+      "Save this route and immediately start drawing the next one (another circuit or cable type).",
+    "takeoff.measure.undoPoint": "Undo point",
+    "takeoff.measure.gapJump": "Skip",
+    "takeoff.measure.gapJumpArmed": "Skipping…",
+    "takeoff.measure.gapJumpHint":
+      "The next segment won't be measured — jump to another spot and keep counting meters within the same route.",
+    "takeoff.measure.editRun": "Edit points",
+    "takeoff.measure.editRunDone": "Done",
+    "takeoff.measure.editRunHint":
+      "Drag points to move them, click a diamond to add a point, Alt+click or double-click a point to delete it.",
+    "takeoff.measure.editVertexHint":
+      "Drag to move · Alt+click or double-click to delete",
+    "takeoff.measure.editOnPlan": "Edit on plan",
+    "takeoff.measure.editOnPlanHint":
+      "Opens the route on the drawing so you can move, add or delete its points.",
+    "takeoff.measure.highlightRunHint":
+      "Highlight this route on the plan — all other routes fade out.",
+    "takeoff.measure.highlightGroupHint":
+      "Highlight every route of this cable type on the plan.",
+    "takeoff.measure.clearHighlight": "Clear highlight",
+    "takeoff.measure.deleteMeasurementHint": "Click to delete this measurement",
+    "takeoff.measure.summarySyncHint":
+      "{{synced}} in quote · {{pending}} need export · {{draft}} not approved",
+    "takeoff.measure.syncInQuote": "In quote: {{length}} m",
+    "takeoff.measure.syncNeedsExport":
+      "Approved {{approved}} m — in quote {{inQuote}} m (re-export)",
+    "takeoff.measure.syncStaleQuote":
+      "Still in quote: {{length}} m (no approved routes — re-export to remove)",
+    "takeoff.measure.syncNotApproved":
+      "Not approved yet ({{length}} m) — will not go into the quote",
+    "takeoff.measure.approvedOfTotal": "approved {{approved}} m",
+    "takeoff.measure.unnamedCableType": "No cable type",
+    "takeoff.measure.cableStartHint": "Click the plan to add route points",
+    "takeoff.measure.toastScaleSaved": "Drawing scale saved.",
+    "takeoff.measure.toastRunSaved": "Cable route saved — {{length}} m.",
+    "takeoff.measure.installation.groove": "In a groove",
+    "takeoff.measure.installation.surface_trunking": "In trunking",
+    "takeoff.measure.installation.conduit": "In a conduit",
+    "takeoff.measure.installation.ceiling": "In the ceiling",
+    "takeoff.measure.installation.drywall": "In drywall",
+    "takeoff.measure.installation.floor": "In the floor",
+    "takeoff.measure.installation.other": "Other",
+    "takeoff.measure.statusValue.draft": "Draft",
+    "takeoff.measure.statusValue.review": "For review",
+    "takeoff.measure.statusValue.checked": "Checked",
+    "takeoff.measure.statusValue.approved": "Approved for quote",
     "takeoff.viewer.analyzeHint":
       "Drag a rectangle over a room or section. The app finds multiple symbol candidates inside — not one mark.",
     "takeoff.viewer.analyzeLoading": "Analyzing region… finding symbol candidates.",
@@ -3831,7 +4060,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.category.new": "New item",
     "takeoff.category.newTitle": "New item (position)",
     "takeoff.category.newHint":
-      "Name the position (e.g. \"Ceiling light LED 12W\"), pick a type and click its symbols on the plan — every click adds one piece.",
+      "The name can be anything — every distinct name is its own item with its own color and count. Use names to split sub-types, e.g. \"Switch staircase\" vs \"Switch double\". Pick \"General item\" as the type for custom categories, then click its symbols on the plan — every click adds one piece.",
     "takeoff.category.nameLabel": "Item name",
     "takeoff.category.namePlaceholder": "e.g. Socket 230V double",
     "takeoff.category.startMarking": "Start marking",
@@ -3842,6 +4071,10 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.category.markingBanner":
       "Clicking adds: {{label}} — {{count}} pcs so far. Esc or \"Finish\" ends marking.",
     "takeoff.category.highlight": "Highlight this item's marks on the plan",
+    "takeoff.category.highlightAll": "Highlight all",
+    "takeoff.category.highlightAllOff": "Hide highlight",
+    "takeoff.category.highlightAllHint":
+      "Light up every item's marks on the plan in its own color, so nothing gets overlooked.",
     "takeoff.category.expandHint": "Show individual marks",
     "takeoff.category.pieces": "{{count}} pcs",
     "takeoff.category.pageShort": "Page {{page}}",
@@ -3895,6 +4128,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.review.applyType": "Apply",
     "takeoff.review.takeoffItems": "Takeoff quantities",
     "takeoff.review.evidenceCount": "{{count}} evidence",
+    "takeoff.review.sourceCable": "cable",
     "takeoff.review.evidenceFor": "Plan evidence: {{name}}",
     "takeoff.review.evidenceThumbHint": "Click to show this mark in the plan",
     "takeoff.review.tabCandidates": "Candidates",
@@ -3945,6 +4179,27 @@ export const translations: Record<Locale, Record<string, string>> = {
       "AI found {{count}} new candidates on the whole page — review overlays (not added to quote yet).",
     "takeoff.toast.scanWholePageAiEmpty":
       "AI found no new symbols — everything it saw is already marked or confirmed.",
+    "takeoff.viewer.modeIdentify": "Identify (AI)",
+    "takeoff.viewer.identifyHint":
+      "Draw a rectangle around a symbol (or just click it) — AI analyzes that area and tells you what it is BEFORE you mark it. No mark is created. Paid AI action per use.",
+    "takeoff.identify.createMark": "Create mark with this name",
+    "takeoff.identify.action": "What is this? (AI)",
+    "takeoff.identify.hint":
+      "Ask AI vision to identify this symbol (name and type) — useful when the plan has no legend. Paid AI action.",
+    "takeoff.identify.title": "AI symbol identification",
+    "takeoff.identify.busy": "AI is looking at the symbol…",
+    "takeoff.identify.category": "Category",
+    "takeoff.identify.confidence": "Confidence",
+    "takeoff.identify.confidence_high": "high",
+    "takeoff.identify.confidence_medium": "medium",
+    "takeoff.identify.confidence_low": "low",
+    "takeoff.identify.applyHint":
+      "You can use this name as the position name for this mark. Always verify against the project documentation.",
+    "takeoff.identify.apply": "Use as position name",
+    "takeoff.identify.failed": "AI identification failed. Please try again.",
+    "takeoff.identify.retry": "Try again",
+    "takeoff.identify.empty":
+      "AI did not recognize a symbol at this mark. Try zooming the plan or moving the mark closer onto the symbol.",
     "takeoff.toast.scanWholePageAiOnlyText":
       "AI found no real symbols — it correctly ignored {{count}} text/number/legend items on this page. Try a smaller area, or mark manually if a symbol is really missing.",
     "takeoff.toast.scanWholePageAiFailed":
@@ -3971,6 +4226,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.review.sectionRejected": "Rejected / hidden",
     "takeoff.review.sectionItems": "Takeoff items",
     "takeoff.review.sectionItemsHint": "Click an item to see it highlighted on the plan.",
+    "takeoff.review.sectionItemsScrollHint": "Scroll to see all items",
     "takeoff.manual.saveAsCandidate": "Save as candidate",
     "takeoff.manual.saveAndConfirm": "Save and confirm",
     "takeoff.manual.savedAsCandidate": "Saved as a candidate for review — it does not change quantities until confirmed.",
@@ -4125,8 +4381,11 @@ export const translations: Record<Locale, Record<string, string>> = {
     "products.sourcing.col.product": "Product",
     "products.sourcing.col.code": "Code",
     "products.sourcing.col.qty": "Qty",
+    "products.sourcing.col.status": "Status",
     "products.sourcing.col.net": "Net",
+    "products.sourcing.col.sell": "Sell",
     "products.sourcing.col.source": "Source",
+    "products.sourcing.col.actions": "Actions",
     "products.sourcing.badge.confirmed": "Price confirmed",
     "products.sourcing.badge.indicative": "Indicative price",
     "products.sourcing.badge.missing": "Price missing",
@@ -5306,6 +5565,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "sidebar.section.equipment": "Vybavenie",
     "sidebar.section.materials": "Materiál",
     "sidebar.item.materials.overview": "Prehľad materiálu",
+    "sidebar.item.materials.catalog": "Vlastné položky",
     "sidebar.item.materials.rental": "Náradie na prenájom",
     "sidebar.item.equipment.list": "Moje vybavenie",
     "sidebar.section.team": "Tím",
@@ -7085,6 +7345,8 @@ export const translations: Record<Locale, Record<string, string>> = {
     "materials.unit.m": "m",
     "materials.unit.m2": "m²",
     "materials.unit.m3": "m³",
+    "materials.unit.cm": "cm",
+    "materials.unit.km": "km",
     "materials.unit.kg": "kg",
     "materials.unit.g": "g",
     "materials.unit.l": "l",
@@ -7118,6 +7380,58 @@ export const translations: Record<Locale, Record<string, string>> = {
     "materials.category.discount": "Zľava",
     "materials.category.other_material": "Iný materiál",
     "materials.category.unknown": "Neznáme",
+    "materials.catalog.title": "Vlastné položky",
+    "materials.catalog.lead":
+      "Váš vlastný cenník produktov a prác. Položky vytvoríte raz a do cenovej ponuky ich vložíte jedným klikom.",
+    "materials.catalog.addProduct": "Pridať produkt",
+    "materials.catalog.addWork": "Pridať prácu",
+    "materials.catalog.filterAll": "Všetko",
+    "materials.catalog.filterProducts": "Produkty",
+    "materials.catalog.filterWorks": "Práce",
+    "materials.catalog.searchPlaceholder": "Hľadať podľa názvu…",
+    "materials.catalog.emptyTitle": "Zatiaľ žiadne položky",
+    "materials.catalog.emptyBody":
+      "Vytvorte si prvý produkt alebo prácu — napr. „Montáž zásuvky“ s vašou hodinovou alebo kusovou sadzbou. Do ponúk ju potom vložíte jedným klikom.",
+    "materials.catalog.noMatches": "Hľadaniu nezodpovedá žiadna položka.",
+    "materials.catalog.colName": "Položka",
+    "materials.catalog.colUnit": "Jednotka",
+    "materials.catalog.colPrice": "Cena / jedn.",
+    "materials.catalog.kindProduct": "Produkt",
+    "materials.catalog.kindWork": "Práca",
+    "materials.catalog.newTitle": "Nová položka",
+    "materials.catalog.editTitle": "Upraviť položku",
+    "materials.catalog.fieldName": "Názov",
+    "materials.catalog.fieldPrice": "Cena za jednotku (€)",
+    "materials.catalog.fieldDescription": "Popis (voliteľné)",
+    "materials.catalog.namePlaceholderProduct": "napr. Zásuvka 230V premium",
+    "materials.catalog.namePlaceholderWork": "napr. Montáž zásuvky",
+    "materials.catalog.descriptionPlaceholder": "Poznámka pre vás — dodávateľ, model…",
+    "materials.catalog.deleteTitle": "Vymazať položku?",
+    "materials.catalog.deleteBody":
+      "„{{name}}“ sa odstráni z cenníka. Ponuky, ktoré ju už používajú, si svoje kópie ponechajú.",
+    "materials.catalog.loadError": "Cenník sa nepodarilo načítať.",
+    "materials.catalog.saveError": "Uloženie zlyhalo. Skúste znova.",
+    "materials.catalog.pickerButton": "Pridať z vlastných položiek",
+    "materials.catalog.pickerTitle": "Pridať z vlastných položiek",
+    "materials.catalog.pickerEmpty":
+      "Váš cenník je zatiaľ prázdny. Najprv si vytvorte produkty a práce v sekcii Materiál → Vlastné položky.",
+    "materials.catalog.pickerOpenCatalog": "Otvoriť vlastné položky",
+    "materials.catalog.pickerAdd": "Pridať",
+    "materials.catalog.pickerAddedCount": "Pridané do ponuky: {{count}}",
+    "materials.catalog.sourceNote": "Vlastná položka",
+    "materials.catalog.importCsv": "Importovať cenník (CSV)",
+    "materials.catalog.csvBody":
+      "Nahrajte svoj cenník ako CSV súbor so stĺpcami: názov; jednotka; cena (voliteľne typ a popis). Slovenské jednotky (ks, bm, hod…) aj desatinné čiarky sa rozpoznajú automaticky. Položky, ktoré už máte, sa preskočia.",
+    "materials.catalog.csvSample": "Stiahnuť vzorové CSV",
+    "materials.catalog.csvChooseFile": "Vybrať CSV súbor…",
+    "materials.catalog.csvPreviewCount": "{{count}} položiek pripravených na import",
+    "materials.catalog.csvNoRows":
+      "V súbore sa nenašli žiadne platné položky. Skontrolujte formát stĺpcov.",
+    "materials.catalog.csvErrors": "{{count}} riadkov preskočených:",
+    "materials.catalog.csvDefaultKind": "Typ pre riadky bez typu",
+    "materials.catalog.importConfirm": "Importovať",
+    "materials.catalog.importDone":
+      "Cenník naimportovaný: {{created}} položiek pridaných, {{skipped}} už existovalo.",
     "materials.overview.title": "Prehľad materiálu",
     "materials.overview.subtitle": "Použitý materiál naprieč firemnými projektmi",
     "materials.overview.totalSpend": "Celkové náklady",
@@ -7446,7 +7760,8 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.actions.markPaused": "Pozastaviť projekt",
     "projects.actions.rejectConcept": "Odmietnuť koncept",
     "projects.deleteConfirm.title": "Vymazať projekt?",
-    "projects.deleteConfirm.body": "Projekt bude natrvalo odstránený. Túto akciu nemožno vrátiť späť.",
+    "projects.deleteConfirm.body":
+      "Projekt sa natrvalo vymaže vrátane výkazu, trás, položiek ponuky, dokumentov a súvisiacich súborov. Túto akciu nemožno vrátiť späť.",
     "projects.archiveConfirm.title": "Archivovať projekt?",
     "projects.archiveConfirm.body": "Projekt sa skryje z aktívnych zoznamov. Neskôr ho môžete obnoviť z archívu.",
     "projects.toast.archived": "Projekt archivovaný.",
@@ -8589,6 +8904,21 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.aiSetup.material.layersHint":
       "Súhrn je pre rozpočtára. Surový výkaz je pod „Detailný výkaz“ — nie je to zákaznícka ponuka.",
     "projects.aiSetup.material.summaryTitle": "Rýchly súhrn",
+    "projects.aiSetup.material.takeoffMirrorSource": "Z PDF výkazu (označené značky)",
+    "projects.aiSetup.material.takeoffMirrorHint":
+      "Zrkadlí sa s PDF výkazom — {{count}} položiek sleduje značky označené v pláne a aktualizuje sa automaticky, kým ponuku neukončíte. Kliknutím otvoríte PDF.",
+    "projects.aiSetup.material.takeoffLinkedHint":
+      "Množstvo je prepojené s PDF výkazom — počíta sa z potvrdených značiek v pláne. Úprava množstva tu sa prepíše aj do výkazu.",
+    "projects.aiSetup.material.clearAiRows": "Vymazať AI návrhy ({{count}})",
+    "projects.aiSetup.material.clearAiRowsTitle": "Vymazať položky navrhnuté AI?",
+    "projects.aiSetup.material.clearAiRowsBody":
+      "Odstráni len {{count}} položiek navrhnutých AI. Položky z katalógu, ručne pridané riadky aj položky prepojené s PDF značkami zostanú. Akcia sa nedá vrátiť.",
+    "projects.aiSetup.material.clearAiRowsConfirm": "Vymazať položky",
+    "projects.aiSetup.material.deleteRow": "Vymazať položku",
+    "projects.aiSetup.material.deleteRowTitle": "Vymazať túto položku?",
+    "projects.aiSetup.material.deleteRowBody":
+      "„{{name}}“ sa odstráni z ponuky. Ak časť množstva pochádza zo značiek v pláne, tá zostane — odstráňte značky priamo v PDF. Akcia sa nedá vrátiť.",
+    "projects.aiSetup.material.deleteRowConfirm": "Vymazať položku",
     "projects.aiSetup.material.detailTitle": "Detailný výkaz položiek",
     "projects.aiSetup.material.showDetail": "Zobraziť detailný výkaz",
     "projects.aiSetup.material.hideDetail": "Skryť detailný výkaz",
@@ -8621,6 +8951,17 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.aiSetup.work.checklistHint":
       "Upravte hodiny vyššie podľa tohto rozsahu. Presné metre a typy rozvádzačov overte na stavbe.",
     "projects.aiSetup.material.empty": "Žiadne materiálové návrhy. Pridajte vlastnú položku.",
+    "projects.aiSetup.material.addManualRow": "Pridať položku",
+    "projects.aiSetup.material.addManualRowConfirm": "Pridať",
+    "projects.aiSetup.material.manualName": "Názov",
+    "projects.aiSetup.material.manualQty": "Množstvo",
+    "projects.aiSetup.material.manualUnit": "Jednotka",
+    "quotes.managedByProject.title": "Táto ponuka sa spravuje v zákazke",
+    "quotes.managedByProject.body":
+      "Položky, ceny a sumy sa automaticky zrkadlia z konceptu ponuky v zákazke. Upravujte ich na jednom mieste — v príprave ponuky v zákazke.",
+    "quotes.managedByProject.cta": "Upraviť v zákazke",
+    "quotes.managedByProject.itemsHint":
+      "Len na čítanie — zoznam sa automaticky aktualizuje zo zákazky.",
     "projects.aiSetup.material.add": "Pridať materiál",
     "projects.aiSetup.material.sparseHint":
       "V projekte sú len všeobecné položky. Načítajte výkaz z výkresu / AI session.",
@@ -9042,6 +9383,25 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.aiSetup.positions.pricesLead":
       "Riadky bez ceny držia ponuku ako predbežnú. Doplňte ceny z katalógu alebo manuálne.",
     "projects.aiSetup.positions.pricesAllDone": "Všetky pozície majú cenu alebo sú označené ako dodávka zákazníka.",
+    "projects.aiSetup.prices.takeoffRowsTitle": "Položky ponuky",
+    "projects.aiSetup.prices.takeoffRowsSubtitle":
+      "Len položky označené v PDF. Riadky bez odznaku PDF (AI / staré dáta) sa odstránia automaticky. Vlastné položky pridáte tlačidlami vyššie.",
+    "projects.aiSetup.prices.unitPrice": "Cena / jedn.",
+    "projects.aiSetup.prices.colItem": "Položka",
+    "projects.aiSetup.prices.colTotal": "Spolu",
+    "projects.aiSetup.prices.searchPlaceholder": "Hľadať položku…",
+    "projects.aiSetup.prices.sortUnpricedFirst": "Bez ceny navrch",
+    "projects.aiSetup.prices.sortName": "Názov (A–Z)",
+    "projects.aiSetup.prices.sortTotalDesc": "Najvyššia suma",
+    "projects.aiSetup.prices.sortPriceDesc": "Najvyššia cena / jedn.",
+    "projects.aiSetup.prices.noRowsMatch": "Žiadne položky nezodpovedajú hľadaniu.",
+    "projects.aiSetup.prices.takeoffQtyEditHint":
+      "Prepojené s PDF výkazom — zmena množstva sa uloží aj do výkazu.",
+    "projects.aiSetup.prices.orphanDuplicateBadge": "Nie z PDF",
+    "projects.aiSetup.prices.orphanDuplicateHint":
+      "Navyše riadok s rovnakým názvom ako PDF položka — zvyšok AI/starých dát, nie z vašich značiek. Zmažte ho; skutočný počet je v riadku s odznakom PDF.",
+    "projects.aiSetup.material.summaryFromPdfHint":
+      "{{pdf}} z {{total}} riadkov pochádza z PDF výkazu (značky + prenesené káble). Káble: schváľte trasy a „Pridať schválené do ponuky“. „Vymazať AI návrhy“ maže len AI — katalóg a ručne pridané položky ostanú.",
 
     // --- Plan Takeoff Workbench ---
     "takeoff.pageTitle": "Výkaz z výkresu",
@@ -9073,11 +9433,140 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.viewer.modeRect": "Nakresliť rámik",
     "takeoff.viewer.modeAnalyzeRegion": "Analyzovať oblasť",
     "takeoff.viewer.pointHint":
-      "Kliknite na miesto značky. Táto akcia vytvorí kandidáta alebo potvrdenú značku.",
+      "Kliknite na miesto značky. Táto akcia vytvorí kandidáta alebo potvrdenú značku. Posun: koliesko myši alebo medzerník + ťah.",
     "takeoff.viewer.rectHint": "Ťahom nakreslite obdĺžnik okolo značky vo výkrese.",
     "takeoff.viewer.highlightAll": "Zvýrazniť všetko na pláne",
     "takeoff.viewer.highlightAllHint":
       "Všetky značky zo zoznamu svietia vo výkrese (pohľad sa automaticky priblížil, aby sa všetky zmestili). Čo vo výkrese NEsvieti, ešte chýba — označ to alebo naskenuj tú oblasť.",
+    "takeoff.viewer.hideHighlights": "Skryť zvýraznenia",
+    "takeoff.viewer.hideHighlightsHint":
+      "Vypne všetky zvýraznenia značiek na pláne (aj \"Zvýrazniť všetko\", aj zvýraznené kategórie).",
+    "takeoff.viewer.hideMarks": "Skryť značky",
+    "takeoff.viewer.showMarks": "Zobraziť značky",
+    "takeoff.viewer.hideMarksHint":
+      "Dočasne skryje všetky značky, aby ste videli čistý výkres. Výkaz zostáva nezmenený — opätovným klikom sa značky vrátia.",
+    "takeoff.annotate.text": "Pridať text",
+    "takeoff.annotate.note": "Poznámka",
+    "takeoff.annotate.rect": "Obdĺžnik",
+    "takeoff.annotate.ellipse": "Elipsa",
+    "takeoff.annotate.hint":
+      "Nástroj poznámok: kliknutím (text/poznámka) alebo ťahom (tvar) umiestnite poznámku na plán. Poznámky nikdy nemenia počty kusov.",
+    "takeoff.annotate.newTextTitle": "Pridať text na plán",
+    "takeoff.annotate.newNoteTitle": "Pridať poznámku",
+    "takeoff.annotate.textPlaceholder": "Napíšte poznámku…",
+    "takeoff.annotate.editTitle": "Poznámka",
+    "takeoff.annotate.shapeEditHint": "Nakreslený tvar nemá text. Tu ho môžete vymazať.",
+    "takeoff.annotate.shapeTitle": "Tvar (poznámka)",
+    "takeoff.rail.title": "Strany",
+    "takeoff.rail.collapse": "Skryť panel strán",
+    "takeoff.rail.expand": "Zobraziť panel strán",
+    "takeoff.measure.title": "Merať",
+    "takeoff.measure.calibrate": "Kalibrovať mierku",
+    "takeoff.measure.setScale": "Nastaviť mierku",
+    "takeoff.measure.editScale": "Upraviť mierku",
+    "takeoff.measure.resetScale": "Resetovať mierku",
+    "takeoff.measure.length": "Merať dĺžku",
+    "takeoff.measure.cableRun": "Merať káblovú trasu",
+    "takeoff.measure.cancel": "Zrušiť meranie",
+    "takeoff.measure.scaleSet": "Mierka nastavená",
+    "takeoff.measure.scaleMissing": "Najprv nastavte mierku výkresu.",
+    "takeoff.measure.scaleLabel": "Mierka: {{length}} m",
+    "takeoff.measure.calibrateHint":
+      "Kalibrácia mierky: kliknite na dva body so známou reálnou vzdialenosťou (napr. zakótovanú stenu) a zadajte skutočnú dĺžku.",
+    "takeoff.measure.lengthHint":
+      "Meranie dĺžky: kliknite na bod A a potom na bod B. Vzdialenosť sa prepočíta podľa mierky výkresu a uloží sa.",
+    "takeoff.measure.cableHint":
+      "Káblová trasa: každý klik pridá bod trasy. Enter alebo dvojklik trasu dokončí, Backspace odstráni posledný bod, Esc zruší kreslenie.",
+    "takeoff.measure.calibrateDialogTitle": "Nastaviť mierku výkresu",
+    "takeoff.measure.calibrateDialogBody":
+      "Zadajte skutočnú dĺžku vyznačenej čiary. Môžete použiť metre alebo milimetre.",
+    "takeoff.measure.calibrateInputPlaceholder": "napr. 1770 mm alebo 1,77 m",
+    "takeoff.measure.calibrateInputInvalid":
+      "Zadajte dĺžku ako číslo v m alebo mm, napr. 1770 mm alebo 1,77 m.",
+    "takeoff.measure.calibratePointsTooClose":
+      "Kalibračné body sú príliš blízko seba — vyberte dva vzdialenejšie body.",
+    "takeoff.measure.hideMeasurements": "Skryť merania",
+    "takeoff.measure.showMeasurements": "Zobraziť merania",
+    "takeoff.measure.hideMeasurementsHint":
+      "Dočasne skryť všetky merania a káblové trasy z plánu. Nič sa nemaže.",
+    "takeoff.measure.cablesAndRoutes": "Káble a trasy",
+    "takeoff.measure.addRoute": "Nová trasa",
+    "takeoff.measure.addRouteHint":
+      "Začnite kresliť káblovú trasu na pláne — každý klik pridá bod.",
+    "takeoff.measure.emptyRuns":
+      "Zatiaľ žiadne káblové trasy. Nastavte mierku výkresu, potom kliknite na „Nová trasa“ a nakreslite trasu na pláne.",
+    "takeoff.measure.selectRunHint": "Zobraziť a upraviť túto trasu",
+    "takeoff.measure.routeLength": "Trasa",
+    "takeoff.measure.finalLength": "Spolu",
+    "takeoff.measure.runName": "Názov trasy",
+    "takeoff.measure.circuitName": "Okruh",
+    "takeoff.measure.circuitPlaceholder": "napr. Zásuvky kuchyňa",
+    "takeoff.measure.cableType": "Typ kábla",
+    "takeoff.measure.cableTypeCustom": "Vlastný typ kábla",
+    "takeoff.measure.catalogGroup": "Z katalógu",
+    "takeoff.measure.installationType": "Spôsob uloženia",
+    "takeoff.measure.verticalLength": "Zvislé spády (m)",
+    "takeoff.measure.fixedReserve": "Pevná rezerva (m)",
+    "takeoff.measure.reservePercent": "Rezerva (%)",
+    "takeoff.measure.roundingStep": "Zaokrúhlenie (m)",
+    "takeoff.measure.status": "Stav",
+    "takeoff.measure.approve": "Schváliť do ponuky",
+    "takeoff.measure.summaryByCableType": "Súhrn podľa typu kábla",
+    "takeoff.measure.addApprovedToQuote": "Pridať schválené do ponuky",
+    "takeoff.measure.exportNoneApproved":
+      "Do ponuky sa prenášajú iba trasy so stavom „Schválené do ponuky“.",
+    "takeoff.measure.exportDone":
+      "Do ponuky prenesených {{count}} položiek (spolu {{length}} m).",
+    "takeoff.measure.defaultRunName": "Nová káblová trasa",
+    "takeoff.measure.finishRun": "Dokončiť trasu",
+    "takeoff.measure.finishRunNext": "Dokončiť + ďalšia",
+    "takeoff.measure.finishRunNextHint":
+      "Uloží túto trasu a hneď začnete kresliť ďalšiu (iný okruh alebo iný typ kábla).",
+    "takeoff.measure.undoPoint": "Späť o bod",
+    "takeoff.measure.gapJump": "Preskočiť",
+    "takeoff.measure.gapJumpArmed": "Preskakujem…",
+    "takeoff.measure.gapJumpHint":
+      "Ďalší úsek sa nebude merať — preskočíte na iné miesto a metre pokračujú v rámci tej istej trasy.",
+    "takeoff.measure.editRun": "Upraviť body",
+    "takeoff.measure.editRunDone": "Hotovo",
+    "takeoff.measure.editRunHint":
+      "Body presúvajte ťahaním, kliknutím na kosoštvorec pridáte bod, Alt+klik alebo dvojklik bod zmaže.",
+    "takeoff.measure.editVertexHint":
+      "Ťahaním presuniete · Alt+klik alebo dvojklik zmaže",
+    "takeoff.measure.editOnPlan": "Upraviť na pláne",
+    "takeoff.measure.editOnPlanHint":
+      "Otvorí trasu vo výkrese, kde môžete presúvať, pridávať a mazať jej body.",
+    "takeoff.measure.highlightRunHint":
+      "Zvýrazní túto trasu na pláne — ostatné trasy sa stlmia.",
+    "takeoff.measure.highlightGroupHint":
+      "Zvýrazní na pláne všetky trasy tohto typu kábla.",
+    "takeoff.measure.clearHighlight": "Zrušiť zvýraznenie",
+    "takeoff.measure.deleteMeasurementHint": "Kliknutím meranie zmažete",
+    "takeoff.measure.summarySyncHint":
+      "{{synced}} v ponuke · {{pending}} treba preniesť · {{draft}} neschválené",
+    "takeoff.measure.syncInQuote": "V ponuke: {{length}} m",
+    "takeoff.measure.syncNeedsExport":
+      "Schválené {{approved}} m — v ponuke {{inQuote}} m (prenieste znova)",
+    "takeoff.measure.syncStaleQuote":
+      "Stále v ponuke: {{length}} m (žiadne schválené trasy — prenieste znova na odstránenie)",
+    "takeoff.measure.syncNotApproved":
+      "Ešte neschválené ({{length}} m) — do ponuky nepôjde",
+    "takeoff.measure.approvedOfTotal": "schválené {{approved}} m",
+    "takeoff.measure.unnamedCableType": "Bez typu kábla",
+    "takeoff.measure.cableStartHint": "Klikaním na plán pridávajte body trasy",
+    "takeoff.measure.toastScaleSaved": "Mierka výkresu uložená.",
+    "takeoff.measure.toastRunSaved": "Káblová trasa uložená — {{length}} m.",
+    "takeoff.measure.installation.groove": "V drážke",
+    "takeoff.measure.installation.surface_trunking": "V lište",
+    "takeoff.measure.installation.conduit": "V chráničke",
+    "takeoff.measure.installation.ceiling": "V strope",
+    "takeoff.measure.installation.drywall": "V SDK",
+    "takeoff.measure.installation.floor": "V podlahe",
+    "takeoff.measure.installation.other": "Iné",
+    "takeoff.measure.statusValue.draft": "Návrh",
+    "takeoff.measure.statusValue.review": "Na kontrolu",
+    "takeoff.measure.statusValue.checked": "Skontrolované",
+    "takeoff.measure.statusValue.approved": "Schválené do ponuky",
     "takeoff.viewer.analyzeHint":
       "Ťahom označte miestnosť alebo časť pôdorysu. Aplikácia nájde viacero kandidátov vo vnútri — nie jednu značku.",
     "takeoff.viewer.scanVisibleArea": "Skenovať viditeľnú oblasť",
@@ -9099,7 +9588,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.category.new": "Nová položka",
     "takeoff.category.newTitle": "Nová položka (pozícia)",
     "takeoff.category.newHint":
-      "Pomenujte pozíciu (napr. \"Stropné svetlo LED 12W\"), vyberte typ a klikajte na jej symboly vo výkrese — každý klik pridá jeden kus.",
+      "Názov môže byť ľubovoľný — každý odlišný názov je samostatná položka s vlastnou farbou a počtom. Podtypy odlíšte názvom, napr. \"Vypínač schodiskový\" a \"Vypínač dvojitý\". Pre vlastné (custom) kategórie zvoľte typ \"Všeobecná položka\". Potom klikajte na symboly vo výkrese — každý klik pridá jeden kus.",
     "takeoff.category.nameLabel": "Názov položky",
     "takeoff.category.namePlaceholder": "napr. Zásuvka 230V dvojitá",
     "takeoff.category.startMarking": "Začať označovať",
@@ -9110,6 +9599,10 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.category.markingBanner":
       "Klikaním pridávate: {{label}} — zatiaľ {{count}} ks. Esc alebo \"Ukončiť\" zastaví označovanie.",
     "takeoff.category.highlight": "Zvýrazniť značky tejto položky vo výkrese",
+    "takeoff.category.highlightAll": "Zvýrazniť všetky",
+    "takeoff.category.highlightAllOff": "Skryť zvýraznenie",
+    "takeoff.category.highlightAllHint":
+      "Rozsvieti značky všetkých položiek vo výkrese, každú v jej farbe — nič neprehliadnete.",
     "takeoff.category.expandHint": "Zobraziť jednotlivé značky",
     "takeoff.category.pieces": "{{count}} ks",
     "takeoff.category.pageShort": "Strana {{page}}",
@@ -9163,6 +9656,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.review.applyType": "Použiť",
     "takeoff.review.takeoffItems": "Množstvá výkazu",
     "takeoff.review.evidenceCount": "{{count}} dôkazov",
+    "takeoff.review.sourceCable": "kábel",
     "takeoff.review.evidenceFor": "Dôkazy vo výkrese: {{name}}",
     "takeoff.review.evidenceThumbHint": "Kliknutím zobrazíte značku vo výkrese",
     "takeoff.review.tabCandidates": "Kandidáti",
@@ -9215,6 +9709,27 @@ export const translations: Record<Locale, Record<string, string>> = {
       "AI našla {{count}} nových kandidátov na celej strane — skontrolujte overlay (ešte nie sú v ponuke).",
     "takeoff.toast.scanWholePageAiEmpty":
       "AI nenašla žiadne nové značky — všetko, čo videla, je už označené alebo potvrdené.",
+    "takeoff.viewer.modeIdentify": "Zistiť (AI)",
+    "takeoff.viewer.identifyHint":
+      "Natiahnite rámik okolo symbolu (alebo naň len kliknite) — AI analyzuje túto oblasť a povie vám, čo to je, EŠTE PRED označením. Nevytvára sa žiadna značka. Platená AI akcia za každé použitie.",
+    "takeoff.identify.createMark": "Vytvoriť značku s týmto názvom",
+    "takeoff.identify.action": "Čo je to? (AI)",
+    "takeoff.identify.hint":
+      "AI vízia identifikuje túto značku (názov a typ) — užitočné, keď plán nemá legendu. Platená AI akcia.",
+    "takeoff.identify.title": "AI identifikácia značky",
+    "takeoff.identify.busy": "AI si prezerá značku…",
+    "takeoff.identify.category": "Kategória",
+    "takeoff.identify.confidence": "Istota",
+    "takeoff.identify.confidence_high": "vysoká",
+    "takeoff.identify.confidence_medium": "stredná",
+    "takeoff.identify.confidence_low": "nízka",
+    "takeoff.identify.applyHint":
+      "Tento názov môžete použiť ako názov položky pre túto značku. Vždy si ho overte voči projektovej dokumentácii.",
+    "takeoff.identify.apply": "Použiť ako názov položky",
+    "takeoff.identify.failed": "AI identifikácia zlyhala. Skúste to znova.",
+    "takeoff.identify.retry": "Skúsiť znova",
+    "takeoff.identify.empty":
+      "AI pri tejto značke nerozpoznala symbol. Skúste priblížiť plán alebo posunúť značku bližšie na symbol.",
     "takeoff.toast.scanWholePageAiOnlyText":
       "AI nenašla žiadne reálne značky — správne ignorovala {{count}} textov/čísel/položiek legendy na tejto strane. Skúste menšiu oblasť, alebo označte ručne, ak tam naozaj chýba značka.",
     "takeoff.toast.scanWholePageAiFailed":
@@ -9241,6 +9756,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.review.sectionRejected": "Odmietnuté / skryté",
     "takeoff.review.sectionItems": "Výkaz položiek",
     "takeoff.review.sectionItemsHint": "Kliknutím na položku ju zvýrazníte vo výkrese.",
+    "takeoff.review.sectionItemsScrollHint": "Posuňte zoznam, aby ste videli všetky položky",
     "takeoff.manual.saveAsCandidate": "Uložiť ako kandidáta",
     "takeoff.manual.saveAndConfirm": "Uložiť a potvrdiť",
     "takeoff.manual.savedAsCandidate": "Uložené ako kandidát na kontrolu — množstvá sa zmenia až po potvrdení.",
@@ -9395,8 +9911,11 @@ export const translations: Record<Locale, Record<string, string>> = {
     "products.sourcing.col.product": "Produkt",
     "products.sourcing.col.code": "Kód",
     "products.sourcing.col.qty": "Množ.",
+    "products.sourcing.col.status": "Stav",
     "products.sourcing.col.net": "Nákup",
+    "products.sourcing.col.sell": "Predaj",
     "products.sourcing.col.source": "Zdroj",
+    "products.sourcing.col.actions": "Akcie",
     "products.sourcing.badge.confirmed": "Cena potvrdená",
     "products.sourcing.badge.indicative": "Orientačná cena",
     "products.sourcing.badge.missing": "Cena chýba",

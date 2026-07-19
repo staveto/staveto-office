@@ -10,6 +10,7 @@ import {
   FileText,
   Package,
   KeyRound,
+  BookOpen,
 } from "lucide-react";
 import type { EnabledModulesMap, ModuleKey } from "@/lib/enabledModules";
 import { isModuleEnabled } from "@/lib/enabledModules";
@@ -219,6 +220,14 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
         labelKey: "sidebar.item.materials.overview",
         href: "/app/materials",
         icon: Package,
+        managementOnly: true,
+        moduleKey: "jobs",
+      },
+      {
+        id: "materials-catalog",
+        labelKey: "sidebar.item.materials.catalog",
+        href: "/app/materials/catalog",
+        icon: BookOpen,
         managementOnly: true,
         moduleKey: "jobs",
       },

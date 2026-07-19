@@ -35,7 +35,13 @@ import {
 } from "@/components/ui/card";
 import { formatMoney } from "@/lib/format";
 import { computeItemTotal, computeEstimateTotals } from "@/lib/estimateUtils";
-import { hasQuoteAccess, saveQuote, setQuoteStatus, removeQuote } from "@/services/quotes";
+import {
+  hasQuoteAccess,
+  saveQuote,
+  setQuoteStatus,
+  removeQuote,
+  refreshLinkedDraftQuoteFromProject,
+} from "@/services/quotes";
 import type { QuoteStatus } from "@/lib/quotes";
 import { QuoteStatusBadge } from "@/components/quotes/QuoteStatusBadge";
 import { QUOTE_DRAFT_UNITS } from "@/lib/quoteDraftItems";
@@ -76,6 +82,11 @@ export default function QuoteDetailPage() {
   const [items, setItems] = useState<LineItem[]>([]);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
+  // Draft quotes linked to a zákazka are managed there (AI príprava ponuky)
+  // — this page is a read-only view for them, so there is exactly ONE place
+  // where quote content gets edited. Standalone/sent quotes stay editable.
+  const managedByProject = status === "draft" && !!projectId;
+
   const itemsWithTotals = items.map((item) => ({
     ...item,
     total: computeItemTotal(item.qty, item.unitPrice),
@@ -94,7 +105,22 @@ export default function QuoteDetailPage() {
           setNotFound(true);
           return;
         }
-        const q = access.quote;
+        let q = access.quote;
+        // Draft quotes linked to a project mirror the project's current
+        // draft — refresh stale snapshots so this page matches the zákazka.
+        if (q.status === "draft" && q.projectId) {
+          try {
+            const refreshed = await refreshLinkedDraftQuoteFromProject(
+              activeWorkspace,
+              user.id,
+              q.projectId,
+              { onlyIfProjectNewer: true }
+            );
+            if (refreshed && refreshed.id === q.id) q = refreshed;
+          } catch {
+            // Keep the stored snapshot when the refresh fails.
+          }
+        }
         setProjectId(q.projectId);
         setTitle(q.title);
         setClientName(q.clientName);
@@ -300,6 +326,100 @@ export default function QuoteDetailPage() {
 
       <p className="text-sm text-muted-foreground">{t("projects.draft.quoteItem.disclaimer")}</p>
 
+      {managedByProject ? (
+        <div className="space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#BFDBFE] bg-[#EFF6FF] px-4 py-3">
+            <div>
+              <p className="text-sm font-semibold text-[#1D376A]">
+                {t("quotes.managedByProject.title")}
+              </p>
+              <p className="mt-0.5 text-xs text-[#334155]">
+                {t("quotes.managedByProject.body")}
+              </p>
+            </div>
+            <Link
+              href={`/app/projects/${projectId}?setup=ai`}
+              className={buttonVariants({ size: "sm" })}
+            >
+              {t("quotes.managedByProject.cta")}
+            </Link>
+          </div>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>{t("quotes.sectionLines")}</CardTitle>
+                <CardDescription>{t("quotes.managedByProject.itemsHint")}</CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t("projects.draft.quoteItem.name")}</TableHead>
+                    <TableHead className="text-right">{t("projects.draft.quoteItem.qty")}</TableHead>
+                    <TableHead>{t("projects.draft.quoteItem.unit")}</TableHead>
+                    <TableHead className="text-right">
+                      {t("projects.draft.quoteItem.unitPrice")}
+                    </TableHead>
+                    <TableHead className="text-right">
+                      {t("projects.draft.quoteItem.total")}
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {itemsWithTotals.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-medium">{item.name}</TableCell>
+                      <TableCell className="text-right tabular-nums">{item.qty}</TableCell>
+                      <TableCell className="text-muted-foreground">{item.unit}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatMoney(item.unitPrice)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {formatMoney(item.total)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <div className="mt-4 rounded-lg bg-muted/50 p-4 space-y-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    {t("projects.draft.quoteItem.subtotal")}
+                  </span>
+                  <span className="tabular-nums">{formatMoney(subtotal)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">
+                    {t("projects.draft.quoteItem.vatLine", { percent: vatPercent })}
+                  </span>
+                  <span className="tabular-nums">{formatMoney(vatAmount)}</span>
+                </div>
+                <div className="flex justify-between font-medium pt-1 border-t">
+                  <span>{t("projects.draft.quoteItem.grandTotal")}</span>
+                  <span className="tabular-nums">{formatMoney(grandTotal)}</span>
+                </div>
+              </div>
+              {notes.trim() ? (
+                <p className="mt-4 whitespace-pre-wrap text-sm text-muted-foreground">{notes}</p>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={saving}
+              onClick={handleDelete}
+            >
+              {t("common.delete")}
+            </Button>
+          </div>
+          {errors.delete && <p className="text-sm text-destructive">{errors.delete}</p>}
+        </div>
+      ) : (
       <form onSubmit={(e) => void handleSave(e)} className="space-y-6">
         {errors.submit && (
           <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive text-sm">
@@ -510,6 +630,7 @@ export default function QuoteDetailPage() {
           </CardContent>
         </Card>
       </form>
+      )}
     </div>
   );
 }

@@ -53,8 +53,12 @@ export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabP
 
   const summary = computeQuoteSummary(project, quoteItems, tasks);
   const displayLines = useMemo(
-    () => buildProjectQuoteDisplayLines(project, quoteItems, tasks, suggestions),
-    [project, quoteItems, tasks, suggestions]
+    () =>
+      buildProjectQuoteDisplayLines(project, quoteItems, tasks, suggestions, {
+        workLine: t("projects.aiSetup.work.lineLabel"),
+        materialSummary: t("projects.aiSetup.summary.material"),
+      }),
+    [project, quoteItems, tasks, suggestions, t]
   );
   const isSales = isDraftJob(project);
   const hasAiSession = Boolean(project.aiEstimatorSessionId?.trim());

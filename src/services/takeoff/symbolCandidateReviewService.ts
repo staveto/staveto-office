@@ -121,7 +121,35 @@ async function resolveCandidate(
   return dtoFromSymbolCandidate(row);
 }
 
+/**
+ * Serialize takeoff quantity RMW per drawing. Rapid category marking fires
+ * overlapping confirms; without a lock, concurrent list→increment→upsert
+ * loses counts (confirmed marks stay correct, výkaz undercounts).
+ */
+const confirmLocks = new Map<string, Promise<void>>();
+
+function withConfirmLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = confirmLocks.get(key) ?? Promise.resolve();
+  const run = prev.catch(() => undefined).then(fn);
+  confirmLocks.set(
+    key,
+    run.then(
+      () => undefined,
+      () => undefined
+    )
+  );
+  return run;
+}
+
 export async function confirmSymbolCandidate(
+  input: ConfirmCandidateInput
+): Promise<ConfirmCandidateResult> {
+  const rowEarly = await getSymbolCandidate(input.projectId, input.candidateId);
+  const lockKey = `${input.projectId}:${rowEarly?.drawingId ?? input.candidateId}`;
+  return withConfirmLock(lockKey, () => confirmSymbolCandidateUnlocked(input));
+}
+
+async function confirmSymbolCandidateUnlocked(
   input: ConfirmCandidateInput
 ): Promise<ConfirmCandidateResult> {
   const candidate = await resolveCandidate(

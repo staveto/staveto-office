@@ -41,7 +41,13 @@ type DetectResponse = {
 
 async function callDetect(req: DetectRequest): Promise<DetectResponse["symbols"]> {
   const callable = getAiCallable<DetectRequest, DetectResponse>("detectPlanSymbols");
-  const res = await callable(req);
+  // The callable SDK serializes `undefined` values as null, which the server's
+  // schema rejects ("legendEntries: Expected array, received null") — drop
+  // unset keys entirely instead of sending them.
+  const payload = Object.fromEntries(
+    Object.entries(req).filter(([, v]) => v !== undefined)
+  ) as DetectRequest;
+  const res = await callable(payload);
   const symbols = res.data?.symbols;
   return Array.isArray(symbols) ? symbols : [];
 }
@@ -106,9 +112,20 @@ export async function detectSymbolAtCanvasPoint(input: {
   clickCanvasPx: { x: number; y: number };
   language?: "sk" | "de" | "en";
   legendEntries?: Array<{ label?: string; description: string }>;
+  /**
+   * Crop window edge (canvas px) sent to the model. Default 480 suits a bare
+   * click; when the user DRAWS a region ("identify" rubber-band), pass a
+   * larger value so the whole drawn area fits in the analyzed crop.
+   */
+  cropTargetPx?: number;
 }): Promise<DetectSymbolAtPointResult> {
   const { imageData, clickCanvasPx } = input;
-  const crop = clickCropRect(clickCanvasPx, imageData.width, imageData.height);
+  const crop = clickCropRect(
+    clickCanvasPx,
+    imageData.width,
+    imageData.height,
+    input.cropTargetPx ?? 480
+  );
   const base64 = encodeRegion(imageData, crop, CLICK_SEND_MAX_PX, "image/png");
   if (!base64) return null;
 

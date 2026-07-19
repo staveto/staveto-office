@@ -32,6 +32,7 @@ import {
 } from "@/lib/documents/quoteTemplateApply";
 import { buildQuoteTemplateStyleProps } from "@/lib/documents/quoteTemplateStyles";
 import type { QuoteLegalLabels } from "@/lib/documents/quoteLegalLabels";
+import { localizeGenericQuoteLineName } from "@/lib/projectQuoteDraft";
 import styles from "./quote-print.module.css";
 
 export type QuotePrintDocumentProps = {
@@ -194,7 +195,12 @@ function ItemsTable({
           return (
             <tr key={item.id}>
               <td className={styles.colNum}>{startIndex + itemIndex + 1}</td>
-              <td>{item.name}</td>
+              <td>
+                {localizeGenericQuoteLineName(item.name, category, {
+                  workLine: t("projects.aiSetup.work.lineLabel"),
+                  materialSummary: t("projects.aiSetup.summary.material"),
+                })}
+              </td>
               <td className={styles.colType}>{t(`quotes.print.category.${category}`)}</td>
               <td className={styles.colQty}>{formatQuoteQty(item.qty)}</td>
               <td className={styles.colUnit}>{item.unit}</td>

@@ -24,6 +24,7 @@ import {
   saveSymbolCandidates,
 } from "@/services/takeoff/pdfTakeoffRegionService";
 import { findSimilarSymbols } from "@/services/takeoff/similarSymbolDetectionService";
+import { listDrawingOccurrences } from "@/services/takeoff/drawingOccurrenceService";
 import {
   createCandidatePreviewImage,
   renderPageRaster,
@@ -170,10 +171,13 @@ async function runFindSimilarFromReference(params: {
     };
   }
 
-  // Exclusions: everything already confirmed or already suggested/rejected.
-  const [confirmedSymbols, existingCandidates] = await Promise.all([
+  // Exclusions: everything already confirmed, already suggested/rejected,
+  // plus legacy manual marks — a spot that carries ANY mark must never get
+  // a new overlapping proposal.
+  const [confirmedSymbols, existingCandidates, occurrences] = await Promise.all([
     listConfirmedSymbolsForDrawing(projectId, drawingId),
     listSymbolCandidatesForDrawing(projectId, drawingId),
+    listDrawingOccurrences(projectId, drawingId).catch(() => []),
   ]);
 
   let candidates = buildSimilarCandidates({
@@ -181,6 +185,10 @@ async function runFindSimilarFromReference(params: {
     sourceSymbol: reference,
     confirmedSymbols,
     existingCandidates,
+    existingOccurrences: occurrences.map((o) => ({
+      pageNumber: o.pageNumber,
+      normalizedPosition: o.normalizedPosition,
+    })),
     threshold,
     maxResults,
   });

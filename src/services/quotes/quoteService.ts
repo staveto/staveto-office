@@ -311,6 +311,66 @@ export async function upsertQuoteFromProject(
   return createQuoteFromProject(workspace, uid, projectId);
 }
 
+function isProjectNewerThanQuote(
+  project: Pick<ProjectDoc, "updatedAt">,
+  quote: Pick<QuoteDoc, "updatedAt">
+): boolean {
+  const tp = project.updatedAt ? Date.parse(project.updatedAt) : 0;
+  const tq = quote.updatedAt ? Date.parse(quote.updatedAt) : 0;
+  return tp > tq;
+}
+
+/**
+ * Refresh an already-linked DRAFT quote from the project's current draft
+ * (items, totals, VAT, notes). Sent/accepted/rejected quotes are never
+ * touched. Unlike upsertQuoteFromProject this performs no project
+ * write-back — bumping project.updatedAt here would make the project look
+ * forever newer than the quote and re-trigger the refresh on every load.
+ *
+ * Returns the refreshed quote, or null when there is nothing to do.
+ */
+export async function refreshLinkedDraftQuoteFromProject(
+  workspace: Workspace | ActiveWorkspace,
+  uid: string,
+  projectId: string,
+  opts?: { onlyIfProjectNewer?: boolean }
+): Promise<QuoteDoc | null> {
+  const access = await hasProjectAccess(projectId, uid);
+  if (!access.allowed || !access.project) return null;
+  const project = access.project;
+
+  const active = toActiveWorkspace(workspace, uid);
+  const projectQuotes = await listQuotesForProject(projectId, active, uid);
+  const draftQuote = projectQuotes.find((q) => q.status === "draft");
+  if (!draftQuote) return null;
+
+  if (opts?.onlyIfProjectNewer && !isProjectNewerThanQuote(project, draftQuote)) {
+    return null;
+  }
+
+  const lineItems = await resolveProjectQuoteLineItems(project);
+  if (lineItems.length === 0) return null;
+
+  const meta = parseAiSetupMeta(project.quoteDraftNotes);
+  const clientName =
+    project.customerCompanyName?.trim() ||
+    project.customerName?.trim() ||
+    project.name?.trim() ||
+    "Customer";
+
+  return updateQuote(draftQuote.id, {
+    title: project.name?.trim() || draftQuote.title,
+    clientName,
+    clientEmail: project.customerEmail,
+    vatPercent:
+      meta?.calculation?.vatPercent ??
+      project.quoteDraftVatPercent ??
+      draftQuote.vatPercent,
+    notes: plainNotesFromProjectDraft(project.quoteDraftNotes),
+    items: lineItems,
+  });
+}
+
 function sortQuotesByUpdatedAt(quotes: QuoteDoc[]): QuoteDoc[] {
   return [...quotes].sort((a, b) => {
     const ta = a.updatedAt ? Date.parse(a.updatedAt) : 0;
@@ -319,7 +379,12 @@ function sortQuotesByUpdatedAt(quotes: QuoteDoc[]): QuoteDoc[] {
   });
 }
 
-/** Create missing top-level quote docs for projects that already have draft quote items. */
+/**
+ * Keep top-level quote docs in step with project drafts:
+ *  - create missing quotes for projects that already have draft quote items
+ *  - refresh linked DRAFT quotes whose project changed after the quote,
+ *    so the quotes list always shows the current draft items and totals
+ */
 export async function syncMissingQuotesFromProjects(
   workspace: Workspace | ActiveWorkspace,
   uid: string
@@ -330,17 +395,29 @@ export async function syncMissingQuotesFromProjects(
     listProjectsForWorkspace(active, uid),
   ]);
 
-  const linkedProjectIds = new Set(
-    quotes.map((q) => q.projectId).filter((id): id is string => !!id)
-  );
+  const linkedDraftByProjectId = new Map<string, QuoteDoc>();
+  const linkedProjectIds = new Set<string>();
+  for (const q of quotes) {
+    if (!q.projectId) continue;
+    linkedProjectIds.add(q.projectId);
+    if (q.status === "draft" && !linkedDraftByProjectId.has(q.projectId)) {
+      linkedDraftByProjectId.set(q.projectId, q);
+    }
+  }
 
   for (const project of projects) {
-    if (linkedProjectIds.has(project.id)) continue;
-    if (!projectHasQuoteDraft(project)) continue;
-
     try {
-      await upsertQuoteFromProject(active, uid, project.id);
-      linkedProjectIds.add(project.id);
+      if (!linkedProjectIds.has(project.id)) {
+        if (!projectHasQuoteDraft(project)) continue;
+        await upsertQuoteFromProject(active, uid, project.id);
+        linkedProjectIds.add(project.id);
+        continue;
+      }
+
+      const linkedDraft = linkedDraftByProjectId.get(project.id);
+      if (linkedDraft && isProjectNewerThanQuote(project, linkedDraft)) {
+        await refreshLinkedDraftQuoteFromProject(active, uid, project.id);
+      }
     } catch (err) {
       if (process.env.NODE_ENV === "development") {
         console.warn("[quotes] sync failed for project", project.id, err);

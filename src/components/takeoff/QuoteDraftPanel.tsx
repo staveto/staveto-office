@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { FileText, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/I18nContext";
 import type { DrawingOccurrence } from "@/types/drawingTakeoff";
@@ -27,6 +27,7 @@ type Props = {
 export function QuoteDraftPanel({ occurrences, onAddToQuote, busy, resultMessage }: Props) {
   const { t } = useI18n();
   const [expandAssemblies, setExpandAssemblies] = useState(true);
+  const [open, setOpen] = useState(true);
 
   const confirmed = useMemo(() => confirmedOccurrences(occurrences), [occurrences]);
   const preview = useMemo(
@@ -47,15 +48,28 @@ export function QuoteDraftPanel({ occurrences, onAddToQuote, busy, resultMessage
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-border bg-card p-3">
-      <div className="flex items-center gap-2">
+    // shrink-0: keep the panel's own height; the collapsed header still fits
+    // even when the sibling panels above claim the flexible space.
+    <div className="shrink-0 rounded-lg border border-border bg-card" data-testid="quote-draft-panel">
+      <button
+        type="button"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/50"
+        onClick={() => setOpen((v) => !v)}
+      >
+        {open ? (
+          <ChevronDown className="size-3.5 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="size-3.5 text-muted-foreground" />
+        )}
         <FileText className="size-4 text-primary" />
         <p className="text-sm font-semibold text-foreground">{t("takeoff.quote.title")}</p>
         <span className="ml-auto text-xs tabular-nums text-muted-foreground">
           {t("takeoff.quote.lineCount", { count: preview.length })}
         </span>
-      </div>
+      </button>
 
+      {open ? (
+      <div className="space-y-3 border-t border-border/70 p-3">
       <div className="max-h-44 overflow-auto rounded border border-border">
         {preview.map((line) => (
           <div
@@ -111,6 +125,8 @@ export function QuoteDraftPanel({ occurrences, onAddToQuote, busy, resultMessage
       ) : null}
 
       <p className="text-[11px] text-muted-foreground">{t("takeoff.quote.editableHint")}</p>
+      </div>
+      ) : null}
     </div>
   );
 }

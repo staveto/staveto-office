@@ -29,10 +29,22 @@ async function upsertQuoteDraftItem(
   return createQuoteDraftItem(projectId, payload);
 }
 
+export type SyncMaterialRowsOptions = {
+  /**
+   * When true, delete quote material docs that are not in `rows`.
+   * MUST stay false for debounced auto-persist: a stale in-flight sync
+   * with an older snapshot would otherwise wipe catalog/manual lines the
+   * user just added (or that another tab still has).
+   */
+  pruneMissing?: boolean;
+};
+
 export async function syncMaterialRowsToQuoteItems(
   projectId: string,
-  rows: AiSetupMaterialRow[]
+  rows: AiSetupMaterialRow[],
+  options: SyncMaterialRowsOptions = {}
 ): Promise<AiSetupMaterialRow[]> {
+  const pruneMissing = options.pruneMissing === true;
   const project = await getProject(projectId);
   if (!project) throw new Error("Project not found");
 
@@ -65,16 +77,18 @@ export async function syncMaterialRowsToQuoteItems(
     nextRows[i] = { ...row, quoteItemId: id, id };
   }
 
-  const fresh = await listProjectQuoteDraftItems(projectId);
-  const materialIds = new Set(
-    nextRows.filter((r) => r.quoteItemId).map((r) => r.quoteItemId!)
-  );
-  for (const item of fresh) {
-    if (item.category === "material" && !materialIds.has(item.id)) {
-      try {
-        await deleteQuoteDraftItem(projectId, item.id);
-      } catch {
-        // Ignore stale deletes.
+  if (pruneMissing) {
+    const fresh = await listProjectQuoteDraftItems(projectId);
+    const materialIds = new Set(
+      nextRows.filter((r) => r.quoteItemId).map((r) => r.quoteItemId!)
+    );
+    for (const item of fresh) {
+      if (item.category === "material" && !materialIds.has(item.id)) {
+        try {
+          await deleteQuoteDraftItem(projectId, item.id);
+        } catch {
+          // Ignore stale deletes.
+        }
       }
     }
   }

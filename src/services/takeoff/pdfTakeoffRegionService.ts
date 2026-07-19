@@ -20,6 +20,7 @@ import {
   getDocs,
   setDoc,
   updateDoc,
+  onSnapshot,
   query,
   where,
 } from "@/lib/firebase";
@@ -374,6 +375,72 @@ export async function deleteTakeoffItem(projectId: string, itemId: string): Prom
   const db = getFirestoreInstance();
   if (!db) throw new Error("Firestore not configured");
   await deleteDoc(doc(db, "projects", projectId, "takeoffItems", itemId));
+}
+
+/**
+ * Manual quantity override from the quote side of the takeoff↔quote mirror
+ * (the reviewer corrects a count in "Výkaz a ceny"). Honest provenance:
+ * the quantity is no longer purely mark-derived, so it becomes "manual".
+ */
+export async function updateTakeoffItemQuantity(
+  projectId: string,
+  itemId: string,
+  quantity: number
+): Promise<void> {
+  const db = getFirestoreInstance();
+  if (!db) throw new Error("Firestore not configured");
+  await updateDoc(doc(db, "projects", projectId, "takeoffItems", itemId), {
+    quantity: quantity >= 0 ? quantity : 0,
+    sourceOfQuantity: "manual",
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/**
+ * Unit correction from the quote's "Ceny" tab. The takeoff↔quote mirror
+ * treats the takeoff item as the owner of unit, so a unit picked in the
+ * quote must land here — otherwise the next snapshot echo reverts it.
+ */
+export async function updateTakeoffItemUnit(
+  projectId: string,
+  itemId: string,
+  unit: string
+): Promise<void> {
+  const db = getFirestoreInstance();
+  if (!db) throw new Error("Firestore not configured");
+  await updateDoc(doc(db, "projects", projectId, "takeoffItems", itemId), {
+    unit,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+/**
+ * Live mirror of takeoff items — powers the quote "Výkaz a ceny" summary so
+ * counts confirmed on the PDF appear there immediately (and keep updating
+ * until the quote is finished). `drawingId: null` watches the WHOLE project
+ * (all drawings + legacy alias ids), which is what a quote needs — the
+ * material summary must include every marked component regardless of which
+ * document identity the marks were stored under. Returns the unsubscriber.
+ */
+export function watchTakeoffItems(
+  projectId: string,
+  drawingId: string | null,
+  onItems: (items: TakeoffItem[]) => void
+): () => void {
+  const db = getFirestoreInstance();
+  if (!db) return () => undefined;
+  const col = collection(db, "projects", projectId, "takeoffItems");
+  return onSnapshot(
+    drawingId ? query(col, where("drawingId", "==", drawingId)) : col,
+    (snap) => {
+      onItems(
+        snap.docs
+          .map((d) => ({ ...(d.data() as Omit<TakeoffItem, "id">), id: d.id }))
+          .sort((a, b) => a.name.localeCompare(b.name))
+      );
+    },
+    () => undefined // permission/network hiccups must not crash the wizard
+  );
 }
 
 export async function upsertTakeoffItem(item: TakeoffItem): Promise<TakeoffItem> {

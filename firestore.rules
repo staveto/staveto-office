@@ -1063,6 +1063,11 @@ service cloud.firestore {
       match /documents/{documentId} {
         allow read, write: if canAccessWorkspace(workspaceId);
       }
+
+      // Reusable price-list of own products/works inserted into quotes.
+      match /catalogItems/{itemId} {
+        allow read, write: if canAccessWorkspace(workspaceId);
+      }
     }
   }
 }

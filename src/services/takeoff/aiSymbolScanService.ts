@@ -15,13 +15,14 @@
  * takeoffItems, confirmedSymbols or takeoffEvidence.
  */
 
-import { normalizedRectOverlapRatio } from "@/lib/takeoff/candidateReview";
+import { normalizedRectCoverageRatio } from "@/lib/takeoff/candidateReview";
 import { normalizedRectToBBoxPdf } from "@/lib/takeoff/regionAnalyzer";
 import { filterCandidatesOverlappingOcrText } from "@/lib/takeoff/ocrNearbyText";
 import type { RasterImage } from "@/lib/ai/visualSymbolCounter";
 import type { Locale } from "@/i18n/translations";
 import {
   detectAllSymbolsOnCanvas,
+  detectSymbolAtCanvasPoint,
   type AiDetectedSymbol,
 } from "@/services/ai/detectPlanSymbolsService";
 import { runOcrOnRasterRegion } from "@/services/takeoff/ocrAdapter";
@@ -119,11 +120,13 @@ function overlapsExisting(
   candidate: AnalyzeRegionCandidateDto,
   existing: Array<Pick<AnalyzeRegionCandidateDto, "page_number" | "status" | "normalized_position">>
 ): boolean {
+  // Coverage over the smaller rect, not IoU — a small existing manual point
+  // mark inside a bigger AI box must still count as "already marked here".
   return existing.some(
     (e) =>
       e.status !== "rejected" &&
       (e.page_number ?? 0) === (candidate.page_number ?? 0) &&
-      normalizedRectOverlapRatio(e.normalized_position, candidate.normalized_position) >=
+      normalizedRectCoverageRatio(e.normalized_position, candidate.normalized_position) >=
         AI_DUPLICATE_IOU
   );
 }
@@ -171,10 +174,13 @@ function rasterToImageData(raster: RasterImage): ImageData {
 
 export class AiScanUnavailableError extends Error {
   reason: AiScanUnavailableReason;
-  constructor(reason: AiScanUnavailableReason) {
-    super(reason);
+  /** Underlying error message (callable/pdf.js) — surfaced in failure UIs for diagnosis. */
+  detail?: string;
+  constructor(reason: AiScanUnavailableReason, detail?: string) {
+    super(detail ? `${reason}: ${detail}` : reason);
     this.name = "AiScanUnavailableError";
     this.reason = reason;
+    this.detail = detail;
   }
 }
 
@@ -275,5 +281,107 @@ export async function scanWholeDrawingPageWithAi(
     await updateDrawingRegionStatus(projectId, region.id, "failed").catch(() => undefined);
     if (err instanceof AiScanUnavailableError) throw err;
     throw new AiScanUnavailableError("ai_call_failed");
+  }
+}
+
+/** Gemini category → takeoff type-catalog id (electrical trade), where a 1:1 type exists. */
+const CATEGORY_TO_SYMBOL_TYPE: Record<string, string> = {
+  socket: "socket",
+  switch: "switch",
+  lighting: "light",
+  led_strip: "led_strip",
+  distribution_board: "distribution_board",
+  cable: "cable_route",
+};
+
+/** Takeoff symbol type for an AI category, or null when there is no clean match. */
+export function symbolTypeForAiCategory(category: string): string | null {
+  return CATEGORY_TO_SYMBOL_TYPE[category] ?? null;
+}
+
+export type IdentifySymbolResult = {
+  /** Human name of the symbol, in the requested language (e.g. "Sériový vypínač č.5"). */
+  name: string;
+  /** Model category id (socket/switch/lighting/…). */
+  category: string;
+  confidence: "high" | "medium" | "low";
+  /**
+   * Tight normalized (0..1) page bbox of the WHOLE symbol as the model sees
+   * it — lets "identify before marking" create a correctly-sized mark.
+   */
+  normalizedPosition: NormalizedRect;
+};
+
+/**
+ * "Čo je táto značka?" — ask Gemini vision to identify the ONE symbol under
+ * an existing mark. Sends only a small neighborhood crop (same click-mode
+ * pipeline the AI Estimator uses), so it's fast and cheap compared to a
+ * full-page scan. Read-only: never writes anything anywhere.
+ */
+export async function identifySymbolWithAi(params: {
+  fileUrl: string;
+  pageNumber: number;
+  /** Normalized (0..1) position of the mark whose symbol should be identified. */
+  normalizedPosition: NormalizedRect;
+  language?: Locale;
+  targetPageWidthPx?: number;
+}): Promise<IdentifySymbolResult | null> {
+  const {
+    fileUrl,
+    pageNumber,
+    normalizedPosition,
+    language = "sk",
+    targetPageWidthPx = 2200,
+  } = params;
+
+  const rendered = await renderPageRaster(fileUrl, pageNumber, targetPageWidthPx);
+  if (!rendered) {
+    throw new AiScanUnavailableError("pdf_render_failed");
+  }
+  const { raster } = rendered;
+  const imageData = rasterToImageData(raster);
+  const clickCanvasPx = {
+    x: (normalizedPosition.x + normalizedPosition.width / 2) * raster.width,
+    y: (normalizedPosition.y + normalizedPosition.height / 2) * raster.height,
+  };
+  // When the user DREW a region (identify rubber-band), analyze a crop that
+  // covers the whole drawn rectangle plus context — not just a fixed point
+  // neighborhood. Bare clicks (tiny rects) keep the default 480px window.
+  const drawnEdgePx = Math.max(
+    normalizedPosition.width * raster.width,
+    normalizedPosition.height * raster.height
+  );
+  const cropTargetPx = Math.min(
+    1600,
+    Math.max(480, Math.round(drawnEdgePx * 1.6))
+  );
+
+  try {
+    const detected = await detectSymbolAtCanvasPoint({
+      imageData,
+      clickCanvasPx,
+      language,
+      cropTargetPx,
+    });
+    if (!detected) return null;
+    return {
+      name: detected.name,
+      category: detected.category,
+      confidence: detected.confidence,
+      normalizedPosition: {
+        x: detected.bbox.x,
+        y: detected.bbox.y,
+        width: detected.bbox.width,
+        height: detected.bbox.height,
+      },
+    };
+  } catch (err) {
+    // Keep the underlying callable error visible — "zlyhalo, skúste znova"
+    // without a cause is undebuggable for the user AND for us.
+    console.error("identifySymbolWithAi failed", err);
+    throw new AiScanUnavailableError(
+      "ai_call_failed",
+      err instanceof Error ? err.message : String(err)
+    );
   }
 }
