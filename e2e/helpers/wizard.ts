@@ -28,26 +28,43 @@ export async function clickContinue(page: Page): Promise<void> {
   await page.getByRole("button", { name: /Weiter|Continue|Pokrač/i }).click();
 }
 
+/** Phase 1A simplified flow: Customer → Info (no work-type / method). */
+export async function advanceSimplifiedWizardToInfo(page: Page): Promise<void> {
+  await page.goto("/app/projects/new");
+  await page.getByTestId("step-customer").waitFor();
+  await page.getByRole("radio", { name: /ohne Kontakt|without contact|bez kontaktu|Später|later|neskôr/i }).click();
+  await clickContinue(page);
+  await page.getByTestId("step-info").waitFor();
+}
+
+export async function advanceSimplifiedWizardReadyToCreate(page: Page): Promise<void> {
+  await advanceSimplifiedWizardToInfo(page);
+  await page.locator("#name").fill(`E2E Simplified ${Date.now()}`);
+}
+
+/** @deprecated Legacy multi-step wizard — only when NEXT_PUBLIC_ENABLE_SIMPLIFIED_PROJECT_CREATION=0 */
 export async function advanceToMethodStep(page: Page): Promise<void> {
   await page.goto("/app/projects/new");
   await page.getByRole("radio", { name: /Service/i }).first().click();
   await clickContinue(page);
-  await page.getByRole("radio", { name: /Später ergänzen/i }).click();
+  await page.getByRole("radio", { name: /Später ergänzen|without contact|bez kontaktu/i }).click();
   await clickContinue(page);
 }
 
+/** @deprecated Legacy — requires simplified OFF + AI creation ON */
 export async function advanceManualWizardToConcept(page: Page): Promise<void> {
   await advanceToMethodStep(page);
-  await page.getByRole("radio", { name: /Manuell erstellen/i }).click();
+  await page.getByRole("radio", { name: /Manuell erstellen|Create manually|manuálne/i }).click();
   await clickContinue(page);
   await page.locator("#name").fill(`E2E Manual ${Date.now()}`);
   await clickContinue(page);
-  await page.getByRole("heading", { level: 2, name: /Fast geschafft/i }).waitFor();
+  await page.getByRole("heading", { level: 2, name: /Fast geschafft|Almost|Takmer/i }).waitFor();
 }
 
+/** @deprecated Legacy AI wizard — requires NEXT_PUBLIC_ENABLE_AI_PROJECT_CREATION=1 and simplified OFF */
 export async function advanceAiWizardToReviewPlaceholder(page: Page): Promise<void> {
   await advanceToMethodStep(page);
-  await page.getByRole("radio", { name: /Mit AI erstellen/i }).click();
+  await page.getByRole("radio", { name: /Mit AI erstellen|Create with AI|pomocou AI/i }).click();
   await clickContinue(page);
   await page.locator("#ai-project-name").fill(`E2E AI ${Date.now()}`);
   await page.locator("#ai-project-brief").fill(
@@ -56,8 +73,8 @@ export async function advanceAiWizardToReviewPlaceholder(page: Page): Promise<vo
   await clickContinue(page);
   await page
     .getByTestId("ai-review-workspace")
-    .or(page.getByRole("button", { name: /Manuell fortfahren/i }))
-    .or(page.getByText(/AI-Entwurf konnte nicht erstellt werden/i))
+    .or(page.getByRole("button", { name: /Manuell fortfahren|manual|Manuálne/i }))
+    .or(page.getByText(/AI-Entwurf konnte nicht|AI draft|AI návrh/i))
     .first()
     .waitFor({ timeout: 120_000 });
 }

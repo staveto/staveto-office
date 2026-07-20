@@ -36,6 +36,14 @@ export type CatalogItemDoc = {
   unitPrice: number;
   currency: string;
   category?: MaterialCategory;
+  /**
+   * Optional Phase 2A market refs — never required.
+   * Company catalog stays independent of CatalogProduct.
+   */
+  professionCode?: string;
+  categoryId?: string;
+  marketProductId?: string;
+  preferredSupplierOfferId?: string;
   createdAt: string;
   updatedAt: string;
   createdBy: string;

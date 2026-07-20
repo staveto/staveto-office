@@ -39,6 +39,8 @@ export type CreateDraftJobInput = {
   customerPhone?: string;
   addressText?: string;
   city?: string;
+  /** ISO country code (e.g. SK) — optional; used by simplified create flow. */
+  countryCode?: string;
   source: JobSource;
   internalNote?: string;
 };
@@ -98,6 +100,9 @@ export async function createDraftJob(
   if (input.customerPhone?.trim()) projectData.customerPhone = input.customerPhone.trim();
   if (input.addressText?.trim()) projectData.addressText = input.addressText.trim();
   if (input.city?.trim()) projectData.city = input.city.trim();
+  if (input.countryCode?.trim()) {
+    projectData.countryCode = input.countryCode.trim().toUpperCase();
+  }
   if (input.internalNote?.trim()) projectData.internalNote = input.internalNote.trim();
 
   const ref = await addDoc(collection(db, "projects"), projectData);

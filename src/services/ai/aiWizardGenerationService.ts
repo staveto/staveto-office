@@ -4,6 +4,7 @@
  */
 
 import type { AttachmentProcessing } from "@/types/attachmentDraft";
+import { isAiProjectCreationEnabled } from "@/lib/projectCreationFeature";
 import type { AiProjectPlan } from "@/lib/aiProjectSchema";
 import {
   rebalanceAiPhasesForReview,
@@ -83,7 +84,11 @@ export type AiWizardGenerateResult = {
 };
 
 export function isWizardAiGenerationEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_DISABLE_AI_GENERATION !== "1";
+  // New-project AI path only — historical `?setup=ai` projects are unaffected.
+  return (
+    process.env.NEXT_PUBLIC_DISABLE_AI_GENERATION !== "1" &&
+    isAiProjectCreationEnabled()
+  );
 }
 
 export function mapWizardAiError(err: unknown): CallableErrorKind {

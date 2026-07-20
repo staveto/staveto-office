@@ -25,19 +25,35 @@ import type { MaterialSuggestionDoc } from "@/services/materials/types";
 import { useI18n } from "@/i18n/I18nContext";
 import { cn } from "@/lib/utils";
 import { po } from "./overview/poStyles";
+import { DraftQuoteItemsPanel } from "@/components/jobs/DraftQuoteItemsPanel";
+import { isManualQuoteWorkspaceEnabled } from "@/lib/projectCreationFeature";
+import { shouldShowManualQuoteEditor } from "@/lib/manualQuoteWorkspace";
 
 type ProjectQuoteTabProps = {
   project: ProjectDoc;
   quoteItems: QuoteDraftItemDoc[];
   tasks: TaskDoc[];
+  userId?: string;
+  onProjectUpdated?: (project: ProjectDoc) => void;
+  onQuoteItemsChanged?: (items: QuoteDraftItemDoc[]) => void;
 };
 
-export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabProps) {
+export function ProjectQuoteTab({
+  project,
+  quoteItems,
+  tasks,
+  userId,
+  onProjectUpdated,
+  onQuoteItemsChanged,
+}: ProjectQuoteTabProps) {
   const { t } = useI18n();
   const { activeCurrency } = useActiveWorkspaceContext();
   const [suggestions, setSuggestions] = useState<MaterialSuggestionDoc[]>([]);
+  const manualEditor =
+    shouldShowManualQuoteEditor(project) && Boolean(userId && onProjectUpdated);
 
   useEffect(() => {
+    if (manualEditor) return;
     let cancelled = false;
     void listMaterialSuggestions(project.id)
       .then((rows) => {
@@ -49,7 +65,7 @@ export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabP
     return () => {
       cancelled = true;
     };
-  }, [project.id]);
+  }, [project.id, manualEditor]);
 
   const summary = computeQuoteSummary(project, quoteItems, tasks);
   const displayLines = useMemo(
@@ -62,13 +78,27 @@ export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabP
   );
   const isSales = isDraftJob(project);
   const hasAiSession = Boolean(project.aiEstimatorSessionId?.trim());
+  const manualOn = isManualQuoteWorkspaceEnabled();
   const setupHref = `/app/projects/${project.id}?setup=ai`;
   const printHref = `/app/projects/${project.id}/print?from=quote`;
   const money = (amount: number | null) => formatMoney(amount ?? 0, activeCurrency);
 
+  if (manualEditor && userId && onProjectUpdated) {
+    return (
+      <div className="space-y-4" data-testid="project-quote-tab-manual">
+        <DraftQuoteItemsPanel
+          project={project}
+          userId={userId}
+          onProjectUpdated={onProjectUpdated}
+          onQuoteItemsChanged={onQuoteItemsChanged}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-4">
-      {!summary.hasQuote && isSales ? (
+    <div className="space-y-4" data-testid="project-quote-tab-legacy">
+      {!summary.hasQuote && isSales && !manualOn ? (
         <Card className={cn(po.card, "border-[var(--po-card-border)]")}>
           <CardContent className="py-8 text-center space-y-4">
             <p className="text-sm text-muted-foreground max-w-md mx-auto">
@@ -80,6 +110,7 @@ export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabP
                 buttonVariants({ variant: "default", size: "sm" }),
                 "bg-[#e06737] hover:bg-[#c9582f]"
               )}
+              data-testid="quote-legacy-ai-cta"
             >
               {t("projects.dashboard.action.prepareQuote")}
             </Link>
@@ -103,14 +134,14 @@ export function ProjectQuoteTab({ project, quoteItems, tasks }: ProjectQuoteTabP
                 <Printer className="size-4 mr-1.5" />
                 {t("projects.dashboard.quote.viewPdf")}
               </Link>
-              {isSales || hasAiSession ? (
+              {!manualOn && (isSales || hasAiSession) ? (
                 <Link href={setupHref} className={buttonVariants({ variant: "outline", size: "sm" })}>
                   <Pencil className="size-4 mr-1.5" />
                   {t("projects.dashboard.action.openQuote")}
                 </Link>
               ) : null}
             </div>
-          ) : isSales ? (
+          ) : isSales && !manualOn ? (
             <Link href={setupHref} className={buttonVariants({ variant: "outline", size: "sm" })}>
               {t("projects.dashboard.action.prepareQuote")}
             </Link>

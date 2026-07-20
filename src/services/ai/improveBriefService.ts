@@ -1,6 +1,5 @@
 import { getAiCallable } from "@/lib/firebase";
 import type { Locale } from "@/i18n/translations";
-import { isWizardAiGenerationEnabled } from "./aiWizardGenerationService";
 import { extractCallableErrorMessage, mapCallableError } from "./projectDraftService";
 
 export type ImproveBriefResult = {
@@ -25,8 +24,13 @@ function localeToBriefLanguage(locale: Locale): "sk" | "cs" | "de" | "en" {
   return "sk";
 }
 
+/**
+ * AI text polish for description fields.
+ * Independent of full AI project creation — only global AI kill switches apply.
+ */
 export function isImproveBriefEnabled(): boolean {
-  return isWizardAiGenerationEnabled();
+  if (process.env.NEXT_PUBLIC_FORCE_DISABLE_AI_FEATURES === "1") return false;
+  return process.env.NEXT_PUBLIC_DISABLE_AI_GENERATION !== "1";
 }
 
 export async function improveProjectBrief(

@@ -17,6 +17,12 @@ type Props = {
   submitError: string | null;
   onSubmit: () => void;
   showSubmit: boolean;
+  /** Phase 1A simplified preview — no type / AI next steps. */
+  simplified?: boolean;
+  jobName?: string;
+  locationLabel?: string;
+  /** Pending documents selected before create (names only). */
+  documentNames?: string[];
 };
 
 const DEFAULT_NEXT_KEYS = ["next1", "next2", "next3"] as const;
@@ -58,10 +64,98 @@ export function NewJobPreviewPanel({
   submitError,
   onSubmit,
   showSubmit,
+  simplified = false,
+  jobName,
+  locationLabel,
+  documentNames = [],
 }: Props) {
   const { t } = useI18n();
   const highlightIdx = nextStepHighlightIndex(activeStep);
   const stepKeys = nextStepKeys(activeStep);
+
+  if (simplified) {
+    return (
+      <div className={nj.previewPanel}>
+        <div className="px-8 pt-8 pb-6">
+          <h2 className="text-xl sm:text-[22px] font-bold text-white tracking-tight">
+            {t("projects.new.preview.titleJob")}
+          </h2>
+
+          <dl className={cn(nj.previewMeta, "mt-6")}>
+            <div className="flex justify-between gap-4 items-start">
+              <dt className="text-white/60 shrink-0 pt-0.5">{t("projects.new.preview.customer")}</dt>
+              <dd className="font-semibold text-white text-right min-w-0 max-w-[58%]">
+                <span className="block truncate">{contactLabel}</span>
+                {contactPersonLabel ? (
+                  <span className="mt-1 block text-sm font-medium text-white/70 truncate">
+                    {t("projects.new.preview.contactPerson")}: {contactPersonLabel}
+                  </span>
+                ) : null}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-4 items-baseline">
+              <dt className="text-white/60">{t("projects.new.preview.name")}</dt>
+              <dd className="font-semibold text-white text-right truncate max-w-[58%]">
+                {jobName?.trim() || t("projects.new.preview.notSelected")}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-4 items-baseline">
+              <dt className="text-white/60">{t("projects.new.preview.location")}</dt>
+              <dd className="font-semibold text-white text-right truncate max-w-[58%]">
+                {locationLabel?.trim() || t("projects.new.preview.notSelected")}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-4 items-start">
+              <dt className="text-white/60 shrink-0 pt-0.5">{t("projects.new.preview.documents")}</dt>
+              <dd className="font-semibold text-white text-right min-w-0 max-w-[58%]">
+                {documentNames.length === 0 ? (
+                  <span>{t("projects.new.preview.notSelected")}</span>
+                ) : (
+                  <ul className="space-y-1 text-sm font-medium text-white/90">
+                    {documentNames.map((fileName) => (
+                      <li key={fileName} className="truncate" title={fileName}>
+                        {fileName}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </dd>
+            </div>
+            <div className="flex justify-between gap-4 items-baseline">
+              <dt className="text-white/60">{t("projects.new.preview.status")}</dt>
+              <dd>
+                <span className="inline-flex items-center rounded-full bg-[#E95F2A]/20 px-3 py-1 text-sm font-semibold text-[#FFB088]">
+                  {t("projects.new.preview.statusValue")}
+                </span>
+              </dd>
+            </div>
+          </dl>
+        </div>
+
+        {submitError ? (
+          <p className="px-8 text-sm font-medium text-[#FCA5A5]" role="alert">
+            {submitError}
+          </p>
+        ) : null}
+
+        <div className="px-8 pb-8 pt-2 space-y-3">
+          {showSubmit ? (
+            <Button
+              type="button"
+              disabled={loading}
+              className={nj.primaryCta}
+              onClick={onSubmit}
+            >
+              {loading ? t("common.loading") : submitLabel}
+            </Button>
+          ) : null}
+          <Link href="/app/projects" className={nj.secondaryLink}>
+            {t("projects.new.backToList")}
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={nj.previewPanel}>

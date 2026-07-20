@@ -17,12 +17,12 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/context/AuthContext";
 import { useEnabledWorkTypes } from "@/context/EnabledWorkTypesContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { createDraftJob, copyProjectConcept } from "@/services/projects";
+import { uploadProjectDocument } from "@/services/projects/projectDocuments";
 import {
   ensureDraftProjectForVisualTakeoff,
   buildEstimatorPdfMarkingHref,
@@ -102,6 +102,14 @@ import {
   workTypeLabelKey,
   type WorkType,
 } from "@/lib/workTypes";
+import {
+  SIMPLIFIED_LEGACY_WORK_TYPE,
+  isAiProjectCreationEnabled,
+  isSimplifiedProjectCreationEnabled,
+  projectCreateLandingHref,
+} from "@/lib/projectCreationFeature";
+import { useActiveWorkspaceContext } from "@/hooks/useActiveWorkspaceContext";
+import { resolveCountryConfig } from "@/lib/workspace/countryConfig";
 import { cn } from "@/lib/utils";
 import {
   nj,
@@ -120,6 +128,7 @@ import { AiCreationMethodStep } from "./ai/AiCreationMethodStep";
 import { CopySourceStep } from "./copy/CopySourceStep";
 import { CopyOptionsStep, type CopyOptionsState } from "./copy/CopyOptionsStep";
 import { AiDraftBriefStep } from "./ai/AiDraftBriefStep";
+import { DescriptionWithAiImprove } from "./DescriptionWithAiImprove";
 import { AiDraftReviewPanel, type AiDraftReviewMode } from "./ai/AiDraftReviewPanel";
 import type { AttachmentQuickAction } from "./ai/AiDraftReviewWorkspace";
 import type { AiRefineNodeTarget } from "./ai/aiDraftReviewTypes";
@@ -131,6 +140,8 @@ import {
   type CreationMethod,
   type WizardStep,
 } from "./newJobWizardTypes";
+
+const COUNTRY_OPTIONS = ["SK", "CZ", "AT", "DE", "PL", "HU"] as const;
 
 function RequiredMark() {
   return (
@@ -146,11 +157,22 @@ export function NewJobForm() {
   const { t, locale } = useI18n();
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
+  const { activeCountryCode: workspaceCountryCode } = useActiveWorkspaceContext();
   const { visibleWorkTypes, loading: workTypesLoading } = useEnabledWorkTypes();
   const resumeAppliedRef = useRef(false);
+  const submittingRef = useRef(false);
 
-  const [step, setStep] = useState<WizardStep>("type");
-  const [workType, setWorkType] = useState<WorkType | null>(null);
+  const simplified = isSimplifiedProjectCreationEnabled();
+  const aiCreationOn = isAiProjectCreationEnabled();
+  const pathOpts = useMemo(
+    () => ({ simplified, aiCreationEnabled: aiCreationOn }),
+    [simplified, aiCreationOn]
+  );
+
+  const [step, setStep] = useState<WizardStep>(simplified ? "contact" : "type");
+  const [workType, setWorkType] = useState<WorkType | null>(
+    simplified ? SIMPLIFIED_LEGACY_WORK_TYPE : null
+  );
 
   const [contactMode, setContactMode] = useState<ContactMode | null>(null);
   const [customers, setCustomers] = useState<CustomerDoc[]>([]);
@@ -170,7 +192,9 @@ export function NewJobForm() {
   const [newContactAddress, setNewContactAddress] = useState("");
   const [extendedContactOpen, setExtendedContactOpen] = useState(false);
 
-  const [creationMethod, setCreationMethod] = useState<CreationMethod | null>(null);
+  const [creationMethod, setCreationMethod] = useState<CreationMethod | null>(
+    simplified ? "manual" : null
+  );
   const [existingProjects, setExistingProjects] = useState<ProjectDoc[]>([]);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [copySourceProjectId, setCopySourceProjectId] = useState<string | null>(null);
@@ -183,6 +207,12 @@ export function NewJobForm() {
   const [name, setName] = useState("");
   const [location, setLocation] = useState("");
   const [shortDescription, setShortDescription] = useState("");
+  const [countryCode, setCountryCode] = useState(() =>
+    resolveCountryConfig(workspaceCountryCode).countryCode
+  );
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const pendingFilesInputRef = useRef<HTMLInputElement | null>(null);
+  const [uploadWarning, setUploadWarning] = useState<string | null>(null);
 
   const [aiProjectName, setAiProjectName] = useState("");
   const [aiBrief, setAiBrief] = useState("");
@@ -213,8 +243,16 @@ export function NewJobForm() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const wizardPath = useMemo(() => buildWizardPath(creationMethod), [creationMethod]);
+  const wizardPath = useMemo(
+    () => buildWizardPath(creationMethod, pathOpts),
+    [creationMethod, pathOpts]
+  );
   const stepIndex = wizardPath.indexOf(step);
+
+  useEffect(() => {
+    if (!workspaceCountryCode) return;
+    setCountryCode(resolveCountryConfig(workspaceCountryCode).countryCode);
+  }, [workspaceCountryCode]);
 
   useNewProjectWizardAgentScreenSync({
     projectName: aiProjectName || name,
@@ -396,10 +434,12 @@ export function NewJobForm() {
     return t("projects.new.preview.methodAi");
   }, [creationMethod, t]);
 
-  const submitLabel = t("projects.new.submit");
+  const submitLabel = simplified
+    ? t("projects.new.createProject")
+    : t("projects.new.submit");
 
   const stepperSteps = useMemo(() => {
-    const path = buildWizardPath(creationMethod);
+    const path = buildWizardPath(creationMethod, pathOpts);
     const idx = path.indexOf(step);
     return path.map((id) => {
       const stepDone =
@@ -414,13 +454,28 @@ export function NewJobForm() {
                 : id === "copy-details" || id === "manual-details"
                   ? !!name.trim()
                   : true;
+      const labelKey =
+        simplified && id === "manual-details"
+          ? "projects.new.stepper.info"
+          : `projects.new.stepper.${id}`;
       return {
         id: id as NewJobStepId,
-        label: t(`projects.new.stepper.${id}`),
+        label: t(labelKey),
         done: stepDone && idx > path.indexOf(id),
       };
     });
-  }, [t, creationMethod, step, stepDoneContact, stepDoneMethod, workType, copySourceProjectId, name]);
+  }, [
+    t,
+    creationMethod,
+    pathOpts,
+    simplified,
+    step,
+    stepDoneContact,
+    stepDoneMethod,
+    workType,
+    copySourceProjectId,
+    name,
+  ]);
 
   const clearFieldError = (key: string) => {
     if (fieldErrors[key]) {
@@ -564,18 +619,20 @@ export function NewJobForm() {
 
   const goNext = async () => {
     if (!validateStep(step)) return;
-    const next = getNextStep(step, creationMethod);
+    const next = getNextStep(step, creationMethod, pathOpts);
     if (!next) return;
 
     if (step === "ai-brief" && next === "ai-review") {
+      if (!aiCreationOn || !isWizardAiGenerationEnabled()) {
+        setAiDraft(null);
+        setAiReviewMode("placeholder");
+        setCreationMethod("manual");
+        setStep("manual-details");
+        return;
+      }
       setStep(next);
       setAiGenerateError(null);
       setAiGenerateErrorDetail(null);
-      if (!isWizardAiGenerationEnabled()) {
-        setAiDraft(null);
-        setAiReviewMode("placeholder");
-        return;
-      }
       setAiReviewMode("generating");
       try {
         await runAiGenerate();
@@ -593,8 +650,20 @@ export function NewJobForm() {
   };
 
   const goBack = () => {
-    const prev = getPrevStep(step, creationMethod);
+    const prev = getPrevStep(step, creationMethod, pathOpts);
     if (prev) setStep(prev);
+  };
+
+  const startCopyFlow = () => {
+    setWorkType((prev) => prev ?? SIMPLIFIED_LEGACY_WORK_TYPE);
+    setCreationMethod("copy");
+    setCopySourceProjectId(null);
+    clearFieldError("method");
+    if (!stepDoneContact) {
+      setStep("contact");
+    } else {
+      setStep("copy-source");
+    }
   };
 
   const handleContinueManual = () => {
@@ -1044,7 +1113,8 @@ export function NewJobForm() {
 
   const handleCreate = async () => {
     if (creationMethod !== "manual") return;
-    if (!user?.id || !activeWorkspace || !workType) return;
+    const effectiveWorkType = workType ?? (simplified ? SIMPLIFIED_LEGACY_WORK_TYPE : null);
+    if (!user?.id || !activeWorkspace || !effectiveWorkType) return;
     if (!validateStep("manual-details")) {
       setStep("manual-details");
       return;
@@ -1053,8 +1123,11 @@ export function NewJobForm() {
       setStep("contact");
       return;
     }
+    if (submittingRef.current) return;
+    submittingRef.current = true;
 
     setSubmitError(null);
+    setUploadWarning(null);
     setLoading(true);
     try {
       const customer = await resolveCustomerFields();
@@ -1062,11 +1135,13 @@ export function NewJobForm() {
       if (!jobName) {
         setFieldErrors({ name: t("projects.new.validation.name") });
         setStep("manual-details");
+        submittingRef.current = false;
+        setLoading(false);
         return;
       }
 
       const projectId = await createDraftJob(activeWorkspace, user.id, {
-        workType,
+        workType: effectiveWorkType,
         name: jobName,
         customerId: customer.customerId,
         customerRequest: shortDescription.trim() || undefined,
@@ -1076,22 +1151,43 @@ export function NewJobForm() {
         customerEmail: customer.customerEmail,
         customerPhone: customer.customerPhone,
         addressText: location.trim() || undefined,
+        countryCode: countryCode.trim() || undefined,
         source: "web",
       });
 
-      router.push(`/app/projects/${projectId}`);
+      if (pendingFiles.length > 0) {
+        const failed: string[] = [];
+        for (const file of pendingFiles) {
+          try {
+            await uploadProjectDocument(projectId, activeWorkspace, user.id, file);
+          } catch {
+            failed.push(file.name);
+          }
+        }
+        if (failed.length > 0) {
+          setUploadWarning(
+            t("projects.new.uploadFailedAfterCreate", { files: failed.join(", ") })
+          );
+        }
+        setPendingFiles([]);
+      }
+
+      // Phase 1B: land on manual quote tab when enabled.
+      router.push(projectCreateLandingHref(projectId));
     } catch (err) {
       setSubmitError(
         err instanceof Error ? err.message : t("projects.new.submitError")
       );
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
 
   const handleCopyCreate = async () => {
     if (creationMethod !== "copy") return;
-    if (!user?.id || !activeWorkspace || !workType || !copySourceProjectId) return;
+    const effectiveWorkType = workType ?? (simplified ? SIMPLIFIED_LEGACY_WORK_TYPE : null);
+    if (!user?.id || !activeWorkspace || !effectiveWorkType || !copySourceProjectId) return;
     if (!validateStep("copy-details")) {
       setStep("copy-details");
       return;
@@ -1104,6 +1200,8 @@ export function NewJobForm() {
       setStep("contact");
       return;
     }
+    if (submittingRef.current) return;
+    submittingRef.current = true;
 
     setSubmitError(null);
     setLoading(true);
@@ -1113,6 +1211,8 @@ export function NewJobForm() {
       if (!jobName) {
         setFieldErrors({ name: t("projects.new.validation.name") });
         setStep("copy-details");
+        submittingRef.current = false;
+        setLoading(false);
         return;
       }
 
@@ -1120,7 +1220,7 @@ export function NewJobForm() {
         activeWorkspace,
         user.id,
         {
-          workType,
+          workType: effectiveWorkType,
           name: jobName,
           customerId: customer.customerId,
           customerRequest: shortDescription.trim() || undefined,
@@ -1130,6 +1230,7 @@ export function NewJobForm() {
           customerEmail: customer.customerEmail,
           customerPhone: customer.customerPhone,
           addressText: location.trim() || undefined,
+          countryCode: countryCode.trim() || undefined,
           source: "web",
         },
         {
@@ -1138,12 +1239,14 @@ export function NewJobForm() {
         }
       );
 
-      router.push(`/app/projects/${projectId}`);
+      // Phase 1B: same landing as create — never open AI setup after copy.
+      router.push(projectCreateLandingHref(projectId));
     } catch (err) {
       setSubmitError(
         err instanceof Error ? err.message : t("projects.new.submitError")
       );
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -1164,10 +1267,18 @@ export function NewJobForm() {
     else void handleCreate();
   };
 
-  const showFooterContinue =
-    step !== "ai-review" && step !== "concept" && !(step === "method" && !creationMethod);
-  const showFooterSubmit =
-    step === "concept" && (creationMethod === "manual" || creationMethod === "copy");
+  const showFooterContinue = simplified
+    ? step === "contact" ||
+      step === "copy-source" ||
+      step === "copy-options"
+    : step !== "ai-review" &&
+      step !== "concept" &&
+      !(step === "method" && !creationMethod);
+
+  const showFooterSubmit = simplified
+    ? (step === "manual-details" && creationMethod === "manual") ||
+      (step === "copy-details" && creationMethod === "copy")
+    : step === "concept" && (creationMethod === "manual" || creationMethod === "copy");
 
   const onSelectWorkType = (type: WorkType) => {
     setWorkType(type);
@@ -1180,12 +1291,36 @@ export function NewJobForm() {
   };
 
   return (
-    <div className="space-y-10 sm:space-y-12">
+    <div className="space-y-10 sm:space-y-12" data-testid="new-job-form">
       <header className="space-y-6 sm:space-y-8">
         <div className="space-y-3 max-w-3xl">
-          <h1 className={nj.title}>{t("projects.new.title")}</h1>
-          <p className={nj.subtitle}>{t("projects.new.subtitleV2")}</p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-3 min-w-0">
+              <h1 className={nj.title}>{t("projects.new.title")}</h1>
+              <p className={nj.subtitle}>
+                {simplified ? t("projects.new.subtitleSimplified") : t("projects.new.subtitleV2")}
+              </p>
+            </div>
+            {simplified ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="shrink-0"
+                data-testid="copy-existing-project"
+                onClick={startCopyFlow}
+                disabled={!copyAvailable && !projectsLoading}
+                title={!copyAvailable ? t("projects.new.copy.empty") : undefined}
+              >
+                {t("projects.new.copySecondary")}
+              </Button>
+            ) : null}
+          </div>
           <ProjectCreateOwnershipBanner />
+          {uploadWarning ? (
+            <p className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="status">
+              {uploadWarning}
+            </p>
+          ) : null}
         </div>
         <NewJobStepper steps={stepperSteps} activeId={step} />
       </header>
@@ -1200,8 +1335,8 @@ export function NewJobForm() {
       >
         <div className={nj.mainCard}>
           <div className={cn(nj.mainCardInner, "min-h-[320px] flex flex-col")}>
-            {step === "type" ? (
-              <section className={cn(nj.sectionGap, "flex-1")}>
+            {step === "type" && !simplified ? (
+              <section className={cn(nj.sectionGap, "flex-1")} data-testid="step-work-type">
                 <h2 className={nj.sectionHeading}>{t("projects.new.step1Title")}</h2>
                 {workTypesLoading ? (
                   <p className={nj.bodyMuted}>{t("common.loading")}</p>
@@ -1258,10 +1393,14 @@ export function NewJobForm() {
             ) : null}
 
             {step === "contact" ? (
-              <section className={cn(nj.sectionGap, "flex-1")}>
+              <section className={cn(nj.sectionGap, "flex-1")} data-testid="step-customer">
                 <div>
-                  <h2 className={nj.sectionHeading}>{t("projects.new.step2Title")}</h2>
-                  <p className={nj.sectionLead}>{t("projects.new.step2Lead")}</p>
+                  <h2 className={nj.sectionHeading}>
+                    {simplified ? t("projects.new.step.customerTitle") : t("projects.new.step2Title")}
+                  </h2>
+                  <p className={nj.sectionLead}>
+                    {simplified ? t("projects.new.step.customerLead") : t("projects.new.step2Lead")}
+                  </p>
                 </div>
 
                 <div className="space-y-3" role="radiogroup" aria-label={t("projects.new.step2Title")}>
@@ -1700,8 +1839,8 @@ export function NewJobForm() {
               </section>
             ) : null}
 
-            {step === "method" ? (
-              <section className={cn(nj.sectionGap, "flex-1")}>
+            {step === "method" && !simplified ? (
+              <section className={cn(nj.sectionGap, "flex-1")} data-testid="step-method">
                 <h2 className={nj.sectionHeading}>{t("projects.new.step3Title")}</h2>
                 <AiCreationMethodStep
                   value={creationMethod}
@@ -1774,27 +1913,35 @@ export function NewJobForm() {
                     value={location}
                     onChange={setLocation}
                   />
-                  <div>
-                    <Label htmlFor="copy-shortDesc" className={nj.label}>
-                      {t("projects.new.shortDescription")}
-                    </Label>
-                    <Textarea
-                      id="copy-shortDesc"
-                      value={shortDescription}
-                      onChange={(e) => setShortDescription(e.target.value)}
-                      placeholder={t("projects.new.shortDescriptionPlaceholder")}
-                      rows={3}
-                      className={nj.textarea}
-                    />
-                  </div>
+                  <DescriptionWithAiImprove
+                    id="copy-shortDesc"
+                    value={shortDescription}
+                    onChange={setShortDescription}
+                    label={t("projects.new.shortDescription")}
+                    placeholder={t("projects.new.shortDescriptionPlaceholder")}
+                    rows={3}
+                    projectName={name}
+                    jobType={workType ?? SIMPLIFIED_LEGACY_WORK_TYPE}
+                    location={location}
+                    locale={locale}
+                    data-testid="copy-short-description-ai"
+                  />
                 </div>
               </section>
             ) : null}
 
             {step === "manual-details" ? (
-              <section className={cn(nj.sectionGap, "flex-1")}>
-                <h2 className={nj.sectionHeading}>{t("projects.new.step.manualDetailsTitle")}</h2>
-                <p className={nj.sectionLead}>{t("projects.new.method.manualPrimaryDesc")}</p>
+              <section className={cn(nj.sectionGap, "flex-1")} data-testid="step-info">
+                <h2 className={nj.sectionHeading}>
+                  {simplified
+                    ? t("projects.new.step.infoTitle")
+                    : t("projects.new.step.manualDetailsTitle")}
+                </h2>
+                <p className={nj.sectionLead}>
+                  {simplified
+                    ? t("projects.new.step.infoLead")
+                    : t("projects.new.method.manualPrimaryDesc")}
+                </p>
                 <div className={cn(nj.formGroup, nj.fieldStack, "max-w-2xl")}>
                   <div>
                     <Label htmlFor="name" className={nj.label}>
@@ -1817,29 +1964,107 @@ export function NewJobForm() {
                       </p>
                     ) : null}
                   </div>
+                  <DescriptionWithAiImprove
+                    id="shortDesc"
+                    value={shortDescription}
+                    onChange={setShortDescription}
+                    label={t("projects.new.shortDescription")}
+                    placeholder={
+                      simplified
+                        ? t("projects.new.descriptionPlaceholderSimplified")
+                        : t("projects.new.shortDescriptionPlaceholder")
+                    }
+                    rows={3}
+                    projectName={name}
+                    jobType={workType ?? SIMPLIFIED_LEGACY_WORK_TYPE}
+                    location={location}
+                    locale={locale}
+                    attachmentNames={pendingFiles.map((f) => f.name)}
+                    data-testid="short-description-ai"
+                  />
                   <JobSiteLocationField
                     id="location"
                     value={location}
                     onChange={setLocation}
                   />
-                  <div>
-                    <Label htmlFor="shortDesc" className={nj.label}>
-                      {t("projects.new.shortDescription")}
-                    </Label>
-                    <Textarea
-                      id="shortDesc"
-                      value={shortDescription}
-                      onChange={(e) => setShortDescription(e.target.value)}
-                      placeholder={t("projects.new.shortDescriptionPlaceholder")}
-                      rows={3}
-                      className={nj.textarea}
-                    />
-                  </div>
+                  {simplified ? (
+                    <>
+                      <div>
+                        <Label htmlFor="job-country" className={nj.label}>
+                          {t("projects.new.country")}
+                        </Label>
+                        <select
+                          id="job-country"
+                          className={nj.input}
+                          value={countryCode}
+                          onChange={(e) => setCountryCode(e.target.value)}
+                        >
+                          {COUNTRY_OPTIONS.map((code) => (
+                            <option key={code} value={code}>
+                              {code}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <Label htmlFor="job-documents" className={nj.label}>
+                          {t("projects.new.documents")}
+                        </Label>
+                        <Input
+                          ref={pendingFilesInputRef}
+                          id="job-documents"
+                          type="file"
+                          multiple
+                          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                          className={nj.input}
+                          onChange={(e) => {
+                            const list = e.target.files;
+                            setPendingFiles(list ? Array.from(list) : []);
+                          }}
+                        />
+                        <p className="mt-1 text-xs text-[#64748B]">
+                          {t("projects.new.documentsHint")}
+                        </p>
+                        {pendingFiles.length > 0 ? (
+                          <ul
+                            className="mt-3 space-y-2 rounded-xl border border-[#E2E8F0] bg-[#F8FAFC] px-3 py-3"
+                            aria-label={t("projects.new.documents")}
+                          >
+                            {pendingFiles.map((file, index) => (
+                              <li
+                                key={`${file.name}-${file.size}-${index}`}
+                                className="flex items-center justify-between gap-3 text-sm text-[#0F2A4D]"
+                              >
+                                <span className="min-w-0 truncate font-medium" title={file.name}>
+                                  {file.name}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="shrink-0 text-xs font-semibold text-[#64748B] hover:text-[#E95F2A]"
+                                  onClick={() => {
+                                    setPendingFiles((prev) => {
+                                      const next = prev.filter((_, i) => i !== index);
+                                      if (pendingFilesInputRef.current) {
+                                        pendingFilesInputRef.current.value = "";
+                                      }
+                                      return next;
+                                    });
+                                  }}
+                                >
+                                  {t("projects.new.documentsRemove")}
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </div>
+                    </>
+                  ) : null}
                 </div>
               </section>
             ) : null}
 
-            {step === "ai-brief" && user && activeWorkspace ? (
+            {step === "ai-brief" && aiCreationOn && user && activeWorkspace ? (
               <section className={cn(nj.sectionGap, "flex-1")}>
                 <h2 className={nj.sectionHeading}>{t("projects.new.step.aiBriefTitle")}</h2>
                 <p className={nj.sectionLead}>{t("projects.new.method.aiPrimaryDesc")}</p>
@@ -1872,7 +2097,7 @@ export function NewJobForm() {
               </section>
             ) : null}
 
-            {step === "ai-review" ? (
+            {step === "ai-review" && aiCreationOn ? (
               <section className={cn(nj.sectionGap, "flex-1")}>
                 <h2 className={nj.sectionHeading}>{t("projects.new.step.aiReviewTitle")}</h2>
                 <AiDraftReviewPanel
@@ -2049,6 +2274,10 @@ export function NewJobForm() {
               submitError={submitError}
               onSubmit={() => void handleWizardSubmit()}
               showSubmit={showFooterSubmit}
+              simplified={simplified}
+              jobName={name}
+              locationLabel={location}
+              documentNames={pendingFiles.map((f) => f.name)}
             />
           </aside>
         ) : null}
@@ -2064,8 +2293,12 @@ export function NewJobForm() {
             submitLabel={submitLabel}
             loading={loading}
             submitError={submitError}
-            onSubmit={() => void handleCreate()}
+            onSubmit={() => void handleWizardSubmit()}
             showSubmit
+            simplified={simplified}
+            jobName={name}
+            locationLabel={location}
+            documentNames={pendingFiles.map((f) => f.name)}
           />
         </div>
       ) : null}

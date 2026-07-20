@@ -20,6 +20,11 @@ import {
   resolveEnabledModules,
 } from "@/lib/enabledModules";
 import { resolveQuoteCurrency } from "@/lib/workspace/countryConfig";
+import {
+  isManualQuoteWorkspaceEnabled,
+  projectQuoteTabHref,
+} from "@/lib/projectCreationFeature";
+import { isQuotePreparationPhase } from "@/lib/projectDefaultTab";
 
 export type ProjectDashboardTab =
   | "overview"
@@ -45,10 +50,14 @@ export function getVisibleProjectDashboardTabs(
   modules?: EnabledModulesMap | null
 ): ProjectDashboardTab[] {
   const resolved = resolveEnabledModules(modules ?? undefined);
+  const manualQuote = isManualQuoteWorkspaceEnabled();
   return ALL_PROJECT_DASHBOARD_TABS.filter((tab) => {
     if (tab === "workplan") return isModuleEnabled(resolved, "planning");
     if (tab === "problems") return isModuleEnabled(resolved, "issues");
-    if (tab === "quote") return isModuleEnabled(resolved, "quotes");
+    // Phase 1D: quote tab must stay reachable in quote-first flow even if org module is off.
+    if (tab === "quote") {
+      return manualQuote || isModuleEnabled(resolved, "quotes");
+    }
     if (tab === "documents") return isModuleEnabled(resolved, "documents");
     return true;
   });
@@ -317,6 +326,24 @@ export function getNextActionContent(project: ProjectDoc): NextActionContent {
     };
   }
 
+  // Phase 1D: simplified next-step copy for quote-first sales projects.
+  if (
+    isManualQuoteWorkspaceEnabled() &&
+    isQuotePreparationPhase({
+      projectPhase: phase,
+      lifecycleStatus: ls,
+      quoteStatus: qs,
+    })
+  ) {
+    return {
+      statusKey: "projects.dashboard.next.status.continueQuote",
+      badgeKey: null,
+      badgeTone: "neutral",
+      blockReasonKey: null,
+      descriptionKey: "projects.dashboard.next.desc.continueQuote",
+    };
+  }
+
   return {
     statusKey: "projects.dashboard.next.status.noQuote",
     badgeKey: "projects.dashboard.next.badge.salesPhase",
@@ -398,12 +425,18 @@ export function getDashboardActions(project: ProjectDoc): DashboardAction[] {
     ];
   }
 
+  const quoteHref = isManualQuoteWorkspaceEnabled()
+    ? projectQuoteTabHref(id)
+    : `/app/projects/${id}?setup=ai`;
+
   if (qs === "draft" || qs === "ready") {
     return [
       {
         id: "open-quote",
-        labelKey: "projects.dashboard.action.openQuote",
-        href: `/app/projects/${id}?setup=ai`,
+        labelKey: isManualQuoteWorkspaceEnabled()
+          ? "projects.dashboard.action.continueQuote"
+          : "projects.dashboard.action.openQuote",
+        href: quoteHref,
         variant: "primary",
       },
       {
@@ -415,17 +448,36 @@ export function getDashboardActions(project: ProjectDoc): DashboardAction[] {
     ];
   }
 
+  // Quote prep: single clear CTA — no competing "add materials".
+  if (
+    isManualQuoteWorkspaceEnabled() &&
+    isQuotePreparationPhase({
+      projectPhase: phase,
+      lifecycleStatus: ls,
+      quoteStatus: qs,
+    })
+  ) {
+    return [
+      {
+        id: "continue-quote",
+        labelKey: "projects.dashboard.action.continueQuote",
+        href: quoteHref,
+        variant: "primary",
+      },
+    ];
+  }
+
   return [
     {
       id: "prepare-quote",
       labelKey: "projects.dashboard.action.prepareQuote",
-      href: `/app/projects/${id}?setup=ai`,
+      href: quoteHref,
       variant: "primary",
     },
     {
       id: "add-material",
       labelKey: "projects.dashboard.action.addMaterial",
-      href: `/app/projects/${id}?setup=ai`,
+      href: quoteHref,
       variant: "secondary",
     },
   ];
@@ -509,6 +561,9 @@ export function getProjectSummaryText(project: ProjectDoc): string {
 /** Dashboard / KPI link target for project quote (tab or AI setup). */
 export function getProjectQuoteHref(project: ProjectDoc): string {
   const id = project.id;
+  if (isManualQuoteWorkspaceEnabled()) {
+    return projectQuoteTabHref(id);
+  }
   const phase = normalizeProjectPhase(project);
   const qs = project.quoteStatus ?? "none";
 
@@ -516,7 +571,7 @@ export function getProjectQuoteHref(project: ProjectDoc): string {
     return `/app/projects/${id}?setup=ai`;
   }
 
-  return `/app/projects/${id}?tab=quote`;
+  return projectQuoteTabHref(id);
 }
 
 export function getListPrimaryAction(project: ProjectDoc): {
@@ -525,8 +580,8 @@ export function getListPrimaryAction(project: ProjectDoc): {
 } {
   const phase = normalizeProjectPhase(project);
   const qs = project.quoteStatus ?? "none";
-  const ss = project.salesStatus;
   const id = project.id;
+  const quoteHref = getProjectQuoteHref(project);
 
   if (phase === "delivery") {
     return {
@@ -538,14 +593,14 @@ export function getListPrimaryAction(project: ProjectDoc): {
   if (phase === "sales" && qs === "none") {
     return {
       labelKey: "projects.dashboard.action.prepareQuote",
-      href: `/app/projects/${id}?setup=ai`,
+      href: quoteHref,
     };
   }
 
   if (phase === "sales" && (qs === "draft" || qs === "ready")) {
     return {
       labelKey: "projects.dashboard.action.openQuote",
-      href: `/app/projects/${id}?setup=ai`,
+      href: quoteHref,
     };
   }
 

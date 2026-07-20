@@ -70,6 +70,11 @@ type Props = {
   className?: string;
 };
 
+/**
+ * @deprecated Phase 1A — simplified project creation no longer uses job-type
+ * toggles. Kept for rollback via NEXT_PUBLIC_ENABLE_LEGACY_PROJECT_TYPE_SETTINGS=1.
+ * Remove after migration of historical org.enabledWorkTypes consumers.
+ */
 export function WorkTypeSettings({ className }: Props) {
   const { t } = useI18n();
   const {

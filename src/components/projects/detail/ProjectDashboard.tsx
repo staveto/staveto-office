@@ -15,6 +15,10 @@ import {
   isProjectDashboardTabVisible,
   type ProjectDashboardTab,
 } from "@/lib/projectDashboard";
+import {
+  parseProjectDashboardTab,
+  resolveProjectDefaultTabForProject,
+} from "@/lib/projectDefaultTab";
 import { useEnabledModules } from "@/context/EnabledModulesContext";
 import { listProjectDocuments, type ProjectDocumentRecord } from "@/services/projects/projectDocuments";
 import { useWorkspace } from "@/context/WorkspaceContext";
@@ -60,22 +64,6 @@ import { isOpenProblem } from "@/services/projects/projectProblemsService";
 import { PlanningNotifyDialog } from "@/components/planning/PlanningScheduleFeedback";
 import { useI18n } from "@/i18n/I18nContext";
 
-function parseTab(raw: string | null): ProjectDashboardTab {
-  if (
-    raw === "tasks" ||
-    raw === "workplan" ||
-    raw === "quote" ||
-    raw === "documents" ||
-    raw === "activity" ||
-    raw === "problems"
-  ) {
-    return raw;
-  }
-  if (raw === "materials" || raw === "expenses") return "quote";
-  if (raw === "overview") return "overview";
-  return "overview";
-}
-
 function todayYmd(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
@@ -105,7 +93,7 @@ export function ProjectDashboard({
   const { activeWorkspace } = useWorkspace();
   const { modules } = useEnabledModules();
   const [activeTab, setActiveTab] = useState<ProjectDashboardTab>(() =>
-    parseTab(searchParams.get("tab"))
+    resolveProjectDefaultTabForProject(project, searchParams.get("tab"), modules)
   );
   const [tasks, setTasks] = useState<TaskDoc[]>([]);
   const [quoteItems, setQuoteItems] = useState<QuoteDraftItemDoc[]>([]);
@@ -122,11 +110,32 @@ export function ProjectDashboard({
   const { t } = useI18n();
 
   useEffect(() => {
-    const parsed = parseTab(searchParams.get("tab"));
-    if (!isProjectDashboardTabVisible(parsed, modules)) {
-      setActiveTab("overview");
+    const rawTab = searchParams.get("tab");
+    const resolved = resolveProjectDefaultTabForProject(project, rawTab, modules);
+
+    // Soft-land quote prep when URL has no tab — sync once, no loop.
+    if (!rawTab && resolved === "quote") {
+      setActiveTab("quote");
       const params = new URLSearchParams(searchParams.toString());
-      params.delete("tab");
+      params.set("tab", "quote");
+      router.replace(`/app/projects/${project.id}?${params.toString()}`, {
+        scroll: false,
+      });
+      return;
+    }
+
+    const explicit = parseProjectDashboardTab(rawTab);
+    if (
+      explicit &&
+      explicit !== resolved &&
+      !isProjectDashboardTabVisible(explicit, modules) &&
+      !(explicit === "quote")
+    ) {
+      // Hidden module tab → fall back without fighting explicit overview/quote.
+      setActiveTab(resolved);
+      const params = new URLSearchParams(searchParams.toString());
+      if (resolved === "overview") params.delete("tab");
+      else params.set("tab", resolved);
       params.delete("problemId");
       router.replace(
         params.toString()
@@ -136,13 +145,14 @@ export function ProjectDashboard({
       );
       return;
     }
-    setActiveTab(parsed);
+
+    setActiveTab(resolved);
     if (searchParams.get("problemId") && searchParams.get("tab") !== "problems") {
       if (isProjectDashboardTabVisible("problems", modules)) {
         setActiveTab("problems");
       }
     }
-  }, [searchParams, modules, project.id, router]);
+  }, [searchParams, modules, project, router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -169,13 +179,11 @@ export function ProjectDashboard({
           listProjectProblems(project.id).catch(() => []),
         ]);
 
-        let resolvedDocs = docs;
-
         if (cancelled) return;
         setOpenProblemsCount(problemsList.filter((p) => isOpenProblem(p)).length);
         setTasks(tasksList);
         setQuoteItems(items);
-        setDocuments(resolvedDocs);
+        setDocuments(docs);
         setPhases(phaseList);
         setMembers(memberList);
         setTimeEntries(entries);
@@ -312,6 +320,7 @@ export function ProjectDashboard({
           crewCount={members.length}
           openTasksCount={openTasksCount}
           overdueTasksCount={overdueTasksCount}
+          activeTab={activeTab}
           onProjectUpdated={onProjectUpdated}
           onActionToast={handleActionToast}
           onNavigate={handleTabChange}
@@ -345,6 +354,7 @@ export function ProjectDashboard({
       <div className="order-4 flex items-end gap-2">
         <div className="min-w-0 flex-1">
           <ProjectDetailTabs
+            project={project}
             activeTab={activeTab}
             onTabChange={handleTabChange}
             badges={badges}
@@ -398,7 +408,14 @@ export function ProjectDashboard({
             onProblemIdChange={handleProblemIdChange}
           />
         ) : activeTab === "quote" ? (
-          <ProjectQuoteTab project={project} quoteItems={quoteItems} tasks={tasks} />
+          <ProjectQuoteTab
+            project={project}
+            quoteItems={quoteItems}
+            tasks={tasks}
+            userId={userId}
+            onProjectUpdated={onProjectUpdated}
+            onQuoteItemsChanged={setQuoteItems}
+          />
         ) : activeTab === "documents" ? (
           <ProjectDocumentsTab
             project={project}

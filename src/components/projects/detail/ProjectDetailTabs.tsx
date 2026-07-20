@@ -1,7 +1,8 @@
 "use client";
 
+import type { ProjectDoc } from "@/lib/projects";
 import type { ProjectDashboardTab } from "@/lib/projectDashboard";
-import { getVisibleProjectDashboardTabs } from "@/lib/projectDashboard";
+import { getOrderedProjectDashboardTabs } from "@/lib/projectDefaultTab";
 import { useEnabledModules } from "@/context/EnabledModulesContext";
 import { useI18n } from "@/i18n/I18nContext";
 import { cn } from "@/lib/utils";
@@ -12,19 +13,21 @@ export type TabBadge = {
 };
 
 type ProjectDetailTabsProps = {
+  project: Pick<ProjectDoc, "phase" | "lifecycleStatus" | "quoteStatus">;
   activeTab: ProjectDashboardTab;
   onTabChange: (tab: ProjectDashboardTab) => void;
   badges?: Partial<Record<ProjectDashboardTab, TabBadge>>;
 };
 
 export function ProjectDetailTabs({
+  project,
   activeTab,
   onTabChange,
   badges,
 }: ProjectDetailTabsProps) {
   const { t } = useI18n();
   const { modules } = useEnabledModules();
-  const visibleTabs = getVisibleProjectDashboardTabs(modules);
+  const visibleTabs = getOrderedProjectDashboardTabs(project, modules);
 
   return (
     <div

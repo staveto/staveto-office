@@ -62,6 +62,7 @@ import type {
   QuoteDraftItemDoc,
   QuoteDraftItemInput,
 } from "./quoteDraftItems";
+import { parseQuoteItemSnapshots } from "@/lib/catalog/quoteSnapshots";
 export type {
   QuoteDraftItemCategory,
   QuoteDraftItemDoc,
@@ -343,6 +344,7 @@ function toQuoteDraftItemDoc(
         ? data.sourceDrawingId
         : undefined,
     takeoffStatus,
+    ...parseQuoteItemSnapshots(data),
     createdAt: toStr(data.createdAt),
     updatedAt: toStr(data.updatedAt),
   };

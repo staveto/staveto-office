@@ -2,6 +2,7 @@
 
 import { Check, Copy, PenLine, Sparkles } from "lucide-react";
 import { useI18n } from "@/i18n/I18nContext";
+import { isAiProjectCreationEnabled } from "@/lib/projectCreationFeature";
 import { cn } from "@/lib/utils";
 import { nj, njLargeChoice } from "../newJobFormStyles";
 import type { CreationMethod } from "../newJobWizardTypes";
@@ -15,15 +16,20 @@ type Props = {
 
 export function AiCreationMethodStep({ value, onChange, copyAvailable, error }: Props) {
   const { t } = useI18n();
+  const aiCreationOn = isAiProjectCreationEnabled();
 
   const options = [
-    {
-      id: "ai" as const,
-      icon: Sparkles,
-      title: t("projects.new.method.aiPrimary"),
-      desc: t("projects.new.method.aiPrimaryDesc"),
-      disabled: false,
-    },
+    ...(aiCreationOn
+      ? [
+          {
+            id: "ai" as const,
+            icon: Sparkles,
+            title: t("projects.new.method.aiPrimary"),
+            desc: t("projects.new.method.aiPrimaryDesc"),
+            disabled: false,
+          },
+        ]
+      : []),
     {
       id: "manual" as const,
       icon: PenLine,

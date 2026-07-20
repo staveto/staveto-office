@@ -3,6 +3,8 @@
  * Stored under projects/{projectId}/quoteItems — same pattern as tasks/expenses.
  */
 
+import type { QuotePriceSnapshot, QuoteProductSnapshot } from "@/lib/catalog/types";
+
 export type QuoteDraftItemCategory = "material" | "work";
 
 /** Honest quantity provenance — legend_only is never plan-confirmed. */
@@ -38,6 +40,16 @@ export type QuoteDraftItemDoc = {
     | "legend_only"
     | "customer_question"
     | "excluded";
+  /**
+   * Optional Phase 2A frozen product identity — never the live price source.
+   * Historical items without this field remain valid.
+   */
+  productSnapshot?: QuoteProductSnapshot;
+  /**
+   * Optional Phase 2A frozen purchase/sale price evidence.
+   * Sale amount on the line remains `unitPrice`.
+   */
+  priceSnapshot?: QuotePriceSnapshot;
   createdAt?: string;
   updatedAt?: string;
 };

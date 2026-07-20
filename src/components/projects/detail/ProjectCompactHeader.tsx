@@ -20,6 +20,11 @@ import {
   getHumanWorkflowStatusKey,
   getLocationDisplay,
 } from "@/lib/projectDashboard";
+import {
+  isQuotePreparationPhase,
+  resolveProjectHeaderPrimaryAction,
+} from "@/lib/projectDefaultTab";
+import { isManualQuoteWorkspaceEnabled } from "@/lib/projectCreationFeature";
 import type { ProjectHealth } from "@/lib/projectHealth";
 import type { ProjectPhaseMetrics } from "@/lib/projectPhaseMetrics";
 import { ProjectHealthBadge } from "./ProjectHealthBadge";
@@ -41,6 +46,7 @@ type Props = {
   crewCount: number;
   openTasksCount: number;
   overdueTasksCount: number;
+  activeTab?: ProjectDashboardTab;
   onProjectUpdated: (project: ProjectDoc) => void;
   onActionToast: (key: string) => void;
   onNavigate: (tab: ProjectDashboardTab) => void;
@@ -132,6 +138,7 @@ export function ProjectCompactHeader({
   crewCount,
   openTasksCount,
   overdueTasksCount,
+  activeTab,
   onProjectUpdated,
   onActionToast,
   onNavigate,
@@ -147,17 +154,32 @@ export function ProjectCompactHeader({
       ? t("projects.dashboard.phaseGeneral")
       : t("projects.header.noPhase"));
 
-  const hasUrgent = overdueTasksCount > 0 || health.status !== "ON_TRACK";
-  const primaryLabel = hasUrgent
-    ? t("projects.cockpit.cta.solveProblem")
-    : t("projects.cockpit.cta.openPlan");
-  const primaryTab: ProjectDashboardTab = hasUrgent ? "tasks" : "workplan";
+  const quotePrep =
+    isManualQuoteWorkspaceEnabled() && isQuotePreparationPhase(project);
 
-  const summaryKey = overdueTasksCount > 0
-    ? "projects.cockpit.header.summaryOverdue"
-    : health.status !== "ON_TRACK"
-      ? "projects.cockpit.header.summaryAttention"
-      : "projects.cockpit.header.summaryOk";
+  const hasUrgent = overdueTasksCount > 0 || health.status !== "ON_TRACK";
+  const primaryAction = resolveProjectHeaderPrimaryAction({
+    project,
+    activeTab,
+    hasUrgent,
+  });
+  const primaryTab = primaryAction.tab;
+  const primaryLabel = t(primaryAction.labelKey);
+
+  const showPlanningKpis =
+    !quotePrep ||
+    phaseMetrics.overallPercent > 0 ||
+    openTasksCount > 0 ||
+    overdueTasksCount > 0 ||
+    crewCount > 0;
+
+  const summaryKey = quotePrep
+    ? "projects.cockpit.header.summaryQuotePrep"
+    : overdueTasksCount > 0
+      ? "projects.cockpit.header.summaryOverdue"
+      : health.status !== "ON_TRACK"
+        ? "projects.cockpit.header.summaryAttention"
+        : "projects.cockpit.header.summaryOk";
 
   return (
     <header className={cn(po.infoCard, "overflow-hidden")}>
@@ -232,34 +254,36 @@ export function ProjectCompactHeader({
         </div>
       </div>
 
-      <div className={cn(po.kpiGrid, "border-t border-[var(--po-card-border)]/50 px-4 py-2.5 sm:px-5")}>
-        <KpiStat icon={Layers} label={t("projects.header.activePhase")} value={activePhaseText} />
-        <KpiStat
-          icon={TrendingUp}
-          label={t("projects.header.progress")}
-          value={`${phaseMetrics.overallPercent}%`}
-        />
-        <KpiStat
-          icon={ClipboardList}
-          label={t("projects.command.health.tasksOpen")}
-          value={String(openTasksCount)}
-        />
-        <KpiStat
-          icon={ClipboardList}
-          label={t("projects.cockpit.kpi.overdue")}
-          value={String(overdueTasksCount)}
-          warn={overdueTasksCount > 0}
-        />
-        <KpiStat
-          icon={Users}
-          label={t("projects.header.crew")}
-          value={
-            crewCount > 0
-              ? t("projects.ownership.assignedCount", { count: crewCount })
-              : t("projects.dashboard.kpi.noTeam")
-          }
-        />
-      </div>
+      {showPlanningKpis ? (
+        <div className={cn(po.kpiGrid, "border-t border-[var(--po-card-border)]/50 px-4 py-2.5 sm:px-5")}>
+          <KpiStat icon={Layers} label={t("projects.header.activePhase")} value={activePhaseText} />
+          <KpiStat
+            icon={TrendingUp}
+            label={t("projects.header.progress")}
+            value={`${phaseMetrics.overallPercent}%`}
+          />
+          <KpiStat
+            icon={ClipboardList}
+            label={t("projects.command.health.tasksOpen")}
+            value={String(openTasksCount)}
+          />
+          <KpiStat
+            icon={ClipboardList}
+            label={t("projects.cockpit.kpi.overdue")}
+            value={String(overdueTasksCount)}
+            warn={overdueTasksCount > 0}
+          />
+          <KpiStat
+            icon={Users}
+            label={t("projects.header.crew")}
+            value={
+              crewCount > 0
+                ? t("projects.ownership.assignedCount", { count: crewCount })
+                : t("projects.dashboard.kpi.noTeam")
+            }
+          />
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-2 border-t border-[var(--po-card-border)]/50 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 sm:px-5">
         <Button
