@@ -75,6 +75,8 @@ import {
   parseRealLengthToMeters,
   polylineLengthMeters,
   removeCableRunPoint,
+  resolveCableRunColor,
+  resolveCableRunStrokeWidth,
 } from "@/lib/takeoff/cableMeasurement";
 import {
   computeEvidenceFocusTarget,
@@ -3411,7 +3413,10 @@ export function DrawingPdfViewer({
                 if (pagePoints.length < 2) return null;
                 const pts = pagePoints.map(measurePx);
                 const pointsAttr = pts.map((p) => `${p.x},${p.y}`).join(" ");
-                const color = categoryColorForKey(categoryKeyForLabel(run.cableTypeName));
+                const color = resolveCableRunColor(run, (name) =>
+                  categoryColorForKey(categoryKeyForLabel(name))
+                );
+                const baseStroke = resolveCableRunStrokeWidth(run);
                 const isPicked = run.id === selectedCableRunId;
                 const isHovered = run.id === hoveredCableRunId;
                 // Highlight filter: with an active selection everything else
@@ -3425,7 +3430,15 @@ export function DrawingPdfViewer({
                   !isHovered &&
                   !isEditingThis;
                 const emphasized = isPicked || isHovered || isEditingThis || isHighlighted;
-                const strokeColor = isPicked ? SELECTED_HIGHLIGHT_COLOR : color;
+                // Keep the operator-chosen color; selection uses a glow, not a
+                // forced magenta override (so color/thickness edits are visible).
+                const strokeColor = color;
+                const cableStroke = emphasized
+                  ? baseStroke + 1.5
+                  : dimmed
+                    ? Math.max(1, baseStroke * 0.55)
+                    : baseStroke;
+                const casingStroke = cableStroke + (emphasized ? 3.5 : 2.5);
                 const clickable =
                   Boolean(onCableRunClick) && !isMeasureMode && !panActive && !isEditingThis;
                 const labelAnchor = pts[Math.floor((pts.length - 1) / 2)];
@@ -3436,7 +3449,7 @@ export function DrawingPdfViewer({
                         points={pointsAttr}
                         fill="none"
                         stroke="transparent"
-                        strokeWidth={14}
+                        strokeWidth={Math.max(14, casingStroke + 6)}
                         className="pointer-events-auto cursor-pointer"
                         onClick={(e) => {
                           e.stopPropagation();
@@ -3455,7 +3468,7 @@ export function DrawingPdfViewer({
                         points={pointsAttr}
                         fill="none"
                         stroke="#fff"
-                        strokeWidth={emphasized ? 7 : 5.5}
+                        strokeWidth={casingStroke}
                         strokeLinejoin="round"
                         strokeLinecap="round"
                         opacity={0.85}
@@ -3477,7 +3490,7 @@ export function DrawingPdfViewer({
                             y2={q.y}
                             stroke={strokeColor}
                             strokeWidth={
-                              isGap ? 1.5 : emphasized ? 4 : dimmed ? 1.5 : 2.5
+                              isGap ? Math.max(1.2, baseStroke * 0.45) : cableStroke
                             }
                             strokeDasharray={isGap ? "3 5" : undefined}
                             strokeLinecap="round"
@@ -3487,7 +3500,7 @@ export function DrawingPdfViewer({
                             style={
                               isPicked && !isGap
                                 ? {
-                                    filter: `drop-shadow(0 0 4px ${SELECTED_HIGHLIGHT_COLOR})`,
+                                    filter: `drop-shadow(0 0 4px ${strokeColor})`,
                                   }
                                 : undefined
                             }

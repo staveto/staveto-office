@@ -979,6 +979,20 @@ service cloud.firestore {
       }
     }
 
+    // Phase 1 electrical supplier catalog (Admin import only; client read for quote picker).
+    match /catalogCategories/{categoryId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+    match /catalogProducts/{productId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+    match /catalogImports/{importId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
     match /absences/{absenceId} {
       allow read: if isSignedIn() && (
         resource.data.userId == request.auth.uid

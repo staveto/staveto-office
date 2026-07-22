@@ -8,7 +8,11 @@
  * "Cena chýba" in the existing UI).
  */
 
-import { createQuoteDraftItem, listProjectQuoteDraftItems } from "@/lib/projects";
+import {
+  createQuoteDraftItem,
+  listProjectQuoteDraftItems,
+  updateQuoteDraftItem,
+} from "@/lib/projects";
 import type { TakeoffQuoteLine } from "@/types/drawingTakeoff";
 import { newLinesAgainstExisting } from "@/lib/takeoff/quoteGeneration";
 import { updateDrawingOccurrence } from "./drawingOccurrenceService";
@@ -69,4 +73,59 @@ export async function addTakeoffLinesToQuoteDraft(
   }
 
   return { added: fresh.length, skippedExisting: lines.length - fresh.length };
+}
+
+/**
+ * Keep a quote draft line in sync with catalog-backed PDF marking.
+ * Creates the line on first mark; later marks update qty (+ price from catalog).
+ * Returns the quoteItems document id for the binding cache.
+ */
+export async function syncCatalogMarkedQtyToQuote(params: {
+  projectId: string;
+  drawingId?: string;
+  name: string;
+  qty: number;
+  unitPrice: number;
+  unit?: string;
+  note?: string;
+  quoteItemId?: string;
+}): Promise<string> {
+  const unit = params.unit?.trim() || "ks";
+  const qty = Math.max(1, Math.round(params.qty));
+  const unitPrice =
+    typeof params.unitPrice === "number" && params.unitPrice >= 0
+      ? params.unitPrice
+      : 0;
+
+  if (params.quoteItemId) {
+    await updateQuoteDraftItem(params.projectId, params.quoteItemId, {
+      qty,
+      unitPrice,
+    });
+    return params.quoteItemId;
+  }
+
+  const existing = await listProjectQuoteDraftItems(params.projectId);
+  const nameKey = params.name.trim().toLowerCase();
+  const unitKey = unit.toLowerCase();
+  const match = existing.find(
+    (e) => e.name.trim().toLowerCase() === nameKey && e.unit.trim().toLowerCase() === unitKey
+  );
+  if (match) {
+    await updateQuoteDraftItem(params.projectId, match.id, { qty, unitPrice });
+    return match.id;
+  }
+
+  return createQuoteDraftItem(params.projectId, {
+    category: "material",
+    name: params.name.trim(),
+    qty,
+    unit,
+    unitPrice,
+    note: params.note,
+    sourceOfQuantity: "symbol_detection",
+    evidenceCount: qty,
+    ...(params.drawingId ? { sourceDrawingId: params.drawingId } : {}),
+    takeoffStatus: "draft",
+  });
 }

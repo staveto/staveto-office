@@ -40,6 +40,8 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   /** Insert one catalog item into the quote. Called per click. */
   onPick: (item: CatalogItemDoc) => void;
+  /** Optional: leave catalog and insert a blank custom quote line. */
+  onAddCustom?: () => void;
 };
 
 function unitLabel(t: (k: string) => string, unit: string): string {
@@ -60,7 +62,12 @@ function formatPrice(value: number, currency: string): string {
   }
 }
 
-export function CatalogItemPickerDialog({ open, onOpenChange, onPick }: Props) {
+export function CatalogItemPickerDialog({
+  open,
+  onOpenChange,
+  onPick,
+  onAddCustom,
+}: Props) {
   const { t } = useI18n();
   const { user } = useAuth();
   const { activeWorkspace } = useWorkspace();
@@ -311,7 +318,21 @@ export function CatalogItemPickerDialog({ open, onOpenChange, onPick }: Props) {
           </div>
         )}
 
-        <DialogFooter>
+        <DialogFooter className="gap-2 sm:justify-between">
+          {onAddCustom ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className="sm:mr-auto"
+              onClick={onAddCustom}
+              data-testid="catalog-picker-add-custom"
+            >
+              <Plus className="mr-1 size-3.5" />
+              {t("projects.draft.quoteItem.addCustom")}
+            </Button>
+          ) : (
+            <span />
+          )}
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
             {addedCount > 0 ? t("common.close") : t("common.cancel")}
           </Button>

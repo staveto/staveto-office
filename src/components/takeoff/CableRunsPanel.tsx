@@ -34,9 +34,14 @@ import type {
   CableRunStatus,
 } from "@/types/pdfTakeoff";
 import {
+  CABLE_RUN_COLOR_PALETTE,
+  CABLE_RUN_STROKE_PRESETS,
   DEFAULT_CABLE_TYPE_NAMES,
   groupCableRunsByType,
+  resolveCableRunColor,
+  resolveCableRunStrokeWidth,
 } from "@/lib/takeoff/cableMeasurement";
+import { categoryColorForKey, categoryKeyForLabel } from "@/lib/takeoff/takeoffCategories";
 
 const INSTALLATION_TYPES: CableInstallationType[] = [
   "groove",
@@ -278,6 +283,15 @@ export function CableRunsPanel({
                           onClick={() => onSelectRun(picked ? null : run.id)}
                           title={t("takeoff.measure.selectRunHint")}
                         >
+                          <span
+                            className="size-3 shrink-0 rounded-full border border-black/10"
+                            style={{
+                              backgroundColor: resolveCableRunColor(run, (name) =>
+                                categoryColorForKey(categoryKeyForLabel(name))
+                              ),
+                            }}
+                            aria-hidden
+                          />
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-xs font-semibold text-foreground">
                               {run.name}
@@ -350,6 +364,99 @@ export function CableRunsPanel({
                                   }
                                 />
                               </label>
+
+                              <div className="space-y-1.5">
+                                <span className="text-[11px] font-medium text-muted-foreground">
+                                  {t("takeoff.measure.lineStyle")}
+                                </span>
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {(() => {
+                                    const currentColor = resolveCableRunColor(run, (name) =>
+                                      categoryColorForKey(categoryKeyForLabel(name))
+                                    ).toLowerCase();
+                                    return (
+                                      <>
+                                        {CABLE_RUN_COLOR_PALETTE.map((hex) => {
+                                          const active = currentColor === hex.toLowerCase();
+                                          return (
+                                            <button
+                                              key={hex}
+                                              type="button"
+                                              className={cn(
+                                                "size-6 rounded-full border-2 transition-shadow",
+                                                active
+                                                  ? "border-foreground shadow-sm"
+                                                  : "border-transparent hover:border-border"
+                                              )}
+                                              style={{ backgroundColor: hex }}
+                                              title={t("takeoff.measure.lineColorHint")}
+                                              aria-label={t("takeoff.measure.lineColorHint")}
+                                              aria-pressed={active}
+                                              data-testid="cable-run-color"
+                                              onClick={() =>
+                                                onUpdateRun(run.id, { color: hex })
+                                              }
+                                            />
+                                          );
+                                        })}
+                                        <label
+                                          className="relative size-6 cursor-pointer overflow-hidden rounded-full border border-border"
+                                          title={t("takeoff.measure.lineColorCustom")}
+                                        >
+                                          <span
+                                            className="absolute inset-0"
+                                            style={{ backgroundColor: currentColor }}
+                                          />
+                                          <input
+                                            type="color"
+                                            className="absolute inset-0 cursor-pointer opacity-0"
+                                            value={currentColor}
+                                            onChange={(e) =>
+                                              onUpdateRun(run.id, { color: e.target.value })
+                                            }
+                                            aria-label={t("takeoff.measure.lineColorCustom")}
+                                          />
+                                        </label>
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <span className="shrink-0 text-[10px] text-muted-foreground">
+                                    {t("takeoff.measure.lineThickness")}
+                                  </span>
+                                  <div className="flex flex-1 items-center gap-1">
+                                    {CABLE_RUN_STROKE_PRESETS.map((w) => {
+                                      const active =
+                                        resolveCableRunStrokeWidth(run) === w;
+                                      return (
+                                        <button
+                                          key={w}
+                                          type="button"
+                                          className={cn(
+                                            "flex h-7 flex-1 items-center justify-center rounded-md border px-1",
+                                            active
+                                              ? "border-emerald-600 bg-emerald-50"
+                                              : "border-border bg-background hover:bg-muted/60"
+                                          )}
+                                          title={`${w} px`}
+                                          aria-pressed={active}
+                                          data-testid="cable-run-stroke"
+                                          onClick={() =>
+                                            onUpdateRun(run.id, { strokeWidth: w })
+                                          }
+                                        >
+                                          <span
+                                            className="block w-full rounded-full bg-foreground"
+                                            style={{ height: Math.max(1, w * 0.7) }}
+                                          />
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+
                               <label className="block">
                                 <span className="text-[11px] font-medium text-muted-foreground">
                                   {t("takeoff.measure.circuitName")}

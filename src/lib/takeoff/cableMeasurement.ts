@@ -23,7 +23,51 @@ export const CABLE_RUN_DEFAULTS = {
   fixedReserveM: 0,
   verticalLengthM: 0,
   roundingStepM: 1,
+  /** Default plan stroke — emerald, readable on white drawings. */
+  color: "#059669",
+  strokeWidth: 3,
 } as const;
+
+/** Preset colors offered in the cable-route style picker. */
+export const CABLE_RUN_COLOR_PALETTE = [
+  "#059669", // emerald
+  "#2563EB", // blue
+  "#DC2626", // red
+  "#D97706", // amber
+  "#7C3AED", // violet
+  "#0891B2", // cyan
+  "#DB2777", // pink
+  "#0F172A", // near-black
+] as const;
+
+/** Preset stroke widths (screen px) for the style picker. */
+export const CABLE_RUN_STROKE_PRESETS = [1.5, 2.5, 3.5, 5, 7] as const;
+
+export function clampCableStrokeWidth(value: number | undefined | null): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return CABLE_RUN_DEFAULTS.strokeWidth;
+  }
+  return Math.min(8, Math.max(1, Math.round(value * 10) / 10));
+}
+
+export function resolveCableRunColor(
+  run: Pick<CableRun, "color" | "cableTypeName">,
+  fallbackFromType: (cableTypeName: string) => string
+): string {
+  const custom = run.color?.trim();
+  if (custom && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(custom)) {
+    return custom.length === 4
+      ? `#${custom[1]}${custom[1]}${custom[2]}${custom[2]}${custom[3]}${custom[3]}`
+      : custom;
+  }
+  return fallbackFromType(run.cableTypeName);
+}
+
+export function resolveCableRunStrokeWidth(
+  run: Pick<CableRun, "strokeWidth">
+): number {
+  return clampCableStrokeWidth(run.strokeWidth);
+}
 
 /** Built-in cable type suggestions used when no catalog item is picked. */
 export const DEFAULT_CABLE_TYPE_NAMES = [

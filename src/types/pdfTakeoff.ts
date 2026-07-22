@@ -286,6 +286,15 @@ export type CableRun = {
   status: CableRunStatus;
   catalogItemId?: string;
   note?: string;
+  /**
+   * Stroke color on the plan (CSS hex). When missing, a stable color is
+   * derived from cableTypeName so older runs keep their look.
+   */
+  color?: string;
+  /**
+   * Base stroke width on the plan in screen px (≈ 1.5–8). Missing → default.
+   */
+  strokeWidth?: number;
   createdAt: string;
   updatedAt: string;
 };

@@ -3,7 +3,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Trash2, Loader2, Ruler, BookOpen, AlertTriangle } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Loader2,
+  Ruler,
+  BookOpen,
+  AlertTriangle,
+  CircleDollarSign,
+} from "lucide-react";
 import {
   Card,
   CardContent,
@@ -48,7 +56,11 @@ import { updateDraftJobFields } from "@/services/projects";
 import { upsertQuoteFromProject } from "@/services/quotes";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { CatalogItemPickerDialog } from "@/components/projects/setup/CatalogItemPickerDialog";
+import { ElectricalCatalogPickerDialog } from "@/components/jobs/ElectricalCatalogPickerDialog";
+import { AiPriceLookupDialog } from "@/components/takeoff/AiPriceLookupDialog";
 import type { CatalogItemDoc } from "@/services/materials";
+import type { ElectricalCatalogProduct } from "@/lib/catalog/electrical/types";
+import { productUnitPriceEur } from "@/services/catalog/electricalCatalogReadService";
 import {
   catalogUnitToQuoteDraftUnit,
   mergeQuoteDraftPlainNotes,
@@ -99,6 +111,7 @@ function CategoryTable({
   setRowActionBusy,
   setError,
   setSaveStatus,
+  onOpenCatalog,
 }: {
   category: QuoteDraftItemCategory;
   items: QuoteDraftItemDoc[];
@@ -109,15 +122,25 @@ function CategoryTable({
   setRowActionBusy: (v: boolean) => void;
   setError: (v: string | null) => void;
   setSaveStatus: (v: SaveStatus) => void;
+  /** Opens product picker modal instead of inserting a blank row. */
+  onOpenCatalog: () => void;
 }) {
   const { t } = useI18n();
   const [rows, setRows] = useState<Record<string, RowDraft>>({});
+  const [priceLookupItemId, setPriceLookupItemId] = useState<string | null>(null);
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const dirtyIds = useRef<Set<string>>(new Set());
   const saveGeneration = useRef<Record<string, number>>({});
   const rowsRef = useRef(rows);
   const persistRowRef = useRef<(itemId: string) => Promise<void>>(async () => {});
   rowsRef.current = rows;
+  const priceLookupItem = priceLookupItemId
+    ? items.find((i) => i.id === priceLookupItemId) ?? null
+    : null;
+  const priceLookupName =
+    (priceLookupItemId && rows[priceLookupItemId]?.name) ||
+    priceLookupItem?.name ||
+    "";
 
   useEffect(() => {
     setRows((prev) => {
@@ -267,28 +290,6 @@ function CategoryTable({
     }
   };
 
-  const handleAdd = async () => {
-    setRowActionBusy(true);
-    setError(null);
-    setSaveStatus("saving");
-    try {
-      await createQuoteDraftItem(projectId, {
-        category,
-        name: t("projects.draft.quoteItem.newItem"),
-        qty: 1,
-        unit: "ks",
-        unitPrice: 0,
-      });
-      await onReloadSilent();
-      setSaveStatus("saved");
-    } catch (e) {
-      setSaveStatus("error");
-      setError(e instanceof Error ? e.message : t("projects.draft.quoteItem.saveError"));
-    } finally {
-      setRowActionBusy(false);
-    }
-  };
-
   const handleDelete = async (itemId: string) => {
     const draft = rowsRef.current[itemId];
     const qty = draft?.qty ?? items.find((i) => i.id === itemId)?.qty ?? 0;
@@ -335,7 +336,7 @@ function CategoryTable({
           variant="outline"
           size="sm"
           disabled={rowActionBusy}
-          onClick={() => void handleAdd()}
+          onClick={onOpenCatalog}
           data-testid={`quote-add-${category}`}
         >
           <Plus className="size-4 mr-1" />
@@ -449,20 +450,35 @@ function CategoryTable({
                       </Select>
                     </TableCell>
                     <TableCell className="align-top whitespace-normal">
-                      <Input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        value={row.unitPrice}
-                        onChange={(e) =>
-                          patchRow(item.id, {
-                            unitPrice: parseFloat(e.target.value) || 0,
-                          })
-                        }
-                        onBlur={() => flushSave(item.id)}
-                        className="h-8 w-full min-w-0 tabular-nums"
-                        aria-label={t("projects.draft.quoteItem.unitPrice")}
-                      />
+                      <div className="flex items-center gap-1">
+                        <Input
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          value={row.unitPrice}
+                          onChange={(e) =>
+                            patchRow(item.id, {
+                              unitPrice: parseFloat(e.target.value) || 0,
+                            })
+                          }
+                          onBlur={() => flushSave(item.id)}
+                          className="h-8 w-full min-w-0 tabular-nums"
+                          aria-label={t("projects.draft.quoteItem.unitPrice")}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 shrink-0"
+                          disabled={rowActionBusy || !row.name.trim()}
+                          title={t("takeoff.priceLookup.buttonHint")}
+                          aria-label={t("takeoff.priceLookup.button")}
+                          data-testid="quote-add-price"
+                          onClick={() => setPriceLookupItemId(item.id)}
+                        >
+                          <CircleDollarSign className="size-4 text-[#e06737]" />
+                        </Button>
+                      </div>
                     </TableCell>
                     <TableCell className="align-top text-right text-sm tabular-nums whitespace-nowrap">
                       {formatMoney(total)}
@@ -487,6 +503,33 @@ function CategoryTable({
           </Table>
         </div>
       )}
+
+      {priceLookupItemId && priceLookupName ? (
+        <AiPriceLookupDialog
+          open
+          productName={priceLookupName}
+          onOpenChange={(next) => {
+            if (!next) setPriceLookupItemId(null);
+          }}
+          onApply={async ({ unitPrice, note }) => {
+            const existingNote = rowsRef.current[priceLookupItemId]?.note?.trim();
+            patchRow(
+              priceLookupItemId,
+              {
+                unitPrice,
+                ...(note
+                  ? {
+                      note: existingNote ? `${existingNote} · ${note}` : note,
+                    }
+                  : {}),
+              },
+              { debounce: false }
+            );
+            await persistRowRef.current(priceLookupItemId);
+            setPriceLookupItemId(null);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -506,7 +549,15 @@ export function DraftQuoteItemsPanel({
   const [creatingQuote, setCreatingQuote] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
-  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [electricalCatalogOpen, setElectricalCatalogOpen] = useState(false);
+  const [companyCatalogOpen, setCompanyCatalogOpen] = useState(false);
+  const [catalogPreferredCategory, setCatalogPreferredCategory] =
+    useState<QuoteDraftItemCategory>("material");
+
+  const openCatalog = (category: QuoteDraftItemCategory = "material") => {
+    setCatalogPreferredCategory(category);
+    setElectricalCatalogOpen(true);
+  };
   const [vatPercent, setVatPercent] = useState(project.quoteDraftVatPercent ?? 20);
   const [notes, setNotes] = useState(() => plainNotesFromQuoteDraft(project.quoteDraftNotes));
   const quoteDraftNotesRef = useRef(project.quoteDraftNotes);
@@ -647,6 +698,34 @@ export function DraftQuoteItemsPanel({
     }
   };
 
+  const handlePickElectricalProduct = async (product: ElectricalCatalogProduct) => {
+    setRowActionBusy(true);
+    setError(null);
+    setSaveStatus("saving");
+    try {
+      const noteParts = [
+        product.brand,
+        product.series,
+        product.supplierSku ? `kód ${product.supplierSku}` : null,
+      ].filter(Boolean);
+      await createQuoteDraftItem(project.id, {
+        category: catalogPreferredCategory,
+        name: product.name,
+        qty: 1,
+        unit: "ks",
+        unitPrice: productUnitPriceEur(product),
+        note: noteParts.length ? noteParts.join(" · ") : undefined,
+      });
+      await loadSilent();
+      setSaveStatus("saved");
+    } catch (e) {
+      setSaveStatus("error");
+      setError(e instanceof Error ? e.message : t("projects.draft.quoteItem.saveError"));
+    } finally {
+      setRowActionBusy(false);
+    }
+  };
+
   const handleCreateQuote = async () => {
     if (!activeWorkspace || !hasItems) return;
     if (!projectHasQuoteCustomer(project)) {
@@ -756,28 +835,39 @@ export function DraftQuoteItemsPanel({
                 size="sm"
                 className="bg-[#e06737] hover:bg-[#c95a30] text-white"
                 disabled={rowActionBusy}
-                onClick={() => void handleAddCustom("material")}
-                data-testid="quote-empty-add-custom"
+                onClick={() => openCatalog("material")}
+                data-testid="quote-empty-open-catalog"
               >
-                <Plus className="size-4 mr-1" />
-                {t("projects.draft.quoteItem.addCustom")}
+                <BookOpen className="size-4 mr-1" />
+                {t("projects.draft.quoteItem.add")}
               </Button>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 disabled={rowActionBusy}
-                onClick={() => setCatalogOpen(true)}
-                data-testid="quote-empty-open-catalog"
+                onClick={() => void handleAddCustom("material")}
+                data-testid="quote-empty-add-custom"
               >
-                <BookOpen className="size-4 mr-1" />
-                {t("projects.draft.quoteItem.openCatalog")}
+                <Plus className="size-4 mr-1" />
+                {t("projects.draft.quoteItem.addCustom")}
               </Button>
             </div>
           </div>
         ) : (
           <>
             <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className="bg-[#e06737] hover:bg-[#c95a30] text-white"
+                disabled={rowActionBusy}
+                onClick={() => openCatalog("material")}
+                data-testid="quote-toolbar-open-catalog"
+              >
+                <BookOpen className="size-4 mr-1" />
+                {t("projects.draft.quoteItem.add")}
+              </Button>
               <Button
                 type="button"
                 variant="outline"
@@ -788,17 +878,6 @@ export function DraftQuoteItemsPanel({
               >
                 <Plus className="size-4 mr-1" />
                 {t("projects.draft.quoteItem.addCustom")}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={rowActionBusy}
-                onClick={() => setCatalogOpen(true)}
-                data-testid="quote-toolbar-open-catalog"
-              >
-                <BookOpen className="size-4 mr-1" />
-                {t("projects.draft.quoteItem.openCatalog")}
               </Button>
             </div>
 
@@ -812,6 +891,7 @@ export function DraftQuoteItemsPanel({
               setRowActionBusy={setRowActionBusy}
               setError={setError}
               setSaveStatus={setSaveStatus}
+              onOpenCatalog={() => openCatalog("material")}
             />
             <CategoryTable
               category="work"
@@ -823,6 +903,7 @@ export function DraftQuoteItemsPanel({
               setRowActionBusy={setRowActionBusy}
               setError={setError}
               setSaveStatus={setSaveStatus}
+              onOpenCatalog={() => openCatalog("work")}
             />
 
             <div className="grid gap-4 sm:grid-cols-2 border-t pt-4">
@@ -923,11 +1004,31 @@ export function DraftQuoteItemsPanel({
         ) : null}
       </CardContent>
 
+      <ElectricalCatalogPickerDialog
+        open={electricalCatalogOpen}
+        onOpenChange={setElectricalCatalogOpen}
+        onPick={(product) => {
+          void handlePickElectricalProduct(product);
+        }}
+        onAddCustom={() => {
+          setElectricalCatalogOpen(false);
+          void handleAddCustom(catalogPreferredCategory);
+        }}
+        onOpenCompanyCatalog={() => {
+          setElectricalCatalogOpen(false);
+          setCompanyCatalogOpen(true);
+        }}
+      />
+
       <CatalogItemPickerDialog
-        open={catalogOpen}
-        onOpenChange={setCatalogOpen}
+        open={companyCatalogOpen}
+        onOpenChange={setCompanyCatalogOpen}
         onPick={(item) => {
           void handlePickCatalogItem(item);
+        }}
+        onAddCustom={() => {
+          setCompanyCatalogOpen(false);
+          void handleAddCustom(catalogPreferredCategory);
         }}
       />
     </Card>

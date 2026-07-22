@@ -20,6 +20,8 @@
     "test:workspace": "vitest run",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "catalog:buco:dry-run": "vite-node scripts/catalog/import-buco-electrical.ts",
+    "catalog:buco:import": "vite-node scripts/catalog/import-buco-electrical.ts --commit",
     "takeoff:doctor": "node scripts/takeoff-doctor.mjs",
     "firebase": "firebase",
     "firebase:login": "firebase login --reauth",

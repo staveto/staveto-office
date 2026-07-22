@@ -118,7 +118,10 @@ import {
   categoryKeyForLabel,
   categoryLabelForCandidate,
 } from "@/lib/takeoff/takeoffCategories";
-import { addTakeoffLinesToQuoteDraft } from "@/services/takeoff/takeoffQuoteService";
+import {
+  addTakeoffLinesToQuoteDraft,
+  syncCatalogMarkedQtyToQuote,
+} from "@/services/takeoff/takeoffQuoteService";
 import {
   isPdfTakeoffAiScanEnabled,
   isPdfTakeoffRegionAnalyzerEnabled,
@@ -162,6 +165,14 @@ import {
  */
 export type TakeoffWorkbenchMode = "default" | "quote-precheck" | TakeoffMode;
 export type TakeoffReturnTo = "new-project-proposal" | "quote-review" | "documents";
+
+type CatalogMarkBinding = {
+  productId: string;
+  unitPrice: number;
+  unit: string;
+  note?: string;
+  quoteItemId?: string;
+};
 
 type Props = {
   projectId: string;
@@ -309,11 +320,14 @@ export function PlanTakeoffWorkbench({
   // Rapid category marking — the operator picks/creates a position (e.g.
   // "Svetlo LED 12W") and click-counts its symbols on the plan. Every click
   // creates AND confirms a mark of that category — no per-click dialog.
+  // Catalog bindings keep quote draft qty/price in sync while marking.
   const [activeCategory, setActiveCategory] = useState<{
     key: string;
     label: string;
     symbolType: string;
+    catalog?: CatalogMarkBinding;
   } | null>(null);
+  const catalogBindingsRef = useRef<Map<string, CatalogMarkBinding>>(new Map());
   // "Zvýrazniť" on category rows — each toggles independently, so any
   // combination of positions can glow on the plan at once. Mark ids are
   // derived (not stored) so marks added later to a highlighted category
@@ -867,6 +881,8 @@ export function PlanTakeoffWorkbench({
         roundingStepM: CABLE_RUN_DEFAULTS.roundingStepM,
         finalLengthM: totals.finalLengthM,
         status: "draft",
+        color: CABLE_RUN_DEFAULTS.color,
+        strokeWidth: CABLE_RUN_DEFAULTS.strokeWidth,
       })
         .then((run) => {
           setSelectedCableRunId(run.id);
@@ -1455,17 +1471,71 @@ export function PlanTakeoffWorkbench({
       try {
         await saveSymbolCandidates(projectId, null, drawingId, pageNumber, [dto]);
         await handleConfirmCandidate(dto.id, activeCategory.symbolType, dto);
+
+        const binding =
+          activeCategory.catalog ??
+          catalogBindingsRef.current.get(activeCategory.key);
+        if (binding) {
+          const priorConfirmed = regionCandidates.filter(
+            (c) =>
+              c.id !== dto.id &&
+              c.status === "confirmed" &&
+              categoryKeyForLabel(categoryLabelForCandidate(c)) ===
+                activeCategory.key
+          ).length;
+          try {
+            const quoteItemId = await syncCatalogMarkedQtyToQuote({
+              projectId,
+              drawingId,
+              name: activeCategory.label,
+              qty: priorConfirmed + 1,
+              unitPrice: binding.unitPrice,
+              unit: binding.unit,
+              note: binding.note,
+              quoteItemId: binding.quoteItemId,
+            });
+            const next: CatalogMarkBinding = { ...binding, quoteItemId };
+            catalogBindingsRef.current.set(activeCategory.key, next);
+            setActiveCategory((prev) =>
+              prev && prev.key === activeCategory.key
+                ? { ...prev, catalog: next }
+                : prev
+            );
+          } catch {
+            /* marking succeeded — quote sync is best-effort (e.g. non-draft) */
+          }
+        }
       } catch {
         setRegionCandidates((prev) => prev.filter((c) => c.id !== dto.id));
         showToast(t("takeoff.toast.saveFailed"));
       }
     },
-    [activeCategory, projectId, drawingId, handleConfirmCandidate, showToast, t]
+    [activeCategory, projectId, drawingId, handleConfirmCandidate, regionCandidates, showToast, t]
   );
 
   const handleStartCategoryMarking = useCallback(
-    (category: { key: string; label: string; symbolType: string }) => {
-      setActiveCategory(category);
+    (category: {
+      key: string;
+      label: string;
+      symbolType: string;
+      catalog?: Omit<CatalogMarkBinding, "quoteItemId"> & { quoteItemId?: string };
+    }) => {
+      const prev = catalogBindingsRef.current.get(category.key);
+      const catalog = category.catalog
+        ? {
+            ...category.catalog,
+            quoteItemId: category.catalog.quoteItemId ?? prev?.quoteItemId,
+          }
+        : prev;
+      if (catalog) {
+        catalogBindingsRef.current.set(category.key, catalog);
+      }
+      setActiveCategory({
+        key: category.key,
+        label: category.label,
+        symbolType: category.symbolType,
+        ...(catalog ? { catalog } : {}),
+      });
       setMarkerMode("point");
       setRightTab("candidates");
     },
@@ -1476,6 +1546,51 @@ export function PlanTakeoffWorkbench({
     setActiveCategory(null);
     setMarkerMode("select");
   }, []);
+
+  /** Catalog / AI price → quote draft (confirm happens in AiPriceLookupDialog). */
+  const handleApplyPrice = useCallback(
+    async (input: { name: string; unitPrice: number; note?: string }) => {
+      const key = categoryKeyForLabel(input.name);
+      const qty = Math.max(
+        1,
+        regionCandidates.filter(
+          (c) =>
+            c.status === "confirmed" &&
+            categoryKeyForLabel(categoryLabelForCandidate(c)) === key
+        ).length
+      );
+      const binding = catalogBindingsRef.current.get(key);
+      try {
+        const quoteItemId = await syncCatalogMarkedQtyToQuote({
+          projectId,
+          drawingId,
+          name: input.name,
+          qty,
+          unitPrice: input.unitPrice,
+          unit: binding?.unit ?? "ks",
+          note: input.note ?? binding?.note,
+          quoteItemId: binding?.quoteItemId,
+        });
+        catalogBindingsRef.current.set(key, {
+          productId: binding?.productId ?? `price:${key}`,
+          unitPrice: input.unitPrice,
+          unit: binding?.unit ?? "ks",
+          note: input.note ?? binding?.note,
+          quoteItemId,
+        });
+        showToast(t("takeoff.priceLookup.toastApplied"));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "";
+        showToast(
+          message.includes("draft jobs")
+            ? t("takeoff.quote.draftOnly")
+            : t("takeoff.priceLookup.applyError")
+        );
+        throw err;
+      }
+    },
+    [projectId, drawingId, regionCandidates, showToast, t]
+  );
 
   // Leaving point mode by ANY path (Esc, toolbar mode buttons, scan actions)
   // always ends the rapid-marking session — no stale "still adding Svetlo"
@@ -2523,6 +2638,9 @@ export function PlanTakeoffWorkbench({
                     }
                     onRenameCategory={
                       perms.allowConfirm ? handleRenameCategory : undefined
+                    }
+                    onApplyPrice={
+                      perms.allowEdit ? handleApplyPrice : undefined
                     }
                     persistKey={`${projectId}:${drawingId}`}
                   />

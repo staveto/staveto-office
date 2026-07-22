@@ -23,6 +23,7 @@ import {
   MousePointerClick,
   FolderInput,
   Sparkles,
+  CircleDollarSign,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,6 +44,11 @@ import {
 } from "@/components/ui/dialog";
 import { useI18n } from "@/i18n/I18nContext";
 import { cn } from "@/lib/utils";
+import { ElectricalCatalogPickerDialog } from "@/components/jobs/ElectricalCatalogPickerDialog";
+import { AiPriceLookupDialog } from "@/components/takeoff/AiPriceLookupDialog";
+import type { ElectricalCatalogProduct } from "@/lib/catalog/electrical/types";
+import { productUnitPriceEur } from "@/services/catalog/electricalCatalogReadService";
+import { symbolTypeFromElectricalProduct } from "@/lib/takeoff/electricalProductSymbolType";
 import type { AnalyzeRegionCandidateDto } from "@/types/pdfTakeoff";
 import type { TakeoffItem } from "@/types/pdfTakeoff";
 import {
@@ -172,6 +178,13 @@ type Props = {
     key: string;
     label: string;
     symbolType: string;
+    /** When set, each confirmed mark syncs qty/price into the quote draft. */
+    catalog?: {
+      productId: string;
+      unitPrice: number;
+      unit: string;
+      note?: string;
+    };
   }) => void;
   onStopCategoryMarking?: () => void;
   /**
@@ -191,6 +204,15 @@ type Props = {
   onMoveConfirmedToCategory?: (candidateId: string, label: string) => Promise<void>;
   /** Rename a whole position (relabels every mark in it; merges on name clash). */
   onRenameCategory?: (categoryKey: string, newLabel: string) => Promise<void>;
+  /**
+   * Apply a looked-up unit price into the project quote draft for this article.
+   * Undefined hides the "Doplniť cenu" action.
+   */
+  onApplyPrice?: (input: {
+    name: string;
+    unitPrice: number;
+    note?: string;
+  }) => Promise<void>;
   /**
    * Persist the panel's view state (open sections, expanded categories)
    * under this key — pass the canonical drawingId so the quote flow and the
@@ -261,6 +283,7 @@ export function SymbolCandidateReviewPanel({
   onSetHighlightedCategories,
   onMoveConfirmedToCategory,
   onRenameCategory,
+  onApplyPrice,
   persistKey = null,
 }: Props) {
   const { t } = useI18n();
@@ -293,6 +316,8 @@ export function SymbolCandidateReviewPanel({
       collapsedGroups: [...collapsed],
     });
   }, [persistKey, showConfirmed, showRejected, showItems, expandedCategories, collapsed]);
+  const [catalogPickerOpen, setCatalogPickerOpen] = useState(false);
+  const [priceLookupFor, setPriceLookupFor] = useState<string | null>(null);
   const [newCategoryOpen, setNewCategoryOpen] = useState(false);
   const [newCategoryLabel, setNewCategoryLabel] = useState("");
   const [newCategoryType, setNewCategoryType] = useState("light");
@@ -718,10 +743,7 @@ export function SymbolCandidateReviewPanel({
                   className="h-6 shrink-0 px-1.5 text-[10px]"
                   disabled={busy}
                   data-testid="new-category"
-                  onClick={() => {
-                    setNewCategoryLabel("");
-                    setNewCategoryOpen(true);
-                  }}
+                  onClick={() => setCatalogPickerOpen(true)}
                 >
                   <Plus className="mr-0.5 size-3" />
                   {t("takeoff.category.new")}
@@ -842,6 +864,21 @@ export function SymbolCandidateReviewPanel({
                           >
                             <Pencil className="size-3.5" />
                           </button>
+                        ) : null}
+                        {onApplyPrice ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-6 shrink-0 px-1.5 text-[10px]"
+                            disabled={busy}
+                            data-testid="category-add-price"
+                            title={t("takeoff.priceLookup.buttonHint")}
+                            onClick={() => setPriceLookupFor(cat.label)}
+                          >
+                            <CircleDollarSign className="mr-0.5 size-3" />
+                            {t("takeoff.priceLookup.button")}
+                          </Button>
                         ) : null}
                         {canReview && onStartCategoryMarking ? (
                           isActive ? (
@@ -1100,29 +1137,44 @@ export function SymbolCandidateReviewPanel({
           </p>
           <div className="divide-y divide-border/60">
             {detectionItems.map((item) => (
-              <button
+              <div
                 key={item.id}
-                type="button"
-                className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left text-xs hover:bg-muted/60"
+                className="flex items-center gap-1 rounded-md px-1.5 py-1.5 text-xs hover:bg-muted/60"
                 data-testid="takeoff-evidence-link"
-                title={t("takeoff.review.evidenceThumbHint")}
-                onClick={() => onEvidenceClick(item.id)}
               >
-                <MapPin className="size-3 shrink-0 text-primary" />
-                <span className="min-w-0 flex-1 truncate text-foreground">{item.name}</span>
-                <span className="shrink-0 tabular-nums font-semibold text-foreground">
-                  {item.quantity} {item.unit}
-                </span>
-                {item.sourceOfQuantity === "route_calculation" ? (
-                  <span className="shrink-0 rounded bg-emerald-100 px-1 text-[10px] font-semibold text-emerald-800">
-                    {t("takeoff.review.sourceCable")}
+                <button
+                  type="button"
+                  className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                  title={t("takeoff.review.evidenceThumbHint")}
+                  onClick={() => onEvidenceClick(item.id)}
+                >
+                  <MapPin className="size-3 shrink-0 text-primary" />
+                  <span className="min-w-0 flex-1 truncate text-foreground">{item.name}</span>
+                  <span className="shrink-0 tabular-nums font-semibold text-foreground">
+                    {item.quantity} {item.unit}
                   </span>
-                ) : (
-                  <span className="shrink-0 text-[10px] text-primary">
-                    {t("takeoff.review.evidenceCount", { count: item.evidenceCount })}
-                  </span>
-                )}
-              </button>
+                  {item.sourceOfQuantity === "route_calculation" ? (
+                    <span className="shrink-0 rounded bg-emerald-100 px-1 text-[10px] font-semibold text-emerald-800">
+                      {t("takeoff.review.sourceCable")}
+                    </span>
+                  ) : (
+                    <span className="shrink-0 text-[10px] text-primary">
+                      {t("takeoff.review.evidenceCount", { count: item.evidenceCount })}
+                    </span>
+                  )}
+                </button>
+                {onApplyPrice ? (
+                  <button
+                    type="button"
+                    className="shrink-0 rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                    title={t("takeoff.priceLookup.buttonHint")}
+                    data-testid="item-add-price"
+                    onClick={() => setPriceLookupFor(item.name)}
+                  >
+                    <CircleDollarSign className="size-3.5" />
+                  </button>
+                ) : null}
+              </div>
             ))}
             {legendItems.map((item) => (
               <div
@@ -1469,7 +1521,52 @@ export function SymbolCandidateReviewPanel({
         </DialogContent>
       </Dialog>
 
-      {/* Nová položka — create a category and start click-counting it. */}
+      {onApplyPrice && priceLookupFor ? (
+        <AiPriceLookupDialog
+          open={Boolean(priceLookupFor)}
+          productName={priceLookupFor}
+          onOpenChange={(next) => {
+            if (!next) setPriceLookupFor(null);
+          }}
+          onApply={async ({ productName, unitPrice, note }) => {
+            await onApplyPrice({ name: productName, unitPrice, note });
+            setPriceLookupFor(null);
+          }}
+        />
+      ) : null}
+
+      {/* Same catalog picker as cenová ponuka — pick product, then mark on PDF. */}
+      <ElectricalCatalogPickerDialog
+        open={catalogPickerOpen}
+        onOpenChange={setCatalogPickerOpen}
+        onPick={(product: ElectricalCatalogProduct) => {
+          const noteParts = [
+            product.brand,
+            product.series,
+            product.supplierSku ? `kód ${product.supplierSku}` : null,
+          ].filter(Boolean);
+          setCatalogPickerOpen(false);
+          onStartCategoryMarking?.({
+            key: categoryKeyForLabel(product.name),
+            label: product.name.trim(),
+            symbolType: symbolTypeFromElectricalProduct(product),
+            catalog: {
+              productId: product.id,
+              unitPrice: productUnitPriceEur(product),
+              unit: product.unit || "ks",
+              note: noteParts.length ? noteParts.join(" · ") : undefined,
+            },
+          });
+        }}
+        onAddCustom={() => {
+          setCatalogPickerOpen(false);
+          setNewCategoryLabel("");
+          setNewCategoryType("light");
+          setNewCategoryOpen(true);
+        }}
+      />
+
+      {/* Custom name fallback — create a category and start click-counting it. */}
       <Dialog open={newCategoryOpen} onOpenChange={setNewCategoryOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
