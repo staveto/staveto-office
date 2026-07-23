@@ -393,8 +393,8 @@ function CategoryTable({
                           onChange={(e) => patchRow(item.id, { note: e.target.value })}
                           onBlur={() => flushSave(item.id)}
                           className="h-7 w-full min-w-0 text-xs"
-                          placeholder={t("projects.draft.quoteItem.descriptionPlaceholder")}
-                          aria-label={t("projects.draft.quoteItem.description")}
+                          placeholder={t("projects.draft.quoteItem.lineNotePlaceholder")}
+                          aria-label={t("projects.draft.quoteItem.lineNote")}
                         />
                         {item.sourceDrawingId &&
                         item.sourceOfQuantity === "symbol_detection" &&
