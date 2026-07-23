@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   catalogUnitToQuoteDraftUnit,
+  mergeQuoteDraftDocumentMeta,
   mergeQuoteDraftPlainNotes,
   projectHasQuoteCustomer,
   shouldConfirmQuoteItemDelete,
@@ -51,6 +52,31 @@ describe("manualQuoteWorkspace", () => {
 
   it("keeps plain notes as plain string when no AI meta", () => {
     expect(mergeQuoteDraftPlainNotes("hello", "world")).toBe("world");
+  });
+
+  it("stores general quote description in document meta", () => {
+    const next = mergeQuoteDraftDocumentMeta(null, {
+      scopeOfWork: "Kompletná elektroinštalácia bytu",
+    });
+    const parsed = JSON.parse(next) as {
+      quoteDocumentMeta: { scopeOfWork: string };
+    };
+    expect(parsed.quoteDocumentMeta.scopeOfWork).toBe(
+      "Kompletná elektroinštalácia bytu"
+    );
+  });
+
+  it("preserves plain notes when updating description", () => {
+    const existing = JSON.stringify({ plainNotes: "platnosť 30 dní" });
+    const next = mergeQuoteDraftDocumentMeta(existing, {
+      scopeOfWork: "Výmena rozvádzača",
+    });
+    const parsed = JSON.parse(next) as {
+      plainNotes: string;
+      quoteDocumentMeta: { scopeOfWork: string };
+    };
+    expect(parsed.plainNotes).toBe("platnosť 30 dní");
+    expect(parsed.quoteDocumentMeta.scopeOfWork).toBe("Výmena rozvádzača");
   });
 
   it("detects customer presence", () => {

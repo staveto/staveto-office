@@ -42,12 +42,27 @@ export function parseBucoSourceFile(filePath: string): ParsedBucoSource {
 }
 
 function parseScraperState(state: BucoScraperState): ParsedBucoSource {
+  const urlToCategory = new Map<string, { path: string; name: string }>();
+  for (const [path, node] of Object.entries(state.tree ?? {})) {
+    if (!node) continue;
+    const name = (node.nazov || node.name || "").trim();
+    for (const productUrl of node.products ?? []) {
+      if (!productUrl) continue;
+      urlToCategory.set(productUrl, { path, name });
+    }
+  }
+
   const products: BucoRawProduct[] = [];
   for (const [url, p] of Object.entries(state.products ?? {})) {
     if (!p) continue;
+    const productUrl = p.url || url;
+    const cat = urlToCategory.get(productUrl);
     products.push({
       ...p,
-      url: p.url || url,
+      url: productUrl,
+      obrazok_url: p.obrazok_url,
+      sourceCategoryPath: p.sourceCategoryPath ?? cat?.path,
+      sourceCategoryName: p.sourceCategoryName ?? cat?.name,
     });
   }
   return {

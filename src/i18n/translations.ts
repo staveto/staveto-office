@@ -1784,7 +1784,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "quotes.print.conditions.execution": "Work will be carried out by appointment.",
     "quotes.print.conditions.scopeChange": "Prices may change if the scope of work changes.",
     "quotes.print.conditions.payment": "Payment terms as agreed.",
-    "quotes.createFromProject": "Create Firestore quote",
+    "quotes.createFromProject": "Create quote",
     "quotes.legacyNote": "Older in-memory estimates (dev MVP):",
     "quotes.legacyLink": "legacy estimates",
     "quotes.legacyBanner": "This screen uses the old in-memory estimates store (development only). For real quotes linked to jobs, use",
@@ -2423,7 +2423,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.cockpit.cta.openPlan": "Open work plan",
     "projects.cockpit.cta.continueQuote": "Continue quote",
     "projects.cockpit.cta.previewQuote": "Preview quote",
-    "projects.cockpit.header.summaryQuotePrep": "Prepare the quote for this job — add lines, then send to the customer.",
+    "projects.cockpit.header.summaryQuotePrep": "Prepare the quote for this job. Add lines, then send to the customer.",
     "projects.cockpit.actionsMenu": "Actions",
     "projects.cockpit.kpi.overdue": "Overdue",
     "projects.cockpit.todayFocus.title": "Needs attention today",
@@ -3439,7 +3439,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.aiSetup.offer.packagePreview": "Customer quote sections (QuotePackage)",
     "projects.aiSetup.offer.packageHint":
       "The customer PDF should follow these sections — not the raw extraction list.",
-    "projects.aiSetup.summary.preliminary": "Preliminary — prices or scope incomplete",
+    "projects.aiSetup.summary.preliminary": "Preliminary: prices or scope incomplete",
     "projects.aiSetup.material.group.socket": "Sockets",
     "projects.aiSetup.material.group.switch": "Switches",
     "projects.aiSetup.material.group.lighting": "Lighting",
@@ -3989,7 +3989,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.measure.calibrateInputInvalid":
       "Enter the length as a number in m or mm, e.g. 1770 mm or 1.77 m.",
     "takeoff.measure.calibratePointsTooClose":
-      "The calibration points are too close together — pick two more distant points.",
+      "The calibration points are too close together. Pick two more distant points.",
     "takeoff.measure.hideMeasurements": "Hide measurements",
     "takeoff.measure.showMeasurements": "Show measurements",
     "takeoff.measure.hideMeasurementsHint":
@@ -3997,7 +3997,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.measure.cablesAndRoutes": "Cables and routes",
     "takeoff.measure.addRoute": "New route",
     "takeoff.measure.addRouteHint":
-      "Start drawing a cable route on the plan — every click adds a point.",
+      "Start drawing a cable route on the plan. Every click adds a point.",
     "takeoff.measure.emptyRuns":
       "No cable routes yet. Set the drawing scale, then click \"New route\" and draw the route on the plan.",
     "takeoff.measure.selectRunHint": "Show and edit this route",
@@ -4035,7 +4035,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.measure.gapJump": "Skip",
     "takeoff.measure.gapJumpArmed": "Skipping…",
     "takeoff.measure.gapJumpHint":
-      "The next segment won't be measured — jump to another spot and keep counting meters within the same route.",
+      "The next segment won't be measured. Jump to another spot and keep counting meters within the same route.",
     "takeoff.measure.editRun": "Edit points",
     "takeoff.measure.editRunDone": "Done",
     "takeoff.measure.editRunHint":
@@ -4046,7 +4046,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.measure.editOnPlanHint":
       "Opens the route on the drawing so you can move, add or delete its points.",
     "takeoff.measure.highlightRunHint":
-      "Highlight this route on the plan — all other routes fade out.",
+      "Highlight this route on the plan. All other routes fade out.",
     "takeoff.measure.highlightGroupHint":
       "Highlight every route of this cable type on the plan.",
     "takeoff.measure.clearHighlight": "Clear highlight",
@@ -4055,16 +4055,16 @@ export const translations: Record<Locale, Record<string, string>> = {
       "{{synced}} in quote · {{pending}} need export · {{draft}} not approved",
     "takeoff.measure.syncInQuote": "In quote: {{length}} m",
     "takeoff.measure.syncNeedsExport":
-      "Approved {{approved}} m — in quote {{inQuote}} m (re-export)",
+      "Approved {{approved}} m, in quote {{inQuote}} m (re-export)",
     "takeoff.measure.syncStaleQuote":
-      "Still in quote: {{length}} m (no approved routes — re-export to remove)",
+      "Still in quote: {{length}} m (no approved routes; re-export to remove)",
     "takeoff.measure.syncNotApproved":
-      "Not approved yet ({{length}} m) — will not go into the quote",
+      "Not approved yet ({{length}} m); will not go into the quote",
     "takeoff.measure.approvedOfTotal": "approved {{approved}} m",
     "takeoff.measure.unnamedCableType": "No cable type",
     "takeoff.measure.cableStartHint": "Click the plan to add route points",
     "takeoff.measure.toastScaleSaved": "Drawing scale saved.",
-    "takeoff.measure.toastRunSaved": "Cable route saved — {{length}} m.",
+    "takeoff.measure.toastRunSaved": "Cable route saved: {{length}} m.",
     "takeoff.measure.installation.groove": "In a groove",
     "takeoff.measure.installation.surface_trunking": "In trunking",
     "takeoff.measure.installation.conduit": "In a conduit",
@@ -4124,11 +4124,13 @@ export const translations: Record<Locale, Record<string, string>> = {
       "We first check the electrical catalog. If needed, AI searches the web (Google) for a current indicative price. Always confirm before it goes into the quote.",
     "takeoff.priceLookup.searching": "Looking up price…",
     "takeoff.priceLookup.error": "Price lookup failed. Try again or enter the price manually.",
+    "takeoff.priceLookup.geminiMissing":
+      "Web price search needs GEMINI_API_KEY in .env.local. Add the key from Google AI Studio, restart the app (npm run dev), then try again. Catalog price can still be used without AI.",
     "takeoff.priceLookup.applyError": "Could not save the price into the quote.",
     "takeoff.priceLookup.sourceCatalog": "From electrical catalog",
     "takeoff.priceLookup.sourceWeb": "From AI web search (indicative)",
     "takeoff.priceLookup.sourceNone": "No automatic price found",
-    "takeoff.priceLookup.indicative": "indicative — verify",
+    "takeoff.priceLookup.indicative": "indicative, verify",
     "takeoff.priceLookup.notFound": "No credible price found. Enter it manually or search the web again.",
     "takeoff.priceLookup.priceLabel": "Unit price (EUR)",
     "takeoff.priceLookup.searchWeb": "Search web (AI)",
@@ -4147,8 +4149,15 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.category.renameHint":
       "All marks of this item get the new name. Renaming to an existing item merges them.",
     "takeoff.category.renameAction": "Rename",
+    "takeoff.category.delete": "Delete whole item",
+    "takeoff.category.deleteTitle": "Delete whole item?",
+    "takeoff.category.deleteBody":
+      "Delete \"{{name}}\" and all {{count}} marks on the plan? The matching quote line will be removed too.",
+    "takeoff.category.deleteAction": "Delete item",
     "takeoff.toast.markMoved": "Mark moved to \"{{label}}\".",
     "takeoff.toast.categoryRenamed": "Item renamed to \"{{label}}\".",
+    "takeoff.toast.categoryDeleted":
+      "Deleted \"{{label}}\" ({{count}} marks) and updated the quote.",
     "takeoff.analyzeRegion.button": "Analyze region",
     "takeoff.analyzeRegion.planQuality": "Plan quality",
     "takeoff.analyzeRegion.planQualityDetail": "{{type}} · {{ocr}}",
@@ -4593,11 +4602,17 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.draft.quoteItem.total": "Total",
     "projects.draft.quoteItem.vat": "VAT %",
     "projects.draft.quoteItem.vatLine": "VAT ({{percent}}%)",
+    "projects.draft.quoteItem.description": "General quote description",
+    "projects.draft.quoteItem.descriptionPlaceholder":
+      "e.g. Complete electrical installation for the apartment according to the project…",
+    "projects.draft.quoteItem.descriptionHint":
+      "Shown on the customer quote PDF as the scope / introduction.",
     "projects.draft.quoteItem.notes": "Terms / internal note",
     "projects.draft.quoteItem.notesPlaceholder": "e.g. validity 30 days, payment terms…",
     "projects.draft.quoteItem.subtotal": "Subtotal",
     "projects.draft.quoteItem.grandTotal": "Total incl. VAT",
-    "projects.draft.quoteItem.disclaimer": "Internal draft only — not binding until you export and send the official quote.",
+    "projects.draft.quoteItem.disclaimer":
+      "Internal draft only. Not binding until you export and send the official quote.",
     "projects.draft.quoteItem.newItem": "New line",
     "projects.draft.quoteItem.needItems": "Add at least one line before opening the estimate editor.",
     "projects.draft.quoteItem.loadError": "Could not load quote lines.",
@@ -4608,7 +4623,8 @@ export const translations: Record<Locale, Record<string, string>> = {
       "Remove this line from the quote? The company catalog item will stay unchanged.",
     "projects.draft.quoteItem.emptyTitle": "Start building your quote",
     "projects.draft.quoteItem.emptyBody":
-      "Add a custom line or pick an item from your company catalog.",
+      "Add a custom line or pick an item from your company catalog. If items disappeared, use Restore items.",
+    "projects.draft.quoteItem.restoreItems": "Restore items",
     "projects.draft.quoteItem.addCustom": "Add custom line",
     "projects.draft.quoteItem.openCatalog": "Open company catalog",
     "projects.draft.quoteItem.electricalCatalogTitle": "Electrical product catalog",
@@ -4617,13 +4633,15 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.draft.quoteItem.catalogAllCategories": "All",
     "projects.draft.quoteItem.catalogAllInCategory": "All in category",
     "projects.draft.quoteItem.catalogResultCount": "{{count}} products",
+    "projects.draft.quoteItem.catalogShowingCount": "Showing {{shown}} of {{total}}",
+    "projects.draft.quoteItem.catalogLoadMore": "Show more",
     "projects.draft.quoteItem.catalogNoMatches": "No products match your search.",
     "projects.draft.quoteItem.catalogLoadError": "Could not load the product catalog.",
     "projects.draft.quoteItem.catalogRulesHint": "If this persists, deploy Firestore rules so signed-in users can read catalogProducts.",
     "projects.draft.quoteItem.description": "Description",
     "projects.draft.quoteItem.descriptionPlaceholder": "Optional description",
     "projects.draft.quoteItem.needCustomer": "Add a customer before sending the quote.",
-    "projects.draft.quoteItem.customerHint": "We recommend linking a customer — you can keep editing the draft without one.",
+    "projects.draft.quoteItem.customerHint": "We recommend linking a customer. You can keep editing the draft without one.",
     "projects.draft.quoteItem.openCustomer": "Choose customer",
     "projects.jobDetailLabel": "Job",
     "members.teamOnly": "Team only feature. Switch to a team workspace.",
@@ -7389,7 +7407,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "quotes.print.conditions.execution": "Realizácia prebehne po dohode termínu.",
     "quotes.print.conditions.scopeChange": "Ceny sa môžu zmeniť pri zmene rozsahu prác.",
     "quotes.print.conditions.payment": "Platobné podmienky podľa dohody.",
-    "quotes.createFromProject": "Vytvoriť ponuku (Firestore)",
+    "quotes.createFromProject": "Vytvoriť ponuku",
     "quotes.legacyNote": "Staršie odhady v pamäti (dev MVP):",
     "quotes.legacyLink": "legacy odhady",
     "quotes.legacyBanner": "Táto obrazovka používa starý odhad v pamäti (len vývoj). Skutočné ponuky prepojené so zákazkami nájdete v",
@@ -8029,7 +8047,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.cockpit.cta.openPlan": "Otvoriť plán práce",
     "projects.cockpit.cta.continueQuote": "Pokračovať v ponuke",
     "projects.cockpit.cta.previewQuote": "Náhľad ponuky",
-    "projects.cockpit.header.summaryQuotePrep": "Pripravte ponuku pre túto zákazku — pridajte položky a potom ju odošlite zákazníkovi.",
+    "projects.cockpit.header.summaryQuotePrep": "Pripravte ponuku pre túto zákazku. Pridajte položky a potom ju odošlite zákazníkovi.",
     "projects.cockpit.actionsMenu": "Akcie",
     "projects.cockpit.kpi.overdue": "Po termíne",
     "projects.cockpit.todayFocus.title": "Dnes treba riešiť",
@@ -9046,7 +9064,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.aiSetup.offer.packagePreview": "Sekcie zákazníckej ponuky (QuotePackage)",
     "projects.aiSetup.offer.packageHint":
       "PDF pre zákazníka má ísť podľa týchto sekcií — nie podľa surového AI výkazu.",
-    "projects.aiSetup.summary.preliminary": "Predbežná — ceny alebo rozsah nie sú kompletné",
+    "projects.aiSetup.summary.preliminary": "Predbežná: ceny alebo rozsah nie sú kompletné",
     "projects.aiSetup.material.group.socket": "Zásuvky",
     "projects.aiSetup.material.group.switch": "Vypínače",
     "projects.aiSetup.material.group.lighting": "Osvetlenie",
@@ -9596,7 +9614,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.measure.calibrateInputInvalid":
       "Zadajte dĺžku ako číslo v m alebo mm, napr. 1770 mm alebo 1,77 m.",
     "takeoff.measure.calibratePointsTooClose":
-      "Kalibračné body sú príliš blízko seba — vyberte dva vzdialenejšie body.",
+      "Kalibračné body sú príliš blízko seba. Vyberte dva vzdialenejšie body.",
     "takeoff.measure.hideMeasurements": "Skryť merania",
     "takeoff.measure.showMeasurements": "Zobraziť merania",
     "takeoff.measure.hideMeasurementsHint":
@@ -9604,7 +9622,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.measure.cablesAndRoutes": "Káble a trasy",
     "takeoff.measure.addRoute": "Nová trasa",
     "takeoff.measure.addRouteHint":
-      "Začnite kresliť káblovú trasu na pláne — každý klik pridá bod.",
+      "Začnite kresliť káblovú trasu na pláne. Každý klik pridá bod.",
     "takeoff.measure.emptyRuns":
       "Zatiaľ žiadne káblové trasy. Nastavte mierku výkresu, potom kliknite na „Nová trasa“ a nakreslite trasu na pláne.",
     "takeoff.measure.selectRunHint": "Zobraziť a upraviť túto trasu",
@@ -9642,7 +9660,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.measure.gapJump": "Preskočiť",
     "takeoff.measure.gapJumpArmed": "Preskakujem…",
     "takeoff.measure.gapJumpHint":
-      "Ďalší úsek sa nebude merať — preskočíte na iné miesto a metre pokračujú v rámci tej istej trasy.",
+      "Ďalší úsek sa nebude merať. Preskočíte na iné miesto a metre pokračujú v rámci tej istej trasy.",
     "takeoff.measure.editRun": "Upraviť body",
     "takeoff.measure.editRunDone": "Hotovo",
     "takeoff.measure.editRunHint":
@@ -9653,7 +9671,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.measure.editOnPlanHint":
       "Otvorí trasu vo výkrese, kde môžete presúvať, pridávať a mazať jej body.",
     "takeoff.measure.highlightRunHint":
-      "Zvýrazní túto trasu na pláne — ostatné trasy sa stlmia.",
+      "Zvýrazní túto trasu na pláne. Ostatné trasy sa stlmia.",
     "takeoff.measure.highlightGroupHint":
       "Zvýrazní na pláne všetky trasy tohto typu kábla.",
     "takeoff.measure.clearHighlight": "Zrušiť zvýraznenie",
@@ -9662,16 +9680,16 @@ export const translations: Record<Locale, Record<string, string>> = {
       "{{synced}} v ponuke · {{pending}} treba preniesť · {{draft}} neschválené",
     "takeoff.measure.syncInQuote": "V ponuke: {{length}} m",
     "takeoff.measure.syncNeedsExport":
-      "Schválené {{approved}} m — v ponuke {{inQuote}} m (prenieste znova)",
+      "Schválené {{approved}} m, v ponuke {{inQuote}} m (prenieste znova)",
     "takeoff.measure.syncStaleQuote":
-      "Stále v ponuke: {{length}} m (žiadne schválené trasy — prenieste znova na odstránenie)",
+      "Stále v ponuke: {{length}} m (žiadne schválené trasy; prenieste znova na odstránenie)",
     "takeoff.measure.syncNotApproved":
-      "Ešte neschválené ({{length}} m) — do ponuky nepôjde",
+      "Ešte neschválené ({{length}} m); do ponuky nepôjde",
     "takeoff.measure.approvedOfTotal": "schválené {{approved}} m",
     "takeoff.measure.unnamedCableType": "Bez typu kábla",
     "takeoff.measure.cableStartHint": "Klikaním na plán pridávajte body trasy",
     "takeoff.measure.toastScaleSaved": "Mierka výkresu uložená.",
-    "takeoff.measure.toastRunSaved": "Káblová trasa uložená — {{length}} m.",
+    "takeoff.measure.toastRunSaved": "Káblová trasa uložená: {{length}} m.",
     "takeoff.measure.installation.groove": "V drážke",
     "takeoff.measure.installation.surface_trunking": "V lište",
     "takeoff.measure.installation.conduit": "V chráničke",
@@ -9731,11 +9749,13 @@ export const translations: Record<Locale, Record<string, string>> = {
       "Najprv skontrolujeme elektrický katalóg. Ak treba, AI prehľadá web (Google) a navrhne orientačnú cenu. Pred zápisom do cenovej ponuky ju vždy potvrďte.",
     "takeoff.priceLookup.searching": "Hľadám cenu…",
     "takeoff.priceLookup.error": "Vyhľadávanie ceny zlyhalo. Skúste znova alebo zadajte cenu ručne.",
+    "takeoff.priceLookup.geminiMissing":
+      "Hľadanie ceny na webe vyžaduje GEMINI_API_KEY v súbore .env.local. Pridajte kľúč z Google AI Studio, reštartujte aplikáciu (npm run dev) a skúste znova. Cenu z katalógu môžete použiť aj bez AI.",
     "takeoff.priceLookup.applyError": "Cenu sa nepodarilo uložiť do cenovej ponuky.",
     "takeoff.priceLookup.sourceCatalog": "Z elektrického katalógu",
     "takeoff.priceLookup.sourceWeb": "Z AI vyhľadávania na webe (orientačné)",
     "takeoff.priceLookup.sourceNone": "Automatická cena sa nenašla",
-    "takeoff.priceLookup.indicative": "orientačné — overte",
+    "takeoff.priceLookup.indicative": "orientačné, overte",
     "takeoff.priceLookup.notFound": "Nenašla sa dôveryhodná cena. Zadajte ju ručne alebo znova hľadajte na webe.",
     "takeoff.priceLookup.priceLabel": "Jednotková cena (EUR)",
     "takeoff.priceLookup.searchWeb": "Hľadať na webe (AI)",
@@ -9754,8 +9774,15 @@ export const translations: Record<Locale, Record<string, string>> = {
     "takeoff.category.renameHint":
       "Všetky značky tejto položky dostanú nový názov. Premenovaním na existujúcu položku sa zlúčia.",
     "takeoff.category.renameAction": "Premenovať",
+    "takeoff.category.delete": "Vymazať celú položku",
+    "takeoff.category.deleteTitle": "Vymazať celú položku?",
+    "takeoff.category.deleteBody":
+      "Vymazať \"{{name}}\" a všetkých {{count}} značiek vo výkrese? Zodpovedajúci riadok v ponuke sa tiež odstráni.",
+    "takeoff.category.deleteAction": "Vymazať položku",
     "takeoff.toast.markMoved": "Značka presunutá do \"{{label}}\".",
     "takeoff.toast.categoryRenamed": "Položka premenovaná na \"{{label}}\".",
+    "takeoff.toast.categoryDeleted":
+      "Vymazané \"{{label}}\" ({{count}} značiek) a aktualizovaná ponuka.",
     "takeoff.analyzeRegion.button": "Analyzovať oblasť",
     "takeoff.analyzeRegion.planQuality": "Kvalita výkresu",
     "takeoff.analyzeRegion.planQualityDetail": "{{type}} · {{ocr}}",
@@ -10202,11 +10229,17 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.draft.quoteItem.total": "Spolu",
     "projects.draft.quoteItem.vat": "DPH %",
     "projects.draft.quoteItem.vatLine": "DPH ({{percent}} %)",
+    "projects.draft.quoteItem.description": "Všeobecný popis ponuky",
+    "projects.draft.quoteItem.descriptionPlaceholder":
+      "napr. Kompletná elektroinštalácia bytu podľa projektu…",
+    "projects.draft.quoteItem.descriptionHint":
+      "Zobrazí sa na PDF ponuke pre zákazníka ako rozsah prác / úvod.",
     "projects.draft.quoteItem.notes": "Poznámka / podmienky",
     "projects.draft.quoteItem.notesPlaceholder": "napr. platnosť 30 dní, spôsob úhrady…",
     "projects.draft.quoteItem.subtotal": "Medzisúčet",
     "projects.draft.quoteItem.grandTotal": "Celkom s DPH",
-    "projects.draft.quoteItem.disclaimer": "Interný návrh — nie je záväzný, kým neodošlete oficiálnu ponuku zákazníkovi.",
+    "projects.draft.quoteItem.disclaimer":
+      "Interný návrh. Nie je záväzný, kým neodošlete oficiálnu ponuku zákazníkovi.",
     "projects.draft.quoteItem.newItem": "Nová položka",
     "projects.draft.quoteItem.needItems": "Pridajte aspoň jednu položku pred otvorením editora ponuky.",
     "projects.draft.quoteItem.loadError": "Nepodarilo sa načítať položky ponuky.",
@@ -10217,7 +10250,8 @@ export const translations: Record<Locale, Record<string, string>> = {
       "Odstrániť túto položku z ponuky? Položka vo firemnom katalógu ostane nezmenená.",
     "projects.draft.quoteItem.emptyTitle": "Začnite vytvárať cenovú ponuku",
     "projects.draft.quoteItem.emptyBody":
-      "Pridajte vlastnú položku alebo vyberte položku z firemného katalógu.",
+      "Pridajte vlastnú položku alebo vyberte položku z firemného katalógu. Ak položky zmizli, použite Obnoviť položky.",
+    "projects.draft.quoteItem.restoreItems": "Obnoviť položky",
     "projects.draft.quoteItem.addCustom": "Pridať vlastnú položku",
     "projects.draft.quoteItem.openCatalog": "Otvoriť firemný katalóg",
     "projects.draft.quoteItem.electricalCatalogTitle": "Elektro katalóg produktov",
@@ -10226,6 +10260,8 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.draft.quoteItem.catalogAllCategories": "Všetko",
     "projects.draft.quoteItem.catalogAllInCategory": "Celá kategória",
     "projects.draft.quoteItem.catalogResultCount": "{{count}} produktov",
+    "projects.draft.quoteItem.catalogShowingCount": "Zobrazených {{shown}} z {{total}}",
+    "projects.draft.quoteItem.catalogLoadMore": "Zobraziť ďalšie",
     "projects.draft.quoteItem.catalogNoMatches": "Žiadny produkt nevyhovuje hľadaniu.",
     "projects.draft.quoteItem.catalogLoadError": "Katalóg produktov sa nepodarilo načítať.",
     "projects.draft.quoteItem.catalogRulesHint": "Ak problém pretrváva, nasadte Firestore rules (read pre catalogProducts).",
@@ -10233,7 +10269,7 @@ export const translations: Record<Locale, Record<string, string>> = {
     "projects.draft.quoteItem.descriptionPlaceholder": "Voliteľný popis",
     "projects.draft.quoteItem.needCustomer": "Pred odoslaním ponuky doplňte zákazníka.",
     "projects.draft.quoteItem.customerHint":
-      "Odporúčame zákazníka — draft ponuky môžete upravovať aj bez neho.",
+      "Odporúčame zákazníka. Draft ponuky môžete upravovať aj bez neho.",
     "projects.draft.quoteItem.openCustomer": "Vybrať zákazníka",
     "projects.jobDetailLabel": "Zákazka",
     "members.teamOnly": "Funkcia len pre tím. Prepnite na tímový pracovný priestor.",

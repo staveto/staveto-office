@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -10,6 +10,8 @@ import { useAuth } from "@/context/AuthContext";
 import { useWorkspaceProduct } from "@/hooks/useWorkspaceProduct";
 import { hasProjectAccess, type ProjectDoc } from "@/lib/projects";
 import { isDraftJob } from "@/lib/projectLifecycle";
+import { shouldShowManualQuoteEditor } from "@/lib/manualQuoteWorkspace";
+import { projectQuoteTabHref } from "@/lib/projectCreationFeature";
 import { AiProjectSetupWorkspace } from "@/components/projects/setup/AiProjectSetupWorkspace";
 import { ProjectDashboard } from "@/components/projects/detail/ProjectDashboard";
 import { useProjectDetailAgentScreenSync } from "@/hooks/useManagerAgentScreenSync";
@@ -31,6 +33,7 @@ function ProjectDetailSkeleton() {
 export default function ProjectDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { t } = useI18n();
   const { user } = useAuth();
   const { role } = useWorkspaceProduct();
@@ -38,6 +41,8 @@ export default function ProjectDetailPage() {
   const setupAi = searchParams.get("setup") === "ai";
   const setupStep = searchParams.get("step");
   const setupTab = searchParams.get("tab");
+  /** Explicit escape hatch for the historical AI setup wizard. */
+  const allowLegacyAiSetup = searchParams.get("legacyAi") === "1";
 
   const [project, setProject] = useState<ProjectDoc | null>(null);
   const [loading, setLoading] = useState(true);
@@ -83,6 +88,14 @@ export default function ProjectDetailPage() {
     const timer = setTimeout(() => setToastMessage(null), 4000);
     return () => clearTimeout(timer);
   }, [toastMessage]);
+
+  // Manual quote workspace is the default edit path. Old `?setup=ai` entry
+  // points (e.g. from Cenové ponuky → Upraviť) must land on `?tab=quote`.
+  useEffect(() => {
+    if (!project || !setupAi || allowLegacyAiSetup) return;
+    if (!shouldShowManualQuoteEditor(project)) return;
+    router.replace(projectQuoteTabHref(project.id));
+  }, [project, setupAi, allowLegacyAiSetup, router]);
 
   useProjectDetailAgentScreenSync({ project });
 
@@ -130,6 +143,17 @@ export default function ProjectDetailPage() {
   }
 
   const hasAiEstimatorSession = Boolean(project.aiEstimatorSessionId?.trim());
+  const redirectSetupAiToManualQuote =
+    setupAi && !allowLegacyAiSetup && shouldShowManualQuoteEditor(project);
+
+  if (redirectSetupAiToManualQuote) {
+    return (
+      <div className="space-y-6">
+        <ProjectDetailSkeleton />
+      </div>
+    );
+  }
+
   const showAiSetup =
     setupAi &&
     !!user?.id &&

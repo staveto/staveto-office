@@ -1096,6 +1096,18 @@ export async function updateQuoteDraftItem(
   }
   if (data.note !== undefined) update.note = data.note.trim() || null;
   if (data.customerVisible !== undefined) update.customerVisible = data.customerVisible;
+  if (typeof data.evidenceCount === "number") {
+    update.evidenceCount = data.evidenceCount >= 0 ? data.evidenceCount : 0;
+  }
+  if (data.sourceOfQuantity !== undefined) {
+    update.sourceOfQuantity = data.sourceOfQuantity;
+  }
+  if (data.sourceDrawingId !== undefined) {
+    update.sourceDrawingId = data.sourceDrawingId || null;
+  }
+  if (data.takeoffStatus !== undefined) {
+    update.takeoffStatus = data.takeoffStatus || null;
+  }
 
   await updateDoc(ref, update);
   await updateProjectUpdatedAt(projectId);

@@ -165,6 +165,10 @@ export function ProjectCompactHeader({
   });
   const primaryTab = primaryAction.tab;
   const primaryLabel = t(primaryAction.labelKey);
+  const previewQuoteHref =
+    primaryAction.labelKey === "projects.cockpit.cta.previewQuote"
+      ? `/app/projects/${project.id}/print?from=quote`
+      : null;
 
   const showPlanningKpis =
     !quotePrep ||
@@ -286,13 +290,30 @@ export function ProjectCompactHeader({
       ) : null}
 
       <div className="flex flex-col gap-2 border-t border-[var(--po-card-border)]/50 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 sm:px-5">
-        <Button
-          size="lg"
-          className={cn(po.btnPrimaryLg, "w-full sm:w-auto")}
-          onClick={() => onNavigate(primaryTab)}
-        >
-          {primaryLabel}
-        </Button>
+        {previewQuoteHref ? (
+          <Button
+            size="lg"
+            className={cn(po.btnPrimaryLg, "w-full sm:w-auto")}
+            asChild
+          >
+            <Link
+              href={previewQuoteHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="project-header-preview-quote"
+            >
+              {primaryLabel}
+            </Link>
+          </Button>
+        ) : (
+          <Button
+            size="lg"
+            className={cn(po.btnPrimaryLg, "w-full sm:w-auto")}
+            onClick={() => onNavigate(primaryTab)}
+          >
+            {primaryLabel}
+          </Button>
+        )}
         <SecondaryActionsMenu onNavigate={onNavigate} t={t} className="w-full sm:w-auto" />
       </div>
     </header>

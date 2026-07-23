@@ -67,8 +67,11 @@ export function AiPriceLookupDialog({
       })
       .catch((e) => {
         if (cancelled) return;
+        const msg = e instanceof Error ? e.message : "";
         setError(
-          e instanceof Error ? e.message : t("takeoff.priceLookup.error")
+          msg === "GEMINI_NOT_CONFIGURED" || msg.includes("GEMINI_API_KEY")
+            ? t("takeoff.priceLookup.geminiMissing")
+            : msg || t("takeoff.priceLookup.error")
         );
       })
       .finally(() => {
@@ -92,7 +95,12 @@ export function AiPriceLookupDialog({
         setPriceText(String(r.unitPrice));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("takeoff.priceLookup.error"));
+      const msg = e instanceof Error ? e.message : "";
+      setError(
+        msg === "GEMINI_NOT_CONFIGURED" || msg.includes("GEMINI_API_KEY")
+          ? t("takeoff.priceLookup.geminiMissing")
+          : msg || t("takeoff.priceLookup.error")
+      );
     } finally {
       setLoading(false);
     }

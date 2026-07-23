@@ -3606,7 +3606,7 @@ export function DrawingPdfViewer({
                         strokeWidth={3}
                         paintOrder="stroke"
                       >
-                        {`${run.name} – ${run.cableTypeName} – ${run.finalLengthM} m`}
+                        {`${run.name} · ${run.cableTypeName} · ${run.finalLengthM} m`}
                       </text>
                     ) : null}
                   </g>

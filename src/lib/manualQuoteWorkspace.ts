@@ -12,6 +12,7 @@ import {
   type WorkType,
 } from "@/lib/workTypes";
 import { isManualQuoteWorkspaceEnabled } from "@/lib/projectCreationFeature";
+import type { QuoteDocumentMeta } from "@/lib/quoteDocumentMeta";
 
 const CATALOG_UNIT_TO_QUOTE: Record<string, string> = {
   pcs: "ks",
@@ -57,6 +58,50 @@ export function mergeQuoteDraftPlainNotes(
   }
 
   return trimmed;
+}
+
+/**
+ * Merge quote document fields (e.g. general description / scope) into
+ * quoteDraftNotes JSON without wiping AI meta or plain notes.
+ */
+export function mergeQuoteDraftDocumentMeta(
+  existing: string | undefined | null,
+  patch: Pick<QuoteDocumentMeta, "scopeOfWork">
+): string {
+  let base: Record<string, unknown> = {};
+  if (existing?.trim()) {
+    try {
+      const parsed = JSON.parse(existing) as Record<string, unknown>;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        base = { ...parsed };
+      } else {
+        base = { plainNotes: existing.trim() };
+      }
+    } catch {
+      base = { plainNotes: existing.trim() };
+    }
+  }
+
+  const prevMeta =
+    base.quoteDocumentMeta && typeof base.quoteDocumentMeta === "object"
+      ? { ...(base.quoteDocumentMeta as QuoteDocumentMeta) }
+      : {};
+
+  if (patch.scopeOfWork !== undefined) {
+    const trimmed = patch.scopeOfWork.trim();
+    if (trimmed) prevMeta.scopeOfWork = trimmed;
+    else delete prevMeta.scopeOfWork;
+  }
+
+  if (Object.keys(prevMeta).length > 0) base.quoteDocumentMeta = prevMeta;
+  else delete base.quoteDocumentMeta;
+
+  const keys = Object.keys(base);
+  if (keys.length === 0) return "";
+  if (keys.length === 1 && typeof base.plainNotes === "string") {
+    return base.plainNotes;
+  }
+  return JSON.stringify(base);
 }
 
 export function projectHasQuoteCustomer(

@@ -75,8 +75,14 @@ export async function lookupProductPriceOnWeb(
   });
 
   if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error || `Price lookup failed (${res.status})`);
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      message?: string;
+    };
+    if (body.error === "GEMINI_NOT_CONFIGURED" || body.message?.includes("GEMINI_API_KEY")) {
+      throw new Error("GEMINI_NOT_CONFIGURED");
+    }
+    throw new Error(body.message || body.error || `Price lookup failed (${res.status})`);
   }
 
   const data = (await res.json()) as { result: ProductPriceLookupResult };

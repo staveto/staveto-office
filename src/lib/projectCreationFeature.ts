@@ -48,6 +48,27 @@ export function projectQuoteTabHref(projectId: string): string {
 }
 
 /**
+ * Where to open a quote for editing.
+ * Draft quotes linked to a job → project `?tab=quote` (manual editor).
+ * Standalone / sent quotes → `/app/quotes/{id}`.
+ */
+export function getQuoteEditorHref(quote: {
+  id: string;
+  status?: string;
+  projectId?: string | null;
+}): string {
+  const projectId = quote.projectId?.trim();
+  if (
+    isManualQuoteWorkspaceEnabled() &&
+    quote.status === "draft" &&
+    projectId
+  ) {
+    return projectQuoteTabHref(projectId);
+  }
+  return `/app/quotes/${quote.id}`;
+}
+
+/**
  * Landing after simplified create/copy.
  * When manual quote workspace is off, fall back to project detail (Phase 1A).
  */

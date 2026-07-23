@@ -57,9 +57,11 @@ const STATUSES: CableRunStatus[] = ["draft", "review", "checked", "approved"];
 
 const STATUS_BADGE_CLASSES: Record<CableRunStatus, string> = {
   draft: "bg-muted text-muted-foreground",
-  review: "bg-amber-100 text-amber-800",
-  checked: "bg-blue-100 text-blue-800",
-  approved: "bg-emerald-100 text-emerald-800",
+  review:
+    "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300",
+  checked: "bg-blue-100 text-blue-800 dark:bg-blue-950/50 dark:text-blue-300",
+  approved:
+    "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300",
 };
 
 type Props = {
@@ -213,12 +215,12 @@ export function CableRunsPanel({
           ) : (
             <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
           )}
-          <Cable className="size-3.5 shrink-0 text-emerald-700" />
+          <Cable className="size-3.5 shrink-0 text-emerald-700 dark:text-emerald-400" />
           <span className="truncate text-xs font-semibold text-foreground">
             {t("takeoff.measure.cablesAndRoutes")}
           </span>
           {runs.length > 0 ? (
-            <span className="rounded-full bg-emerald-100 px-1.5 text-[10px] font-bold text-emerald-800">
+            <span className="rounded-full bg-emerald-100 px-1.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
               {runs.length}
             </span>
           ) : null}
@@ -228,7 +230,7 @@ export function CableRunsPanel({
             type="button"
             size="sm"
             variant="outline"
-            className="h-7 gap-1 border-emerald-600/50 text-xs text-emerald-700 hover:bg-emerald-50"
+            className="h-7 gap-1 border-emerald-600/50 text-xs text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
             data-testid="cable-runs-new"
             disabled={!hasCalibration}
             title={
@@ -250,7 +252,7 @@ export function CableRunsPanel({
       {open ? (
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto border-t border-border p-2.5">
           {!hasCalibration ? (
-            <p className="rounded-md border border-dashed border-amber-400/60 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-800">
+            <p className="rounded-md border border-dashed border-amber-400/60 bg-amber-500/10 px-2 py-1.5 text-[11px] text-amber-800 dark:text-amber-300">
               {t("takeoff.measure.scaleMissing")}
             </p>
           ) : null}
@@ -270,9 +272,9 @@ export function CableRunsPanel({
                       className={cn(
                         "rounded-md border px-2 py-1.5",
                         picked
-                          ? "border-emerald-600 bg-emerald-50/60"
+                          ? "border-emerald-600 bg-emerald-50/60 dark:border-emerald-500 dark:bg-emerald-950/45"
                           : highlighted
-                            ? "border-amber-500/70 bg-amber-50/40"
+                            ? "border-amber-500/70 bg-amber-50/40 dark:border-amber-500/60 dark:bg-amber-950/35"
                             : "border-border bg-card hover:border-emerald-600/50"
                       )}
                     >
@@ -320,7 +322,7 @@ export function CableRunsPanel({
                             className={cn(
                               "shrink-0 rounded p-1",
                               highlighted
-                                ? "bg-amber-100 text-amber-700"
+                                ? "bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300"
                                 : "text-muted-foreground hover:bg-muted"
                             )}
                             data-testid="cable-run-highlight"
@@ -357,7 +359,7 @@ export function CableRunsPanel({
                                   {t("takeoff.measure.runName")}
                                 </span>
                                 <Input
-                                  className="mt-0.5 h-7 text-xs"
+                                  className="mt-0.5 h-7 bg-background text-xs text-foreground"
                                   value={run.name}
                                   onChange={(e) =>
                                     onUpdateRun(run.id, { name: e.target.value })
@@ -436,7 +438,7 @@ export function CableRunsPanel({
                                           className={cn(
                                             "flex h-7 flex-1 items-center justify-center rounded-md border px-1",
                                             active
-                                              ? "border-emerald-600 bg-emerald-50"
+                                              ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/50"
                                               : "border-border bg-background hover:bg-muted/60"
                                           )}
                                           title={`${w} px`}
@@ -462,7 +464,7 @@ export function CableRunsPanel({
                                   {t("takeoff.measure.circuitName")}
                                 </span>
                                 <Input
-                                  className="mt-0.5 h-7 text-xs"
+                                  className="mt-0.5 h-7 bg-background text-xs text-foreground"
                                   value={run.circuitName ?? ""}
                                   placeholder={t("takeoff.measure.circuitPlaceholder")}
                                   onChange={(e) =>
@@ -475,7 +477,7 @@ export function CableRunsPanel({
                                   {t("takeoff.measure.cableType")}
                                 </span>
                                 <select
-                                  className="mt-0.5 h-7 w-full rounded-md border border-border bg-background px-2 text-xs"
+                                  className="mt-0.5 h-7 w-full rounded-md border border-border bg-background px-2 text-xs text-foreground"
                                   value={
                                     run.catalogItemId
                                       ? `catalog:${run.catalogItemId}`
@@ -523,7 +525,7 @@ export function CableRunsPanel({
                                   ) : null}
                                 </select>
                                 <Input
-                                  className="mt-1 h-7 text-xs"
+                                  className="mt-1 h-7 bg-background text-xs text-foreground"
                                   value={run.cableTypeName}
                                   placeholder={t("takeoff.measure.cableTypeCustom")}
                                   onChange={(e) =>
@@ -539,7 +541,7 @@ export function CableRunsPanel({
                                   {t("takeoff.measure.installationType")}
                                 </span>
                                 <select
-                                  className="mt-0.5 h-7 w-full rounded-md border border-border bg-background px-2 text-xs"
+                                  className="mt-0.5 h-7 w-full rounded-md border border-border bg-background px-2 text-xs text-foreground"
                                   value={run.installationType}
                                   onChange={(e) =>
                                     onUpdateRun(run.id, {
@@ -564,7 +566,7 @@ export function CableRunsPanel({
                                     type="number"
                                     min={0}
                                     step={0.1}
-                                    className="mt-0.5 h-7 text-xs"
+                                    className="mt-0.5 h-7 bg-background text-xs text-foreground"
                                     value={run.verticalLengthM}
                                     onChange={(e) =>
                                       onUpdateRun(run.id, {
@@ -581,7 +583,7 @@ export function CableRunsPanel({
                                     type="number"
                                     min={0}
                                     step={0.1}
-                                    className="mt-0.5 h-7 text-xs"
+                                    className="mt-0.5 h-7 bg-background text-xs text-foreground"
                                     value={run.fixedReserveM}
                                     onChange={(e) =>
                                       onUpdateRun(run.id, {
@@ -598,7 +600,7 @@ export function CableRunsPanel({
                                     type="number"
                                     min={0}
                                     step={1}
-                                    className="mt-0.5 h-7 text-xs"
+                                    className="mt-0.5 h-7 bg-background text-xs text-foreground"
                                     value={run.reservePercent}
                                     onChange={(e) =>
                                       onUpdateRun(run.id, {
@@ -615,7 +617,7 @@ export function CableRunsPanel({
                                     type="number"
                                     min={0.1}
                                     step={0.5}
-                                    className="mt-0.5 h-7 text-xs"
+                                    className="mt-0.5 h-7 bg-background text-xs text-foreground"
                                     value={run.roundingStepM}
                                     onChange={(e) =>
                                       onUpdateRun(run.id, {
@@ -630,7 +632,7 @@ export function CableRunsPanel({
                                   {t("takeoff.measure.status")}
                                 </span>
                                 <select
-                                  className="mt-0.5 h-7 w-full rounded-md border border-border bg-background px-2 text-xs"
+                                  className="mt-0.5 h-7 w-full rounded-md border border-border bg-background px-2 text-xs text-foreground"
                                   data-testid="cable-run-status"
                                   value={run.status}
                                   onChange={(e) =>
@@ -669,7 +671,7 @@ export function CableRunsPanel({
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                className="h-7 flex-1 gap-1 border-emerald-600/50 text-xs text-emerald-700 hover:bg-emerald-50"
+                                className="h-7 flex-1 gap-1 border-emerald-600/50 text-xs text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
                                 data-testid="cable-run-approve"
                                 onClick={() =>
                                   onUpdateRun(run.id, { status: "approved" })
@@ -684,7 +686,7 @@ export function CableRunsPanel({
                                 type="button"
                                 size="sm"
                                 variant="outline"
-                                className="h-7 gap-1 text-xs text-red-600 hover:bg-red-50"
+                                className="h-7 gap-1 text-xs text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40"
                                 data-testid="cable-run-delete"
                                 onClick={() => onDeleteRun(run.id)}
                               >
@@ -716,7 +718,7 @@ export function CableRunsPanel({
                 {onSetHighlightedRuns && highlightedRunIds.length > 0 ? (
                   <button
                     type="button"
-                    className="shrink-0 text-[10px] font-semibold text-amber-700 hover:underline"
+                    className="shrink-0 text-[10px] font-semibold text-amber-700 hover:underline dark:text-amber-400"
                     data-testid="cable-run-highlight-clear"
                     onClick={() => onSetHighlightedRuns([])}
                   >
@@ -756,10 +758,10 @@ export function CableRunsPanel({
                             });
                   const statusClass =
                     status === "synced"
-                      ? "text-emerald-700"
+                      ? "text-emerald-700 dark:text-emerald-400"
                       : status === "not_approved"
                         ? "text-muted-foreground"
-                        : "text-amber-700";
+                        : "text-amber-700 dark:text-amber-400";
                   const row = (
                     <>
                       {onSetHighlightedRuns ? (
@@ -800,7 +802,7 @@ export function CableRunsPanel({
                           className={cn(
                             "flex w-full items-start gap-1.5 rounded px-1 py-0.5 text-left text-[11px]",
                             allOn
-                              ? "bg-amber-100/70 text-amber-900"
+                              ? "bg-amber-100/70 text-amber-900 dark:bg-amber-950/45 dark:text-amber-200"
                               : "hover:bg-muted"
                           )}
                           data-testid="cable-run-highlight-group"
@@ -854,7 +856,7 @@ export function CableRunsPanel({
                     }`}
               </Button>
               {exportMessage ? (
-                <p className="text-[11px] text-emerald-700" role="status">
+                <p className="text-[11px] text-emerald-700 dark:text-emerald-400" role="status">
                   {exportMessage}
                 </p>
               ) : null}

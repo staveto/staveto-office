@@ -53,6 +53,8 @@ export type ElectricalCatalogProduct = {
   series: string | null;
   productType: string | null;
   unit: "ks";
+  /** Product thumbnail (BUCO CDN). Optional for older imports. */
+  imageUrl: string | null;
   attributes: ElectricalProductAttributes;
   supplier: {
     supplierId: "buco";
@@ -99,6 +101,8 @@ export type BucoRawProduct = {
   cena_s_dph?: string;
   cena_bez_dph?: string;
   sklad?: string;
+  /** Absolute image URL from scraper (may be empty). */
+  obrazok_url?: string;
   url: string;
   sourceCategoryPath?: string;
   sourceCategoryName?: string;
@@ -111,10 +115,12 @@ export type BucoScraperState = {
     string,
     {
       name?: string;
+      nazov?: string;
       url?: string;
       path?: string;
       parentPath?: string | null;
       children?: string[];
+      products?: string[];
     }
   >;
   products?: Record<string, BucoRawProduct>;

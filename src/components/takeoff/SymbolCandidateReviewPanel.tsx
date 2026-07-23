@@ -204,6 +204,8 @@ type Props = {
   onMoveConfirmedToCategory?: (candidateId: string, label: string) => Promise<void>;
   /** Rename a whole position (relabels every mark in it; merges on name clash). */
   onRenameCategory?: (categoryKey: string, newLabel: string) => Promise<void>;
+  /** Delete every confirmed mark in a position/category (and sync quote). */
+  onDeleteCategory?: (categoryKey: string) => Promise<void>;
   /**
    * Apply a looked-up unit price into the project quote draft for this article.
    * Undefined hides the "Doplniť cenu" action.
@@ -283,6 +285,7 @@ export function SymbolCandidateReviewPanel({
   onSetHighlightedCategories,
   onMoveConfirmedToCategory,
   onRenameCategory,
+  onDeleteCategory,
   onApplyPrice,
   persistKey = null,
 }: Props) {
@@ -328,6 +331,12 @@ export function SymbolCandidateReviewPanel({
   const [renameFor, setRenameFor] = useState<{ key: string; label: string } | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
+  const [deleteCategoryFor, setDeleteCategoryFor] = useState<{
+    key: string;
+    label: string;
+    count: number;
+  } | null>(null);
+  const [deleteCategoryBusy, setDeleteCategoryBusy] = useState(false);
   const [changeTypeFor, setChangeTypeFor] = useState<AnalyzeRegionCandidateDto | null>(
     null
   );
@@ -865,6 +874,24 @@ export function SymbolCandidateReviewPanel({
                             <Pencil className="size-3.5" />
                           </button>
                         ) : null}
+                        {canReview && onDeleteCategory ? (
+                          <button
+                            type="button"
+                            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            disabled={busy || deleteCategoryBusy}
+                            data-testid="category-delete"
+                            title={t("takeoff.category.delete")}
+                            onClick={() =>
+                              setDeleteCategoryFor({
+                                key: cat.key,
+                                label: cat.label,
+                                count: cat.candidates.length,
+                              })
+                            }
+                          >
+                            <Trash2 className="size-3.5" />
+                          </button>
+                        ) : null}
                         {onApplyPrice ? (
                           <Button
                             type="button"
@@ -1329,6 +1356,54 @@ export function SymbolCandidateReviewPanel({
             >
               <Trash2 className="mr-1 size-3.5" />
               {t("takeoff.review.delete")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!deleteCategoryFor}
+        onOpenChange={(open) => {
+          if (!open && !deleteCategoryBusy) setDeleteCategoryFor(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("takeoff.category.deleteTitle")}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {t("takeoff.category.deleteBody", {
+              name: deleteCategoryFor?.label ?? "",
+              count: deleteCategoryFor?.count ?? 0,
+            })}
+          </p>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={deleteCategoryBusy}
+              onClick={() => setDeleteCategoryFor(null)}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={busy || deleteCategoryBusy || !deleteCategoryFor}
+              data-testid="confirm-delete-category"
+              onClick={async () => {
+                if (!deleteCategoryFor || !onDeleteCategory) return;
+                setDeleteCategoryBusy(true);
+                try {
+                  await onDeleteCategory(deleteCategoryFor.key);
+                  setDeleteCategoryFor(null);
+                } finally {
+                  setDeleteCategoryBusy(false);
+                }
+              }}
+            >
+              <Trash2 className="mr-1 size-3.5" />
+              {t("takeoff.category.deleteAction")}
             </Button>
           </DialogFooter>
         </DialogContent>

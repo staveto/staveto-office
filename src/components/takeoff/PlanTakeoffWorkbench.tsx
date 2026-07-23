@@ -120,6 +120,7 @@ import {
 } from "@/lib/takeoff/takeoffCategories";
 import {
   addTakeoffLinesToQuoteDraft,
+  reconcileDrawingQuoteItemsFromConfirmedMarks,
   syncCatalogMarkedQtyToQuote,
 } from "@/services/takeoff/takeoffQuoteService";
 import {
@@ -455,14 +456,30 @@ export function PlanTakeoffWorkbench({
         ? listTakeoffItems(projectId, drawingId)
         : Promise.resolve([]),
     ])
-      .then(([list, candidates, items]) => {
+      .then(async ([list, candidates, items]) => {
         if (cancelled) return;
         setOccurrences(list);
-        if (candidates.length) {
-          setRegionCandidates(candidates.map(dtoFromSymbolCandidate));
+        const dtos = candidates.map(dtoFromSymbolCandidate);
+        if (dtos.length) {
+          setRegionCandidates(dtos);
           setRightTab("candidates");
+        } else {
+          setRegionCandidates([]);
         }
         setTakeoffItems(items);
+        // Drop / resize quote rows that no longer match confirmed marks on
+        // this drawing (e.g. marks deleted earlier while quote stayed open).
+        try {
+          await reconcileDrawingQuoteItemsFromConfirmedMarks({
+            projectId,
+            drawingId,
+            confirmedLabels: dtos
+              .filter((c) => c.status === "confirmed")
+              .map((c) => categoryLabelForCandidate(c)),
+          });
+        } catch {
+          /* best-effort — non-draft jobs may reject quote edits */
+        }
       })
       .catch(() => {
         if (!cancelled) showToast(t("takeoff.toast.loadFailed"));
@@ -1179,11 +1196,39 @@ export function PlanTakeoffWorkbench({
     async (candidateId: string) => {
       const dto = regionCandidates.find((c) => c.id === candidateId);
       if (!dto) return;
+      const label = categoryLabelForCandidate(dto);
+      const key = categoryKeyForLabel(label);
+      const remainingQty = regionCandidates.filter(
+        (c) =>
+          c.id !== candidateId &&
+          c.status === "confirmed" &&
+          categoryKeyForLabel(categoryLabelForCandidate(c)) === key
+      ).length;
       setReviewBusy(true);
       try {
         await unconfirmAndDeleteSymbol({ projectId, candidateId });
         removeCandidateLocal(candidateId);
         await refreshTakeoffItems();
+        const binding = catalogBindingsRef.current.get(key);
+        try {
+          const quoteItemId = await syncCatalogMarkedQtyToQuote({
+            projectId,
+            drawingId,
+            name: label,
+            qty: remainingQty,
+            unit: binding?.unit ?? "ks",
+            ...(binding ? { unitPrice: binding.unitPrice } : {}),
+            note: binding?.note,
+            quoteItemId: binding?.quoteItemId,
+          });
+          if (quoteItemId && binding) {
+            catalogBindingsRef.current.set(key, { ...binding, quoteItemId });
+          } else if (!quoteItemId) {
+            catalogBindingsRef.current.delete(key);
+          }
+        } catch {
+          /* mark deleted — quote sync is best-effort */
+        }
         showToast(t("takeoff.toast.confirmedDeleted"));
       } catch {
         showToast(t("takeoff.toast.reviewFailed"));
@@ -1191,7 +1236,78 @@ export function PlanTakeoffWorkbench({
         setReviewBusy(false);
       }
     },
-    [projectId, regionCandidates, removeCandidateLocal, refreshTakeoffItems, showToast, t]
+    [
+      projectId,
+      drawingId,
+      regionCandidates,
+      removeCandidateLocal,
+      refreshTakeoffItems,
+      showToast,
+      t,
+    ]
+  );
+
+  /** Delete every confirmed mark in one category (+ remove quote line). */
+  const handleDeleteCategory = useCallback(
+    async (categoryKey: string) => {
+      const targets = regionCandidates.filter(
+        (c) =>
+          c.status === "confirmed" &&
+          categoryKeyForLabel(categoryLabelForCandidate(c)) === categoryKey
+      );
+      if (targets.length === 0) return;
+      const label = categoryLabelForCandidate(targets[0]!);
+      setReviewBusy(true);
+      try {
+        for (const c of targets) {
+          try {
+            await unconfirmAndDeleteSymbol({ projectId, candidateId: c.id });
+            removeCandidateLocal(c.id);
+          } catch {
+            /* keep going — one bad row must not block the rest */
+          }
+        }
+        await refreshTakeoffItems();
+        const binding = catalogBindingsRef.current.get(categoryKey);
+        try {
+          await syncCatalogMarkedQtyToQuote({
+            projectId,
+            drawingId,
+            name: label,
+            qty: 0,
+            unit: binding?.unit ?? "ks",
+            ...(binding ? { unitPrice: binding.unitPrice } : {}),
+            note: binding?.note,
+            quoteItemId: binding?.quoteItemId,
+          });
+          catalogBindingsRef.current.delete(categoryKey);
+        } catch {
+          /* category cleared — quote sync is best-effort */
+        }
+        if (activeCategory?.key === categoryKey) {
+          setActiveCategory(null);
+          setMarkerMode("select");
+        }
+        showToast(
+          t("takeoff.toast.categoryDeleted", {
+            label,
+            count: targets.length,
+          })
+        );
+      } finally {
+        setReviewBusy(false);
+      }
+    },
+    [
+      projectId,
+      drawingId,
+      regionCandidates,
+      removeCandidateLocal,
+      refreshTakeoffItems,
+      activeCategory?.key,
+      showToast,
+      t,
+    ]
   );
 
   /**
@@ -1494,6 +1610,7 @@ export function PlanTakeoffWorkbench({
               note: binding.note,
               quoteItemId: binding.quoteItemId,
             });
+            if (!quoteItemId) return;
             const next: CatalogMarkBinding = { ...binding, quoteItemId };
             catalogBindingsRef.current.set(activeCategory.key, next);
             setActiveCategory((prev) =>
@@ -1571,6 +1688,9 @@ export function PlanTakeoffWorkbench({
           note: input.note ?? binding?.note,
           quoteItemId: binding?.quoteItemId,
         });
+        if (!quoteItemId) {
+          throw new Error("Quote item missing after price apply");
+        }
         catalogBindingsRef.current.set(key, {
           productId: binding?.productId ?? `price:${key}`,
           unitPrice: input.unitPrice,
@@ -2638,6 +2758,9 @@ export function PlanTakeoffWorkbench({
                     }
                     onRenameCategory={
                       perms.allowConfirm ? handleRenameCategory : undefined
+                    }
+                    onDeleteCategory={
+                      perms.allowConfirm ? handleDeleteCategory : undefined
                     }
                     onApplyPrice={
                       perms.allowEdit ? handleApplyPrice : undefined

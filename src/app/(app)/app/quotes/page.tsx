@@ -21,6 +21,10 @@ import { listQuotesForWorkspaceEnsured } from "@/services/quotes";
 import { QuoteStatusBadge } from "@/components/quotes/QuoteStatusBadge";
 import { useSetupChecklistVisit } from "@/hooks/useSetupChecklistVisit";
 import { useQuotesAgentScreenSync } from "@/hooks/useManagerAgentScreenSync";
+import {
+  getQuoteEditorHref,
+  projectQuoteTabHref,
+} from "@/lib/projectCreationFeature";
 
 export default function QuotesPage() {
   const { t } = useI18n();
@@ -124,7 +128,10 @@ export default function QuotesPage() {
               {quotes.map((q) => (
                 <TableRow key={q.id}>
                   <TableCell className="font-medium">
-                    <Link href={`/app/quotes/${q.id}`} className="hover:underline text-[#1D376A]">
+                    <Link
+                      href={getQuoteEditorHref(q)}
+                      className="hover:underline text-[#1D376A]"
+                    >
                       {q.title}
                     </Link>
                   </TableCell>
@@ -132,7 +139,7 @@ export default function QuotesPage() {
                   <TableCell className="text-muted-foreground text-sm">
                     {q.projectName && q.projectId ? (
                       <Link
-                        href={`/app/projects/${q.projectId}?tab=quote`}
+                        href={projectQuoteTabHref(q.projectId)}
                         className="hover:underline"
                       >
                         {q.projectName}
@@ -149,7 +156,7 @@ export default function QuotesPage() {
                   </TableCell>
                   <TableCell>
                     <Link
-                      href={`/app/quotes/${q.id}`}
+                      href={getQuoteEditorHref(q)}
                       className={buttonVariants({ variant: "ghost", size: "sm" })}
                     >
                       {t("quotes.view")}

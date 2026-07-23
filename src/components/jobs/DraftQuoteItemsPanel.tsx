@@ -11,6 +11,7 @@ import {
   BookOpen,
   AlertTriangle,
   CircleDollarSign,
+  Printer,
 } from "lucide-react";
 import {
   Card,
@@ -63,6 +64,7 @@ import type { ElectricalCatalogProduct } from "@/lib/catalog/electrical/types";
 import { productUnitPriceEur } from "@/services/catalog/electricalCatalogReadService";
 import {
   catalogUnitToQuoteDraftUnit,
+  mergeQuoteDraftDocumentMeta,
   mergeQuoteDraftPlainNotes,
   projectHasQuoteCustomer,
   shouldConfirmQuoteItemDelete,
@@ -73,6 +75,8 @@ import {
   shouldApplyAutosaveResult,
 } from "@/lib/quoteDraftAutosave";
 import { plainNotesFromQuoteDraft } from "@/components/projects/setup/aiSetupHelpers";
+import { parseQuoteDocumentMeta } from "@/lib/quoteDocumentMeta";
+import { restoreProjectQuoteDraftItemsIfEmpty } from "@/services/takeoff/restoreProjectQuoteDraftItems";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -560,15 +564,30 @@ export function DraftQuoteItemsPanel({
   };
   const [vatPercent, setVatPercent] = useState(project.quoteDraftVatPercent ?? 20);
   const [notes, setNotes] = useState(() => plainNotesFromQuoteDraft(project.quoteDraftNotes));
+  const [description, setDescription] = useState(
+    () => parseQuoteDocumentMeta(project.quoteDraftNotes).scopeOfWork ?? ""
+  );
+  const [exportingPdf, setExportingPdf] = useState(false);
   const quoteDraftNotesRef = useRef(project.quoteDraftNotes);
   const metaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(
-    async (opts?: { silent?: boolean }) => {
+    async (opts?: { silent?: boolean; tryRestore?: boolean }) => {
       if (!opts?.silent) setLoading(true);
       try {
-        const list = await listProjectQuoteDraftItems(project.id);
+        let list = await listProjectQuoteDraftItems(project.id);
+        if (opts?.tryRestore !== false) {
+          const restored = await restoreProjectQuoteDraftItemsIfEmpty({
+            projectId: project.id,
+            workspace: activeWorkspace,
+            uid: userId,
+          });
+          if (restored.restored > 0 || restored.deduped > 0) {
+            list = await listProjectQuoteDraftItems(project.id);
+            setSaveStatus("saved");
+          }
+        }
         setItems(list);
         onQuoteItemsChanged?.(list);
       } catch (e) {
@@ -577,7 +596,7 @@ export function DraftQuoteItemsPanel({
         if (!opts?.silent) setLoading(false);
       }
     },
-    [project.id, t, onQuoteItemsChanged]
+    [project.id, t, onQuoteItemsChanged, activeWorkspace, userId]
   );
 
   const loadSilent = useCallback(async () => {
@@ -597,9 +616,19 @@ export function DraftQuoteItemsPanel({
     void load();
   }, [load]);
 
+  // After takeoff sync (marks → quoteItems), refresh when the tab is visible again.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void load({ silent: true });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [load]);
+
   useEffect(() => {
     setVatPercent(project.quoteDraftVatPercent ?? 20);
     setNotes(plainNotesFromQuoteDraft(project.quoteDraftNotes));
+    setDescription(parseQuoteDocumentMeta(project.quoteDraftNotes).scopeOfWork ?? "");
     quoteDraftNotesRef.current = project.quoteDraftNotes;
   }, [project.quoteDraftVatPercent, project.quoteDraftNotes]);
 
@@ -626,16 +655,19 @@ export function DraftQuoteItemsPanel({
     vatPercent
   );
 
-  const scheduleMetaSave = (vat: number, noteText: string) => {
+  const scheduleMetaSave = (vat: number, noteText: string, descriptionText: string) => {
     if (metaTimer.current) clearTimeout(metaTimer.current);
     metaTimer.current = setTimeout(async () => {
       setError(null);
       setSaveStatus("saving");
       try {
-        const mergedNotes = mergeQuoteDraftPlainNotes(
+        const withNotes = mergeQuoteDraftPlainNotes(
           quoteDraftNotesRef.current,
           noteText
         );
+        const mergedNotes = mergeQuoteDraftDocumentMeta(withNotes, {
+          scopeOfWork: descriptionText,
+        });
         const updated = await updateDraftJobFields(project.id, {
           quoteDraftVatPercent: vat,
           quoteDraftNotes: mergedNotes,
@@ -651,6 +683,17 @@ export function DraftQuoteItemsPanel({
   };
 
   const hasItems = items.length > 0;
+  const printHref = `/app/projects/${project.id}/print?from=quote`;
+
+  const handleExportPdf = () => {
+    setExportingPdf(true);
+    setError(null);
+    try {
+      window.open(printHref, "_blank", "noopener,noreferrer");
+    } finally {
+      window.setTimeout(() => setExportingPdf(false), 400);
+    }
+  };
   const showCustomerHint = shouldShowQuoteCustomerHint(project);
 
   const handleAddCustom = async (category: QuoteDraftItemCategory = "material") => {
@@ -768,27 +811,46 @@ export function DraftQuoteItemsPanel({
             <CardTitle className="text-base">{t("projects.draft.sectionQuoteItems")}</CardTitle>
             <CardDescription>{t("projects.draft.quoteItemsHint")}</CardDescription>
           </div>
-          {saveStatusLabel ? (
-            <p
-              className={
-                saveStatus === "error"
-                  ? "text-xs text-destructive"
-                  : "text-xs text-muted-foreground"
-              }
-              role="status"
-              aria-live="polite"
-              data-testid="quote-save-status"
+          <div className="flex flex-wrap items-center gap-2">
+            {saveStatusLabel ? (
+              <p
+                className={
+                  saveStatus === "error"
+                    ? "text-xs text-destructive"
+                    : "text-xs text-muted-foreground"
+                }
+                role="status"
+                aria-live="polite"
+                data-testid="quote-save-status"
+              >
+                {saveStatus === "saving" ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Loader2 className="size-3 animate-spin" />
+                    {saveStatusLabel}
+                  </span>
+                ) : (
+                  saveStatusLabel
+                )}
+              </p>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              asChild
             >
-              {saveStatus === "saving" ? (
-                <span className="inline-flex items-center gap-1">
-                  <Loader2 className="size-3 animate-spin" />
-                  {saveStatusLabel}
-                </span>
-              ) : (
-                saveStatusLabel
-              )}
-            </p>
-          ) : null}
+              <Link
+                href={printHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="quote-preview-link"
+              >
+                <Printer className="size-3.5" />
+                {t("projects.cockpit.cta.previewQuote")}
+              </Link>
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -852,10 +914,52 @@ export function DraftQuoteItemsPanel({
                 <Plus className="size-4 mr-1" />
                 {t("projects.draft.quoteItem.addCustom")}
               </Button>
+              <Button type="button" variant="outline" size="sm" className="gap-1.5" asChild>
+                <Link
+                  href={printHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid="quote-empty-preview"
+                >
+                  <Printer className="size-4" />
+                  {t("projects.cockpit.cta.previewQuote")}
+                </Link>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={rowActionBusy || loading}
+                onClick={() => void load({ tryRestore: true })}
+                data-testid="quote-empty-restore"
+              >
+                {t("projects.draft.quoteItem.restoreItems")}
+              </Button>
             </div>
           </div>
         ) : (
           <>
+            <div className="space-y-1.5">
+              <Label htmlFor="quote-description">
+                {t("projects.draft.quoteItem.description")}
+              </Label>
+              <Textarea
+                id="quote-description"
+                value={description}
+                rows={3}
+                placeholder={t("projects.draft.quoteItem.descriptionPlaceholder")}
+                onChange={(e) => {
+                  setDescription(e.target.value);
+                  scheduleMetaSave(vatPercent, notes, e.target.value);
+                }}
+                className="mt-1"
+                data-testid="quote-general-description"
+              />
+              <p className="text-xs text-muted-foreground">
+                {t("projects.draft.quoteItem.descriptionHint")}
+              </p>
+            </div>
+
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
@@ -919,7 +1023,7 @@ export function DraftQuoteItemsPanel({
                     const v = parseFloat(e.target.value);
                     const next = Number.isFinite(v) ? v : 0;
                     setVatPercent(next);
-                    scheduleMetaSave(next, notes);
+                    scheduleMetaSave(next, notes, description);
                   }}
                   className="mt-1 max-w-[120px]"
                 />
@@ -933,7 +1037,7 @@ export function DraftQuoteItemsPanel({
                   placeholder={t("projects.draft.quoteItem.notesPlaceholder")}
                   onChange={(e) => {
                     setNotes(e.target.value);
-                    scheduleMetaSave(vatPercent, e.target.value);
+                    scheduleMetaSave(vatPercent, e.target.value, description);
                   }}
                   className="mt-1"
                 />
@@ -974,11 +1078,21 @@ export function DraftQuoteItemsPanel({
                 ) : null}
                 {t("quotes.createFromProject")}
               </Button>
-              <Button type="button" variant="outline" size="sm" disabled title={t("dashboard.comingSoon")}>
-                {t("projects.draft.exportPdf")}
-                <span className="ml-2 text-[10px] uppercase text-muted-foreground">
-                  {t("dashboard.comingSoon")}
-                </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={exportingPdf}
+                onClick={handleExportPdf}
+                data-testid="quote-export-pdf"
+                className="gap-1.5"
+              >
+                {exportingPdf ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Printer className="size-4" />
+                )}
+                {t("projects.cockpit.cta.previewQuote")}
               </Button>
               <Button
                 type="button"

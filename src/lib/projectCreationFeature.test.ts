@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   SIMPLIFIED_LEGACY_WORK_TYPE,
+  getQuoteEditorHref,
   isAiProjectCreationEnabled,
   isLegacyProjectTypeSettingsEnabled,
   isManualQuoteWorkspaceEnabled,
@@ -66,5 +67,20 @@ describe("projectCreationFeature", () => {
   it("lands create/copy on project detail when manual workspace is off", () => {
     vi.stubEnv("NEXT_PUBLIC_ENABLE_MANUAL_QUOTE_WORKSPACE", "0");
     expect(projectCreateLandingHref("abc")).toBe("/app/projects/abc");
+  });
+
+  it("opens draft job quotes on the project quote tab", () => {
+    expect(
+      getQuoteEditorHref({ id: "q1", status: "draft", projectId: "p1" })
+    ).toBe("/app/projects/p1?tab=quote");
+  });
+
+  it("keeps standalone quotes on /app/quotes/{id}", () => {
+    expect(getQuoteEditorHref({ id: "q1", status: "draft" })).toBe(
+      "/app/quotes/q1"
+    );
+    expect(
+      getQuoteEditorHref({ id: "q1", status: "sent", projectId: "p1" })
+    ).toBe("/app/quotes/q1");
   });
 });

@@ -3,6 +3,7 @@ export * from "./normalizeName";
 export * from "./prices";
 export * from "./brands";
 export * from "./ids";
+export * from "./images";
 export * from "./category-rules";
 export * from "./searchTokens";
 export * from "./parseSource";

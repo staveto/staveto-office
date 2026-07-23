@@ -27,6 +27,11 @@ import type {
   ElectricalCatalogProduct,
 } from "@/lib/catalog/electrical/types";
 import {
+  isCatalogImageFailed,
+  markCatalogImageFailed,
+  resolveCatalogProductImageUrl,
+} from "@/lib/catalog/electrical/images";
+import {
   filterProductsByCategory,
   searchElectricalProducts,
 } from "@/lib/catalog/electrical/searchSuggest";
@@ -43,12 +48,71 @@ type Props = {
   onOpenCompanyCatalog?: () => void;
 };
 
+/** Keep the DOM small — full catalog is 1k+ rows. */
+const PAGE_SIZE = 40;
+
 function formatProductPrice(product: ElectricalCatalogProduct): string {
   const eur = productUnitPriceEur(product);
   if (eur <= 0 && product.pricing.priceStatus !== "valid") {
     return "—";
   }
   return formatMoney(eur, product.pricing.currency || "EUR");
+}
+
+function ProductThumb({
+  product,
+  size = "md",
+}: {
+  product: ElectricalCatalogProduct;
+  size?: "sm" | "md";
+}) {
+  const url = useMemo(
+    () => resolveCatalogProductImageUrl(product),
+    [product.imageUrl, product.supplierSku]
+  );
+  const [failed, setFailed] = useState(() =>
+    url ? isCatalogImageFailed(url) : true
+  );
+
+  useEffect(() => {
+    setFailed(url ? isCatalogImageFailed(url) : true);
+  }, [url]);
+
+  const box =
+    size === "sm" ? "size-10 rounded-md" : "size-14 rounded-lg sm:size-16";
+
+  if (!url || failed) {
+    return (
+      <div
+        className={cn(
+          "flex shrink-0 items-center justify-center border border-border bg-muted/50 text-muted-foreground",
+          box
+        )}
+        aria-hidden
+      >
+        <Package className={size === "sm" ? "size-4" : "size-5"} />
+      </div>
+    );
+  }
+  return (
+    // External BUCO CDN — plain img so we do not need next/image remote config.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={url}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      referrerPolicy="no-referrer"
+      onError={() => {
+        markCatalogImageFailed(url);
+        setFailed(true);
+      }}
+      className={cn(
+        "shrink-0 border border-border bg-white object-contain dark:bg-card",
+        box
+      )}
+    />
+  );
 }
 
 export function ElectricalCatalogPickerDialog({
@@ -69,6 +133,7 @@ export function ElectricalCatalogPickerDialog({
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [addedCount, setAddedCount] = useState(0);
   const [justAddedId, setJustAddedId] = useState<string | null>(null);
+  const [visibleLimit, setVisibleLimit] = useState(PAGE_SIZE);
   const [wasOpen, setWasOpen] = useState(open);
   const searchWrapRef = useRef<HTMLDivElement>(null);
 
@@ -82,15 +147,16 @@ export function ElectricalCatalogPickerDialog({
       setAddedCount(0);
       setJustAddedId(null);
       setError(null);
-      setLoading(true);
-      setCategories([]);
-      setProducts([]);
+      setVisibleLimit(PAGE_SIZE);
+      // Keep previous catalog in memory — avoid full Firestore re-fetch flash.
+      if (products.length === 0) setLoading(true);
     }
   }
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    if (products.length === 0) setLoading(true);
     void loadElectricalCatalog()
       .then(({ categories: cats, products: prods }) => {
         if (cancelled) return;
@@ -103,13 +169,13 @@ export function ElectricalCatalogPickerDialog({
         setError(
           e instanceof Error ? e.message : t("projects.draft.quoteItem.catalogLoadError")
         );
-        setCategories([]);
-        setProducts([]);
         setLoading(false);
       });
     return () => {
       cancelled = true;
     };
+    // products.length intentionally omitted — only gate initial loading UI
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, t]);
 
   useEffect(() => {
@@ -172,16 +238,26 @@ export function ElectricalCatalogPickerDialog({
     });
   }, [products, search, activeCategoryId]);
 
-  const visibleProducts = useMemo(() => {
+  const filteredProducts = useMemo(() => {
     const q = search.trim();
     if (q.length >= 1) {
       return searchElectricalProducts(products, q, {
         categoryId: activeCategoryId,
-        limit: 200,
+        limit: 300,
       }).map((h) => h.product);
     }
     return filterProductsByCategory(products, activeCategoryId);
   }, [products, search, activeCategoryId]);
+
+  const visibleProducts = useMemo(
+    () => filteredProducts.slice(0, visibleLimit),
+    [filteredProducts, visibleLimit]
+  );
+  const hasMore = visibleLimit < filteredProducts.length;
+
+  useEffect(() => {
+    setVisibleLimit(PAGE_SIZE);
+  }, [search, activeCategoryId]);
 
   const handlePick = (product: ElectricalCatalogProduct) => {
     onPick(product);
@@ -340,7 +416,7 @@ export function ElectricalCatalogPickerDialog({
                             className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left hover:bg-muted"
                             onClick={() => handlePick(product)}
                           >
-                            <Package className="size-4 shrink-0 text-muted-foreground" />
+                            <ProductThumb product={product} size="sm" />
                             <span className="min-w-0 flex-1">
                               <span className="block truncate text-sm font-medium">
                                 {product.name}
@@ -383,14 +459,19 @@ export function ElectricalCatalogPickerDialog({
                 <div className="flex items-baseline justify-between gap-3">
                   <h3 className="text-sm font-semibold text-foreground">{heading}</h3>
                   <p className="shrink-0 text-xs text-muted-foreground">
-                    {t("projects.draft.quoteItem.catalogResultCount", {
-                      count: String(visibleProducts.length),
-                    })}
+                    {filteredProducts.length > PAGE_SIZE
+                      ? t("projects.draft.quoteItem.catalogShowingCount", {
+                          shown: String(visibleProducts.length),
+                          total: String(filteredProducts.length),
+                        })
+                      : t("projects.draft.quoteItem.catalogResultCount", {
+                          count: String(filteredProducts.length),
+                        })}
                   </p>
                 </div>
               </div>
 
-              {visibleProducts.length === 0 ? (
+              {filteredProducts.length === 0 ? (
                 <p className="px-5 py-16 text-center text-sm text-muted-foreground">
                   {t("projects.draft.quoteItem.catalogNoMatches")}
                 </p>
@@ -404,11 +485,12 @@ export function ElectricalCatalogPickerDialog({
                           type="button"
                           onClick={() => handlePick(product)}
                           className={cn(
-                            "flex w-full items-center gap-4 px-4 py-3.5 text-left transition-colors sm:px-5",
+                            "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors sm:gap-4 sm:px-5 sm:py-3.5",
                             "hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#1D376A]/40",
                             justAdded && "bg-emerald-50 dark:bg-emerald-950/30"
                           )}
                         >
+                          <ProductThumb product={product} />
                           <div className="min-w-0 flex-1">
                             <p className="text-[11px] text-muted-foreground">
                               {product.categoryPathNames.join(" › ")}
@@ -450,6 +532,20 @@ export function ElectricalCatalogPickerDialog({
                       </li>
                     );
                   })}
+                  {hasMore ? (
+                    <li className="px-4 py-3 sm:px-5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() =>
+                          setVisibleLimit((n) => n + PAGE_SIZE)
+                        }
+                      >
+                        {t("projects.draft.quoteItem.catalogLoadMore")}
+                      </Button>
+                    </li>
+                  ) : null}
                 </ul>
               )}
 

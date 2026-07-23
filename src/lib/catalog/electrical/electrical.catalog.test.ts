@@ -128,5 +128,27 @@ describe("buildElectricalCatalogFromProducts", () => {
     expect(products.find((p) => p.id === "buco_222")?.name.toLowerCase()).toContain(
       "valena"
     );
+    expect(products.find((p) => p.id === "buco_111")?.imageUrl).toBe(
+      "https://www.buco.sk/assets/images/produkty/thumb/111.jpg"
+    );
+  });
+
+  it("keeps scraper obrazok_url when provided", () => {
+    const { products } = buildElectricalCatalogFromProducts({
+      products: [
+        {
+          nazov: "Vypínač",
+          kod: "999",
+          cena_s_dph: "1,20",
+          cena_bez_dph: "1,00",
+          sklad: "1",
+          obrazok_url: "https://www.buco.sk/assets/images/produkty/thumb/custom.jpg",
+          url: "https://www.buco.sk/vypinac-999",
+        },
+      ],
+      sourceFile: "test.json",
+      importId: "test_import",
+    });
+    expect(products[0]?.imageUrl).toContain("custom.jpg");
   });
 });

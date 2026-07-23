@@ -7,6 +7,7 @@ import {
   resolveCategoryNames,
 } from "./category-rules";
 import { buildBucoProductId, buildImportId } from "./ids";
+import { resolveBucoImageUrl } from "./images";
 import { cleanProductName, normalizeCatalogName } from "./normalizeName";
 import { parseAvailability, parseEuroToCents, validatePricePair } from "./prices";
 import { buildElectricalSearchTokens } from "./searchTokens";
@@ -146,6 +147,7 @@ export function buildElectricalCatalogFromProducts(input: {
       series,
       productType: classification.productType,
       unit: "ks",
+      imageUrl: resolveBucoImageUrl(raw),
       attributes: classification.attributes,
       supplier: {
         supplierId: "buco",

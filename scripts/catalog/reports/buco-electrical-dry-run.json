@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-07-22T20:18:07.856Z",
+  "generatedAt": "2026-07-23T20:11:38.156Z",
   "sourceFile": "C:\\Users\\Marek\\Staveto_Cursor\\staveto-app_v2\\staveto-office\\scripts\\catalog\\data\\SK\\electrical\\buco_scraper_state.json",
   "tradeId": "electrical",
   "supplierId": "buco",
   "categoryCounts": {
-    "Vypínače a ovládače": 580,
+    "Vypínače a ovládače": 556,
     "Vypínač č. 1": 14,
     "Vypínač č. 5": 12,
     "Vypínač č. 5B": 14,
@@ -15,12 +15,12 @@
     "Žalúziové ovládače": 14,
     "Pohybové snímače": 17,
     "Termostaty": 3,
-    "Rámčeky a kryty": 351,
-    "Ostatné ovládače": 50,
-    "Zásuvky a konektory": 201,
-    "Zásuvky 230 V": 44,
-    "Dvojzásuvky": 26,
-    "Zásuvky IP44 a vyššie": 26,
+    "Rámčeky a kryty": 349,
+    "Ostatné ovládače": 28,
+    "Zásuvky a konektory": 209,
+    "Zásuvky 230 V": 48,
+    "Dvojzásuvky": 29,
+    "Zásuvky IP44 a vyššie": 27,
     "Dátové zásuvky": 7,
     "TV a SAT zásuvky": 2,
     "USB nabíjačky": 62,
@@ -90,58 +90,357 @@
     "Náradie a pracovné pomôcky": 184,
     "Meracie náradie": 184,
     "Ručné náradie": 0,
-    "Ostatné elektro": 162,
-    "Neklasifikované": 162
+    "Ostatné elektro": 178,
+    "Neklasifikované": 178
   },
   "productCounts": {
     "total": 1471,
-    "active": 1254,
-    "needsReview": 217,
+    "active": 1239,
+    "needsReview": 232,
     "rejected": 0
   },
   "classificationCounts": {
-    "Uzemnenie a bleskozvody › Bleskozvodný materiál": 57,
-    "Svorky a spojovací materiál › Radové svorky": 17,
-    "Káble a vodiče › Inštalačné káble": 71,
-    "Zásuvky a konektory › Káblové vývody": 18,
-    "Rozvodnice a skrine › Skrine": 5,
-    "Ostatné elektro › Neklasifikované": 162,
-    "Zásuvky a konektory › Zásuvky 230 V": 44,
-    "Inštalačné krabice › Krabice do omietky": 19,
-    "Prístroje pre rozvádzače › Relé": 1,
-    "Vypínače a ovládače › Rámčeky a kryty": 351,
-    "Fotovoltika › PV príslušenstvo": 2,
-    "Ističe a ochranné prístroje › Poistky": 1,
-    "Ističe a ochranné prístroje › Poistkové odpínače": 27,
-    "Ističe a ochranné prístroje › Zvodiče prepätia": 12,
-    "Rozvodnice a skrine › Rozvodnice": 92,
-    "Ističe a ochranné prístroje › Ističe": 27,
-    "Ističe a ochranné prístroje › Prúdové chrániče": 2,
-    "Vypínače a ovládače › Tlačidlá": 73,
-    "Náradie a pracovné pomôcky › Meracie náradie": 184,
-    "Zásuvky a konektory › USB nabíjačky": 62,
-    "Rúrky, lišty a káblové trasy › Žľaby": 1,
-    "Vypínače a ovládače › Pohybové snímače": 17,
-    "Vypínače a ovládače › Ostatné ovládače": 50,
-    "Zásuvky a konektory › Zásuvky IP44 a vyššie": 26,
-    "Zásuvky a konektory › Reproduktorové a multimediálne zásuvky": 9,
-    "Zásuvky a konektory › Záslepky": 7,
-    "Vypínače a ovládače › Žalúziové ovládače": 14,
-    "Zásuvky a konektory › Dvojzásuvky": 26,
-    "Káble a vodiče › Dátové káble": 3,
-    "Zásuvky a konektory › Dátové zásuvky": 7,
-    "Osvetlenie › Svietidlá": 38,
-    "Vykurovanie a ventilácia › Elektrické kúrenie": 4,
-    "Vypínače a ovládače › Termostaty": 3,
+    "Vypínače a ovládače › Rámčeky a kryty": 349,
     "Vypínače a ovládače › Vypínač č. 1": 14,
     "Vypínače a ovládače › Vypínač č. 6": 18,
     "Vypínače a ovládače › Vypínač č. 5": 12,
     "Vypínače a ovládače › Vypínač č. 7": 12,
     "Vypínače a ovládače › Vypínač č. 5B": 14,
+    "Vypínače a ovládače › Tlačidlá": 73,
     "Vypínače a ovládače › Stmievače": 2,
-    "Zásuvky a konektory › TV a SAT zásuvky": 2
+    "Vypínače a ovládače › Ostatné ovládače": 28,
+    "Vypínače a ovládače › Žalúziové ovládače": 14,
+    "Zásuvky a konektory › Zásuvky 230 V": 48,
+    "Vypínače a ovládače › Termostaty": 3,
+    "Ostatné elektro › Neklasifikované": 178,
+    "Zásuvky a konektory › Dvojzásuvky": 29,
+    "Zásuvky a konektory › USB nabíjačky": 62,
+    "Zásuvky a konektory › Káblové vývody": 18,
+    "Zásuvky a konektory › Záslepky": 7,
+    "Zásuvky a konektory › TV a SAT zásuvky": 2,
+    "Zásuvky a konektory › Dátové zásuvky": 7,
+    "Zásuvky a konektory › Zásuvky IP44 a vyššie": 27,
+    "Rozvodnice a skrine › Rozvodnice": 92,
+    "Zásuvky a konektory › Reproduktorové a multimediálne zásuvky": 9,
+    "Ističe a ochranné prístroje › Ističe": 27,
+    "Ističe a ochranné prístroje › Prúdové chrániče": 2,
+    "Rozvodnice a skrine › Skrine": 5,
+    "Ističe a ochranné prístroje › Poistkové odpínače": 27,
+    "Ističe a ochranné prístroje › Zvodiče prepätia": 12,
+    "Káble a vodiče › Inštalačné káble": 71,
+    "Inštalačné krabice › Krabice do omietky": 19,
+    "Osvetlenie › Svietidlá": 38,
+    "Vypínače a ovládače › Pohybové snímače": 17,
+    "Uzemnenie a bleskozvody › Bleskozvodný materiál": 57,
+    "Svorky a spojovací materiál › Radové svorky": 17,
+    "Káble a vodiče › Dátové káble": 3,
+    "Prístroje pre rozvádzače › Relé": 1,
+    "Fotovoltika › PV príslušenstvo": 2,
+    "Ističe a ochranné prístroje › Poistky": 1,
+    "Vykurovanie a ventilácia › Elektrické kúrenie": 4,
+    "Náradie a pracovné pomôcky › Meracie náradie": 184,
+    "Rúrky, lišty a káblové trasy › Žľaby": 1
   },
   "invalidPrices": [
+    {
+      "productId": "buco_754001",
+      "sku": "754001",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "3,94",
+      "grossRaw": "1,20"
+    },
+    {
+      "productId": "buco_754002",
+      "sku": "754002",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "3,94",
+      "grossRaw": "1,20"
+    },
+    {
+      "productId": "buco_754003",
+      "sku": "754003",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "3,94",
+      "grossRaw": "1,20"
+    },
+    {
+      "productId": "buco_754251",
+      "sku": "754251",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "3,94",
+      "grossRaw": "1,20"
+    },
+    {
+      "productId": "buco_752105",
+      "sku": "752105",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "3,45",
+      "grossRaw": "1,20"
+    },
+    {
+      "productId": "buco_754252",
+      "sku": "754252",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "3,94",
+      "grossRaw": "1,20"
+    },
+    {
+      "productId": "buco_754004",
+      "sku": "754004",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "3,94",
+      "grossRaw": "1,20"
+    },
+    {
+      "productId": "buco_752193",
+      "sku": "752193",
+      "reasons": [
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "45,54",
+      "grossRaw": "82,87"
+    },
+    {
+      "productId": "buco_752185",
+      "sku": "752185",
+      "reasons": [
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "45,54",
+      "grossRaw": "82,87"
+    },
+    {
+      "productId": "buco_753179",
+      "sku": "753179",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "3,94",
+      "grossRaw": "1,20"
+    },
+    {
+      "productId": "buco_782375",
+      "sku": "782375",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "159,01",
+      "grossRaw": "10,61"
+    },
+    {
+      "productId": "buco_36605",
+      "sku": "36605",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "159,01",
+      "grossRaw": "10,61"
+    },
+    {
+      "productId": "buco_001664",
+      "sku": "001664",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "309,81",
+      "grossRaw": "56,63"
+    },
+    {
+      "productId": "buco_1801005",
+      "sku": "1801005",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "309,81",
+      "grossRaw": "56,63"
+    },
+    {
+      "productId": "buco_137207",
+      "sku": "137207",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "309,81",
+      "grossRaw": "56,63"
+    },
+    {
+      "productId": "buco_178830",
+      "sku": "178830",
+      "reasons": [
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "1,87",
+      "grossRaw": "125,96"
+    },
+    {
+      "productId": "buco_286521",
+      "sku": "286521",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "3,20",
+      "grossRaw": "3,07"
+    },
+    {
+      "productId": "buco_286519",
+      "sku": "286519",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "3,20",
+      "grossRaw": "3,07"
+    },
+    {
+      "productId": "buco_286589",
+      "sku": "286589",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "3,20",
+      "grossRaw": "3,07"
+    },
+    {
+      "productId": "buco_112933",
+      "sku": "112933",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "3,20",
+      "grossRaw": "3,07"
+    },
+    {
+      "productId": "buco_501069",
+      "sku": "501069",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "3,20",
+      "grossRaw": "3,07"
+    },
+    {
+      "productId": "buco_2411",
+      "sku": "2411",
+      "reasons": [
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "0,05",
+      "grossRaw": "0,27"
+    },
+    {
+      "productId": "buco_4698",
+      "sku": "4698",
+      "reasons": [
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "0,02",
+      "grossRaw": "0,02"
+    },
+    {
+      "productId": "buco_4708",
+      "sku": "4708",
+      "reasons": [
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "0,02",
+      "grossRaw": "0,02"
+    },
+    {
+      "productId": "buco_4718",
+      "sku": "4718",
+      "reasons": [
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "0,02",
+      "grossRaw": "0,02"
+    },
+    {
+      "productId": "buco_4728",
+      "sku": "4728",
+      "reasons": [
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "0,02",
+      "grossRaw": "0,02"
+    },
+    {
+      "productId": "buco_4738",
+      "sku": "4738",
+      "reasons": [
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "0,02",
+      "grossRaw": "0,03"
+    },
+    {
+      "productId": "buco_47410",
+      "sku": "47410",
+      "reasons": [
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "0,04",
+      "grossRaw": "0,04"
+    },
+    {
+      "productId": "buco_1502021",
+      "sku": "1502021",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "49,00",
+      "grossRaw": "0,64"
+    },
+    {
+      "productId": "buco_37156",
+      "sku": "37156",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "49,00",
+      "grossRaw": "0,64"
+    },
+    {
+      "productId": "buco_632850",
+      "sku": "632850",
+      "reasons": [
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "1,87",
+      "grossRaw": "125,96"
+    },
     {
       "productId": "buco_369339",
       "sku": "369339",
@@ -171,6 +470,15 @@
       ],
       "netRaw": "554,70",
       "grossRaw": "412,47"
+    },
+    {
+      "productId": "buco_412181",
+      "sku": "412181",
+      "reasons": [
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "45,54",
+      "grossRaw": "82,87"
     },
     {
       "productId": "buco_057015",
@@ -242,144 +550,154 @@
       "grossRaw": "0,31"
     },
     {
-      "productId": "buco_286521",
-      "sku": "286521",
+      "productId": "buco_1901014",
+      "sku": "1901014",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "3,20",
-      "grossRaw": "3,07"
+      "netRaw": "82,92",
+      "grossRaw": "39,00"
     },
     {
-      "productId": "buco_286519",
-      "sku": "286519",
+      "productId": "buco_1901012",
+      "sku": "1901012",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "3,20",
-      "grossRaw": "3,07"
+      "netRaw": "82,92",
+      "grossRaw": "39,00"
     },
     {
-      "productId": "buco_286589",
-      "sku": "286589",
+      "productId": "buco_2252064",
+      "sku": "2252064",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "3,20",
-      "grossRaw": "3,07"
+      "netRaw": "82,92",
+      "grossRaw": "39,00"
     },
     {
-      "productId": "buco_112933",
-      "sku": "112933",
+      "productId": "buco_2252310",
+      "sku": "2252310",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "3,20",
-      "grossRaw": "3,07"
+      "netRaw": "82,92",
+      "grossRaw": "39,00"
     },
     {
-      "productId": "buco_501069",
-      "sku": "501069",
+      "productId": "buco_015152",
+      "sku": "015152",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "3,20",
-      "grossRaw": "3,07"
+      "netRaw": "82,92",
+      "grossRaw": "39,00"
     },
     {
-      "productId": "buco_10136",
-      "sku": "10136",
+      "productId": "buco_6172",
+      "sku": "6172",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "177,05",
-      "grossRaw": "36,72"
+      "netRaw": "82,92",
+      "grossRaw": "39,00"
     },
     {
-      "productId": "buco_10137",
-      "sku": "10137",
+      "productId": "buco_2252332",
+      "sku": "2252332",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "177,05",
-      "grossRaw": "36,72"
+      "netRaw": "82,92",
+      "grossRaw": "39,00"
     },
     {
-      "productId": "buco_1262180",
-      "sku": "1262180",
+      "productId": "buco_6171",
+      "sku": "6171",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "177,05",
-      "grossRaw": "36,72"
+      "netRaw": "82,92",
+      "grossRaw": "39,00"
     },
     {
-      "productId": "buco_22390",
-      "sku": "22390",
+      "productId": "buco_654002",
+      "sku": "654002",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "177,05",
-      "grossRaw": "36,72"
+      "netRaw": "122,45",
+      "grossRaw": "63,37"
     },
     {
-      "productId": "buco_9512165",
-      "sku": "9512165",
+      "productId": "buco_654721",
+      "sku": "654721",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "177,05",
-      "grossRaw": "36,72"
+      "netRaw": "122,45",
+      "grossRaw": "63,37"
     },
     {
-      "productId": "buco_20696",
-      "sku": "20696",
+      "productId": "buco_654802",
+      "sku": "654802",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "177,05",
-      "grossRaw": "36,72"
+      "netRaw": "122,45",
+      "grossRaw": "63,37"
     },
     {
-      "productId": "buco_7803125",
-      "sku": "7803125",
+      "productId": "buco_088000",
+      "sku": "088000",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "177,05",
-      "grossRaw": "36,72"
+      "netRaw": "122,45",
+      "grossRaw": "63,37"
     },
     {
-      "productId": "buco_45734",
-      "sku": "45734",
+      "productId": "buco_054001",
+      "sku": "054001",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "872,60",
-      "grossRaw": "073,30"
+      "netRaw": "122,45",
+      "grossRaw": "63,37"
     },
     {
-      "productId": "buco_41479",
-      "sku": "41479",
+      "productId": "buco_054011",
+      "sku": "054011",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "45,52",
-      "grossRaw": "36,65"
+      "netRaw": "122,45",
+      "grossRaw": "63,37"
+    },
+    {
+      "productId": "buco_654720",
+      "sku": "654720",
+      "reasons": [
+        "net_gt_gross",
+        "implausible_vat_ratio"
+      ],
+      "netRaw": "122,45",
+      "grossRaw": "63,37"
     },
     {
       "productId": "buco_050446",
@@ -472,415 +790,112 @@
       "grossRaw": "4,68"
     },
     {
-      "productId": "buco_001664",
-      "sku": "001664",
+      "productId": "buco_10136",
+      "sku": "10136",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "309,81",
-      "grossRaw": "56,63"
+      "netRaw": "177,05",
+      "grossRaw": "36,72"
     },
     {
-      "productId": "buco_1801005",
-      "sku": "1801005",
+      "productId": "buco_10137",
+      "sku": "10137",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "309,81",
-      "grossRaw": "56,63"
+      "netRaw": "177,05",
+      "grossRaw": "36,72"
     },
     {
-      "productId": "buco_137207",
-      "sku": "137207",
+      "productId": "buco_1262180",
+      "sku": "1262180",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "309,81",
-      "grossRaw": "56,63"
+      "netRaw": "177,05",
+      "grossRaw": "36,72"
     },
     {
-      "productId": "buco_178830",
-      "sku": "178830",
-      "reasons": [
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "1,87",
-      "grossRaw": "125,96"
-    },
-    {
-      "productId": "buco_752193",
-      "sku": "752193",
-      "reasons": [
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "45,54",
-      "grossRaw": "82,87"
-    },
-    {
-      "productId": "buco_752185",
-      "sku": "752185",
-      "reasons": [
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "45,54",
-      "grossRaw": "82,87"
-    },
-    {
-      "productId": "buco_412181",
-      "sku": "412181",
-      "reasons": [
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "45,54",
-      "grossRaw": "82,87"
-    },
-    {
-      "productId": "buco_632850",
-      "sku": "632850",
-      "reasons": [
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "1,87",
-      "grossRaw": "125,96"
-    },
-    {
-      "productId": "buco_1502021",
-      "sku": "1502021",
+      "productId": "buco_22390",
+      "sku": "22390",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "49,00",
-      "grossRaw": "0,64"
+      "netRaw": "177,05",
+      "grossRaw": "36,72"
     },
     {
-      "productId": "buco_37156",
-      "sku": "37156",
+      "productId": "buco_9512165",
+      "sku": "9512165",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "49,00",
-      "grossRaw": "0,64"
+      "netRaw": "177,05",
+      "grossRaw": "36,72"
     },
     {
-      "productId": "buco_654002",
-      "sku": "654002",
+      "productId": "buco_20696",
+      "sku": "20696",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "122,45",
-      "grossRaw": "63,37"
+      "netRaw": "177,05",
+      "grossRaw": "36,72"
     },
     {
-      "productId": "buco_654721",
-      "sku": "654721",
+      "productId": "buco_7803125",
+      "sku": "7803125",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "122,45",
-      "grossRaw": "63,37"
+      "netRaw": "177,05",
+      "grossRaw": "36,72"
     },
     {
-      "productId": "buco_654802",
-      "sku": "654802",
+      "productId": "buco_45734",
+      "sku": "45734",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "122,45",
-      "grossRaw": "63,37"
+      "netRaw": "872,60",
+      "grossRaw": "073,30"
     },
     {
-      "productId": "buco_088000",
-      "sku": "088000",
+      "productId": "buco_41479",
+      "sku": "41479",
       "reasons": [
         "net_gt_gross",
         "implausible_vat_ratio"
       ],
-      "netRaw": "122,45",
-      "grossRaw": "63,37"
-    },
-    {
-      "productId": "buco_054001",
-      "sku": "054001",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "122,45",
-      "grossRaw": "63,37"
-    },
-    {
-      "productId": "buco_054011",
-      "sku": "054011",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "122,45",
-      "grossRaw": "63,37"
-    },
-    {
-      "productId": "buco_654720",
-      "sku": "654720",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "122,45",
-      "grossRaw": "63,37"
-    },
-    {
-      "productId": "buco_2411",
-      "sku": "2411",
-      "reasons": [
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "0,05",
-      "grossRaw": "0,27"
-    },
-    {
-      "productId": "buco_4698",
-      "sku": "4698",
-      "reasons": [
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "0,02",
-      "grossRaw": "0,02"
-    },
-    {
-      "productId": "buco_4708",
-      "sku": "4708",
-      "reasons": [
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "0,02",
-      "grossRaw": "0,02"
-    },
-    {
-      "productId": "buco_4718",
-      "sku": "4718",
-      "reasons": [
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "0,02",
-      "grossRaw": "0,02"
-    },
-    {
-      "productId": "buco_4728",
-      "sku": "4728",
-      "reasons": [
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "0,02",
-      "grossRaw": "0,02"
-    },
-    {
-      "productId": "buco_4738",
-      "sku": "4738",
-      "reasons": [
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "0,02",
-      "grossRaw": "0,03"
-    },
-    {
-      "productId": "buco_47410",
-      "sku": "47410",
-      "reasons": [
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "0,04",
-      "grossRaw": "0,04"
-    },
-    {
-      "productId": "buco_1901014",
-      "sku": "1901014",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "82,92",
-      "grossRaw": "39,00"
-    },
-    {
-      "productId": "buco_1901012",
-      "sku": "1901012",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "82,92",
-      "grossRaw": "39,00"
-    },
-    {
-      "productId": "buco_2252064",
-      "sku": "2252064",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "82,92",
-      "grossRaw": "39,00"
-    },
-    {
-      "productId": "buco_2252310",
-      "sku": "2252310",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "82,92",
-      "grossRaw": "39,00"
-    },
-    {
-      "productId": "buco_015152",
-      "sku": "015152",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "82,92",
-      "grossRaw": "39,00"
-    },
-    {
-      "productId": "buco_6172",
-      "sku": "6172",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "82,92",
-      "grossRaw": "39,00"
-    },
-    {
-      "productId": "buco_6171",
-      "sku": "6171",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "82,92",
-      "grossRaw": "39,00"
-    },
-    {
-      "productId": "buco_2252332",
-      "sku": "2252332",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "82,92",
-      "grossRaw": "39,00"
-    },
-    {
-      "productId": "buco_754001",
-      "sku": "754001",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "3,94",
-      "grossRaw": "1,20"
-    },
-    {
-      "productId": "buco_754002",
-      "sku": "754002",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "3,94",
-      "grossRaw": "1,20"
-    },
-    {
-      "productId": "buco_754003",
-      "sku": "754003",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "3,94",
-      "grossRaw": "1,20"
-    },
-    {
-      "productId": "buco_754251",
-      "sku": "754251",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "3,94",
-      "grossRaw": "1,20"
-    },
-    {
-      "productId": "buco_752105",
-      "sku": "752105",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "3,45",
-      "grossRaw": "1,20"
-    },
-    {
-      "productId": "buco_754252",
-      "sku": "754252",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "3,94",
-      "grossRaw": "1,20"
-    },
-    {
-      "productId": "buco_754004",
-      "sku": "754004",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "3,94",
-      "grossRaw": "1,20"
-    },
-    {
-      "productId": "buco_782375",
-      "sku": "782375",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "159,01",
-      "grossRaw": "10,61"
-    },
-    {
-      "productId": "buco_36605",
-      "sku": "36605",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "159,01",
-      "grossRaw": "10,61"
-    },
-    {
-      "productId": "buco_753179",
-      "sku": "753179",
-      "reasons": [
-        "net_gt_gross",
-        "implausible_vat_ratio"
-      ],
-      "netRaw": "3,94",
-      "grossRaw": "1,20"
+      "netRaw": "45,52",
+      "grossRaw": "36,65"
     }
   ],
   "duplicateSkus": [
+    {
+      "sku": "0403",
+      "urls": [
+        "https://www.buco.sk/merten-system-m-krytka-pre-jednopackovy-vypinac-cierna-matna-meg3300-0403",
+        "https://www.buco.sk/merten-system-m-krytka-pre-dvojpackovy-vypinac-cierna-matna-meg3400-0403",
+        "https://www.buco.sk/merten-system-m-krytka-pre-jednopackovy-vypinac-symbol-zvonceka-cierna-matna-meg3305-0403",
+        "https://www.buco.sk/merten-system-m-krytka-pre-zaluziovy-spinac-alebo-tlacitko-cierna-matna-meg3855-0403",
+        "https://www.buco.sk/merten-system-m-krytka-pre-otocny-stmievac-cierna-matna-meg5250-0403",
+        "https://www.buco.sk/merten-system-m-krytka-pre-priestorovy-termostat-cierna-matna-meg5762-0403",
+        "https://www.buco.sk/merten-system-m-celna-doska-pre-mechanizmus-digitalneho-termostatu-cierna-matna-meg5775-0403",
+        "https://www.buco.sk/merten-system-m-zaslepka-cierna-matna-meg4075-0403",
+        "https://www.buco.sk/merten-m-elegance-krytka-pre-usb-nabijacku-cierna-matna-meg4367-0403",
+        "https://www.buco.sk/merten-system-m-kablovy-vyvod-cierna-matna-meg4071-0403"
+      ]
+    },
     {
       "sku": "1201",
       "urls": [
@@ -960,24 +975,334 @@
         "https://www.buco.sk/wago-topjobr-s-radova-svorka-1mm2-01415mm2-zelenozlta-4-vodicova-s-tlacidlom-push-in-cage-clampr-2200-1407",
         "https://www.buco.sk/wago-topjobr-s-radova-svorka-15mm2-02525mm2-zelenozlta-4-vodicova-s-tlacidlom-push-in-cage-clampr-2201-1407"
       ]
-    },
-    {
-      "sku": "0403",
-      "urls": [
-        "https://www.buco.sk/merten-system-m-krytka-pre-jednopackovy-vypinac-cierna-matna-meg3300-0403",
-        "https://www.buco.sk/merten-system-m-krytka-pre-dvojpackovy-vypinac-cierna-matna-meg3400-0403",
-        "https://www.buco.sk/merten-system-m-krytka-pre-jednopackovy-vypinac-symbol-zvonceka-cierna-matna-meg3305-0403",
-        "https://www.buco.sk/merten-system-m-krytka-pre-zaluziovy-spinac-alebo-tlacitko-cierna-matna-meg3855-0403",
-        "https://www.buco.sk/merten-system-m-krytka-pre-otocny-stmievac-cierna-matna-meg5250-0403",
-        "https://www.buco.sk/merten-system-m-krytka-pre-priestorovy-termostat-cierna-matna-meg5762-0403",
-        "https://www.buco.sk/merten-system-m-celna-doska-pre-mechanizmus-digitalneho-termostatu-cierna-matna-meg5775-0403",
-        "https://www.buco.sk/merten-system-m-zaslepka-cierna-matna-meg4075-0403",
-        "https://www.buco.sk/merten-m-elegance-krytka-pre-usb-nabijacku-cierna-matna-meg4367-0403",
-        "https://www.buco.sk/merten-system-m-kablovy-vyvod-cierna-matna-meg4071-0403"
-      ]
     }
   ],
   "unmatchedProducts": [
+    {
+      "productId": "buco_752195",
+      "name": "Valena Life S Netatmo Smart Štartovací Balíček, Biela",
+      "url": "https://www.buco.sk/valena-life-s-netatmo-smart-startovaci-balicek-biela-752195"
+    },
+    {
+      "productId": "buco_752295",
+      "name": "Valena Life S Netatmo Smart Štartovací Balíček, Béžová",
+      "url": "https://www.buco.sk/valena-life-s-netatmo-smart-startovaci-balicek-bezova-752295"
+    },
+    {
+      "productId": "buco_752395",
+      "name": "Valena Life S Netatmo Smart Štartovací Balíček, Hliník",
+      "url": "https://www.buco.sk/valena-life-s-netatmo-smart-startovaci-balicek-hlinik-752395"
+    },
+    {
+      "productId": "buco_752150",
+      "name": "Valena Life S Netatmo Balíček Vytvorenie Striedavého Prepínača Č.6 S Mikromodulom, Biela",
+      "url": "https://www.buco.sk/valena-life-s-netatmo-balicek-vytvorenie-striedaveho-prepinaca-c6-s-mikromodulom-biela-752150"
+    },
+    {
+      "productId": "buco_752250",
+      "name": "Valena Life S Netatmo Balíček Vytvorenie Striedavého Prepínača Č.6 S Mikromodulom, Béžová",
+      "url": "https://www.buco.sk/valena-life-s-netatmo-balicek-vytvorenie-striedaveho-prepinaca-c6-s-mikromodulom-bezova-752250"
+    },
+    {
+      "productId": "buco_752350",
+      "name": "Valena Life S Netatmo Balíček Vytvorenie Striedavého Prepínača Č.6 S Mikromodulom, Hliník",
+      "url": "https://www.buco.sk/valena-life-s-netatmo-balicek-vytvorenie-striedaveho-prepinaca-c6-s-mikromodulom-hlinik-752350"
+    },
+    {
+      "productId": "buco_064888",
+      "name": "Legrand S Netatmo Smart Mikromodul",
+      "url": "https://www.buco.sk/valena-life-s-netatmo-smart-mikromodul-064888"
+    },
+    {
+      "productId": "buco_752185",
+      "name": "Valena Life S Netatmo Bezdrotovy Spinac 1 Nasobny Biela",
+      "url": "https://www.buco.sk/valena-life-s-netatmo-bezdrotovy-spinac-1-nasobny-biela-752185"
+    },
+    {
+      "productId": "buco_752285",
+      "name": "Valena Life S Netatmo Bezdrôtový Spínač 1-násobný, Béžová",
+      "url": "https://www.buco.sk/valena-life-s-netatmo-bezdrotovy-spinac-1-nasobny-bezova-752285"
+    },
+    {
+      "productId": "buco_752385",
+      "name": "Valena Life S Netatmo Bezdrôtový Spínač 1-násobný, Hliník",
+      "url": "https://www.buco.sk/valena-life-s-netatmo-bezdrotovy-spinac-1-nasobny-hlinik-752385"
+    },
+    {
+      "productId": "buco_752186",
+      "name": "Valena Life S Netatmo Hlavný Bezdrôtový Spínač Doma/mimo Domu, Biela",
+      "url": "https://www.buco.sk/valena-life-s-netatmo-hlavny-bezdrotovy-spinac-doma-mimo-domu-biela-752186"
+    },
+    {
+      "productId": "buco_752286",
+      "name": "Valena Life S Netatmo Hlavný Bezdrôtový Spínač Doma/mimo Domu, Béžová",
+      "url": "https://www.buco.sk/valena-life-s-netatmo-hlavny-bezdrotovy-spinac-doma-mimo-domu-bezova-752286"
+    },
+    {
+      "productId": "buco_752386",
+      "name": "Valena Life S Netatmo Hlavný Bezdrôtový Spínač Doma/mimo Domu, Hliník",
+      "url": "https://www.buco.sk/valena-life-s-netatmo-hlavny-bezdrotovy-spinac-doma-mimo-domu-hlinik-752386"
+    },
+    {
+      "productId": "buco_752189",
+      "name": "Valena Life S Netatmo Bezdrôtový Spínač Zobudenie/spánok, Biela",
+      "url": "https://www.buco.sk/valena-life-s-netatmo-bezdrotovy-spinac-zobudenie-spanok-biela-752189"
+    },
+    {
+      "productId": "buco_752289",
+      "name": "Valena Life S Netatmo Bezdrôtový Spínač Zobudenie/spánok, Béžová",
+      "url": "https://www.buco.sk/valena-life-s-netatmo-bezdrotovy-spinac-zobudenie-spanok-bezova-752289"
+    },
+    {
+      "productId": "buco_752389",
+      "name": "Valena Life S Netatmo Bezdrôtový Spínač Zobudenie/spánok, Hliník",
+      "url": "https://www.buco.sk/valena-life-s-netatmo-bezdrotovy-spinac-zobudenie-spanok-hlinik-752389"
+    },
+    {
+      "productId": "buco_2006020",
+      "name": "Držiak Káblov Do Drážky F-clip, 60mm",
+      "url": "https://www.buco.sk/drziak-kablov-do-drazky-f-clip-60mm-2006020"
+    },
+    {
+      "productId": "buco_2207028",
+      "name": "Zväzkový Držiak Grip 15, Kov, E90, 2031 M 15 Fs",
+      "url": "https://www.buco.sk/zvazkovy-drziak-grip-m-15-2031-m-15-fs-2207028"
+    },
+    {
+      "productId": "buco_2207036",
+      "name": "Zväzkový Držiak Grip 30, Kov, E90, 2031 M 30 Fs",
+      "url": "https://www.buco.sk/zvazkovy-drziak-grip-m-30-2031-m-30-fs-2207036"
+    },
+    {
+      "productId": "buco_2207060",
+      "name": "Zväzkový Držiak Grip 70, Kov, E90, 2031 M 70 Fs",
+      "url": "https://www.buco.sk/zvazkovy-drziak-grip-m-70-2031-m-70-fs-2207060"
+    },
+    {
+      "productId": "buco_2205384",
+      "name": "Zväzkový Držiak Grip 10, Plast, 2031",
+      "url": "https://www.buco.sk/zvazkovy-drziak-grip-10-plast-2031-10-2205384"
+    },
+    {
+      "productId": "buco_2205404",
+      "name": "Zväzkový Držiak Grip 20, Plast, 2031",
+      "url": "https://www.buco.sk/zvazkovy-drziak-grip-20-plast-2031-20-2205404"
+    },
+    {
+      "productId": "buco_2205416",
+      "name": "Zväzkový Držiak Grip 40, Plast, 2031",
+      "url": "https://www.buco.sk/zvazkovy-drziak-grip-40-plast-2031-40-2205416"
+    },
+    {
+      "productId": "buco_1475912",
+      "name": "Perforovaný Montážny Pás 12x0,7mm, Mz029 Li12 Fs",
+      "url": "https://www.buco.sk/perforovany-montazny-pas-12x07mm-mz029-li12-fs-1475912"
+    },
+    {
+      "productId": "buco_1475914",
+      "name": "Perforovaný Montážny Pás 17x0,7mm, Mz029 Lii17 Fs",
+      "url": "https://www.buco.sk/perforovany-montazny-pas-17x07mm-mz029-lii17-fs-1475914"
+    },
+    {
+      "productId": "buco_1475917",
+      "name": "Perforovaný Montážny Pás 25x0,7mm, Mz029 Liii25 Fs",
+      "url": "https://www.buco.sk/perforovany-montazny-pas-25x07mm-mz029-liii25-fs-1475917"
+    },
+    {
+      "productId": "buco_2205017",
+      "name": "Káblová Spona, Pre 8 Vedení 3x1,5mm², Plast,",
+      "url": "https://www.buco.sk/kablova-spona-pre-8-vedeni-3x15mm2-plast-2032-2205017"
+    },
+    {
+      "productId": "buco_2205041",
+      "name": "Káblová Spona, Pre 10 Vedení 3x1,5mm², Plast,",
+      "url": "https://www.buco.sk/kablova-spona-pre-10-vedeni-3x15mm2-plast-2034-2205041"
+    },
+    {
+      "productId": "buco_2205033",
+      "name": "Káblová Spona, Pre 16 Vedení 3x1,5mm², Plast,",
+      "url": "https://www.buco.sk/kablova-spona-pre-16-vedeni-3x15mm2-plast-2033-2205033"
+    },
+    {
+      "productId": "buco_2222833",
+      "name": "Káblová Príchytka Nagel-fix S Klincom, 3x40mm, Plast, Priehľadná, 1996",
+      "url": "https://www.buco.sk/kablova-prichytka-nagel-fix-s-klincom-3x40mm-plast-priehladna-1996-40-2222833"
+    },
+    {
+      "productId": "buco_2222841",
+      "name": "Káblová Príchytka Nagel-fix S Klincom, 3,5x50mm, Plast, Priehľadná, 1996",
+      "url": "https://www.buco.sk/kablova-prichytka-nagel-fix-s-klincom-35x50mm-plast-priehladna-1996-50-2222841"
+    },
+    {
+      "productId": "buco_4698",
+      "name": "Koncová Dutinka Izolovaná 4698, 0,5mm², 8mm, Cu, Biela",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-4698-05mm2-8mm-cu-biela-4698"
+    },
+    {
+      "productId": "buco_4708",
+      "name": "Koncová Dutinka Izolovaná 4708, 0,75mm², 8mm, Cu, Šedá",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-4708-075mm2-8mm-cu-seda-4708"
+    },
+    {
+      "productId": "buco_4718",
+      "name": "Koncová Dutinka Izolovaná 4718, 1mm², 8mm, Cu, Červená",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-4718-1mm2-8mm-cu-cervena-4718"
+    },
+    {
+      "productId": "buco_4728",
+      "name": "Koncová Dutinka Izolovaná 4728, 1,5mm², 8mm, Cu, Čierna",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-4728-15mm2-8mm-cu-cierna-4728"
+    },
+    {
+      "productId": "buco_47212",
+      "name": "Koncová Dutinka Izolovaná 47212, 1,5mm², 12mm, Cu, Čierna",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-4728-15mm2-12mm-cu-cierna-47212"
+    },
+    {
+      "productId": "buco_4738",
+      "name": "Koncová Dutinka Izolovaná 4738, 2,5mm², 8mm, Cu, Modrá",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-4738-25mm2-8mm-cu-modra-4738"
+    },
+    {
+      "productId": "buco_47312",
+      "name": "Koncová Dutinka Izolovaná 47312, 2,5mm², 12mm, Cu, Modrá",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47312-25mm2-12mm-cu-modra-47312"
+    },
+    {
+      "productId": "buco_47318",
+      "name": "Koncová Dutinka Izolovaná 47318, 2,5mm², 18mm, Cu, Modrá",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47318-25mm2-18mm-cu-modra-47318"
+    },
+    {
+      "productId": "buco_47410",
+      "name": "Koncová Dutinka Izolovaná 47410, 4mm², 10mm, Cu, Šedá",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47410-4mm2-10mm-cu-seda-47410"
+    },
+    {
+      "productId": "buco_47512",
+      "name": "Koncová Dutinka Izolovaná 47512, 6mm², 12mm, Cu, Žltá",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47512-6mm2-12mm-cu-zlta-47512"
+    },
+    {
+      "productId": "buco_47612",
+      "name": "Koncová Dutinka Izolovaná 47612, 10mm², 12mm, Cu, Červená",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47612-10mm2-12mm-cu-cervena-47612"
+    },
+    {
+      "productId": "buco_47712",
+      "name": "Koncová Dutinka Izolovaná 47712, 16mm², 12mm, Cu, Modrá",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47712-16mm2-12mm-cu-modra-47712"
+    },
+    {
+      "productId": "buco_47718",
+      "name": "Koncová Dutinka Izolovaná 47718, 16mm², 18mm, Cu, Modrá",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47718-16mm2-18mm-cu-modra-47718"
+    },
+    {
+      "productId": "buco_47816",
+      "name": "Koncová Dutinka Izolovaná 47816, 25mm², 16mm, Cu, Žltá",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47816-25mm2-16mm-cu-zlta-47816"
+    },
+    {
+      "productId": "buco_47822",
+      "name": "Koncová Dutinka Izolovaná 47822, 25mm², 22mm, Cu, Žltá",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47822-25mm2-22mm-cu-zlta-47822"
+    },
+    {
+      "productId": "buco_47916",
+      "name": "Koncová Dutinka Izolovaná 47916, 35mm², 16mm, Cu, Červená",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47916-35mm2-16mm-cu-cervena-47916"
+    },
+    {
+      "productId": "buco_47925",
+      "name": "Koncová Dutinka Izolovaná 47925, 35mm², 25mm, Cu, Červená",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47925-35mm2-25mm-cu-cervena-47925"
+    },
+    {
+      "productId": "buco_48020",
+      "name": "Koncová Dutinka Izolovaná 48020, 50mm², 20mm, Cu, Modrá",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-48020-50mm2-20mm-cu-modra-48020"
+    },
+    {
+      "productId": "buco_48121",
+      "name": "Koncová Dutinka Izolovaná 48121, 70mm², 21mm, Cu, Žltá",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-48121-70mm2-21mm-cu-zlta-48121"
+    },
+    {
+      "productId": "buco_48225",
+      "name": "Koncová Dutinka Izolovaná 48225, 95mm², 25mm, Cu, Červená",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-48225-95mm2-25mm-cu-cervena-48225"
+    },
+    {
+      "productId": "buco_48327",
+      "name": "Koncová Dutinka Izolovaná 48327, 120mm², 27mm, Cu, Modrá",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-48327-120mm2-27mm-cu-modra-48327"
+    },
+    {
+      "productId": "buco_48432",
+      "name": "Koncová Dutinka Izolovaná 48432, 150mm², 32mm, Cu, Žltá",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-48432-150mm2-32mm-cu-zlta-48432"
+    },
+    {
+      "productId": "buco_8698",
+      "name": "Koncová Dutinka Izolovaná Dvojitá 8698, 2x0,5mm², 8mm, Biela",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-8698-2x05mm2-8mm-biela-8698"
+    },
+    {
+      "productId": "buco_8708",
+      "name": "Koncova Dutinka Izolovana Dvojita 8708 2x075mm2 8mm Seda 8708",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-8708-2x075mm2-8mm-seda-8708"
+    },
+    {
+      "productId": "buco_8718",
+      "name": "Koncová Dutinka Izolovaná Dvojitá 8718, 2x1mm², 8mm, Červená",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-8718-2x1mm2-8mm-cervena-8718"
+    },
+    {
+      "productId": "buco_87110",
+      "name": "Koncová Dutinka Izolovaná Dvojitá 87110, 2x1mm², 10mm, Červená",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-87110-2x1mm2-10mm-cervena-87110"
+    },
+    {
+      "productId": "buco_8728",
+      "name": "Koncová Dutinka Izolovaná Dvojitá 8728, 2x1,5mm², 8mm, Čierna",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-8728-2x15mm2-8mm-cierna-8728"
+    },
+    {
+      "productId": "buco_87310",
+      "name": "Koncová Dutinka Izolovaná Dvojitá 87310, 2x2,5mm², 10mm, Modrá",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-87310-2x25mm2-10mm-modra-87310"
+    },
+    {
+      "productId": "buco_87412",
+      "name": "Koncová Dutinka Izolovaná Dvojitá 87412, 2x4mm², 12mm, Šedá",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-87412-2x4mm2-12mm-seda-87412"
+    },
+    {
+      "productId": "buco_87514",
+      "name": "Koncová Dutinka Izolovaná Dvojitá 87514, 2x6mm², 14mm, Žltá",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-87514-2x6mm2-14mm-zlta-87514"
+    },
+    {
+      "productId": "buco_87614",
+      "name": "Koncová Dutinka Izolovaná Dvojitá 87614, 2x10mm², 14mm, Červená",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-87614-2x10mm2-14mm-cervena-87614"
+    },
+    {
+      "productId": "buco_87714",
+      "name": "Koncová Dutinka Izolovaná Dvojitá 87714, 2x16mm², 14mm, Modrá",
+      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-87714-2x16mm2-14mm-modra-87714"
+    },
+    {
+      "productId": "buco_7810052",
+      "name": "Instalačné Puzdro Do Zateplených Fasád Thermofix Tf1-set S Prístrojovou Krabicou",
+      "url": "https://www.buco.sk/instalacne-puzdro-do-zateplenych-fasad-thermofix-tf1-set-s-pristrojovou-krabicou-7810052"
+    },
+    {
+      "productId": "buco_7810051",
+      "name": "Inštalačné Puzdro Do Zateplených Fasád Thermofix Tf1",
+      "url": "https://www.buco.sk/instalacne-puzdro-do-zateplenych-fasad-thermofix-tf1-7810051"
+    },
     {
       "productId": "buco_369339",
       "name": "Pridavna Vonkajsia Jednotka K Farebnej Videosade 7",
@@ -1152,151 +1477,6 @@
       "productId": "buco_094270",
       "name": "Bezdrôtový Zvonček Top - Biela Farba",
       "url": "https://www.buco.sk/bezdrotovy-zvoncek-top-biela-farba-094270"
-    },
-    {
-      "productId": "buco_050445",
-      "name": "Gumova Vidlica IP44 Ik08",
-      "url": "https://www.buco.sk/gumova-vidlica-ip44-ik08-050445"
-    },
-    {
-      "productId": "buco_049433",
-      "name": "Rozbocovac Celny 3x2p T Biela Tmavosiva",
-      "url": "https://www.buco.sk/rozbocovac-celny-3x2p-t-biela-tmavosiva-049433"
-    },
-    {
-      "productId": "buco_049431",
-      "name": "Rozbocovac Celny 2x2p T Biela Tmavosiva",
-      "url": "https://www.buco.sk/rozbocovac-celny-2x2p-t-biela-tmavosiva-049431"
-    },
-    {
-      "productId": "buco_049436",
-      "name": "Rozbocovac Bocny Otocny 3x2p T Biela Tmavosiva",
-      "url": "https://www.buco.sk/rozbocovac-bocny-otocny-3x2p-t-biela-tmavosiva-049436"
-    },
-    {
-      "productId": "buco_049434",
-      "name": "Rozbocovac Celny 3x2p T Cierna Tmavosiva",
-      "url": "https://www.buco.sk/rozbocovac-celny-3x2p-t-cierna-tmavosiva-049434"
-    },
-    {
-      "productId": "buco_049432",
-      "name": "Rozbocovac Celny 2x2p T Cierna Tmavosiva",
-      "url": "https://www.buco.sk/rozbocovac-celny-2x2p-t-cierna-tmavosiva-049432"
-    },
-    {
-      "productId": "buco_049400",
-      "name": "Rozbocovac Bocny 4x2p Biela Tmavosiva",
-      "url": "https://www.buco.sk/rozbocovac-bocny-4x2p-biela-tmavosiva-049400"
-    },
-    {
-      "productId": "buco_049409",
-      "name": "Rohova Viacucelova Predlzovacka 3x2p T USB A C Bez Kabla Biela Hlinik",
-      "url": "https://www.buco.sk/rohova-viacucelova-predlzovacka-3x2p-t-usb-a-c-bez-kabla-biela-hlinik-049409"
-    },
-    {
-      "productId": "buco_049464",
-      "name": "Predlžovačka Prémium 3x2P+T, Bez Kábla, Biela/tmavosivá",
-      "url": "https://www.buco.sk/predlzovacka-premium-3x2p-t-bez-kabla-biela-tmavosiva-049464"
-    },
-    {
-      "productId": "buco_049465",
-      "name": "Predlžovačka Prémium 4x2P+T, Bez Kábla, Biela/tmavosivá",
-      "url": "https://www.buco.sk/predlzovacka-premium-4x2p-t-bez-kabla-biela-tmavosiva-049465"
-    },
-    {
-      "productId": "buco_049466",
-      "name": "Predlžovačka Prémium 4x2P+T, Bez Kábla, Čierna/tmavosivá",
-      "url": "https://www.buco.sk/predlzovacka-premium-4x2p-t-bez-kabla-cierna-tmavosiva-049466"
-    },
-    {
-      "productId": "buco_049467",
-      "name": "Predlžovačka Prémium 5x2P+T, Bez Kábla, Biela/tmavosivá",
-      "url": "https://www.buco.sk/predlzovacka-premium-5x2p-t-bez-kabla-biela-tmavosiva-049467"
-    },
-    {
-      "productId": "buco_049468",
-      "name": "Predlžovačka Prémium 6x2P+T, Bez Kábla, Biela/tmavosivá",
-      "url": "https://www.buco.sk/predlzovacka-premium-6x2p-t-bez-kabla-biela-tmavosiva-049468"
-    },
-    {
-      "productId": "buco_049469",
-      "name": "Predlžovačka Prémium 6x2P+T, Bez Kábla, Čierna/tmavosivá",
-      "url": "https://www.buco.sk/predlzovacka-premium-6x2p-t-bez-kabla-cierna-tmavosiva-049469"
-    },
-    {
-      "productId": "buco_049499",
-      "name": "Predlžovačka Štandard 6x2P+T, Bez Kábla, Biela/svetlosivá",
-      "url": "https://www.buco.sk/predlzovacka-standard-6x2p-t-bez-kabla-biela-tmavosiva-049499"
-    },
-    {
-      "productId": "buco_049498",
-      "name": "Predlžovačka Štandard 5x2P+T, Bez Kábla, Biela/svetlosivá",
-      "url": "https://www.buco.sk/predlzovacka-standard-5x2p-t-bez-kabla-biela-tmavosiva-049498"
-    },
-    {
-      "productId": "buco_049497",
-      "name": "Predlžovačka Štandard 4x2P+T, Bez Kábla, Biela/svetlosivá",
-      "url": "https://www.buco.sk/predlzovacka-standard-4x2p-t-bez-kabla-biela-tmavosiva-049497"
-    },
-    {
-      "productId": "buco_049496",
-      "name": "Predlžovačka Štandard 3x2P+T, Bez Kábla, Biela/svetlosivá",
-      "url": "https://www.buco.sk/predlzovacka-standard-3x2p-t-bez-kabla-biela-tmavosiva-049496"
-    },
-    {
-      "productId": "buco_049408",
-      "name": "Rohová Viacúčelová Predlžovačka 4x2P+T, Bez Kábla, Biela",
-      "url": "https://www.buco.sk/rohova-viacucelova-predlzovacka-4x2p-t-bez-kabla-biela-hlinik-049408"
-    },
-    {
-      "productId": "buco_049437",
-      "name": "Rozbočovač Bočný Otočný 3x2P+T, USB A+c, Biela/tmavosivá",
-      "url": "https://www.buco.sk/rozbocovac-bocny-otocny-3x2p-t-usb-a-c-biela-tmavosiva-049437"
-    },
-    {
-      "productId": "buco_049439",
-      "name": "Rozbočovač Bočný Otočný 3x2P+T, USB A+c, Hliník/tmavosivá",
-      "url": "https://www.buco.sk/rozbocovac-bocny-otocny-3x2p-t-usb-a-c-hlinik-tmavosiva-049439"
-    },
-    {
-      "productId": "buco_049435",
-      "name": "Rozbočovač Bočný 3x2P+T, Biela/tmavosivá",
-      "url": "https://www.buco.sk/rozbocovac-bocny-3x2p-t-biela-tmavosiva-049435"
-    },
-    {
-      "productId": "buco_049438",
-      "name": "Rozbočovač Bočný 3x2P+T, Hliník/tmavosivá",
-      "url": "https://www.buco.sk/rozbocovac-bocny-3x2p-t-hlinik-tmavosiva-049438"
-    },
-    {
-      "productId": "buco_049401",
-      "name": "Rozbočovač Bočný 4x2P, USB A+c, Biela/tmavosivá",
-      "url": "https://www.buco.sk/rozbocovac-bocny-4x2p-usb-a-c-biela-tmavosiva-049401"
-    },
-    {
-      "productId": "buco_050676",
-      "name": "Nočné Bodové Svetlo Biele",
-      "url": "https://www.buco.sk/nocne-bodove-svetlo-biele-050676"
-    },
-    {
-      "productId": "buco_050678",
-      "name": "Núdzové Svetlo Biele",
-      "url": "https://www.buco.sk/nudzove-svetlo-biele-050678"
-    },
-    {
-      "productId": "buco_050577",
-      "name": "Rozbočovač Octopus",
-      "url": "https://www.buco.sk/rozbocovac-octopus-050577"
-    },
-    {
-      "productId": "buco_050172",
-      "name": "Vidlica S Možnostou Pootočenia Kábla O 360°, Biela",
-      "url": "https://www.buco.sk/vidlica-s-moznostou-pootocenia-kabla-o-360-biela-050172"
-    },
-    {
-      "productId": "buco_050173",
-      "name": "Vidlica S Možnostou Pootočenia Kábla O 360°, Čierna",
-      "url": "https://www.buco.sk/vidlica-s-moznostou-pootocenia-kabla-o-360-cierna-050173"
     },
     {
       "productId": "buco_412181",
@@ -1544,399 +1724,749 @@
       "url": "https://www.buco.sk/incara-electron-naklonena-kovova-konzola-654938"
     },
     {
-      "productId": "buco_2006020",
-      "name": "Držiak Káblov Do Drážky F-clip, 60mm",
-      "url": "https://www.buco.sk/drziak-kablov-do-drazky-f-clip-60mm-2006020"
+      "productId": "buco_050445",
+      "name": "Gumova Vidlica IP44 Ik08",
+      "url": "https://www.buco.sk/gumova-vidlica-ip44-ik08-050445"
     },
     {
-      "productId": "buco_2207028",
-      "name": "Zväzkový Držiak Grip 15, Kov, E90, 2031 M 15 Fs",
-      "url": "https://www.buco.sk/zvazkovy-drziak-grip-m-15-2031-m-15-fs-2207028"
+      "productId": "buco_049433",
+      "name": "Rozbocovac Celny 3x2p T Biela Tmavosiva",
+      "url": "https://www.buco.sk/rozbocovac-celny-3x2p-t-biela-tmavosiva-049433"
     },
     {
-      "productId": "buco_2207036",
-      "name": "Zväzkový Držiak Grip 30, Kov, E90, 2031 M 30 Fs",
-      "url": "https://www.buco.sk/zvazkovy-drziak-grip-m-30-2031-m-30-fs-2207036"
+      "productId": "buco_049431",
+      "name": "Rozbocovac Celny 2x2p T Biela Tmavosiva",
+      "url": "https://www.buco.sk/rozbocovac-celny-2x2p-t-biela-tmavosiva-049431"
     },
     {
-      "productId": "buco_2207060",
-      "name": "Zväzkový Držiak Grip 70, Kov, E90, 2031 M 70 Fs",
-      "url": "https://www.buco.sk/zvazkovy-drziak-grip-m-70-2031-m-70-fs-2207060"
+      "productId": "buco_049436",
+      "name": "Rozbocovac Bocny Otocny 3x2p T Biela Tmavosiva",
+      "url": "https://www.buco.sk/rozbocovac-bocny-otocny-3x2p-t-biela-tmavosiva-049436"
     },
     {
-      "productId": "buco_2205384",
-      "name": "Zväzkový Držiak Grip 10, Plast, 2031",
-      "url": "https://www.buco.sk/zvazkovy-drziak-grip-10-plast-2031-10-2205384"
+      "productId": "buco_049434",
+      "name": "Rozbocovac Celny 3x2p T Cierna Tmavosiva",
+      "url": "https://www.buco.sk/rozbocovac-celny-3x2p-t-cierna-tmavosiva-049434"
     },
     {
-      "productId": "buco_2205404",
-      "name": "Zväzkový Držiak Grip 20, Plast, 2031",
-      "url": "https://www.buco.sk/zvazkovy-drziak-grip-20-plast-2031-20-2205404"
+      "productId": "buco_049432",
+      "name": "Rozbocovac Celny 2x2p T Cierna Tmavosiva",
+      "url": "https://www.buco.sk/rozbocovac-celny-2x2p-t-cierna-tmavosiva-049432"
     },
     {
-      "productId": "buco_2205416",
-      "name": "Zväzkový Držiak Grip 40, Plast, 2031",
-      "url": "https://www.buco.sk/zvazkovy-drziak-grip-40-plast-2031-40-2205416"
+      "productId": "buco_049400",
+      "name": "Rozbocovac Bocny 4x2p Biela Tmavosiva",
+      "url": "https://www.buco.sk/rozbocovac-bocny-4x2p-biela-tmavosiva-049400"
     },
     {
-      "productId": "buco_1475912",
-      "name": "Perforovaný Montážny Pás 12x0,7mm, Mz029 Li12 Fs",
-      "url": "https://www.buco.sk/perforovany-montazny-pas-12x07mm-mz029-li12-fs-1475912"
+      "productId": "buco_049409",
+      "name": "Rohova Viacucelova Predlzovacka 3x2p T USB A C Bez Kabla Biela Hlinik",
+      "url": "https://www.buco.sk/rohova-viacucelova-predlzovacka-3x2p-t-usb-a-c-bez-kabla-biela-hlinik-049409"
     },
     {
-      "productId": "buco_1475914",
-      "name": "Perforovaný Montážny Pás 17x0,7mm, Mz029 Lii17 Fs",
-      "url": "https://www.buco.sk/perforovany-montazny-pas-17x07mm-mz029-lii17-fs-1475914"
+      "productId": "buco_049464",
+      "name": "Predlžovačka Prémium 3x2P+T, Bez Kábla, Biela/tmavosivá",
+      "url": "https://www.buco.sk/predlzovacka-premium-3x2p-t-bez-kabla-biela-tmavosiva-049464"
     },
     {
-      "productId": "buco_1475917",
-      "name": "Perforovaný Montážny Pás 25x0,7mm, Mz029 Liii25 Fs",
-      "url": "https://www.buco.sk/perforovany-montazny-pas-25x07mm-mz029-liii25-fs-1475917"
+      "productId": "buco_049465",
+      "name": "Predlžovačka Prémium 4x2P+T, Bez Kábla, Biela/tmavosivá",
+      "url": "https://www.buco.sk/predlzovacka-premium-4x2p-t-bez-kabla-biela-tmavosiva-049465"
     },
     {
-      "productId": "buco_2205017",
-      "name": "Káblová Spona, Pre 8 Vedení 3x1,5mm², Plast,",
-      "url": "https://www.buco.sk/kablova-spona-pre-8-vedeni-3x15mm2-plast-2032-2205017"
+      "productId": "buco_049466",
+      "name": "Predlžovačka Prémium 4x2P+T, Bez Kábla, Čierna/tmavosivá",
+      "url": "https://www.buco.sk/predlzovacka-premium-4x2p-t-bez-kabla-cierna-tmavosiva-049466"
     },
     {
-      "productId": "buco_2205041",
-      "name": "Káblová Spona, Pre 10 Vedení 3x1,5mm², Plast,",
-      "url": "https://www.buco.sk/kablova-spona-pre-10-vedeni-3x15mm2-plast-2034-2205041"
+      "productId": "buco_049467",
+      "name": "Predlžovačka Prémium 5x2P+T, Bez Kábla, Biela/tmavosivá",
+      "url": "https://www.buco.sk/predlzovacka-premium-5x2p-t-bez-kabla-biela-tmavosiva-049467"
     },
     {
-      "productId": "buco_2205033",
-      "name": "Káblová Spona, Pre 16 Vedení 3x1,5mm², Plast,",
-      "url": "https://www.buco.sk/kablova-spona-pre-16-vedeni-3x15mm2-plast-2033-2205033"
+      "productId": "buco_049468",
+      "name": "Predlžovačka Prémium 6x2P+T, Bez Kábla, Biela/tmavosivá",
+      "url": "https://www.buco.sk/predlzovacka-premium-6x2p-t-bez-kabla-biela-tmavosiva-049468"
     },
     {
-      "productId": "buco_2222833",
-      "name": "Káblová Príchytka Nagel-fix S Klincom, 3x40mm, Plast, Priehľadná, 1996",
-      "url": "https://www.buco.sk/kablova-prichytka-nagel-fix-s-klincom-3x40mm-plast-priehladna-1996-40-2222833"
+      "productId": "buco_049469",
+      "name": "Predlžovačka Prémium 6x2P+T, Bez Kábla, Čierna/tmavosivá",
+      "url": "https://www.buco.sk/predlzovacka-premium-6x2p-t-bez-kabla-cierna-tmavosiva-049469"
     },
     {
-      "productId": "buco_2222841",
-      "name": "Káblová Príchytka Nagel-fix S Klincom, 3,5x50mm, Plast, Priehľadná, 1996",
-      "url": "https://www.buco.sk/kablova-prichytka-nagel-fix-s-klincom-35x50mm-plast-priehladna-1996-50-2222841"
+      "productId": "buco_049499",
+      "name": "Predlžovačka Štandard 6x2P+T, Bez Kábla, Biela/svetlosivá",
+      "url": "https://www.buco.sk/predlzovacka-standard-6x2p-t-bez-kabla-biela-tmavosiva-049499"
     },
     {
-      "productId": "buco_4698",
-      "name": "Koncová Dutinka Izolovaná 4698, 0,5mm², 8mm, Cu, Biela",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-4698-05mm2-8mm-cu-biela-4698"
+      "productId": "buco_049498",
+      "name": "Predlžovačka Štandard 5x2P+T, Bez Kábla, Biela/svetlosivá",
+      "url": "https://www.buco.sk/predlzovacka-standard-5x2p-t-bez-kabla-biela-tmavosiva-049498"
     },
     {
-      "productId": "buco_4708",
-      "name": "Koncová Dutinka Izolovaná 4708, 0,75mm², 8mm, Cu, Šedá",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-4708-075mm2-8mm-cu-seda-4708"
+      "productId": "buco_049497",
+      "name": "Predlžovačka Štandard 4x2P+T, Bez Kábla, Biela/svetlosivá",
+      "url": "https://www.buco.sk/predlzovacka-standard-4x2p-t-bez-kabla-biela-tmavosiva-049497"
     },
     {
-      "productId": "buco_4718",
-      "name": "Koncová Dutinka Izolovaná 4718, 1mm², 8mm, Cu, Červená",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-4718-1mm2-8mm-cu-cervena-4718"
+      "productId": "buco_049496",
+      "name": "Predlžovačka Štandard 3x2P+T, Bez Kábla, Biela/svetlosivá",
+      "url": "https://www.buco.sk/predlzovacka-standard-3x2p-t-bez-kabla-biela-tmavosiva-049496"
     },
     {
-      "productId": "buco_4728",
-      "name": "Koncová Dutinka Izolovaná 4728, 1,5mm², 8mm, Cu, Čierna",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-4728-15mm2-8mm-cu-cierna-4728"
+      "productId": "buco_049408",
+      "name": "Rohová Viacúčelová Predlžovačka 4x2P+T, Bez Kábla, Biela",
+      "url": "https://www.buco.sk/rohova-viacucelova-predlzovacka-4x2p-t-bez-kabla-biela-hlinik-049408"
     },
     {
-      "productId": "buco_47212",
-      "name": "Koncová Dutinka Izolovaná 47212, 1,5mm², 12mm, Cu, Čierna",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-4728-15mm2-12mm-cu-cierna-47212"
+      "productId": "buco_049437",
+      "name": "Rozbočovač Bočný Otočný 3x2P+T, USB A+c, Biela/tmavosivá",
+      "url": "https://www.buco.sk/rozbocovac-bocny-otocny-3x2p-t-usb-a-c-biela-tmavosiva-049437"
     },
     {
-      "productId": "buco_4738",
-      "name": "Koncová Dutinka Izolovaná 4738, 2,5mm², 8mm, Cu, Modrá",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-4738-25mm2-8mm-cu-modra-4738"
+      "productId": "buco_049439",
+      "name": "Rozbočovač Bočný Otočný 3x2P+T, USB A+c, Hliník/tmavosivá",
+      "url": "https://www.buco.sk/rozbocovac-bocny-otocny-3x2p-t-usb-a-c-hlinik-tmavosiva-049439"
     },
     {
-      "productId": "buco_47312",
-      "name": "Koncová Dutinka Izolovaná 47312, 2,5mm², 12mm, Cu, Modrá",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47312-25mm2-12mm-cu-modra-47312"
+      "productId": "buco_049435",
+      "name": "Rozbočovač Bočný 3x2P+T, Biela/tmavosivá",
+      "url": "https://www.buco.sk/rozbocovac-bocny-3x2p-t-biela-tmavosiva-049435"
     },
     {
-      "productId": "buco_47318",
-      "name": "Koncová Dutinka Izolovaná 47318, 2,5mm², 18mm, Cu, Modrá",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47318-25mm2-18mm-cu-modra-47318"
+      "productId": "buco_049438",
+      "name": "Rozbočovač Bočný 3x2P+T, Hliník/tmavosivá",
+      "url": "https://www.buco.sk/rozbocovac-bocny-3x2p-t-hlinik-tmavosiva-049438"
     },
     {
-      "productId": "buco_47410",
-      "name": "Koncová Dutinka Izolovaná 47410, 4mm², 10mm, Cu, Šedá",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47410-4mm2-10mm-cu-seda-47410"
+      "productId": "buco_049401",
+      "name": "Rozbočovač Bočný 4x2P, USB A+c, Biela/tmavosivá",
+      "url": "https://www.buco.sk/rozbocovac-bocny-4x2p-usb-a-c-biela-tmavosiva-049401"
     },
     {
-      "productId": "buco_47512",
-      "name": "Koncová Dutinka Izolovaná 47512, 6mm², 12mm, Cu, Žltá",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47512-6mm2-12mm-cu-zlta-47512"
+      "productId": "buco_050676",
+      "name": "Nočné Bodové Svetlo Biele",
+      "url": "https://www.buco.sk/nocne-bodove-svetlo-biele-050676"
     },
     {
-      "productId": "buco_47612",
-      "name": "Koncová Dutinka Izolovaná 47612, 10mm², 12mm, Cu, Červená",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47612-10mm2-12mm-cu-cervena-47612"
+      "productId": "buco_050678",
+      "name": "Núdzové Svetlo Biele",
+      "url": "https://www.buco.sk/nudzove-svetlo-biele-050678"
     },
     {
-      "productId": "buco_47712",
-      "name": "Koncová Dutinka Izolovaná 47712, 16mm², 12mm, Cu, Modrá",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47712-16mm2-12mm-cu-modra-47712"
+      "productId": "buco_050577",
+      "name": "Rozbočovač Octopus",
+      "url": "https://www.buco.sk/rozbocovac-octopus-050577"
     },
     {
-      "productId": "buco_47718",
-      "name": "Koncová Dutinka Izolovaná 47718, 16mm², 18mm, Cu, Modrá",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47718-16mm2-18mm-cu-modra-47718"
+      "productId": "buco_050172",
+      "name": "Vidlica S Možnostou Pootočenia Kábla O 360°, Biela",
+      "url": "https://www.buco.sk/vidlica-s-moznostou-pootocenia-kabla-o-360-biela-050172"
     },
     {
-      "productId": "buco_47816",
-      "name": "Koncová Dutinka Izolovaná 47816, 25mm², 16mm, Cu, Žltá",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47816-25mm2-16mm-cu-zlta-47816"
-    },
-    {
-      "productId": "buco_47822",
-      "name": "Koncová Dutinka Izolovaná 47822, 25mm², 22mm, Cu, Žltá",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47822-25mm2-22mm-cu-zlta-47822"
-    },
-    {
-      "productId": "buco_47916",
-      "name": "Koncová Dutinka Izolovaná 47916, 35mm², 16mm, Cu, Červená",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47916-35mm2-16mm-cu-cervena-47916"
-    },
-    {
-      "productId": "buco_47925",
-      "name": "Koncová Dutinka Izolovaná 47925, 35mm², 25mm, Cu, Červená",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-47925-35mm2-25mm-cu-cervena-47925"
-    },
-    {
-      "productId": "buco_48020",
-      "name": "Koncová Dutinka Izolovaná 48020, 50mm², 20mm, Cu, Modrá",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-48020-50mm2-20mm-cu-modra-48020"
-    },
-    {
-      "productId": "buco_48121",
-      "name": "Koncová Dutinka Izolovaná 48121, 70mm², 21mm, Cu, Žltá",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-48121-70mm2-21mm-cu-zlta-48121"
-    },
-    {
-      "productId": "buco_48225",
-      "name": "Koncová Dutinka Izolovaná 48225, 95mm², 25mm, Cu, Červená",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-48225-95mm2-25mm-cu-cervena-48225"
-    },
-    {
-      "productId": "buco_48327",
-      "name": "Koncová Dutinka Izolovaná 48327, 120mm², 27mm, Cu, Modrá",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-48327-120mm2-27mm-cu-modra-48327"
-    },
-    {
-      "productId": "buco_48432",
-      "name": "Koncová Dutinka Izolovaná 48432, 150mm², 32mm, Cu, Žltá",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-48432-150mm2-32mm-cu-zlta-48432"
-    },
-    {
-      "productId": "buco_8698",
-      "name": "Koncová Dutinka Izolovaná Dvojitá 8698, 2x0,5mm², 8mm, Biela",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-8698-2x05mm2-8mm-biela-8698"
-    },
-    {
-      "productId": "buco_8708",
-      "name": "Koncova Dutinka Izolovana Dvojita 8708 2x075mm2 8mm Seda 8708",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-8708-2x075mm2-8mm-seda-8708"
-    },
-    {
-      "productId": "buco_8718",
-      "name": "Koncová Dutinka Izolovaná Dvojitá 8718, 2x1mm², 8mm, Červená",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-8718-2x1mm2-8mm-cervena-8718"
-    },
-    {
-      "productId": "buco_87110",
-      "name": "Koncová Dutinka Izolovaná Dvojitá 87110, 2x1mm², 10mm, Červená",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-87110-2x1mm2-10mm-cervena-87110"
-    },
-    {
-      "productId": "buco_8728",
-      "name": "Koncová Dutinka Izolovaná Dvojitá 8728, 2x1,5mm², 8mm, Čierna",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-8728-2x15mm2-8mm-cierna-8728"
-    },
-    {
-      "productId": "buco_87310",
-      "name": "Koncová Dutinka Izolovaná Dvojitá 87310, 2x2,5mm², 10mm, Modrá",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-87310-2x25mm2-10mm-modra-87310"
-    },
-    {
-      "productId": "buco_87412",
-      "name": "Koncová Dutinka Izolovaná Dvojitá 87412, 2x4mm², 12mm, Šedá",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-87412-2x4mm2-12mm-seda-87412"
-    },
-    {
-      "productId": "buco_87514",
-      "name": "Koncová Dutinka Izolovaná Dvojitá 87514, 2x6mm², 14mm, Žltá",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-87514-2x6mm2-14mm-zlta-87514"
-    },
-    {
-      "productId": "buco_87614",
-      "name": "Koncová Dutinka Izolovaná Dvojitá 87614, 2x10mm², 14mm, Červená",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-87614-2x10mm2-14mm-cervena-87614"
-    },
-    {
-      "productId": "buco_87714",
-      "name": "Koncová Dutinka Izolovaná Dvojitá 87714, 2x16mm², 14mm, Modrá",
-      "url": "https://www.buco.sk/koncova-dutinka-izolovana-dvojita-87714-2x16mm2-14mm-modra-87714"
-    },
-    {
-      "productId": "buco_7810052",
-      "name": "Instalačné Puzdro Do Zateplených Fasád Thermofix Tf1-set S Prístrojovou Krabicou",
-      "url": "https://www.buco.sk/instalacne-puzdro-do-zateplenych-fasad-thermofix-tf1-set-s-pristrojovou-krabicou-7810052"
-    },
-    {
-      "productId": "buco_7810051",
-      "name": "Inštalačné Puzdro Do Zateplených Fasád Thermofix Tf1",
-      "url": "https://www.buco.sk/instalacne-puzdro-do-zateplenych-fasad-thermofix-tf1-7810051"
+      "productId": "buco_050173",
+      "name": "Vidlica S Možnostou Pootočenia Kábla O 360°, Čierna",
+      "url": "https://www.buco.sk/vidlica-s-moznostou-pootocenia-kabla-o-360-cierna-050173"
     }
   ],
   "sampleNormalizedProducts": [
     {
-      "id": "buco_5401980",
+      "id": "buco_754001",
       "tradeId": "electrical",
-      "categoryId": "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material",
+      "categoryId": "electrical__vypinace-a-ovladace__ramceky-a-kryty",
       "categoryPathIds": [
-        "electrical__uzemnenie-a-bleskozvody",
-        "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material"
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__ramceky-a-kryty"
       ],
       "categoryPathNames": [
-        "Uzemnenie a bleskozvody",
-        "Bleskozvodný materiál"
+        "Vypínače a ovládače",
+        "Rámčeky a kryty"
       ],
-      "name": "Zachytávacia Tyč 1500mm, 101 Vl1500",
-      "normalizedName": "zachytavacia tyc 1500mm 101 vl1500",
-      "supplierSku": "5401980",
-      "brand": null,
-      "series": null,
-      "productType": "lightning",
+      "name": "Valena Life 1 Ramcek Biela",
+      "normalizedName": "valena life 1 ramcek biela",
+      "supplierSku": "754001",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "frame",
       "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/754001.jpg",
       "attributes": {},
       "supplier": {
         "supplierId": "buco",
         "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/zachytavacia-tyc-1500mm-101-vl1500-5401980"
+        "sourceUrl": "https://www.buco.sk/valena-life-1-ramcek-biela-754001"
       },
       "pricing": {
         "currency": "EUR",
-        "netCents": 1842,
-        "grossCents": 2266,
-        "priceStatus": "valid"
+        "netCents": 394,
+        "grossCents": 120,
+        "priceStatus": "needs_review"
       },
       "availability": {
-        "quantity": 16,
+        "quantity": 789,
         "status": "in_stock"
       },
       "searchTokens": [
-        "101",
-        "1500mm",
-        "5401980",
-        "bleskozvod",
-        "bleskozvodny",
-        "bleskozvodny material",
-        "bleskozvody",
-        "lightning",
-        "material",
-        "tyc",
-        "uzemnenie",
-        "uzemnenie a bleskozvody",
-        "vl1500",
-        "zachytavac",
-        "zachytavacia",
-        "zachytavacia tyc 1500mm 101 vl1500"
+        "754001",
+        "biela",
+        "frame",
+        "kryt",
+        "kryty",
+        "legrand",
+        "life",
+        "ovladace",
+        "ramcek",
+        "ramceky",
+        "ramceky a kryty",
+        "spinac",
+        "switch",
+        "valena",
+        "valena life",
+        "valena life 1 ramcek biela",
+        "vypinac",
+        "vypinace",
+        "vypinace a ovladace"
       ],
-      "classificationConfidence": 0.95,
-      "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
+      "classificationConfidence": 0.92,
+      "status": "needs_review",
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
     },
     {
-      "id": "buco_5401983",
+      "id": "buco_754002",
       "tradeId": "electrical",
-      "categoryId": "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material",
+      "categoryId": "electrical__vypinace-a-ovladace__ramceky-a-kryty",
       "categoryPathIds": [
-        "electrical__uzemnenie-a-bleskozvody",
-        "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material"
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__ramceky-a-kryty"
       ],
       "categoryPathNames": [
-        "Uzemnenie a bleskozvody",
-        "Bleskozvodný materiál"
+        "Vypínače a ovládače",
+        "Rámčeky a kryty"
       ],
-      "name": "Zachytávacia Tyč 2000mm, 101 Vl2000",
-      "normalizedName": "zachytavacia tyc 2000mm 101 vl2000",
-      "supplierSku": "5401983",
-      "brand": null,
-      "series": null,
-      "productType": "lightning",
+      "name": "Valena Life 2 Ramcek Biela",
+      "normalizedName": "valena life 2 ramcek biela",
+      "supplierSku": "754002",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "frame",
       "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/754002.jpg",
       "attributes": {},
       "supplier": {
         "supplierId": "buco",
         "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/zachytavacia-tyc-2000mm-101-vl2000-5401983"
+        "sourceUrl": "https://www.buco.sk/valena-life-2-ramcek-biela-754002"
       },
       "pricing": {
         "currency": "EUR",
-        "netCents": 1961,
-        "grossCents": 2412,
-        "priceStatus": "valid"
+        "netCents": 394,
+        "grossCents": 120,
+        "priceStatus": "needs_review"
       },
       "availability": {
-        "quantity": 13,
+        "quantity": 789,
         "status": "in_stock"
       },
       "searchTokens": [
-        "101",
-        "2000mm",
-        "5401983",
-        "bleskozvod",
-        "bleskozvodny",
-        "bleskozvodny material",
-        "bleskozvody",
-        "lightning",
-        "material",
-        "tyc",
-        "uzemnenie",
-        "uzemnenie a bleskozvody",
-        "vl2000",
-        "zachytavac",
-        "zachytavacia",
-        "zachytavacia tyc 2000mm 101 vl2000"
+        "754002",
+        "biela",
+        "frame",
+        "kryt",
+        "kryty",
+        "legrand",
+        "life",
+        "ovladace",
+        "ramcek",
+        "ramceky",
+        "ramceky a kryty",
+        "spinac",
+        "switch",
+        "valena",
+        "valena life",
+        "valena life 2 ramcek biela",
+        "vypinac",
+        "vypinace",
+        "vypinace a ovladace"
       ],
-      "classificationConfidence": 0.95,
-      "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
+      "classificationConfidence": 0.92,
+      "status": "needs_review",
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
     },
     {
-      "id": "buco_5401986",
+      "id": "buco_752101",
       "tradeId": "electrical",
-      "categoryId": "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material",
+      "categoryId": "electrical__vypinace-a-ovladace__vypinac-c1",
       "categoryPathIds": [
-        "electrical__uzemnenie-a-bleskozvody",
-        "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material"
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__vypinac-c1"
       ],
       "categoryPathNames": [
-        "Uzemnenie a bleskozvody",
-        "Bleskozvodný materiál"
+        "Vypínače a ovládače",
+        "Vypínač č. 1"
       ],
-      "name": "Zachytávacia Tyč 2500mm, 101 Vl2500",
-      "normalizedName": "zachytavacia tyc 2500mm 101 vl2500",
-      "supplierSku": "5401986",
-      "brand": null,
-      "series": null,
-      "productType": "lightning",
+      "name": "Valena Life Vypínač Č.1, Biela Kolíska",
+      "normalizedName": "valena life vypinac c 1 biela koliska",
+      "supplierSku": "752101",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "switch_1",
       "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/752101.jpg",
+      "attributes": {
+        "switchType": "1"
+      },
+      "supplier": {
+        "supplierId": "buco",
+        "supplierName": "BUČO",
+        "sourceUrl": "https://www.buco.sk/valena-life-vypinac-c1-biela-koliska-752101"
+      },
+      "pricing": {
+        "currency": "EUR",
+        "netCents": 345,
+        "grossCents": 424,
+        "priceStatus": "valid"
+      },
+      "availability": {
+        "quantity": 1150,
+        "status": "in_stock"
+      },
+      "searchTokens": [
+        "752101",
+        "biela",
+        "koliska",
+        "legrand",
+        "life",
+        "ovladace",
+        "spinac",
+        "switch",
+        "switch 1",
+        "valena",
+        "valena life",
+        "valena life vypinac c 1 biela koliska",
+        "vypinac",
+        "vypinac c 1",
+        "vypinace",
+        "vypinace a ovladace"
+      ],
+      "classificationConfidence": 0.93,
+      "status": "active",
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
+    },
+    {
+      "id": "buco_754003",
+      "tradeId": "electrical",
+      "categoryId": "electrical__vypinace-a-ovladace__ramceky-a-kryty",
+      "categoryPathIds": [
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__ramceky-a-kryty"
+      ],
+      "categoryPathNames": [
+        "Vypínače a ovládače",
+        "Rámčeky a kryty"
+      ],
+      "name": "Valena Life 3 Ramcek Biela",
+      "normalizedName": "valena life 3 ramcek biela",
+      "supplierSku": "754003",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "frame",
+      "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/754003.jpg",
       "attributes": {},
       "supplier": {
         "supplierId": "buco",
         "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/zachytavacia-tyc-2500mm-101-vl2500-5401986"
+        "sourceUrl": "https://www.buco.sk/valena-life-3-ramcek-biela-754003"
       },
       "pricing": {
         "currency": "EUR",
-        "netCents": 2587,
-        "grossCents": 3182,
+        "netCents": 394,
+        "grossCents": 120,
+        "priceStatus": "needs_review"
+      },
+      "availability": {
+        "quantity": 789,
+        "status": "in_stock"
+      },
+      "searchTokens": [
+        "754003",
+        "biela",
+        "frame",
+        "kryt",
+        "kryty",
+        "legrand",
+        "life",
+        "ovladace",
+        "ramcek",
+        "ramceky",
+        "ramceky a kryty",
+        "spinac",
+        "switch",
+        "valena",
+        "valena life",
+        "valena life 3 ramcek biela",
+        "vypinac",
+        "vypinace",
+        "vypinace a ovladace"
+      ],
+      "classificationConfidence": 0.92,
+      "status": "needs_review",
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
+    },
+    {
+      "id": "buco_754251",
+      "tradeId": "electrical",
+      "categoryId": "electrical__vypinace-a-ovladace__ramceky-a-kryty",
+      "categoryPathIds": [
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__ramceky-a-kryty"
+      ],
+      "categoryPathNames": [
+        "Vypínače a ovládače",
+        "Rámčeky a kryty"
+      ],
+      "name": "Valena Life 1 Ramcek Cierna Matna",
+      "normalizedName": "valena life 1 ramcek cierna matna",
+      "supplierSku": "754251",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "frame",
+      "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/LG-754251-WEB-R.jpg",
+      "attributes": {},
+      "supplier": {
+        "supplierId": "buco",
+        "supplierName": "BUČO",
+        "sourceUrl": "https://www.buco.sk/valena-life-1-ramcek-cierna-matna-754251"
+      },
+      "pricing": {
+        "currency": "EUR",
+        "netCents": 394,
+        "grossCents": 120,
+        "priceStatus": "needs_review"
+      },
+      "availability": {
+        "quantity": 789,
+        "status": "in_stock"
+      },
+      "searchTokens": [
+        "754251",
+        "cierna",
+        "frame",
+        "kryt",
+        "kryty",
+        "legrand",
+        "life",
+        "matna",
+        "ovladace",
+        "ramcek",
+        "ramceky",
+        "ramceky a kryty",
+        "spinac",
+        "switch",
+        "valena",
+        "valena life",
+        "valena life 1 ramcek cierna matna",
+        "vypinac",
+        "vypinace",
+        "vypinace a ovladace"
+      ],
+      "classificationConfidence": 0.92,
+      "status": "needs_review",
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
+    },
+    {
+      "id": "buco_752106",
+      "tradeId": "electrical",
+      "categoryId": "electrical__vypinace-a-ovladace__vypinac-c6",
+      "categoryPathIds": [
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__vypinac-c6"
+      ],
+      "categoryPathNames": [
+        "Vypínače a ovládače",
+        "Vypínač č. 6"
+      ],
+      "name": "Valena Life Vypínač Č.6, Biela Kolíska",
+      "normalizedName": "valena life vypinac c 6 biela koliska",
+      "supplierSku": "752106",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "switch_6",
+      "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/752106.jpg",
+      "attributes": {
+        "switchType": "6"
+      },
+      "supplier": {
+        "supplierId": "buco",
+        "supplierName": "BUČO",
+        "sourceUrl": "https://www.buco.sk/valena-life-vypinac-c6-biela-koliska-752106"
+      },
+      "pricing": {
+        "currency": "EUR",
+        "netCents": 434,
+        "grossCents": 534,
+        "priceStatus": "valid"
+      },
+      "availability": {
+        "quantity": 1207,
+        "status": "in_stock"
+      },
+      "searchTokens": [
+        "752106",
+        "biela",
+        "koliska",
+        "legrand",
+        "life",
+        "ovladace",
+        "spinac",
+        "switch",
+        "switch 6",
+        "valena",
+        "valena life",
+        "valena life vypinac c 6 biela koliska",
+        "vypinac",
+        "vypinac c 6",
+        "vypinace",
+        "vypinace a ovladace"
+      ],
+      "classificationConfidence": 0.93,
+      "status": "active",
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
+    },
+    {
+      "id": "buco_752105",
+      "tradeId": "electrical",
+      "categoryId": "electrical__vypinace-a-ovladace__vypinac-c5",
+      "categoryPathIds": [
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__vypinac-c5"
+      ],
+      "categoryPathNames": [
+        "Vypínače a ovládače",
+        "Vypínač č. 5"
+      ],
+      "name": "Valena Life Vypinac C5 Biela Koliska",
+      "normalizedName": "valena life vypinac c5 biela koliska",
+      "supplierSku": "752105",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "switch_5",
+      "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/752105.jpg",
+      "attributes": {
+        "switchType": "5"
+      },
+      "supplier": {
+        "supplierId": "buco",
+        "supplierName": "BUČO",
+        "sourceUrl": "https://www.buco.sk/valena-life-vypinac-c5-biela-koliska-752105"
+      },
+      "pricing": {
+        "currency": "EUR",
+        "netCents": 345,
+        "grossCents": 120,
+        "priceStatus": "needs_review"
+      },
+      "availability": {
+        "quantity": 1150,
+        "status": "in_stock"
+      },
+      "searchTokens": [
+        "752105",
+        "biela",
+        "c5",
+        "koliska",
+        "legrand",
+        "life",
+        "ovladace",
+        "spinac",
+        "switch",
+        "switch 5",
+        "valena",
+        "valena life",
+        "valena life vypinac c5 biela koliska",
+        "vypinac",
+        "vypinac c 5",
+        "vypinace",
+        "vypinace a ovladace"
+      ],
+      "classificationConfidence": 0.9,
+      "status": "needs_review",
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
+    },
+    {
+      "id": "buco_754252",
+      "tradeId": "electrical",
+      "categoryId": "electrical__vypinace-a-ovladace__ramceky-a-kryty",
+      "categoryPathIds": [
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__ramceky-a-kryty"
+      ],
+      "categoryPathNames": [
+        "Vypínače a ovládače",
+        "Rámčeky a kryty"
+      ],
+      "name": "Valena Life 2 Ramcek Cierna Matna",
+      "normalizedName": "valena life 2 ramcek cierna matna",
+      "supplierSku": "754252",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "frame",
+      "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/LG-754252-WEB-R.jpg",
+      "attributes": {},
+      "supplier": {
+        "supplierId": "buco",
+        "supplierName": "BUČO",
+        "sourceUrl": "https://www.buco.sk/valena-life-2-ramcek-cierna-matna-754252"
+      },
+      "pricing": {
+        "currency": "EUR",
+        "netCents": 394,
+        "grossCents": 120,
+        "priceStatus": "needs_review"
+      },
+      "availability": {
+        "quantity": 789,
+        "status": "in_stock"
+      },
+      "searchTokens": [
+        "754252",
+        "cierna",
+        "frame",
+        "kryt",
+        "kryty",
+        "legrand",
+        "life",
+        "matna",
+        "ovladace",
+        "ramcek",
+        "ramceky",
+        "ramceky a kryty",
+        "spinac",
+        "switch",
+        "valena",
+        "valena life",
+        "valena life 2 ramcek cierna matna",
+        "vypinac",
+        "vypinace",
+        "vypinace a ovladace"
+      ],
+      "classificationConfidence": 0.92,
+      "status": "needs_review",
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
+    },
+    {
+      "id": "buco_754004",
+      "tradeId": "electrical",
+      "categoryId": "electrical__vypinace-a-ovladace__ramceky-a-kryty",
+      "categoryPathIds": [
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__ramceky-a-kryty"
+      ],
+      "categoryPathNames": [
+        "Vypínače a ovládače",
+        "Rámčeky a kryty"
+      ],
+      "name": "Valena Life 4 Ramcek Biela",
+      "normalizedName": "valena life 4 ramcek biela",
+      "supplierSku": "754004",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "frame",
+      "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/754004.jpg",
+      "attributes": {},
+      "supplier": {
+        "supplierId": "buco",
+        "supplierName": "BUČO",
+        "sourceUrl": "https://www.buco.sk/valena-life-4-ramcek-biela-754004"
+      },
+      "pricing": {
+        "currency": "EUR",
+        "netCents": 394,
+        "grossCents": 120,
+        "priceStatus": "needs_review"
+      },
+      "availability": {
+        "quantity": 789,
+        "status": "in_stock"
+      },
+      "searchTokens": [
+        "754004",
+        "biela",
+        "frame",
+        "kryt",
+        "kryty",
+        "legrand",
+        "life",
+        "ovladace",
+        "ramcek",
+        "ramceky",
+        "ramceky a kryty",
+        "spinac",
+        "switch",
+        "valena",
+        "valena life",
+        "valena life 4 ramcek biela",
+        "vypinac",
+        "vypinace",
+        "vypinace a ovladace"
+      ],
+      "classificationConfidence": 0.92,
+      "status": "needs_review",
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
+    },
+    {
+      "id": "buco_665001",
+      "tradeId": "electrical",
+      "categoryId": "electrical__vypinace-a-ovladace__ramceky-a-kryty",
+      "categoryPathIds": [
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__ramceky-a-kryty"
+      ],
+      "categoryPathNames": [
+        "Vypínače a ovládače",
+        "Rámčeky a kryty"
+      ],
+      "name": "Niloé 1-rámček, Biely",
+      "normalizedName": "niloe 1 ramcek biely",
+      "supplierSku": "665001",
+      "brand": "Legrand",
+      "series": "Niloé",
+      "productType": "frame",
+      "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/665001.jpg",
+      "attributes": {},
+      "supplier": {
+        "supplierId": "buco",
+        "supplierName": "BUČO",
+        "sourceUrl": "https://www.buco.sk/niloe-1-ramcek-biely-665001"
+      },
+      "pricing": {
+        "currency": "EUR",
+        "netCents": 71,
+        "grossCents": 87,
         "priceStatus": "valid"
       },
       "availability": {
@@ -1944,732 +2474,124 @@
         "status": "in_stock"
       },
       "searchTokens": [
-        "101",
-        "2500mm",
-        "5401986",
-        "bleskozvod",
-        "bleskozvodny",
-        "bleskozvodny material",
-        "bleskozvody",
-        "lightning",
-        "material",
-        "tyc",
-        "uzemnenie",
-        "uzemnenie a bleskozvody",
-        "vl2500",
-        "zachytavac",
-        "zachytavacia",
-        "zachytavacia tyc 2500mm 101 vl2500"
+        "665001",
+        "biely",
+        "frame",
+        "kryt",
+        "kryty",
+        "legrand",
+        "niloe",
+        "niloe 1 ramcek biely",
+        "ovladace",
+        "ramcek",
+        "ramceky",
+        "ramceky a kryty",
+        "spinac",
+        "switch",
+        "vypinac",
+        "vypinace",
+        "vypinace a ovladace"
       ],
-      "classificationConfidence": 0.95,
+      "classificationConfidence": 0.92,
       "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
     },
     {
-      "id": "buco_5401989",
+      "id": "buco_752201",
       "tradeId": "electrical",
-      "categoryId": "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material",
+      "categoryId": "electrical__vypinace-a-ovladace__vypinac-c1",
       "categoryPathIds": [
-        "electrical__uzemnenie-a-bleskozvody",
-        "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material"
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__vypinac-c1"
       ],
       "categoryPathNames": [
-        "Uzemnenie a bleskozvody",
-        "Bleskozvodný materiál"
+        "Vypínače a ovládače",
+        "Vypínač č. 1"
       ],
-      "name": "Zachytávacia Tyč 3000mm, 101 Vl3000",
-      "normalizedName": "zachytavacia tyc 3000mm 101 vl3000",
-      "supplierSku": "5401989",
-      "brand": null,
-      "series": null,
-      "productType": "lightning",
+      "name": "Valena Life Vypínač Č.1, Béžová Kolíska",
+      "normalizedName": "valena life vypinac c 1 bezova koliska",
+      "supplierSku": "752201",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "switch_1",
       "unit": "ks",
-      "attributes": {},
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/752201.jpg",
+      "attributes": {
+        "switchType": "1"
+      },
       "supplier": {
         "supplierId": "buco",
         "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/zachytavacia-tyc-3000mm-101-vl3000-5401989"
+        "sourceUrl": "https://www.buco.sk/valena-life-vypinac-c1-bezova-koliska-752201"
       },
       "pricing": {
         "currency": "EUR",
-        "netCents": 2909,
-        "grossCents": 3578,
+        "netCents": 399,
+        "grossCents": 491,
         "priceStatus": "valid"
       },
       "availability": {
-        "quantity": 5,
+        "quantity": 25,
         "status": "in_stock"
       },
       "searchTokens": [
-        "101",
-        "3000mm",
-        "5401989",
-        "bleskozvod",
-        "bleskozvodny",
-        "bleskozvodny material",
-        "bleskozvody",
-        "lightning",
-        "material",
-        "tyc",
-        "uzemnenie",
-        "uzemnenie a bleskozvody",
-        "vl3000",
-        "zachytavac",
-        "zachytavacia",
-        "zachytavacia tyc 3000mm 101 vl3000"
+        "752201",
+        "bezova",
+        "koliska",
+        "legrand",
+        "life",
+        "ovladace",
+        "spinac",
+        "switch",
+        "switch 1",
+        "valena",
+        "valena life",
+        "valena life vypinac c 1 bezova koliska",
+        "vypinac",
+        "vypinac c 1",
+        "vypinace",
+        "vypinace a ovladace"
       ],
-      "classificationConfidence": 0.95,
+      "classificationConfidence": 0.93,
       "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
     },
     {
-      "id": "buco_5401993",
+      "id": "buco_752301",
       "tradeId": "electrical",
-      "categoryId": "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material",
+      "categoryId": "electrical__vypinace-a-ovladace__vypinac-c1",
       "categoryPathIds": [
-        "electrical__uzemnenie-a-bleskozvody",
-        "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material"
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__vypinac-c1"
       ],
       "categoryPathNames": [
-        "Uzemnenie a bleskozvody",
-        "Bleskozvodný materiál"
+        "Vypínače a ovládače",
+        "Vypínač č. 1"
       ],
-      "name": "Zachytávacia Tyč 3500mm, 101 Vl3500",
-      "normalizedName": "zachytavacia tyc 3500mm 101 vl3500",
-      "supplierSku": "5401993",
-      "brand": null,
-      "series": null,
-      "productType": "lightning",
+      "name": "Valena Life Vypínač Č.1, Hliníková Kolíska",
+      "normalizedName": "valena life vypinac c 1 hlinikova koliska",
+      "supplierSku": "752301",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "switch_1",
       "unit": "ks",
-      "attributes": {},
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/752301.jpg",
+      "attributes": {
+        "switchType": "1"
+      },
       "supplier": {
         "supplierId": "buco",
         "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/zachytavacia-tyc-3500mm-101-vl3500-5401993"
+        "sourceUrl": "https://www.buco.sk/valena-life-vypinac-c1-hlinikova-koliska-752301"
       },
       "pricing": {
         "currency": "EUR",
-        "netCents": 3962,
-        "grossCents": 4873,
-        "priceStatus": "valid"
-      },
-      "availability": {
-        "quantity": 16,
-        "status": "in_stock"
-      },
-      "searchTokens": [
-        "101",
-        "3500mm",
-        "5401993",
-        "bleskozvod",
-        "bleskozvodny",
-        "bleskozvodny material",
-        "bleskozvody",
-        "lightning",
-        "material",
-        "tyc",
-        "uzemnenie",
-        "uzemnenie a bleskozvody",
-        "vl3500",
-        "zachytavac",
-        "zachytavacia",
-        "zachytavacia tyc 3500mm 101 vl3500"
-      ],
-      "classificationConfidence": 0.95,
-      "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
-    },
-    {
-      "id": "buco_5401995",
-      "tradeId": "electrical",
-      "categoryId": "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material",
-      "categoryPathIds": [
-        "electrical__uzemnenie-a-bleskozvody",
-        "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material"
-      ],
-      "categoryPathNames": [
-        "Uzemnenie a bleskozvody",
-        "Bleskozvodný materiál"
-      ],
-      "name": "Zachytávacia Tyč 4000mm, 101 Vl4000",
-      "normalizedName": "zachytavacia tyc 4000mm 101 vl4000",
-      "supplierSku": "5401995",
-      "brand": null,
-      "series": null,
-      "productType": "lightning",
-      "unit": "ks",
-      "attributes": {},
-      "supplier": {
-        "supplierId": "buco",
-        "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/zachytavacia-tyc-4000mm-101-vl4000-5401995"
-      },
-      "pricing": {
-        "currency": "EUR",
-        "netCents": 4108,
-        "grossCents": 5053,
-        "priceStatus": "valid"
-      },
-      "availability": {
-        "quantity": 16,
-        "status": "in_stock"
-      },
-      "searchTokens": [
-        "101",
-        "4000mm",
-        "5401995",
-        "bleskozvod",
-        "bleskozvodny",
-        "bleskozvodny material",
-        "bleskozvody",
-        "lightning",
-        "material",
-        "tyc",
-        "uzemnenie",
-        "uzemnenie a bleskozvody",
-        "vl4000",
-        "zachytavac",
-        "zachytavacia",
-        "zachytavacia tyc 4000mm 101 vl4000"
-      ],
-      "classificationConfidence": 0.95,
-      "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
-    },
-    {
-      "id": "buco_5403335",
-      "tradeId": "electrical",
-      "categoryId": "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material",
-      "categoryPathIds": [
-        "electrical__uzemnenie-a-bleskozvody",
-        "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material"
-      ],
-      "categoryPathNames": [
-        "Uzemnenie a bleskozvody",
-        "Bleskozvodný materiál"
-      ],
-      "name": "Držiak Zachytávacej Tyče, Sd-fix",
-      "normalizedName": "drziak zachytavacej tyce sd fix",
-      "supplierSku": "5403335",
-      "brand": null,
-      "series": null,
-      "productType": "lightning",
-      "unit": "ks",
-      "attributes": {},
-      "supplier": {
-        "supplierId": "buco",
-        "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/drziak-zachytavacej-tyce-sd-fix-5403335"
-      },
-      "pricing": {
-        "currency": "EUR",
-        "netCents": 6535,
-        "grossCents": 8038,
-        "priceStatus": "valid"
-      },
-      "availability": {
-        "quantity": 16,
-        "status": "in_stock"
-      },
-      "searchTokens": [
-        "5403335",
-        "bleskozvod",
-        "bleskozvodny",
-        "bleskozvodny material",
-        "bleskozvody",
-        "chranic",
-        "drziak",
-        "drziak zachytavacej tyce sd fix",
-        "fi",
-        "fix",
-        "lightning",
-        "material",
-        "rcd",
-        "sd",
-        "tyce",
-        "uzemnenie",
-        "uzemnenie a bleskozvody",
-        "zachytavac",
-        "zachytavacej"
-      ],
-      "classificationConfidence": 0.95,
-      "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
-    },
-    {
-      "id": "buco_5403330",
-      "tradeId": "electrical",
-      "categoryId": "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material",
-      "categoryPathIds": [
-        "electrical__uzemnenie-a-bleskozvody",
-        "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material"
-      ],
-      "categoryPathNames": [
-        "Uzemnenie a bleskozvody",
-        "Bleskozvodný materiál"
-      ],
-      "name": "Držiak Zachytávacej Tyče, F-fix",
-      "normalizedName": "drziak zachytavacej tyce f fix",
-      "supplierSku": "5403330",
-      "brand": null,
-      "series": null,
-      "productType": "lightning",
-      "unit": "ks",
-      "attributes": {},
-      "supplier": {
-        "supplierId": "buco",
-        "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/drziak-zachytavacej-tyce-f-fix-5403330"
-      },
-      "pricing": {
-        "currency": "EUR",
-        "netCents": 5231,
-        "grossCents": 6434,
-        "priceStatus": "valid"
-      },
-      "availability": {
-        "quantity": 5,
-        "status": "in_stock"
-      },
-      "searchTokens": [
-        "5403330",
-        "bleskozvod",
-        "bleskozvodny",
-        "bleskozvodny material",
-        "bleskozvody",
-        "chranic",
-        "drziak",
-        "drziak zachytavacej tyce f fix",
-        "fi",
-        "fix",
-        "lightning",
-        "material",
-        "rcd",
-        "tyce",
-        "uzemnenie",
-        "uzemnenie a bleskozvody",
-        "zachytavac",
-        "zachytavacej"
-      ],
-      "classificationConfidence": 0.95,
-      "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
-    },
-    {
-      "id": "buco_123109",
-      "tradeId": "electrical",
-      "categoryId": "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material",
-      "categoryPathIds": [
-        "electrical__uzemnenie-a-bleskozvody",
-        "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material"
-      ],
-      "categoryPathNames": [
-        "Uzemnenie a bleskozvody",
-        "Bleskozvodný materiál"
-      ],
-      "name": "Zachytávacia Tyč 1000mm/10mm S Držiakom Na Strešný Hrebeň, Fs 10 1000 Fg Al V2a",
-      "normalizedName": "zachytavacia tyc 1000mm 10mm s drziakom na stresny hreben fs 10 1000 fg al v2a",
-      "supplierSku": "123109",
-      "brand": null,
-      "series": null,
-      "productType": "lightning",
-      "unit": "ks",
-      "attributes": {},
-      "supplier": {
-        "supplierId": "buco",
-        "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/zachytavacia-tyc-1000mm-10mm-s-drziakom-na-stresny-hreben-fs-10-1000-fg-al-v2a-123109"
-      },
-      "pricing": {
-        "currency": "EUR",
-        "netCents": 2326,
-        "grossCents": 2861,
-        "priceStatus": "valid"
-      },
-      "availability": {
-        "quantity": 8,
-        "status": "in_stock"
-      },
-      "searchTokens": [
-        "10",
-        "1000",
-        "1000mm",
-        "10mm",
-        "123109",
-        "al",
-        "bleskozvod",
-        "bleskozvodny",
-        "bleskozvodny material",
-        "bleskozvody",
-        "drziakom",
-        "fg",
-        "fs",
-        "hreben",
-        "lightning",
-        "material",
-        "na",
-        "stresny",
-        "tyc",
-        "uzemnenie",
-        "uzemnenie a bleskozvody",
-        "v2a",
-        "zachytavac",
-        "zachytavacia",
-        "zachytavacia tyc 1000mm 10mm s drziakom na stresny hreben fs 10 1000 fg al v2a"
-      ],
-      "classificationConfidence": 0.95,
-      "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
-    },
-    {
-      "id": "buco_123110",
-      "tradeId": "electrical",
-      "categoryId": "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material",
-      "categoryPathIds": [
-        "electrical__uzemnenie-a-bleskozvody",
-        "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material"
-      ],
-      "categoryPathNames": [
-        "Uzemnenie a bleskozvody",
-        "Bleskozvodný materiál"
-      ],
-      "name": "Hrebenovy Drziak Zachytavacej Tyce 10mm Ha 10 1f Fg120300 V2a",
-      "normalizedName": "hrebenovy drziak zachytavacej tyce 10mm ha 10 1f fg120300 v2a",
-      "supplierSku": "123110",
-      "brand": null,
-      "series": null,
-      "productType": "lightning",
-      "unit": "ks",
-      "attributes": {},
-      "supplier": {
-        "supplierId": "buco",
-        "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/hrebenovy-drziak-zachytavacej-tyce-10mm-ha-10-1f-fg120300-v2a-123110"
-      },
-      "pricing": {
-        "currency": "EUR",
-        "netCents": 3194,
-        "grossCents": 3928,
-        "priceStatus": "valid"
-      },
-      "availability": {
-        "quantity": 15,
-        "status": "in_stock"
-      },
-      "searchTokens": [
-        "10",
-        "10mm",
-        "123110",
-        "1f",
-        "bleskozvod",
-        "bleskozvodny",
-        "bleskozvodny material",
-        "bleskozvody",
-        "drziak",
-        "fg120300",
-        "ha",
-        "hrebenovy",
-        "hrebenovy drziak zachytavacej tyce 10mm ha 10 1f fg120300 v2a",
-        "lightning",
-        "material",
-        "tyce",
-        "uzemnenie",
-        "uzemnenie a bleskozvody",
-        "v2a",
-        "zachytavac",
-        "zachytavacej"
-      ],
-      "classificationConfidence": 0.95,
-      "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
-    },
-    {
-      "id": "buco_5403308",
-      "tradeId": "electrical",
-      "categoryId": "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material",
-      "categoryPathIds": [
-        "electrical__uzemnenie-a-bleskozvody",
-        "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material"
-      ],
-      "categoryPathNames": [
-        "Uzemnenie a bleskozvody",
-        "Bleskozvodný materiál"
-      ],
-      "name": "Podstavec Fangfix Junior, F-fix-junior",
-      "normalizedName": "podstavec fangfix junior f fix junior",
-      "supplierSku": "5403308",
-      "brand": null,
-      "series": null,
-      "productType": "lightning",
-      "unit": "ks",
-      "attributes": {},
-      "supplier": {
-        "supplierId": "buco",
-        "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/podstavec-fangfix-junior-f-fix-junior-5403308"
-      },
-      "pricing": {
-        "currency": "EUR",
-        "netCents": 1328,
-        "grossCents": 1634,
-        "priceStatus": "valid"
-      },
-      "availability": {
-        "quantity": 8,
-        "status": "in_stock"
-      },
-      "searchTokens": [
-        "5403308",
-        "bleskozvod",
-        "bleskozvodny",
-        "bleskozvodny material",
-        "bleskozvody",
-        "chranic",
-        "fangfix",
-        "fi",
-        "fix",
-        "junior",
-        "lightning",
-        "material",
-        "podstavec",
-        "podstavec fangfix junior f fix junior",
-        "rcd",
-        "uzemnenie",
-        "uzemnenie a bleskozvody",
-        "zachytavac"
-      ],
-      "classificationConfidence": 0.95,
-      "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
-    },
-    {
-      "id": "buco_5403103",
-      "tradeId": "electrical",
-      "categoryId": "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material",
-      "categoryPathIds": [
-        "electrical__uzemnenie-a-bleskozvody",
-        "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material"
-      ],
-      "categoryPathNames": [
-        "Uzemnenie a bleskozvody",
-        "Bleskozvodný materiál"
-      ],
-      "name": "Podstavec Fangfix 10kg, F-fix-10",
-      "normalizedName": "podstavec fangfix 10kg f fix 10",
-      "supplierSku": "5403103",
-      "brand": null,
-      "series": null,
-      "productType": "lightning",
-      "unit": "ks",
-      "attributes": {},
-      "supplier": {
-        "supplierId": "buco",
-        "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/podstavec-fangfix-10kg-f-fix-10-5403103"
-      },
-      "pricing": {
-        "currency": "EUR",
-        "netCents": 2137,
-        "grossCents": 2628,
-        "priceStatus": "valid"
-      },
-      "availability": {
-        "quantity": 6,
-        "status": "in_stock"
-      },
-      "searchTokens": [
-        "10",
-        "10kg",
-        "5403103",
-        "bleskozvod",
-        "bleskozvodny",
-        "bleskozvodny material",
-        "bleskozvody",
-        "chranic",
-        "fangfix",
-        "fi",
-        "fix",
-        "lightning",
-        "material",
-        "podstavec",
-        "podstavec fangfix 10kg f fix 10",
-        "rcd",
-        "uzemnenie",
-        "uzemnenie a bleskozvody",
-        "zachytavac"
-      ],
-      "classificationConfidence": 0.95,
-      "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
-    },
-    {
-      "id": "buco_5403200",
-      "tradeId": "electrical",
-      "categoryId": "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material",
-      "categoryPathIds": [
-        "electrical__uzemnenie-a-bleskozvody",
-        "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material"
-      ],
-      "categoryPathNames": [
-        "Uzemnenie a bleskozvody",
-        "Bleskozvodný materiál"
-      ],
-      "name": "Podstavec Fangfix 16kg, F-fix-16",
-      "normalizedName": "podstavec fangfix 16kg f fix 16",
-      "supplierSku": "5403200",
-      "brand": null,
-      "series": null,
-      "productType": "lightning",
-      "unit": "ks",
-      "attributes": {},
-      "supplier": {
-        "supplierId": "buco",
-        "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/podstavec-fangfix-16kg-f-fix-16-5403200"
-      },
-      "pricing": {
-        "currency": "EUR",
-        "netCents": 2948,
-        "grossCents": 3626,
-        "priceStatus": "valid"
-      },
-      "availability": {
-        "quantity": 11,
-        "status": "in_stock"
-      },
-      "searchTokens": [
-        "16",
-        "16kg",
-        "5403200",
-        "bleskozvod",
-        "bleskozvodny",
-        "bleskozvodny material",
-        "bleskozvody",
-        "chranic",
-        "fangfix",
-        "fi",
-        "fix",
-        "lightning",
-        "material",
-        "podstavec",
-        "podstavec fangfix 16kg f fix 16",
-        "rcd",
-        "uzemnenie",
-        "uzemnenie a bleskozvody",
-        "zachytavac"
-      ],
-      "classificationConfidence": 0.95,
-      "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
-    },
-    {
-      "id": "buco_5405068",
-      "tradeId": "electrical",
-      "categoryId": "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material",
-      "categoryPathIds": [
-        "electrical__uzemnenie-a-bleskozvody",
-        "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material"
-      ],
-      "categoryPathNames": [
-        "Uzemnenie a bleskozvody",
-        "Bleskozvodný materiál"
-      ],
-      "name": "Zachytávací Hrot, 120 A",
-      "normalizedName": "zachytavaci hrot 120 a",
-      "supplierSku": "5405068",
-      "brand": null,
-      "series": null,
-      "productType": "lightning",
-      "unit": "ks",
-      "attributes": {},
-      "supplier": {
-        "supplierId": "buco",
-        "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/zachytavaci-hrot-120-a-5405068"
-      },
-      "pricing": {
-        "currency": "EUR",
-        "netCents": 181,
-        "grossCents": 223,
-        "priceStatus": "valid"
-      },
-      "availability": {
-        "quantity": 12,
-        "status": "in_stock"
-      },
-      "searchTokens": [
-        "120",
-        "5405068",
-        "bleskozvod",
-        "bleskozvodny",
-        "bleskozvodny material",
-        "bleskozvody",
-        "hrot",
-        "lightning",
-        "material",
-        "uzemnenie",
-        "uzemnenie a bleskozvody",
-        "zachytavac",
-        "zachytavaci",
-        "zachytavaci hrot 120 a"
-      ],
-      "classificationConfidence": 0.95,
-      "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
-    },
-    {
-      "id": "buco_5403219",
-      "tradeId": "electrical",
-      "categoryId": "electrical__svorky-a-spojovaci-material__radove-svorky",
-      "categoryPathIds": [
-        "electrical__svorky-a-spojovaci-material",
-        "electrical__svorky-a-spojovaci-material__radove-svorky"
-      ],
-      "categoryPathNames": [
-        "Svorky a spojovací materiál",
-        "Radové svorky"
-      ],
-      "name": "Svorka Fangfix, F-fix-kl",
-      "normalizedName": "svorka fangfix f fix kl",
-      "supplierSku": "5403219",
-      "brand": null,
-      "series": null,
-      "productType": "terminal",
-      "unit": "ks",
-      "attributes": {},
-      "supplier": {
-        "supplierId": "buco",
-        "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/svorka-fangfix-f-fix-kl-5403219"
-      },
-      "pricing": {
-        "currency": "EUR",
-        "netCents": 1609,
-        "grossCents": 1978,
+        "netCents": 748,
+        "grossCents": 921,
         "priceStatus": "valid"
       },
       "availability": {
@@ -2677,554 +2599,255 @@
         "status": "in_stock"
       },
       "searchTokens": [
-        "5403219",
-        "chranic",
-        "fangfix",
-        "fi",
-        "fix",
-        "kl",
-        "material",
-        "radove",
-        "radove svorky",
-        "rcd",
-        "spojovaci",
-        "svorka",
-        "svorka fangfix f fix kl",
-        "svorky",
-        "svorky a spojovaci material",
-        "terminal",
-        "wago"
+        "752301",
+        "hlinikova",
+        "koliska",
+        "legrand",
+        "life",
+        "ovladace",
+        "spinac",
+        "switch",
+        "switch 1",
+        "valena",
+        "valena life",
+        "valena life vypinac c 1 hlinikova koliska",
+        "vypinac",
+        "vypinac c 1",
+        "vypinace",
+        "vypinace a ovladace"
       ],
-      "classificationConfidence": 0.88,
+      "classificationConfidence": 0.93,
       "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
     },
     {
-      "id": "buco_5408806",
+      "id": "buco_756301",
       "tradeId": "electrical",
-      "categoryId": "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material",
+      "categoryId": "electrical__vypinace-a-ovladace__vypinac-c1",
       "categoryPathIds": [
-        "electrical__uzemnenie-a-bleskozvody",
-        "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material"
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__vypinac-c1"
       ],
       "categoryPathNames": [
-        "Uzemnenie a bleskozvody",
-        "Bleskozvodný materiál"
+        "Vypínače a ovládače",
+        "Vypínač č. 1"
       ],
-      "name": "Izolovaný Dištančný Držiak 500mm, Iso-a-500",
-      "normalizedName": "izolovany distancny drziak 500mm iso a 500",
-      "supplierSku": "5408806",
-      "brand": null,
-      "series": null,
-      "productType": "lightning",
+      "name": "Valena Life Vypínač Č.1, Čierna Matná Kolíska",
+      "normalizedName": "valena life vypinac c 1 cierna matna koliska",
+      "supplierSku": "756301",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "switch_1",
       "unit": "ks",
-      "attributes": {},
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/756301.jpg",
+      "attributes": {
+        "switchType": "1"
+      },
       "supplier": {
         "supplierId": "buco",
         "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/izolovany-distancny-drziak-500mm-iso-a-500-5408806"
+        "sourceUrl": "https://www.buco.sk/valena-life-vypinac-c1-cierna-matna-koliska-756301"
       },
       "pricing": {
         "currency": "EUR",
-        "netCents": 3488,
-        "grossCents": 4290,
+        "netCents": 443,
+        "grossCents": 545,
         "priceStatus": "valid"
       },
       "availability": {
-        "quantity": 16,
+        "quantity": 354,
         "status": "in_stock"
       },
       "searchTokens": [
-        "500",
-        "500mm",
-        "5408806",
-        "bleskozvod",
-        "bleskozvodny",
-        "bleskozvodny material",
-        "bleskozvody",
-        "distancny",
-        "drziak",
-        "iso",
-        "izolovany",
-        "izolovany distancny drziak 500mm iso a 500",
-        "lightning",
-        "material",
-        "uzemnenie",
-        "uzemnenie a bleskozvody",
-        "zachytavac"
+        "756301",
+        "cierna",
+        "koliska",
+        "legrand",
+        "life",
+        "matna",
+        "ovladace",
+        "spinac",
+        "switch",
+        "switch 1",
+        "valena",
+        "valena life",
+        "valena life vypinac c 1 cierna matna koliska",
+        "vypinac",
+        "vypinac c 1",
+        "vypinace",
+        "vypinace a ovladace"
       ],
-      "classificationConfidence": 0.95,
+      "classificationConfidence": 0.93,
       "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
     },
     {
-      "id": "buco_5021081",
+      "id": "buco_756002",
       "tradeId": "electrical",
-      "categoryId": "electrical__kable-a-vodice__instalacne-kable",
+      "categoryId": "electrical__vypinace-a-ovladace__ramceky-a-kryty",
       "categoryPathIds": [
-        "electrical__kable-a-vodice",
-        "electrical__kable-a-vodice__instalacne-kable"
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__ramceky-a-kryty"
       ],
       "categoryPathNames": [
-        "Káble a vodiče",
-        "Inštalačné káble"
+        "Vypínače a ovládače",
+        "Rámčeky a kryty"
       ],
-      "name": "Kruhový Vodič Oceľový 125m, Rd 8-FT",
-      "normalizedName": "kruhovy vodic ocelovy 125m rd 8 ft",
-      "supplierSku": "5021081",
-      "brand": null,
-      "series": null,
-      "productType": "installation_cable",
+      "name": "Valena Life Krytka Jednopáčkového Vypínača, Čierna Matná",
+      "normalizedName": "valena life krytka jednopackoveho vypinaca cierna matna",
+      "supplierSku": "756002",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "frame",
       "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/756002.jpg",
       "attributes": {},
       "supplier": {
         "supplierId": "buco",
         "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/kruhovy-vodic-ocelovy-125m-rd-8-ft-5021081"
+        "sourceUrl": "https://www.buco.sk/valena-life-krytka-jednopackoveho-vypinaca-cierna-matna-756002"
       },
       "pricing": {
         "currency": "EUR",
-        "netCents": 118,
-        "grossCents": 145,
+        "netCents": 248,
+        "grossCents": 304,
         "priceStatus": "valid"
       },
       "availability": {
-        "quantity": 238,
+        "quantity": 5,
         "status": "in_stock"
       },
       "searchTokens": [
-        "125m",
-        "5021081",
-        "cable",
-        "cyky",
-        "ft",
-        "instalacne",
-        "instalacne kable",
-        "installation",
-        "installation cable",
-        "kabel",
-        "kable",
-        "kable a vodice",
-        "kruhovy",
-        "kruhovy vodic ocelovy 125m rd 8 ft",
-        "ocelovy",
-        "rd",
-        "vodic",
-        "vodice"
+        "756002",
+        "cierna",
+        "frame",
+        "jednopackoveho",
+        "kryt",
+        "krytka",
+        "kryty",
+        "legrand",
+        "life",
+        "matna",
+        "ovladace",
+        "ramcek",
+        "ramceky",
+        "ramceky a kryty",
+        "spinac",
+        "switch",
+        "valena",
+        "valena life",
+        "valena life krytka jednopackoveho vypinaca cierna matna",
+        "vypinac",
+        "vypinaca",
+        "vypinace",
+        "vypinace a ovladace"
       ],
-      "classificationConfidence": 0.9,
+      "classificationConfidence": 0.92,
       "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
     },
     {
-      "id": "buco_5021103",
+      "id": "buco_752110",
       "tradeId": "electrical",
-      "categoryId": "electrical__kable-a-vodice__instalacne-kable",
+      "categoryId": "electrical__vypinace-a-ovladace__vypinac-c1",
       "categoryPathIds": [
-        "electrical__kable-a-vodice",
-        "electrical__kable-a-vodice__instalacne-kable"
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__vypinac-c1"
       ],
       "categoryPathNames": [
-        "Káble a vodiče",
-        "Inštalačné káble"
+        "Vypínače a ovládače",
+        "Vypínač č. 1"
       ],
-      "name": "Kruhový Vodič Oceľový 80m, Rd",
-      "normalizedName": "kruhovy vodic ocelovy 80m rd",
-      "supplierSku": "5021103",
-      "brand": null,
-      "series": null,
-      "productType": "installation_cable",
+      "name": "Valena Life Vypínač Č.1 S Orientačným Osvetlením, Biela Kolíska",
+      "normalizedName": "valena life vypinac c 1 s orientacnym osvetlenim biela koliska",
+      "supplierSku": "752110",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "switch_1",
       "unit": "ks",
-      "attributes": {},
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/752110.jpg",
+      "attributes": {
+        "switchType": "1"
+      },
       "supplier": {
         "supplierId": "buco",
         "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/kruhovy-vodic-ocelovy-80m-rd-10-5021103"
+        "sourceUrl": "https://www.buco.sk/valena-life-vypinac-c1-s-orientacnym-osvetlenim-biela-koliska-752110"
       },
       "pricing": {
         "currency": "EUR",
-        "netCents": 143,
-        "grossCents": 176,
+        "netCents": 723,
+        "grossCents": 890,
         "priceStatus": "valid"
       },
       "availability": {
-        "quantity": 238,
+        "quantity": 6,
         "status": "in_stock"
       },
       "searchTokens": [
-        "5021103",
-        "80m",
-        "cable",
-        "cyky",
-        "instalacne",
-        "instalacne kable",
-        "installation",
-        "installation cable",
-        "kabel",
-        "kable",
-        "kable a vodice",
-        "kruhovy",
-        "kruhovy vodic ocelovy 80m rd",
-        "ocelovy",
-        "rd",
-        "vodic",
-        "vodice"
+        "752110",
+        "biela",
+        "koliska",
+        "legrand",
+        "life",
+        "orientacnym",
+        "osvetlenim",
+        "ovladace",
+        "spinac",
+        "switch",
+        "switch 1",
+        "valena",
+        "valena life",
+        "valena life vypinac c 1 s orientacnym osvetlenim biela koliska",
+        "vypinac",
+        "vypinac c 1",
+        "vypinace",
+        "vypinace a ovladace"
       ],
-      "classificationConfidence": 0.9,
+      "classificationConfidence": 0.93,
       "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
     },
     {
-      "id": "buco_5021286",
+      "id": "buco_752210",
       "tradeId": "electrical",
-      "categoryId": "electrical__kable-a-vodice__instalacne-kable",
+      "categoryId": "electrical__vypinace-a-ovladace__vypinac-c1",
       "categoryPathIds": [
-        "electrical__kable-a-vodice",
-        "electrical__kable-a-vodice__instalacne-kable"
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__vypinac-c1"
       ],
       "categoryPathNames": [
-        "Káble a vodiče",
-        "Inštalačné káble"
+        "Vypínače a ovládače",
+        "Vypínač č. 1"
       ],
-      "name": "Kruhový Vodič Z Hliníku 150m, Rd 8-ALU",
-      "normalizedName": "kruhovy vodic z hliniku 150m rd 8 alu",
-      "supplierSku": "5021286",
-      "brand": null,
-      "series": null,
-      "productType": "installation_cable",
+      "name": "Valena Life Vypínač Č.1 S Orientačným Osvetlením, Béžová Kolíska",
+      "normalizedName": "valena life vypinac c 1 s orientacnym osvetlenim bezova koliska",
+      "supplierSku": "752210",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "switch_1",
       "unit": "ks",
-      "attributes": {},
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/752210.jpg",
+      "attributes": {
+        "switchType": "1"
+      },
       "supplier": {
         "supplierId": "buco",
         "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/kruhovy-vodic-z-hliniku-150m-rd-8-alu-5021286"
+        "sourceUrl": "https://www.buco.sk/valena-life-vypinac-c1-s-orientacnym-osvetlenim-bezova-koliska-752210"
       },
       "pricing": {
         "currency": "EUR",
-        "netCents": 99,
-        "grossCents": 122,
-        "priceStatus": "valid"
-      },
-      "availability": {
-        "quantity": 238,
-        "status": "in_stock"
-      },
-      "searchTokens": [
-        "150m",
-        "5021286",
-        "alu",
-        "cable",
-        "cyky",
-        "hliniku",
-        "instalacne",
-        "instalacne kable",
-        "installation",
-        "installation cable",
-        "kabel",
-        "kable",
-        "kable a vodice",
-        "kruhovy",
-        "kruhovy vodic z hliniku 150m rd 8 alu",
-        "rd",
-        "vodic",
-        "vodice"
-      ],
-      "classificationConfidence": 0.9,
-      "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
-    },
-    {
-      "id": "buco_5021332",
-      "tradeId": "electrical",
-      "categoryId": "electrical__kable-a-vodice__instalacne-kable",
-      "categoryPathIds": [
-        "electrical__kable-a-vodice",
-        "electrical__kable-a-vodice__instalacne-kable"
-      ],
-      "categoryPathNames": [
-        "Káble a vodiče",
-        "Inštalačné káble"
-      ],
-      "name": "Kruhový Vodič Z Hliníku Potiahnutý Plastom 100m, Rd 8-PVC",
-      "normalizedName": "kruhovy vodic z hliniku potiahnuty plastom 100m rd 8 pvc",
-      "supplierSku": "5021332",
-      "brand": null,
-      "series": null,
-      "productType": "installation_cable",
-      "unit": "ks",
-      "attributes": {},
-      "supplier": {
-        "supplierId": "buco",
-        "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/kruhovy-vodic-z-hliniku-potiahnuty-plastom-100m-rd-8-pvc-5021332"
-      },
-      "pricing": {
-        "currency": "EUR",
-        "netCents": 384,
-        "grossCents": 473,
-        "priceStatus": "valid"
-      },
-      "availability": {
-        "quantity": 238,
-        "status": "in_stock"
-      },
-      "searchTokens": [
-        "100m",
-        "5021332",
-        "cable",
-        "cyky",
-        "hliniku",
-        "instalacne",
-        "instalacne kable",
-        "installation",
-        "installation cable",
-        "kabel",
-        "kable",
-        "kable a vodice",
-        "kruhovy",
-        "kruhovy vodic z hliniku potiahnuty plastom 100m rd 8 pvc",
-        "plastom",
-        "potiahnuty",
-        "pvc",
-        "rd",
-        "vodic",
-        "vodice"
-      ],
-      "classificationConfidence": 0.9,
-      "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
-    },
-    {
-      "id": "buco_5021162",
-      "tradeId": "electrical",
-      "categoryId": "electrical__kable-a-vodice__instalacne-kable",
-      "categoryPathIds": [
-        "electrical__kable-a-vodice",
-        "electrical__kable-a-vodice__instalacne-kable"
-      ],
-      "categoryPathNames": [
-        "Káble a vodiče",
-        "Inštalačné káble"
-      ],
-      "name": "Kruhový Vodič Z Pozinkovanej Ocele Potiahnutý Plastom 75m, Rd 10-PVC",
-      "normalizedName": "kruhovy vodic z pozinkovanej ocele potiahnuty plastom 75m rd 10 pvc",
-      "supplierSku": "5021162",
-      "brand": null,
-      "series": null,
-      "productType": "installation_cable",
-      "unit": "ks",
-      "attributes": {},
-      "supplier": {
-        "supplierId": "buco",
-        "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/kruhovy-vodic-z-pozinkovanej-ocele-potiahnuty-plastom-75m-rd-10-pvc-5021162"
-      },
-      "pricing": {
-        "currency": "EUR",
-        "netCents": 616,
-        "grossCents": 757,
-        "priceStatus": "valid"
-      },
-      "availability": {
-        "quantity": 238,
-        "status": "in_stock"
-      },
-      "searchTokens": [
-        "10",
-        "5021162",
-        "75m",
-        "cable",
-        "cyky",
-        "instalacne",
-        "instalacne kable",
-        "installation",
-        "installation cable",
-        "kabel",
-        "kable",
-        "kable a vodice",
-        "kruhovy",
-        "kruhovy vodic z pozinkovanej ocele potiahnuty plastom 75m rd 10 pvc",
-        "ocele",
-        "plastom",
-        "potiahnuty",
-        "pozinkovanej",
-        "pvc",
-        "rd",
-        "vodic",
-        "vodice"
-      ],
-      "classificationConfidence": 0.9,
-      "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
-    },
-    {
-      "id": "buco_5218700",
-      "tradeId": "electrical",
-      "categoryId": "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material",
-      "categoryPathIds": [
-        "electrical__uzemnenie-a-bleskozvody",
-        "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material"
-      ],
-      "categoryPathNames": [
-        "Uzemnenie a bleskozvody",
-        "Bleskozvodný materiál"
-      ],
-      "name": "Strešný Držiak Vedenia Na Plochú Strechu, 165 Mbg-8-10",
-      "normalizedName": "stresny drziak vedenia na plochu strechu 165 mbg 8 10",
-      "supplierSku": "5218700",
-      "brand": null,
-      "series": null,
-      "productType": "lightning",
-      "unit": "ks",
-      "attributes": {},
-      "supplier": {
-        "supplierId": "buco",
-        "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/stresny-drziak-vedenia-na-plochu-strechu-165-mbg-8-10-5218700"
-      },
-      "pricing": {
-        "currency": "EUR",
-        "netCents": 224,
-        "grossCents": 275,
-        "priceStatus": "valid"
-      },
-      "availability": {
-        "quantity": 238,
-        "status": "in_stock"
-      },
-      "searchTokens": [
-        "10",
-        "165",
-        "5218700",
-        "bleskozvod",
-        "bleskozvodny",
-        "bleskozvodny material",
-        "bleskozvody",
-        "drziak",
-        "lightning",
-        "material",
-        "mbg",
-        "na",
-        "plochu",
-        "strechu",
-        "stresny",
-        "stresny drziak vedenia na plochu strechu 165 mbg 8 10",
-        "uzemnenie",
-        "uzemnenie a bleskozvody",
-        "vedenia",
-        "zachytavac"
-      ],
-      "classificationConfidence": 0.95,
-      "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
-    },
-    {
-      "id": "buco_5207444",
-      "tradeId": "electrical",
-      "categoryId": "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material",
-      "categoryPathIds": [
-        "electrical__uzemnenie-a-bleskozvody",
-        "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material"
-      ],
-      "categoryPathNames": [
-        "Uzemnenie a bleskozvody",
-        "Bleskozvodný materiál"
-      ],
-      "name": "Univerzálny Držiak Vedenia 20mm, Ø8-10mm, 177 20 M8",
-      "normalizedName": "univerzalny drziak vedenia 20mm 8 10mm 177 20 m8",
-      "supplierSku": "5207444",
-      "brand": null,
-      "series": null,
-      "productType": "lightning",
-      "unit": "ks",
-      "attributes": {},
-      "supplier": {
-        "supplierId": "buco",
-        "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/univerzalny-drziak-vedenia-20mm-o8-10mm-177-20-m8-5207444"
-      },
-      "pricing": {
-        "currency": "EUR",
-        "netCents": 58,
-        "grossCents": 72,
-        "priceStatus": "valid"
-      },
-      "availability": {
-        "quantity": 238,
-        "status": "in_stock"
-      },
-      "searchTokens": [
-        "10mm",
-        "177",
-        "20",
-        "20mm",
-        "5207444",
-        "bleskozvod",
-        "bleskozvodny",
-        "bleskozvodny material",
-        "bleskozvody",
-        "drziak",
-        "lightning",
-        "m8",
-        "material",
-        "univerzalny",
-        "univerzalny drziak vedenia 20mm 8 10mm 177 20 m8",
-        "uzemnenie",
-        "uzemnenie a bleskozvody",
-        "vedenia",
-        "zachytavac"
-      ],
-      "classificationConfidence": 0.95,
-      "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
-    },
-    {
-      "id": "buco_5207460",
-      "tradeId": "electrical",
-      "categoryId": "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material",
-      "categoryPathIds": [
-        "electrical__uzemnenie-a-bleskozvody",
-        "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material"
-      ],
-      "categoryPathNames": [
-        "Uzemnenie a bleskozvody",
-        "Bleskozvodný materiál"
-      ],
-      "name": "Univerzálny Držiak Vedenia 30mm, Ø8-10mm, 177 30 M8",
-      "normalizedName": "univerzalny drziak vedenia 30mm 8 10mm 177 30 m8",
-      "supplierSku": "5207460",
-      "brand": null,
-      "series": null,
-      "productType": "lightning",
-      "unit": "ks",
-      "attributes": {},
-      "supplier": {
-        "supplierId": "buco",
-        "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/univerzalny-drziak-vedenia-30mm-o8-10mm-177-30-m9-5207460"
-      },
-      "pricing": {
-        "currency": "EUR",
-        "netCents": 60,
-        "grossCents": 73,
+        "netCents": 760,
+        "grossCents": 935,
         "priceStatus": "valid"
       },
       "availability": {
@@ -3232,93 +2855,605 @@
         "status": "in_stock"
       },
       "searchTokens": [
-        "10mm",
-        "177",
-        "30",
-        "30mm",
-        "5207460",
-        "bleskozvod",
-        "bleskozvodny",
-        "bleskozvodny material",
-        "bleskozvody",
-        "drziak",
-        "lightning",
-        "m8",
-        "material",
-        "univerzalny",
-        "univerzalny drziak vedenia 30mm 8 10mm 177 30 m8",
-        "uzemnenie",
-        "uzemnenie a bleskozvody",
-        "vedenia",
-        "zachytavac"
+        "752210",
+        "bezova",
+        "koliska",
+        "legrand",
+        "life",
+        "orientacnym",
+        "osvetlenim",
+        "ovladace",
+        "spinac",
+        "switch",
+        "switch 1",
+        "valena",
+        "valena life",
+        "valena life vypinac c 1 s orientacnym osvetlenim bezova koliska",
+        "vypinac",
+        "vypinac c 1",
+        "vypinace",
+        "vypinace a ovladace"
       ],
-      "classificationConfidence": 0.95,
+      "classificationConfidence": 0.93,
       "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
     },
     {
-      "id": "buco_5207487",
+      "id": "buco_752310",
       "tradeId": "electrical",
-      "categoryId": "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material",
+      "categoryId": "electrical__vypinace-a-ovladace__vypinac-c1",
       "categoryPathIds": [
-        "electrical__uzemnenie-a-bleskozvody",
-        "electrical__uzemnenie-a-bleskozvody__bleskozvodny-material"
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__vypinac-c1"
       ],
       "categoryPathNames": [
-        "Uzemnenie a bleskozvody",
-        "Bleskozvodný materiál"
+        "Vypínače a ovládače",
+        "Vypínač č. 1"
       ],
-      "name": "Univerzálny Držiak Vedenia 55mm, Ø8-10mm, 177 55 M8",
-      "normalizedName": "univerzalny drziak vedenia 55mm 8 10mm 177 55 m8",
-      "supplierSku": "5207487",
-      "brand": null,
-      "series": null,
-      "productType": "lightning",
+      "name": "Valena Life Vypínač Č.1 S Orientačným Osvetlením, Hliníková Kolíska",
+      "normalizedName": "valena life vypinac c 1 s orientacnym osvetlenim hlinikova koliska",
+      "supplierSku": "752310",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "switch_1",
       "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/752310.jpg",
+      "attributes": {
+        "switchType": "1"
+      },
+      "supplier": {
+        "supplierId": "buco",
+        "supplierName": "BUČO",
+        "sourceUrl": "https://www.buco.sk/valena-life-vypinac-c1-s-orientacnym-osvetlenim-hlinikova-koliska-752310"
+      },
+      "pricing": {
+        "currency": "EUR",
+        "netCents": 960,
+        "grossCents": 1181,
+        "priceStatus": "valid"
+      },
+      "availability": {
+        "quantity": 4,
+        "status": "in_stock"
+      },
+      "searchTokens": [
+        "752310",
+        "hlinikova",
+        "koliska",
+        "legrand",
+        "life",
+        "orientacnym",
+        "osvetlenim",
+        "ovladace",
+        "spinac",
+        "switch",
+        "switch 1",
+        "valena",
+        "valena life",
+        "valena life vypinac c 1 s orientacnym osvetlenim hlinikova koliska",
+        "vypinac",
+        "vypinac c 1",
+        "vypinace",
+        "vypinace a ovladace"
+      ],
+      "classificationConfidence": 0.93,
+      "status": "active",
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
+    },
+    {
+      "id": "buco_756102",
+      "tradeId": "electrical",
+      "categoryId": "electrical__vypinace-a-ovladace__ramceky-a-kryty",
+      "categoryPathIds": [
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__ramceky-a-kryty"
+      ],
+      "categoryPathNames": [
+        "Vypínače a ovládače",
+        "Rámčeky a kryty"
+      ],
+      "name": "Valena Life Krytka Jednopáčkového Vypínača S Orientačným Osvetlením, Čierna Matná",
+      "normalizedName": "valena life krytka jednopackoveho vypinaca s orientacnym osvetlenim cierna matna",
+      "supplierSku": "756102",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "frame",
+      "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/756102.jpg",
       "attributes": {},
       "supplier": {
         "supplierId": "buco",
         "supplierName": "BUČO",
-        "sourceUrl": "https://www.buco.sk/univerzalny-drziak-vedenia-55mm-o8-10mm-177-55-m10-5207487"
+        "sourceUrl": "https://www.buco.sk/valena-life-krytka-jednopackoveho-vypinaca-s-orientacnym-osvetlenim-cierna-matna-756102"
       },
       "pricing": {
         "currency": "EUR",
-        "netCents": 100,
-        "grossCents": 123,
+        "netCents": 381,
+        "grossCents": 469,
         "priceStatus": "valid"
       },
       "availability": {
-        "quantity": 252,
+        "quantity": 4,
         "status": "in_stock"
       },
       "searchTokens": [
-        "10mm",
-        "177",
-        "5207487",
-        "55",
-        "55mm",
-        "bleskozvod",
-        "bleskozvodny",
-        "bleskozvodny material",
-        "bleskozvody",
-        "drziak",
-        "lightning",
-        "m8",
-        "material",
-        "univerzalny",
-        "univerzalny drziak vedenia 55mm 8 10mm 177 55 m8",
-        "uzemnenie",
-        "uzemnenie a bleskozvody",
-        "vedenia",
-        "zachytavac"
+        "756102",
+        "cierna",
+        "frame",
+        "jednopackoveho",
+        "kryt",
+        "krytka",
+        "kryty",
+        "legrand",
+        "life",
+        "matna",
+        "orientacnym",
+        "osvetlenim",
+        "ovladace",
+        "ramcek",
+        "ramceky",
+        "ramceky a kryty",
+        "spinac",
+        "switch",
+        "valena",
+        "valena life",
+        "valena life krytka jednopackoveho vypinaca s orientacnym osvetlenim cierna matna",
+        "vypinac",
+        "vypinaca",
+        "vypinace",
+        "vypinace a ovladace"
       ],
-      "classificationConfidence": 0.95,
+      "classificationConfidence": 0.92,
       "status": "active",
-      "importId": "buco_electrical_20260722201807",
-      "createdAt": "2026-07-22T20:18:07.856Z",
-      "updatedAt": "2026-07-22T20:18:07.856Z"
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
+    },
+    {
+      "id": "buco_752103",
+      "tradeId": "electrical",
+      "categoryId": "electrical__vypinace-a-ovladace__vypinac-c1",
+      "categoryPathIds": [
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__vypinac-c1"
+      ],
+      "categoryPathNames": [
+        "Vypínače a ovládače",
+        "Vypínač č. 1"
+      ],
+      "name": "Valena Life Vypínač Č.1, Trojnásobný, Biela Kolíska",
+      "normalizedName": "valena life vypinac c 1 trojnasobny biela koliska",
+      "supplierSku": "752103",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "switch_1",
+      "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/752103.jpg",
+      "attributes": {
+        "switchType": "1"
+      },
+      "supplier": {
+        "supplierId": "buco",
+        "supplierName": "BUČO",
+        "sourceUrl": "https://www.buco.sk/valena-life-vypinac-c1-trojnasobny-biela-koliska-752103"
+      },
+      "pricing": {
+        "currency": "EUR",
+        "netCents": 1582,
+        "grossCents": 1946,
+        "priceStatus": "valid"
+      },
+      "availability": {
+        "quantity": 3,
+        "status": "in_stock"
+      },
+      "searchTokens": [
+        "752103",
+        "biela",
+        "koliska",
+        "legrand",
+        "life",
+        "ovladace",
+        "spinac",
+        "switch",
+        "switch 1",
+        "trojnasobny",
+        "valena",
+        "valena life",
+        "valena life vypinac c 1 trojnasobny biela koliska",
+        "vypinac",
+        "vypinac c 1",
+        "vypinace",
+        "vypinace a ovladace"
+      ],
+      "classificationConfidence": 0.93,
+      "status": "active",
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
+    },
+    {
+      "id": "buco_752206",
+      "tradeId": "electrical",
+      "categoryId": "electrical__vypinace-a-ovladace__vypinac-c6",
+      "categoryPathIds": [
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__vypinac-c6"
+      ],
+      "categoryPathNames": [
+        "Vypínače a ovládače",
+        "Vypínač č. 6"
+      ],
+      "name": "Valena Life Vypínač Č.6, Béžová Kolíska",
+      "normalizedName": "valena life vypinac c 6 bezova koliska",
+      "supplierSku": "752206",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "switch_6",
+      "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/752206.jpg",
+      "attributes": {
+        "switchType": "6"
+      },
+      "supplier": {
+        "supplierId": "buco",
+        "supplierName": "BUČO",
+        "sourceUrl": "https://www.buco.sk/valena-life-vypinac-c6-bezova-koliska-752206"
+      },
+      "pricing": {
+        "currency": "EUR",
+        "netCents": 487,
+        "grossCents": 599,
+        "priceStatus": "valid"
+      },
+      "availability": {
+        "quantity": 34,
+        "status": "in_stock"
+      },
+      "searchTokens": [
+        "752206",
+        "bezova",
+        "koliska",
+        "legrand",
+        "life",
+        "ovladace",
+        "spinac",
+        "switch",
+        "switch 6",
+        "valena",
+        "valena life",
+        "valena life vypinac c 6 bezova koliska",
+        "vypinac",
+        "vypinac c 6",
+        "vypinace",
+        "vypinace a ovladace"
+      ],
+      "classificationConfidence": 0.93,
+      "status": "active",
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
+    },
+    {
+      "id": "buco_752306",
+      "tradeId": "electrical",
+      "categoryId": "electrical__vypinace-a-ovladace__vypinac-c6",
+      "categoryPathIds": [
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__vypinac-c6"
+      ],
+      "categoryPathNames": [
+        "Vypínače a ovládače",
+        "Vypínač č. 6"
+      ],
+      "name": "Valena Life Vypínač Č.6, Hliníková Kolíska",
+      "normalizedName": "valena life vypinac c 6 hlinikova koliska",
+      "supplierSku": "752306",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "switch_6",
+      "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/752306.jpg",
+      "attributes": {
+        "switchType": "6"
+      },
+      "supplier": {
+        "supplierId": "buco",
+        "supplierName": "BUČO",
+        "sourceUrl": "https://www.buco.sk/valena-life-vypinac-c6-hlinikova-koliska-752306"
+      },
+      "pricing": {
+        "currency": "EUR",
+        "netCents": 784,
+        "grossCents": 965,
+        "priceStatus": "valid"
+      },
+      "availability": {
+        "quantity": 26,
+        "status": "in_stock"
+      },
+      "searchTokens": [
+        "752306",
+        "hlinikova",
+        "koliska",
+        "legrand",
+        "life",
+        "ovladace",
+        "spinac",
+        "switch",
+        "switch 6",
+        "valena",
+        "valena life",
+        "valena life vypinac c 6 hlinikova koliska",
+        "vypinac",
+        "vypinac c 6",
+        "vypinace",
+        "vypinace a ovladace"
+      ],
+      "classificationConfidence": 0.93,
+      "status": "active",
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
+    },
+    {
+      "id": "buco_756316",
+      "tradeId": "electrical",
+      "categoryId": "electrical__vypinace-a-ovladace__vypinac-c6",
+      "categoryPathIds": [
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__vypinac-c6"
+      ],
+      "categoryPathNames": [
+        "Vypínače a ovládače",
+        "Vypínač č. 6"
+      ],
+      "name": "Valena Life Vypínač Č.6, Čierna Matná Kolíska",
+      "normalizedName": "valena life vypinac c 6 cierna matna koliska",
+      "supplierSku": "756316",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "switch_6",
+      "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/756316.jpg",
+      "attributes": {
+        "switchType": "6"
+      },
+      "supplier": {
+        "supplierId": "buco",
+        "supplierName": "BUČO",
+        "sourceUrl": "https://www.buco.sk/valena-life-vypinac-c6-cierna-matna-koliska-756316"
+      },
+      "pricing": {
+        "currency": "EUR",
+        "netCents": 589,
+        "grossCents": 724,
+        "priceStatus": "valid"
+      },
+      "availability": {
+        "quantity": 331,
+        "status": "in_stock"
+      },
+      "searchTokens": [
+        "756316",
+        "cierna",
+        "koliska",
+        "legrand",
+        "life",
+        "matna",
+        "ovladace",
+        "spinac",
+        "switch",
+        "switch 6",
+        "valena",
+        "valena life",
+        "valena life vypinac c 6 cierna matna koliska",
+        "vypinac",
+        "vypinac c 6",
+        "vypinace",
+        "vypinace a ovladace"
+      ],
+      "classificationConfidence": 0.93,
+      "status": "active",
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
+    },
+    {
+      "id": "buco_752126",
+      "tradeId": "electrical",
+      "categoryId": "electrical__vypinace-a-ovladace__vypinac-c6",
+      "categoryPathIds": [
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__vypinac-c6"
+      ],
+      "categoryPathNames": [
+        "Vypínače a ovládače",
+        "Vypínač č. 6"
+      ],
+      "name": "Valena Life Vypínač Č.6 S Orientačným Osvetlením, Biela Kolíska",
+      "normalizedName": "valena life vypinac c 6 s orientacnym osvetlenim biela koliska",
+      "supplierSku": "752126",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "switch_6",
+      "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/752126.jpg",
+      "attributes": {
+        "switchType": "6"
+      },
+      "supplier": {
+        "supplierId": "buco",
+        "supplierName": "BUČO",
+        "sourceUrl": "https://www.buco.sk/valena-life-vypinac-c6-s-orientacnym-osvetlenim-biela-koliska-752126"
+      },
+      "pricing": {
+        "currency": "EUR",
+        "netCents": 772,
+        "grossCents": 949,
+        "priceStatus": "valid"
+      },
+      "availability": {
+        "quantity": 12,
+        "status": "in_stock"
+      },
+      "searchTokens": [
+        "752126",
+        "biela",
+        "koliska",
+        "legrand",
+        "life",
+        "orientacnym",
+        "osvetlenim",
+        "ovladace",
+        "spinac",
+        "switch",
+        "switch 6",
+        "valena",
+        "valena life",
+        "valena life vypinac c 6 s orientacnym osvetlenim biela koliska",
+        "vypinac",
+        "vypinac c 6",
+        "vypinace",
+        "vypinace a ovladace"
+      ],
+      "classificationConfidence": 0.93,
+      "status": "active",
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
+    },
+    {
+      "id": "buco_752226",
+      "tradeId": "electrical",
+      "categoryId": "electrical__vypinace-a-ovladace__vypinac-c6",
+      "categoryPathIds": [
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__vypinac-c6"
+      ],
+      "categoryPathNames": [
+        "Vypínače a ovládače",
+        "Vypínač č. 6"
+      ],
+      "name": "Valena Life Vypínač Č.6 S Orientačným Osvetlením, Béžová Kolíska",
+      "normalizedName": "valena life vypinac c 6 s orientacnym osvetlenim bezova koliska",
+      "supplierSku": "752226",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "switch_6",
+      "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/752226.jpg",
+      "attributes": {
+        "switchType": "6"
+      },
+      "supplier": {
+        "supplierId": "buco",
+        "supplierName": "BUČO",
+        "sourceUrl": "https://www.buco.sk/valena-life-vypinac-c6-s-orientacnym-osvetlenim-bezova-koliska-752226"
+      },
+      "pricing": {
+        "currency": "EUR",
+        "netCents": 811,
+        "grossCents": 998,
+        "priceStatus": "valid"
+      },
+      "availability": {
+        "quantity": 1150,
+        "status": "in_stock"
+      },
+      "searchTokens": [
+        "752226",
+        "bezova",
+        "koliska",
+        "legrand",
+        "life",
+        "orientacnym",
+        "osvetlenim",
+        "ovladace",
+        "spinac",
+        "switch",
+        "switch 6",
+        "valena",
+        "valena life",
+        "valena life vypinac c 6 s orientacnym osvetlenim bezova koliska",
+        "vypinac",
+        "vypinac c 6",
+        "vypinace",
+        "vypinace a ovladace"
+      ],
+      "classificationConfidence": 0.93,
+      "status": "active",
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
+    },
+    {
+      "id": "buco_752326",
+      "tradeId": "electrical",
+      "categoryId": "electrical__vypinace-a-ovladace__vypinac-c6",
+      "categoryPathIds": [
+        "electrical__vypinace-a-ovladace",
+        "electrical__vypinace-a-ovladace__vypinac-c6"
+      ],
+      "categoryPathNames": [
+        "Vypínače a ovládače",
+        "Vypínač č. 6"
+      ],
+      "name": "Valena Life Vypínač Č.6 S Orientačným Osvetlením, Hliníková Kolíska",
+      "normalizedName": "valena life vypinac c 6 s orientacnym osvetlenim hlinikova koliska",
+      "supplierSku": "752326",
+      "brand": "Legrand",
+      "series": "Valena Life",
+      "productType": "switch_6",
+      "unit": "ks",
+      "imageUrl": "https://www.buco.sk/assets/images/produkty/thumb/752326.jpg",
+      "attributes": {
+        "switchType": "6"
+      },
+      "supplier": {
+        "supplierId": "buco",
+        "supplierName": "BUČO",
+        "sourceUrl": "https://www.buco.sk/valena-life-vypinac-c6-s-orientacnym-osvetlenim-hlinikova-koliska-752326"
+      },
+      "pricing": {
+        "currency": "EUR",
+        "netCents": 1097,
+        "grossCents": 1349,
+        "priceStatus": "valid"
+      },
+      "availability": {
+        "quantity": 6,
+        "status": "in_stock"
+      },
+      "searchTokens": [
+        "752326",
+        "hlinikova",
+        "koliska",
+        "legrand",
+        "life",
+        "orientacnym",
+        "osvetlenim",
+        "ovladace",
+        "spinac",
+        "switch",
+        "switch 6",
+        "valena",
+        "valena life",
+        "valena life vypinac c 6 s orientacnym osvetlenim hlinikova koliska",
+        "vypinac",
+        "vypinac c 6",
+        "vypinace",
+        "vypinace a ovladace"
+      ],
+      "classificationConfidence": 0.93,
+      "status": "active",
+      "importId": "buco_electrical_20260723201138",
+      "createdAt": "2026-07-23T20:11:38.156Z",
+      "updatedAt": "2026-07-23T20:11:38.156Z"
     }
   ]
 }

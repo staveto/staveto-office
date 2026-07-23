@@ -14,6 +14,7 @@ import type {
   ElectricalCatalogCategory,
   ElectricalCatalogProduct,
 } from "@/lib/catalog/electrical/types";
+import { resolveCatalogProductImageUrl } from "@/lib/catalog/electrical/images";
 import { ELECTRICAL_TRADE_ID } from "@/lib/catalog/electrical/category-rules";
 
 function requireDb() {
@@ -57,7 +58,14 @@ export async function listElectricalCatalogProducts(
     query(collection(db, "catalogProducts"), where("tradeId", "==", tradeId))
   );
   const items = snap.docs
-    .map((d) => ({ ...(d.data() as ElectricalCatalogProduct), id: d.id }))
+    .map((d) => {
+      const raw = { ...(d.data() as ElectricalCatalogProduct), id: d.id };
+      return {
+        ...raw,
+        // Older docs / partial imports may omit imageUrl — derive from SKU.
+        imageUrl: resolveCatalogProductImageUrl(raw),
+      };
+    })
     .filter((p) => p.status !== "rejected");
   items.sort((a, b) => a.name.localeCompare(b.name, "sk"));
   productsCache = { tradeId, items };

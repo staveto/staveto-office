@@ -36,6 +36,10 @@ import {
 import { formatMoney } from "@/lib/format";
 import { computeItemTotal, computeEstimateTotals } from "@/lib/estimateUtils";
 import {
+  isManualQuoteWorkspaceEnabled,
+  projectQuoteTabHref,
+} from "@/lib/projectCreationFeature";
+import {
   hasQuoteAccess,
   saveQuote,
   setQuoteStatus,
@@ -82,9 +86,9 @@ export default function QuoteDetailPage() {
   const [items, setItems] = useState<LineItem[]>([]);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Draft quotes linked to a zákazka are managed there (AI príprava ponuky)
-  // — this page is a read-only view for them, so there is exactly ONE place
-  // where quote content gets edited. Standalone/sent quotes stay editable.
+  // Draft quotes linked to a zákazka are edited on the job quote tab
+  // (manual workspace). This page is a read-only mirror; standalone/sent
+  // quotes stay editable here.
   const managedByProject = status === "draft" && !!projectId;
 
   const itemsWithTotals = items.map((item) => ({
@@ -106,6 +110,16 @@ export default function QuoteDetailPage() {
           return;
         }
         let q = access.quote;
+        // Draft + job + manual workspace → open the project quote editor
+        // (same view as before: Materiály a položky práce), not AI setup.
+        if (
+          isManualQuoteWorkspaceEnabled() &&
+          q.status === "draft" &&
+          q.projectId
+        ) {
+          router.replace(projectQuoteTabHref(q.projectId));
+          return;
+        }
         // Draft quotes linked to a project mirror the project's current
         // draft — refresh stale snapshots so this page matches the zákazka.
         if (q.status === "draft" && q.projectId) {
@@ -144,7 +158,7 @@ export default function QuoteDetailPage() {
         setLoading(false);
       }
     })();
-  }, [id, user?.id, activeWorkspace?.id]);
+  }, [id, user?.id, activeWorkspace?.id, router]);
 
   useQuoteDetailAgentScreenSync({
     quoteId: id,
@@ -338,8 +352,9 @@ export default function QuoteDetailPage() {
               </p>
             </div>
             <Link
-              href={`/app/projects/${projectId}?setup=ai`}
+              href={projectQuoteTabHref(projectId)}
               className={buttonVariants({ size: "sm" })}
+              data-testid="quote-edit-in-project"
             >
               {t("quotes.managedByProject.cta")}
             </Link>
