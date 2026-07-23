@@ -16,7 +16,8 @@ import {
 } from "@/lib/projects";
 import { listQuotesForProject } from "@/lib/quotes";
 import type { QuoteDoc } from "@/lib/quotes";
-import type { ActiveWorkspace, Workspace } from "@/types/workspace";
+import type { Workspace } from "@/lib/workspace-types";
+import type { ActiveWorkspace } from "@/types/workspace";
 import type { SymbolCandidate } from "@/types/pdfTakeoff";
 import { dtoFromSymbolCandidate } from "@/lib/takeoff/candidateReview";
 import { categoryLabelForCandidate } from "@/lib/takeoff/takeoffCategories";
