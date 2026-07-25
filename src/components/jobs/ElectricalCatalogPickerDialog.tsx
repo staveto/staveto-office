@@ -257,12 +257,17 @@ export function ElectricalCatalogPickerDialog({
     return map;
   }, [brandFilter, brandScopedProducts, countsByCategoryId]);
 
-  /** Brands available in the selected top category (shown above subcategories). */
+  /**
+   * Brands for the current category scope (shown as chips under the search box).
+   * Uses category only — not the active brand — so chips stay stable while filtering.
+   */
   const brandOptions = useMemo(() => {
-    if (!topCategoryId) return [];
-    const inTop = filterProductsByCategory(scopedProducts, topCategoryId);
+    const pool = filterProductsByCategory(
+      scopedProducts,
+      childCategoryId ?? topCategoryId
+    );
     const map = new Map<string, number>();
-    for (const p of inTop) {
+    for (const p of pool) {
       const brand = (p.brand ?? "").trim();
       if (!brand) continue;
       map.set(brand, (map.get(brand) ?? 0) + 1);
@@ -272,7 +277,7 @@ export function ElectricalCatalogPickerDialog({
         (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "sk", { sensitivity: "base" })
       )
       .map(([brand, count]) => ({ brand, count }));
-  }, [scopedProducts, topCategoryId]);
+  }, [scopedProducts, topCategoryId, childCategoryId]);
 
   const topCategories = useMemo(() => {
     const allowedSlugs = routingOnly
@@ -340,13 +345,13 @@ export function ElectricalCatalogPickerDialog({
     setVisibleLimit(PAGE_SIZE);
   }, [search, activeCategoryId, brandFilter]);
 
-  // Drop brand filter if it no longer exists in the selected top category.
+  // Drop brand filter if it no longer exists in the current category scope.
   useEffect(() => {
     if (!brandFilter) return;
-    if (!topCategoryId || !brandOptions.some((b) => b.brand === brandFilter)) {
+    if (!brandOptions.some((b) => b.brand === brandFilter)) {
       setBrandFilter(null);
     }
-  }, [brandFilter, topCategoryId, brandOptions]);
+  }, [brandFilter, brandOptions]);
 
   const handlePick = (product: ElectricalCatalogProduct) => {
     onPick(product);
@@ -436,83 +441,38 @@ export function ElectricalCatalogPickerDialog({
                         <span className="pr-2 leading-snug">{cat.name}</span>
                         <span className="shrink-0 text-xs opacity-70">{count}</span>
                       </button>
-                      {selected ? (
-                        <div className="mb-1 ml-2 mt-0.5 space-y-1.5 border-l border-border pl-2">
-                          {brandOptions.length > 0 ? (
-                            <div className="space-y-0.5" data-testid="catalog-brand-filter">
-                              <p className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                                {t("projects.draft.quoteItem.catalogBrandLabel")}
-                              </p>
-                              <button
-                                type="button"
-                                onClick={() => setBrandFilter(null)}
-                                className={cn(
-                                  "flex w-full rounded-md px-2 py-1.5 text-left text-xs",
-                                  !brandFilter
-                                    ? "font-medium text-[#e06737]"
-                                    : "text-muted-foreground hover:text-foreground"
-                                )}
-                              >
-                                {t("projects.draft.quoteItem.catalogAllBrands")}
-                              </button>
-                              {brandOptions.map(({ brand, count }) => (
-                                <button
-                                  key={brand}
-                                  type="button"
-                                  onClick={() => setBrandFilter(brand)}
-                                  className={cn(
-                                    "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs",
-                                    brandFilter === brand
-                                      ? "bg-[#e06737]/15 font-medium text-[#e06737]"
-                                      : "text-muted-foreground hover:text-foreground"
-                                  )}
-                                  title={brand}
-                                >
-                                  <span className="truncate pr-1 leading-snug">{brand}</span>
-                                  <span className="shrink-0 opacity-70">{count}</span>
-                                </button>
-                              ))}
-                            </div>
-                          ) : null}
-                          {childCategories.length > 0 ? (
-                            <div className="space-y-0.5">
-                              {brandOptions.length > 0 ? (
-                                <p className="px-2 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                                  {t("projects.draft.quoteItem.catalogSubcategoriesLabel")}
-                                </p>
-                              ) : null}
-                              <button
-                                type="button"
-                                onClick={() => setChildCategoryId(null)}
-                                className={cn(
-                                  "flex w-full rounded-md px-2 py-1.5 text-left text-xs",
-                                  !childCategoryId
-                                    ? "font-medium text-[#e06737]"
-                                    : "text-muted-foreground hover:text-foreground"
-                                )}
-                              >
-                                {t("projects.draft.quoteItem.catalogAllInCategory")}
-                              </button>
-                              {childCategories.map((child) => (
-                                <button
-                                  key={child.id}
-                                  type="button"
-                                  onClick={() => setChildCategoryId(child.id)}
-                                  className={cn(
-                                    "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs",
-                                    childCategoryId === child.id
-                                      ? "bg-[#e06737]/15 font-medium text-[#e06737]"
-                                      : "text-muted-foreground hover:text-foreground"
-                                  )}
-                                >
-                                  <span className="pr-1 leading-snug">{child.name}</span>
-                                  <span className="opacity-70">
-                                    {brandAwareCountsByCategoryId.get(child.id) ?? 0}
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          ) : null}
+                      {selected && childCategories.length > 0 ? (
+                        <div className="mb-1 ml-2 mt-0.5 space-y-0.5 border-l border-border pl-2">
+                          <button
+                            type="button"
+                            onClick={() => setChildCategoryId(null)}
+                            className={cn(
+                              "flex w-full rounded-md px-2 py-1.5 text-left text-xs",
+                              !childCategoryId
+                                ? "font-medium text-[#e06737]"
+                                : "text-muted-foreground hover:text-foreground"
+                            )}
+                          >
+                            {t("projects.draft.quoteItem.catalogAllInCategory")}
+                          </button>
+                          {childCategories.map((child) => (
+                            <button
+                              key={child.id}
+                              type="button"
+                              onClick={() => setChildCategoryId(child.id)}
+                              className={cn(
+                                "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs",
+                                childCategoryId === child.id
+                                  ? "bg-[#e06737]/15 font-medium text-[#e06737]"
+                                  : "text-muted-foreground hover:text-foreground"
+                              )}
+                            >
+                              <span className="pr-1 leading-snug">{child.name}</span>
+                              <span className="opacity-70">
+                                {brandAwareCountsByCategoryId.get(child.id) ?? 0}
+                              </span>
+                            </button>
+                          ))}
                         </div>
                       ) : null}
                     </div>
@@ -579,8 +539,55 @@ export function ElectricalCatalogPickerDialog({
                   ) : null}
                 </div>
 
-                {/* Mobile category + brand selects */}
-                <div className="flex flex-col gap-2 sm:hidden">
+                {/* Manufacturer chips — under search, clear of the category tree */}
+                {brandOptions.length > 0 ? (
+                  <div
+                    className="space-y-1.5"
+                    data-testid="catalog-brand-filter"
+                  >
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      {t("projects.draft.quoteItem.catalogBrandLabel")}
+                    </p>
+                    <div className="flex gap-1.5 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                      <button
+                        type="button"
+                        onClick={() => setBrandFilter(null)}
+                        className={cn(
+                          "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                          !brandFilter
+                            ? "border-[#e06737] bg-[#e06737] text-white"
+                            : "border-border bg-background text-muted-foreground hover:border-[#e06737]/50 hover:text-foreground"
+                        )}
+                      >
+                        {t("projects.draft.quoteItem.catalogAllBrands")}
+                      </button>
+                      {brandOptions.map(({ brand, count }) => (
+                        <button
+                          key={brand}
+                          type="button"
+                          onClick={() =>
+                            setBrandFilter((prev) =>
+                              prev === brand ? null : brand
+                            )
+                          }
+                          title={brand}
+                          className={cn(
+                            "shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                            brandFilter === brand
+                              ? "border-[#e06737] bg-[#e06737] text-white"
+                              : "border-border bg-background text-muted-foreground hover:border-[#e06737]/50 hover:text-foreground"
+                          )}
+                        >
+                          {brand}
+                          <span className="ml-1 opacity-80">({count})</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Mobile category select */}
+                <div className="sm:hidden">
                   <select
                     className="h-10 w-full rounded-md border border-border bg-background px-2 text-sm"
                     value={topCategoryId ?? ""}
@@ -596,24 +603,6 @@ export function ElectricalCatalogPickerDialog({
                       </option>
                     ))}
                   </select>
-                  {topCategoryId && brandOptions.length > 0 ? (
-                    <select
-                      className="h-10 w-full rounded-md border border-border bg-background px-2 text-sm"
-                      value={brandFilter ?? ""}
-                      onChange={(e) => setBrandFilter(e.target.value || null)}
-                      aria-label={t("projects.draft.quoteItem.catalogBrandLabel")}
-                      data-testid="catalog-brand-filter-mobile"
-                    >
-                      <option value="">
-                        {t("projects.draft.quoteItem.catalogAllBrands")}
-                      </option>
-                      {brandOptions.map(({ brand, count }) => (
-                        <option key={brand} value={brand}>
-                          {brand} ({count})
-                        </option>
-                      ))}
-                    </select>
-                  ) : null}
                 </div>
 
                 <div className="flex items-baseline justify-between gap-3">
