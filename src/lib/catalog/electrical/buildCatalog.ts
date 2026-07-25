@@ -140,6 +140,9 @@ export function buildElectricalCatalogFromProducts(input: {
       categoryId,
       categoryPathIds: pathIds,
       categoryPathNames: pathNames,
+      ...(raw.sourceCategoryPaths?.length
+        ? { sourceCategoryPaths: raw.sourceCategoryPaths }
+        : {}),
       name,
       normalizedName,
       supplierSku: sku,
@@ -166,7 +169,11 @@ export function buildElectricalCatalogFromProducts(input: {
         supplierSku: sku,
         brand,
         series,
-        categoryPathNames: pathNames,
+        categoryPathNames: [
+          ...pathNames,
+          ...(raw.cesta ?? []),
+          ...(raw.sourceCategoryPaths ?? []),
+        ],
         productType: classification.productType,
       }),
       classificationConfidence: classification.confidence,

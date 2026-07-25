@@ -46,6 +46,8 @@ export type ElectricalCatalogProduct = {
   categoryId: string;
   categoryPathIds: string[];
   categoryPathNames: string[];
+  /** Original BUCO category paths (all memberships after tree dedupe). */
+  sourceCategoryPaths?: string[];
   name: string;
   normalizedName: string;
   supplierSku: string;
@@ -104,9 +106,16 @@ export type BucoRawProduct = {
   /** Absolute image URL from scraper (may be empty). */
   obrazok_url?: string;
   url: string;
+  /** Primary BUCO category path (deepest membership preferred). */
   sourceCategoryPath?: string;
   sourceCategoryName?: string;
+  /** Breadcrumb names for the primary category (nested tree import). */
   cesta?: string[];
+  /**
+   * All BUCO category paths where this product appeared (deduped tree import).
+   * Primary path is always first.
+   */
+  sourceCategoryPaths?: string[];
 };
 
 export type BucoScraperState = {

@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  CircleDollarSign,
   Highlighter,
   Pencil,
   Plus,
@@ -28,13 +29,13 @@ import { useWorkspace } from "@/context/WorkspaceContext";
 import { getWorkspaceStorageKey } from "@/lib/workspaceStorage";
 import { listCatalogItems, type CatalogItemDoc } from "@/services/materials";
 import { cn } from "@/lib/utils";
+import { formatMoney } from "@/lib/format";
 import type {
   CableInstallationType,
   CableRun,
   CableRunStatus,
 } from "@/types/pdfTakeoff";
 import {
-  CABLE_RUN_COLOR_PALETTE,
   CABLE_RUN_STROKE_PRESETS,
   DEFAULT_CABLE_TYPE_NAMES,
   groupCableRunsByType,
@@ -42,6 +43,10 @@ import {
   resolveCableRunStrokeWidth,
 } from "@/lib/takeoff/cableMeasurement";
 import { categoryColorForKey, categoryKeyForLabel } from "@/lib/takeoff/takeoffCategories";
+import { MarkColorPicker } from "@/components/takeoff/MarkColorPicker";
+import { ElectricalCatalogPickerDialog } from "@/components/jobs/ElectricalCatalogPickerDialog";
+import type { ElectricalCatalogProduct } from "@/lib/catalog/electrical/types";
+import { productUnitPriceEur } from "@/services/catalog/electricalCatalogReadService";
 
 const INSTALLATION_TYPES: CableInstallationType[] = [
   "groove",
@@ -120,6 +125,9 @@ export function CableRunsPanel({
 
   const [open, setOpen] = useState(runs.length > 0);
   const [catalogItems, setCatalogItems] = useState<CatalogItemDoc[]>([]);
+  const [stylePickerRunId, setStylePickerRunId] = useState<string | null>(null);
+  /** Run id waiting for a routing (trasovacie) catalog price pick. */
+  const [pricePickRunId, setPricePickRunId] = useState<string | null>(null);
 
   // Selecting a route (from the plan or the list) always reveals the panel —
   // state adjusted during render (no effect → no cascading re-render).
@@ -299,7 +307,11 @@ export function CableRunsPanel({
                               {run.name}
                             </span>
                             <span className="block truncate text-[11px] text-muted-foreground">
-                              {run.cableTypeName} · {installationLabel(run.installationType)}
+                              {run.cableTypeName} ·{" "}
+                              {installationLabel(run.installationType)}
+                              {typeof run.unitPrice === "number" && run.unitPrice > 0
+                                ? ` · ${formatMoney(run.unitPrice, "EUR")}/m`
+                                : ""}
                             </span>
                           </span>
                           <span className="shrink-0 text-right">
@@ -367,96 +379,46 @@ export function CableRunsPanel({
                                 />
                               </label>
 
-                              <div className="space-y-1.5">
+                              <div className="space-y-1">
                                 <span className="text-[11px] font-medium text-muted-foreground">
                                   {t("takeoff.measure.lineStyle")}
                                 </span>
-                                <div className="flex flex-wrap items-center gap-1.5">
-                                  {(() => {
-                                    const currentColor = resolveCableRunColor(run, (name) =>
-                                      categoryColorForKey(categoryKeyForLabel(name))
-                                    ).toLowerCase();
-                                    return (
-                                      <>
-                                        {CABLE_RUN_COLOR_PALETTE.map((hex) => {
-                                          const active = currentColor === hex.toLowerCase();
-                                          return (
-                                            <button
-                                              key={hex}
-                                              type="button"
-                                              className={cn(
-                                                "size-6 rounded-full border-2 transition-shadow",
-                                                active
-                                                  ? "border-foreground shadow-sm"
-                                                  : "border-transparent hover:border-border"
-                                              )}
-                                              style={{ backgroundColor: hex }}
-                                              title={t("takeoff.measure.lineColorHint")}
-                                              aria-label={t("takeoff.measure.lineColorHint")}
-                                              aria-pressed={active}
-                                              data-testid="cable-run-color"
-                                              onClick={() =>
-                                                onUpdateRun(run.id, { color: hex })
-                                              }
-                                            />
-                                          );
-                                        })}
-                                        <label
-                                          className="relative size-6 cursor-pointer overflow-hidden rounded-full border border-border"
-                                          title={t("takeoff.measure.lineColorCustom")}
-                                        >
-                                          <span
-                                            className="absolute inset-0"
-                                            style={{ backgroundColor: currentColor }}
-                                          />
-                                          <input
-                                            type="color"
-                                            className="absolute inset-0 cursor-pointer opacity-0"
-                                            value={currentColor}
-                                            onChange={(e) =>
-                                              onUpdateRun(run.id, { color: e.target.value })
-                                            }
-                                            aria-label={t("takeoff.measure.lineColorCustom")}
-                                          />
-                                        </label>
-                                      </>
-                                    );
-                                  })()}
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <span className="shrink-0 text-[10px] text-muted-foreground">
-                                    {t("takeoff.measure.lineThickness")}
-                                  </span>
-                                  <div className="flex flex-1 items-center gap-1">
-                                    {CABLE_RUN_STROKE_PRESETS.map((w) => {
-                                      const active =
-                                        resolveCableRunStrokeWidth(run) === w;
-                                      return (
-                                        <button
-                                          key={w}
-                                          type="button"
-                                          className={cn(
-                                            "flex h-7 flex-1 items-center justify-center rounded-md border px-1",
-                                            active
-                                              ? "border-emerald-600 bg-emerald-50 dark:bg-emerald-950/50"
-                                              : "border-border bg-background hover:bg-muted/60"
-                                          )}
-                                          title={`${w} px`}
-                                          aria-pressed={active}
-                                          data-testid="cable-run-stroke"
-                                          onClick={() =>
-                                            onUpdateRun(run.id, { strokeWidth: w })
-                                          }
-                                        >
-                                          <span
-                                            className="block w-full rounded-full bg-foreground"
-                                            style={{ height: Math.max(1, w * 0.7) }}
-                                          />
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
+                                {(() => {
+                                  const currentColor = resolveCableRunColor(run, (name) =>
+                                    categoryColorForKey(categoryKeyForLabel(name))
+                                  );
+                                  const stroke = resolveCableRunStrokeWidth(run);
+                                  return (
+                                    <button
+                                      type="button"
+                                      className="flex w-full items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5 text-left hover:bg-muted/50"
+                                      data-testid="cable-run-style"
+                                      title={t("takeoff.measure.lineColorHint")}
+                                      onClick={() => setStylePickerRunId(run.id)}
+                                    >
+                                      <span
+                                        className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border"
+                                        style={{ backgroundColor: `${currentColor}22` }}
+                                      >
+                                        <span
+                                          className="block w-5 rounded-full"
+                                          style={{
+                                            height: Math.max(2, stroke),
+                                            backgroundColor: currentColor,
+                                          }}
+                                        />
+                                      </span>
+                                      <span className="min-w-0 flex-1">
+                                        <span className="block text-xs font-medium text-foreground">
+                                          {t("takeoff.measure.lineStyleEdit")}
+                                        </span>
+                                        <span className="block text-[10px] tabular-nums text-muted-foreground">
+                                          {currentColor.toUpperCase()} · {stroke} px
+                                        </span>
+                                      </span>
+                                    </button>
+                                  );
+                                })()}
                               </div>
 
                               <label className="block">
@@ -494,12 +456,20 @@ export function CableRunsPanel({
                                       if (item) {
                                         onUpdateRun(run.id, {
                                           catalogItemId: item.id,
+                                          electricalProductId: undefined,
                                           cableTypeName: item.name,
+                                          unitPrice:
+                                            typeof item.unitPrice === "number" &&
+                                            item.unitPrice > 0
+                                              ? item.unitPrice
+                                              : undefined,
                                         });
                                       }
                                     } else if (v.startsWith("name:")) {
                                       onUpdateRun(run.id, {
                                         catalogItemId: undefined,
+                                        electricalProductId: undefined,
+                                        unitPrice: undefined,
                                         cableTypeName: v.slice("name:".length),
                                       });
                                     }
@@ -532,10 +502,41 @@ export function CableRunsPanel({
                                     onUpdateRun(run.id, {
                                       cableTypeName: e.target.value,
                                       catalogItemId: undefined,
+                                      electricalProductId: undefined,
+                                      unitPrice: undefined,
                                     })
                                   }
                                 />
                               </label>
+
+                              <div className="space-y-1">
+                                <span className="text-[11px] font-medium text-muted-foreground">
+                                  {t("takeoff.measure.unitPrice")}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className="min-w-0 flex-1 truncate text-xs tabular-nums text-foreground"
+                                    data-testid="cable-run-unit-price"
+                                  >
+                                    {typeof run.unitPrice === "number" &&
+                                    run.unitPrice > 0
+                                      ? `${formatMoney(run.unitPrice, "EUR")} / m`
+                                      : t("takeoff.measure.unitPriceMissing")}
+                                  </span>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-7 shrink-0 px-2 text-[11px]"
+                                    data-testid="cable-run-pick-price"
+                                    title={t("takeoff.measure.pickRoutingPriceHint")}
+                                    onClick={() => setPricePickRunId(run.id)}
+                                  >
+                                    <CircleDollarSign className="mr-1 size-3.5" />
+                                    {t("takeoff.measure.pickRoutingPrice")}
+                                  </Button>
+                                </div>
+                              </div>
                               <label className="block">
                                 <span className="text-[11px] font-medium text-muted-foreground">
                                   {t("takeoff.measure.installationType")}
@@ -868,6 +869,53 @@ export function CableRunsPanel({
             </div>
           ) : null}
         </div>
+      ) : null}
+
+      {onUpdateRun && stylePickerRunId
+        ? (() => {
+            const run = runs.find((r) => r.id === stylePickerRunId);
+            if (!run) return null;
+            const currentColor = resolveCableRunColor(run, (name) =>
+              categoryColorForKey(categoryKeyForLabel(name))
+            );
+            return (
+              <MarkColorPicker
+                open
+                color={currentColor}
+                label={run.name || run.cableTypeName}
+                onClose={() => setStylePickerRunId(null)}
+                onChange={(hex) => onUpdateRun(run.id, { color: hex })}
+                strokeWidth={{
+                  value: resolveCableRunStrokeWidth(run),
+                  presets: CABLE_RUN_STROKE_PRESETS,
+                  onChange: (width) =>
+                    onUpdateRun(run.id, { strokeWidth: width }),
+                }}
+              />
+            );
+          })()
+        : null}
+
+      {onUpdateRun ? (
+        <ElectricalCatalogPickerDialog
+          open={Boolean(pricePickRunId)}
+          onOpenChange={(next) => {
+            if (!next) setPricePickRunId(null);
+          }}
+          routingOnly
+          hideAddCustom
+          onPick={(product: ElectricalCatalogProduct) => {
+            if (!pricePickRunId) return;
+            const unitPrice = productUnitPriceEur(product);
+            onUpdateRun(pricePickRunId, {
+              cableTypeName: product.name.trim(),
+              electricalProductId: product.id,
+              catalogItemId: undefined,
+              unitPrice: unitPrice > 0 ? unitPrice : undefined,
+            });
+            setPricePickRunId(null);
+          }}
+        />
       ) : null}
     </div>
   );

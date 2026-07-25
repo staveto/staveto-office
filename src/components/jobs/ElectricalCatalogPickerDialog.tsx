@@ -39,6 +39,11 @@ import {
   loadElectricalCatalog,
   productUnitPriceEur,
 } from "@/services/catalog/electricalCatalogReadService";
+import {
+  isRoutingElectricalProduct,
+  routingTopCategoryIds,
+  ROUTING_TOP_CATEGORY_SLUGS,
+} from "@/lib/catalog/electrical/routingCatalog";
 
 type Props = {
   open: boolean;
@@ -46,6 +51,15 @@ type Props = {
   onPick: (product: ElectricalCatalogProduct) => void;
   onAddCustom?: () => void;
   onOpenCompanyCatalog?: () => void;
+  /**
+   * Limit the picker to cable-routing materials (káble + rúrky/lišty/trasy).
+   * Used from the cable-route price flow.
+   */
+  routingOnly?: boolean;
+  /** Override dialog title (e.g. routing price pick). */
+  title?: string;
+  /** Hide "custom item" when the flow only accepts catalog products. */
+  hideAddCustom?: boolean;
 };
 
 /** Keep the DOM small — full catalog is 1k+ rows. */
@@ -121,6 +135,9 @@ export function ElectricalCatalogPickerDialog({
   onPick,
   onAddCustom,
   onOpenCompanyCatalog,
+  routingOnly = false,
+  title,
+  hideAddCustom = false,
 }: Props) {
   const { t } = useI18n();
   const [loading, setLoading] = useState(false);
@@ -130,6 +147,8 @@ export function ElectricalCatalogPickerDialog({
   const [search, setSearch] = useState("");
   const [topCategoryId, setTopCategoryId] = useState<string | null>(null);
   const [childCategoryId, setChildCategoryId] = useState<string | null>(null);
+  /** Manufacturer / brand filter (e.g. Schneider Electric). */
+  const [brandFilter, setBrandFilter] = useState<string | null>(null);
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [addedCount, setAddedCount] = useState(0);
   const [justAddedId, setJustAddedId] = useState<string | null>(null);
@@ -143,6 +162,7 @@ export function ElectricalCatalogPickerDialog({
       setSearch("");
       setTopCategoryId(null);
       setChildCategoryId(null);
+      setBrandFilter(null);
       setSuggestOpen(false);
       setAddedCount(0);
       setJustAddedId(null);
@@ -194,20 +214,73 @@ export function ElectricalCatalogPickerDialog({
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
-  /** Live product counts per category id (more accurate than import snapshot). */
+  const routingTopIds = useMemo(
+    () => (routingOnly ? routingTopCategoryIds(categories) : null),
+    [routingOnly, categories]
+  );
+
+  /** Products in scope for this picker (full catalog or routing-only). */
+  const scopedProducts = useMemo(() => {
+    if (!routingTopIds) return products;
+    return products.filter((p) => isRoutingElectricalProduct(p, routingTopIds));
+  }, [products, routingTopIds]);
+
+  /** Products after brand filter — drives category counts + list. */
+  const brandScopedProducts = useMemo(() => {
+    if (!brandFilter) return scopedProducts;
+    const key = brandFilter.trim().toLowerCase();
+    return scopedProducts.filter(
+      (p) => (p.brand ?? "").trim().toLowerCase() === key
+    );
+  }, [scopedProducts, brandFilter]);
+
+  /** Live product counts per category id (nav stays stable when brand changes). */
   const countsByCategoryId = useMemo(() => {
     const map = new Map<string, number>();
-    for (const p of products) {
+    for (const p of scopedProducts) {
       for (const id of p.categoryPathIds) {
         map.set(id, (map.get(id) ?? 0) + 1);
       }
     }
     return map;
-  }, [products]);
+  }, [scopedProducts]);
+
+  /** Child-category counts respecting the active brand filter. */
+  const brandAwareCountsByCategoryId = useMemo(() => {
+    if (!brandFilter) return countsByCategoryId;
+    const map = new Map<string, number>();
+    for (const p of brandScopedProducts) {
+      for (const id of p.categoryPathIds) {
+        map.set(id, (map.get(id) ?? 0) + 1);
+      }
+    }
+    return map;
+  }, [brandFilter, brandScopedProducts, countsByCategoryId]);
+
+  /** Brands available in the selected top category (shown above subcategories). */
+  const brandOptions = useMemo(() => {
+    if (!topCategoryId) return [];
+    const inTop = filterProductsByCategory(scopedProducts, topCategoryId);
+    const map = new Map<string, number>();
+    for (const p of inTop) {
+      const brand = (p.brand ?? "").trim();
+      if (!brand) continue;
+      map.set(brand, (map.get(brand) ?? 0) + 1);
+    }
+    return [...map.entries()]
+      .sort(
+        (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "sk", { sensitivity: "base" })
+      )
+      .map(([brand, count]) => ({ brand, count }));
+  }, [scopedProducts, topCategoryId]);
 
   const topCategories = useMemo(() => {
+    const allowedSlugs = routingOnly
+      ? new Set<string>(ROUTING_TOP_CATEGORY_SLUGS)
+      : null;
     return categories
       .filter((c) => c.level === 0)
+      .filter((c) => (allowedSlugs ? allowedSlugs.has(c.slug) : true))
       .filter((c) => (countsByCategoryId.get(c.id) ?? 0) > 0)
       .sort((a, b) => {
         // Push "Ostatné" to the end
@@ -215,7 +288,15 @@ export function ElectricalCatalogPickerDialog({
         if (b.slug === "ostatne-elektro") return -1;
         return a.sortOrder - b.sortOrder;
       });
-  }, [categories, countsByCategoryId]);
+  }, [categories, countsByCategoryId, routingOnly]);
+
+  // Routing price pick — land on the first routing category instead of "all".
+  useEffect(() => {
+    if (!open || !routingOnly || topCategoryId) return;
+    if (topCategories.length > 0) {
+      setTopCategoryId(topCategories[0]!.id);
+    }
+  }, [open, routingOnly, topCategories, topCategoryId]);
 
   const childCategories = useMemo(() => {
     if (!topCategoryId) return [];
@@ -232,22 +313,22 @@ export function ElectricalCatalogPickerDialog({
 
   const suggestions = useMemo(() => {
     if (search.trim().length < 1) return [];
-    return searchElectricalProducts(products, search, {
+    return searchElectricalProducts(brandScopedProducts, search, {
       categoryId: activeCategoryId,
       limit: 8,
     });
-  }, [products, search, activeCategoryId]);
+  }, [brandScopedProducts, search, activeCategoryId]);
 
   const filteredProducts = useMemo(() => {
     const q = search.trim();
     if (q.length >= 1) {
-      return searchElectricalProducts(products, q, {
+      return searchElectricalProducts(brandScopedProducts, q, {
         categoryId: activeCategoryId,
         limit: 300,
       }).map((h) => h.product);
     }
-    return filterProductsByCategory(products, activeCategoryId);
-  }, [products, search, activeCategoryId]);
+    return filterProductsByCategory(brandScopedProducts, activeCategoryId);
+  }, [brandScopedProducts, search, activeCategoryId]);
 
   const visibleProducts = useMemo(
     () => filteredProducts.slice(0, visibleLimit),
@@ -257,7 +338,15 @@ export function ElectricalCatalogPickerDialog({
 
   useEffect(() => {
     setVisibleLimit(PAGE_SIZE);
-  }, [search, activeCategoryId]);
+  }, [search, activeCategoryId, brandFilter]);
+
+  // Drop brand filter if it no longer exists in the selected top category.
+  useEffect(() => {
+    if (!brandFilter) return;
+    if (!topCategoryId || !brandOptions.some((b) => b.brand === brandFilter)) {
+      setBrandFilter(null);
+    }
+  }, [brandFilter, topCategoryId, brandOptions]);
 
   const handlePick = (product: ElectricalCatalogProduct) => {
     onPick(product);
@@ -269,12 +358,17 @@ export function ElectricalCatalogPickerDialog({
   const selectTop = (id: string | null) => {
     setTopCategoryId(id);
     setChildCategoryId(null);
+    setBrandFilter(null);
   };
 
-  const heading =
+  const heading = [
     activeChild?.name ??
-    activeTop?.name ??
-    t("projects.draft.quoteItem.catalogAllCategories");
+      activeTop?.name ??
+      t("projects.draft.quoteItem.catalogAllCategories"),
+    brandFilter,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -282,7 +376,10 @@ export function ElectricalCatalogPickerDialog({
         <DialogHeader className="shrink-0 border-b border-border px-5 py-4 pr-12">
           <DialogTitle className="flex items-center gap-2 text-base">
             <Zap className="size-4 text-[#e06737]" />
-            {t("projects.draft.quoteItem.electricalCatalogTitle")}
+            {title ??
+              (routingOnly
+                ? t("takeoff.measure.routingCatalogTitle")
+                : t("projects.draft.quoteItem.electricalCatalogTitle"))}
           </DialogTitle>
         </DialogHeader>
 
@@ -317,7 +414,7 @@ export function ElectricalCatalogPickerDialog({
                   )}
                 >
                   <span>{t("projects.draft.quoteItem.catalogAllCategories")}</span>
-                  <span className="text-xs opacity-70">{products.length}</span>
+                  <span className="text-xs opacity-70">{scopedProducts.length}</span>
                 </button>
                 {topCategories.map((cat) => {
                   const count = countsByCategoryId.get(cat.id) ?? 0;
@@ -339,38 +436,83 @@ export function ElectricalCatalogPickerDialog({
                         <span className="pr-2 leading-snug">{cat.name}</span>
                         <span className="shrink-0 text-xs opacity-70">{count}</span>
                       </button>
-                      {selected && childCategories.length > 0 ? (
-                        <div className="mb-1 ml-2 mt-0.5 space-y-0.5 border-l border-border pl-2">
-                          <button
-                            type="button"
-                            onClick={() => setChildCategoryId(null)}
-                            className={cn(
-                              "flex w-full rounded-md px-2 py-1.5 text-left text-xs",
-                              !childCategoryId
-                                ? "font-medium text-[#e06737]"
-                                : "text-muted-foreground hover:text-foreground"
-                            )}
-                          >
-                            {t("projects.draft.quoteItem.catalogAllInCategory")}
-                          </button>
-                          {childCategories.map((child) => (
-                            <button
-                              key={child.id}
-                              type="button"
-                              onClick={() => setChildCategoryId(child.id)}
-                              className={cn(
-                                "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs",
-                                childCategoryId === child.id
-                                  ? "bg-[#e06737]/15 font-medium text-[#e06737]"
-                                  : "text-muted-foreground hover:text-foreground"
-                              )}
-                            >
-                              <span className="pr-1 leading-snug">{child.name}</span>
-                              <span className="opacity-70">
-                                {countsByCategoryId.get(child.id) ?? 0}
-                              </span>
-                            </button>
-                          ))}
+                      {selected ? (
+                        <div className="mb-1 ml-2 mt-0.5 space-y-1.5 border-l border-border pl-2">
+                          {brandOptions.length > 0 ? (
+                            <div className="space-y-0.5" data-testid="catalog-brand-filter">
+                              <p className="px-2 pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                {t("projects.draft.quoteItem.catalogBrandLabel")}
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => setBrandFilter(null)}
+                                className={cn(
+                                  "flex w-full rounded-md px-2 py-1.5 text-left text-xs",
+                                  !brandFilter
+                                    ? "font-medium text-[#e06737]"
+                                    : "text-muted-foreground hover:text-foreground"
+                                )}
+                              >
+                                {t("projects.draft.quoteItem.catalogAllBrands")}
+                              </button>
+                              {brandOptions.map(({ brand, count }) => (
+                                <button
+                                  key={brand}
+                                  type="button"
+                                  onClick={() => setBrandFilter(brand)}
+                                  className={cn(
+                                    "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs",
+                                    brandFilter === brand
+                                      ? "bg-[#e06737]/15 font-medium text-[#e06737]"
+                                      : "text-muted-foreground hover:text-foreground"
+                                  )}
+                                  title={brand}
+                                >
+                                  <span className="truncate pr-1 leading-snug">{brand}</span>
+                                  <span className="shrink-0 opacity-70">{count}</span>
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                          {childCategories.length > 0 ? (
+                            <div className="space-y-0.5">
+                              {brandOptions.length > 0 ? (
+                                <p className="px-2 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                  {t("projects.draft.quoteItem.catalogSubcategoriesLabel")}
+                                </p>
+                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => setChildCategoryId(null)}
+                                className={cn(
+                                  "flex w-full rounded-md px-2 py-1.5 text-left text-xs",
+                                  !childCategoryId
+                                    ? "font-medium text-[#e06737]"
+                                    : "text-muted-foreground hover:text-foreground"
+                                )}
+                              >
+                                {t("projects.draft.quoteItem.catalogAllInCategory")}
+                              </button>
+                              {childCategories.map((child) => (
+                                <button
+                                  key={child.id}
+                                  type="button"
+                                  onClick={() => setChildCategoryId(child.id)}
+                                  className={cn(
+                                    "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs",
+                                    childCategoryId === child.id
+                                      ? "bg-[#e06737]/15 font-medium text-[#e06737]"
+                                      : "text-muted-foreground hover:text-foreground"
+                                  )}
+                                >
+                                  <span className="pr-1 leading-snug">{child.name}</span>
+                                  <span className="opacity-70">
+                                    {brandAwareCountsByCategoryId.get(child.id) ?? 0}
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
                     </div>
@@ -437,8 +579,8 @@ export function ElectricalCatalogPickerDialog({
                   ) : null}
                 </div>
 
-                {/* Mobile category select */}
-                <div className="flex gap-2 sm:hidden">
+                {/* Mobile category + brand selects */}
+                <div className="flex flex-col gap-2 sm:hidden">
                   <select
                     className="h-10 w-full rounded-md border border-border bg-background px-2 text-sm"
                     value={topCategoryId ?? ""}
@@ -454,6 +596,24 @@ export function ElectricalCatalogPickerDialog({
                       </option>
                     ))}
                   </select>
+                  {topCategoryId && brandOptions.length > 0 ? (
+                    <select
+                      className="h-10 w-full rounded-md border border-border bg-background px-2 text-sm"
+                      value={brandFilter ?? ""}
+                      onChange={(e) => setBrandFilter(e.target.value || null)}
+                      aria-label={t("projects.draft.quoteItem.catalogBrandLabel")}
+                      data-testid="catalog-brand-filter-mobile"
+                    >
+                      <option value="">
+                        {t("projects.draft.quoteItem.catalogAllBrands")}
+                      </option>
+                      {brandOptions.map(({ brand, count }) => (
+                        <option key={brand} value={brand}>
+                          {brand} ({count})
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
                 </div>
 
                 <div className="flex items-baseline justify-between gap-3">
@@ -560,7 +720,7 @@ export function ElectricalCatalogPickerDialog({
 
         <DialogFooter className="-mx-0 mb-0 rounded-none border-t border-border bg-muted/40 px-4 py-3 sm:justify-between">
           <div className="flex flex-wrap gap-2">
-            {onAddCustom ? (
+            {onAddCustom && !hideAddCustom ? (
               <Button type="button" variant="ghost" size="sm" onClick={onAddCustom}>
                 <Plus className="mr-1 size-3.5" />
                 {t("projects.draft.quoteItem.addCustom")}

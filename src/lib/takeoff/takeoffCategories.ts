@@ -47,13 +47,70 @@ export function categoryKeyForLabel(label: string): string {
   return label.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-/**
- * Stable color for a category key — same label always maps to the same
- * color, regardless of insertion order or which page loaded first (FNV-1a
- * over the normalized key). Two categories may share a color once there are
- * more categories than palette entries; the label chip disambiguates.
- */
-export function categoryColorForKey(key: string): string {
+/** Per-project operator color overrides (persisted in localStorage). */
+const colorOverridesByProject = new Map<string, Map<string, string>>();
+let activeColorProjectId: string | null = null;
+
+const COLOR_STORAGE_PREFIX = "takeoff.categoryColors.";
+
+function readStoredOverrides(projectId: string): Map<string, string> {
+  const map = new Map<string, string>();
+  if (typeof window === "undefined") return map;
+  try {
+    const raw = window.localStorage.getItem(`${COLOR_STORAGE_PREFIX}${projectId}`);
+    if (!raw) return map;
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    for (const [k, v] of Object.entries(parsed)) {
+      if (typeof v === "string" && /^#[0-9A-Fa-f]{6}$/.test(v)) map.set(k, v);
+    }
+  } catch {
+    /* ignore */
+  }
+  return map;
+}
+
+function persistOverrides(projectId: string, map: Map<string, string>) {
+  if (typeof window === "undefined") return;
+  try {
+    const obj: Record<string, string> = {};
+    for (const [k, v] of map) obj[k] = v;
+    window.localStorage.setItem(
+      `${COLOR_STORAGE_PREFIX}${projectId}`,
+      JSON.stringify(obj)
+    );
+  } catch {
+    /* storage full/blocked */
+  }
+}
+
+/** Load (or activate) color overrides for the current project so plan + panel match. */
+export function setActiveCategoryColorProject(projectId: string | null): void {
+  activeColorProjectId = projectId?.trim() || null;
+  if (!activeColorProjectId) return;
+  if (!colorOverridesByProject.has(activeColorProjectId)) {
+    colorOverridesByProject.set(
+      activeColorProjectId,
+      readStoredOverrides(activeColorProjectId)
+    );
+  }
+}
+
+/** Persist a custom color for a category key (normalized label). */
+export function setCategoryColorOverride(key: string, color: string): void {
+  const k = key.trim();
+  if (!k || !activeColorProjectId) return;
+  const hex = color.trim();
+  if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) return;
+  let map = colorOverridesByProject.get(activeColorProjectId);
+  if (!map) {
+    map = new Map();
+    colorOverridesByProject.set(activeColorProjectId, map);
+  }
+  map.set(k, hex);
+  persistOverrides(activeColorProjectId, map);
+}
+
+function defaultCategoryColorForKey(key: string): string {
   let hash = 0x811c9dc5;
   for (let i = 0; i < key.length; i++) {
     hash ^= key.charCodeAt(i);
@@ -61,6 +118,18 @@ export function categoryColorForKey(key: string): string {
   }
   const idx = Math.abs(hash) % CATEGORY_COLOR_PALETTE.length;
   return CATEGORY_COLOR_PALETTE[idx]!;
+}
+
+/**
+ * Color for a category key — operator override first, else stable hash of the
+ * normalized key (FNV-1a). Same label always maps to the same default color.
+ */
+export function categoryColorForKey(key: string): string {
+  if (activeColorProjectId) {
+    const override = colorOverridesByProject.get(activeColorProjectId)?.get(key);
+    if (override) return override;
+  }
+  return defaultCategoryColorForKey(key);
 }
 
 /** Display label + grouping key for one candidate. */

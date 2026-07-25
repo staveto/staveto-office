@@ -316,6 +316,8 @@ type Props = {
    * with the selection glow — like "Zvýrazniť všetko", but for one group.
    */
   highlightedCandidateIds?: string[] | null;
+  /** Bumps when category mark colors change so overlays re-paint. */
+  colorEpoch?: number;
   /**
    * Clear the panel-driven category highlights — wired to the toolbar's
    * "hide all highlights" button so one click darkens everything at once.
@@ -453,6 +455,8 @@ export function DrawingPdfViewer({
   scanningWholePageWithAi = false,
   focusEvidence = null,
   highlightedCandidateIds = null,
+  /** Bumps when category mark colors change so overlays re-paint. */
+  colorEpoch = 0,
   onClearHighlights,
   pointModeHint = null,
   onIdentifyPoint,
@@ -1747,7 +1751,9 @@ export function DrawingPdfViewer({
               Boolean(c.normalized_position) &&
               c.status !== "rejected"
           ),
-    [regionCandidates, page, hideMarks]
+    // colorEpoch: re-paint when category colors are overridden
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [regionCandidates, page, hideMarks, colorEpoch]
   );
 
   // Designer annotations on the current page — independent of hideMarks
@@ -2070,16 +2076,21 @@ export function DrawingPdfViewer({
     );
   }
 
+  const fillParentHeight = heightClassName.includes("h-full");
+
   return (
     <div
       ref={rootRef}
-      className="overflow-hidden rounded-xl border border-border bg-card outline-none"
+      className={cn(
+        "flex w-full min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card outline-none",
+        fillParentHeight ? "h-full min-h-0" : null
+      )}
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onKeyUp={handleKeyUp}
     >
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/40 px-3 py-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-muted/40 px-3 py-2">
         {/* Mode switch */}
         <div className="flex items-center gap-0.5 rounded-lg border border-border bg-card p-0.5">
           {(() => {
@@ -2703,7 +2714,12 @@ export function DrawingPdfViewer({
         </p>
       ) : null}
 
-      <div className="flex items-stretch">
+      <div
+        className={cn(
+          "flex min-w-0 items-stretch",
+          fillParentHeight ? "min-h-0 flex-1" : null
+        )}
+      >
         {/* Left rail — sibling documents + page thumbnails (like a desktop
             PDF editor's Pages panel). Hidden for single-page single-doc. */}
         {doc && (documents.length > 1 || (doc.numPages > 1 && pageThumbs.length > 0)) ? (
@@ -2711,7 +2727,7 @@ export function DrawingPdfViewer({
             <div
               className={cn(
                 "flex w-[148px] shrink-0 flex-col gap-2 overflow-y-auto border-r border-border bg-muted/30 p-2",
-                heightClassName
+                fillParentHeight ? "min-h-0 self-stretch" : heightClassName
               )}
               data-testid="pages-rail"
             >
@@ -2784,7 +2800,10 @@ export function DrawingPdfViewer({
       {/* Canvas + overlay */}
       <div
         ref={scrollRef}
-        className={cn("relative min-w-0 flex-1 overflow-auto bg-muted/60 p-2", heightClassName)}
+        className={cn(
+          "relative min-w-0 flex-1 overflow-auto bg-muted/60 p-2",
+          fillParentHeight ? "min-h-0" : heightClassName
+        )}
         onPointerDown={() => {
           // Any interaction with the plan arms the keyboard shortcuts
           // (arrows/+/-/Del…) without requiring an explicit Tab-focus first.

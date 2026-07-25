@@ -333,3 +333,110 @@ export async function reconcileDrawingQuoteItemsFromConfirmedMarks(params: {
 
   return { updated, removed, created };
 }
+
+/**
+ * Upsert a cable-group quote line (meters — fractional qty allowed).
+ * Returns the quoteItems document id, or null when the line was removed.
+ */
+export async function syncCableGroupQtyToQuote(params: {
+  projectId: string;
+  drawingId?: string;
+  name: string;
+  qty: number;
+  unitPrice?: number;
+  note?: string;
+}): Promise<string | null> {
+  const unit = "m";
+  const qty = Math.max(0, Math.round(params.qty * 100) / 100);
+
+  if (qty <= 0) {
+    const match = await findQuoteItemForTakeoffMark({
+      projectId: params.projectId,
+      name: params.name,
+      unit,
+    });
+    if (!match) return null;
+    if (match.sourceOfQuantity !== "route_calculation") return match.id;
+    await deleteQuoteDraftItem(params.projectId, match.id);
+    return null;
+  }
+
+  const unitPrice =
+    typeof params.unitPrice === "number" && params.unitPrice >= 0
+      ? params.unitPrice
+      : undefined;
+
+  const match = await findQuoteItemForTakeoffMark({
+    projectId: params.projectId,
+    name: params.name,
+    unit,
+  });
+
+  if (match) {
+    await updateQuoteDraftItem(params.projectId, match.id, {
+      qty,
+      evidenceCount: Math.max(1, Math.round(qty)),
+      ...(unitPrice !== undefined ? { unitPrice } : {}),
+      ...(params.drawingId ? { sourceDrawingId: params.drawingId } : {}),
+      sourceOfQuantity: "route_calculation",
+      ...(params.note?.trim() ? { note: params.note.trim() } : {}),
+    });
+    return match.id;
+  }
+
+  return createQuoteDraftItem(params.projectId, {
+    category: "material",
+    name: params.name.trim(),
+    qty,
+    unit,
+    unitPrice: unitPrice ?? 0,
+    note: params.note?.trim() || "Z výkresu (káblová trasa).",
+    sourceOfQuantity: "route_calculation",
+    evidenceCount: Math.max(1, Math.round(qty)),
+    ...(params.drawingId ? { sourceDrawingId: params.drawingId } : {}),
+    takeoffStatus: "draft",
+  });
+}
+
+/**
+ * After exporting approved cable runs to takeoffItems, mirror them into
+ * projects/{id}/quoteItems so the CP / DraftQuoteItemsPanel sees meters.
+ */
+export async function syncExportedCableTakeoffItemsToQuote(params: {
+  projectId: string;
+  drawingId: string;
+  items: Array<{
+    name: string;
+    quantity: number;
+    unitPrice?: number;
+  }>;
+}): Promise<{ synced: number }> {
+  const keepKeys = new Set<string>();
+  let synced = 0;
+
+  for (const item of params.items) {
+    const name = item.name.trim();
+    if (!name || item.quantity <= 0) continue;
+    keepKeys.add(`${categoryKeyForLabel(name)}|m`);
+    await syncCableGroupQtyToQuote({
+      projectId: params.projectId,
+      drawingId: params.drawingId,
+      name,
+      qty: item.quantity,
+      unitPrice: item.unitPrice,
+    });
+    synced += 1;
+  }
+
+  // Drop route_calculation rows for this drawing that are no longer exported.
+  const existing = await listProjectQuoteDraftItems(params.projectId);
+  for (const row of existing) {
+    if (row.sourceOfQuantity !== "route_calculation") continue;
+    if (row.sourceDrawingId !== params.drawingId) continue;
+    const key = `${categoryKeyForLabel(row.name)}|m`;
+    if (keepKeys.has(key)) continue;
+    await deleteQuoteDraftItem(params.projectId, row.id);
+  }
+
+  return { synced };
+}

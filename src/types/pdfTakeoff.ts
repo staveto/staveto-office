@@ -284,7 +284,12 @@ export type CableRun = {
   /** Final purchase length (m) — what goes into the quote. */
   finalLengthM: number;
   status: CableRunStatus;
+  /** Company workspace catalog item (legacy meter products). */
   catalogItemId?: string;
+  /** Electrical (BUCO) catalog product used as the price / type source. */
+  electricalProductId?: string;
+  /** Unit price EUR/m when linked from electrical or company catalog. */
+  unitPrice?: number;
   note?: string;
   /**
    * Stroke color on the plan (CSS hex). When missing, a stable color is

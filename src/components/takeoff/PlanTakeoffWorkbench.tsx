@@ -115,14 +115,22 @@ import {
   dtoFromSymbolCandidate,
 } from "@/lib/takeoff/candidateReview";
 import {
+  categoryColorForKey,
   categoryKeyForLabel,
   categoryLabelForCandidate,
+  setActiveCategoryColorProject,
+  setCategoryColorOverride,
 } from "@/lib/takeoff/takeoffCategories";
 import {
   addTakeoffLinesToQuoteDraft,
   reconcileDrawingQuoteItemsFromConfirmedMarks,
   syncCatalogMarkedQtyToQuote,
+  syncExportedCableTakeoffItemsToQuote,
 } from "@/services/takeoff/takeoffQuoteService";
+import { listCatalogItems } from "@/services/materials";
+import { getWorkspaceStorageKey } from "@/lib/workspaceStorage";
+import { useAuth } from "@/context/AuthContext";
+import { useWorkspace } from "@/context/WorkspaceContext";
 import {
   isPdfTakeoffAiScanEnabled,
   isPdfTakeoffRegionAnalyzerEnabled,
@@ -173,6 +181,8 @@ type CatalogMarkBinding = {
   unit: string;
   note?: string;
   quoteItemId?: string;
+  /** Product photo URL (BUCO / catalog) for the panel thumb. */
+  imageUrl?: string | null;
 };
 
 type Props = {
@@ -237,6 +247,8 @@ export function PlanTakeoffWorkbench({
 }: Props) {
   const { t, locale } = useI18n();
   const router = useRouter();
+  const { user } = useAuth();
+  const { activeWorkspace } = useWorkspace();
   const quotePrecheck = mode === "quote-precheck";
   const takeoffMode = normalizeTakeoffMode(mode);
   const perms = resolveTakeoffPermissions({
@@ -329,11 +341,21 @@ export function PlanTakeoffWorkbench({
     catalog?: CatalogMarkBinding;
   } | null>(null);
   const catalogBindingsRef = useRef<Map<string, CatalogMarkBinding>>(new Map());
+  /** Product thumbs for confirmed category rows (binding / catalog pick). */
+  const [categoryImageUrls, setCategoryImageUrls] = useState<Record<string, string>>(
+    {}
+  );
   // "Zvýrazniť" on category rows — each toggles independently, so any
   // combination of positions can glow on the plan at once. Mark ids are
   // derived (not stored) so marks added later to a highlighted category
   // start glowing immediately.
   const [highlightedCategoryKeys, setHighlightedCategoryKeys] = useState<string[]>([]);
+  /** Bump when operator changes a mark category color so the plan re-renders. */
+  const [categoryColorEpoch, setCategoryColorEpoch] = useState(0);
+
+  useEffect(() => {
+    setActiveCategoryColorProject(projectId);
+  }, [projectId]);
 
   // Side-panel width is only meaningful in the side-by-side layout — below
   // that both columns stack full-width and the drag handle is hidden.
@@ -341,33 +363,53 @@ export function PlanTakeoffWorkbench({
   // viewport — embedded in a narrow quote column the viewport can be huge
   // while the workbench itself has ~600px; side-by-side there would squeeze
   // the PDF into a useless sliver next to the fixed-width panel.
-  const RIGHT_PANEL_MIN_PX = 320;
+  const RIGHT_PANEL_MIN_PX = 280;
   const RIGHT_PANEL_MAX_PX = 900;
-  /** Minimum container width for PDF + panel side by side (PDF keeps ≥560px). */
-  const WIDE_LAYOUT_MIN_CONTAINER_PX = 1024;
+  /** PDF column must stay usable (toolbar + canvas) in side-by-side mode. */
+  const PDF_COLUMN_MIN_PX = 360;
+  const PANEL_SEPARATOR_PX = 12;
+  /** Minimum container width for PDF + panel side by side. */
+  const WIDE_LAYOUT_MIN_CONTAINER_PX = 900;
   const RIGHT_PANEL_STORAGE_KEY = "takeoff.rightPanelWidthPx";
   const [isWideLayout, setIsWideLayout] = useState(false);
-  const [rightPanelWidth, setRightPanelWidth] = useState(440);
+  const [rightPanelWidth, setRightPanelWidth] = useState(400);
   const panelResizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const layoutContainerRef = useRef<HTMLDivElement | null>(null);
+  const containerWidthRef = useRef(0);
+
+  const clampRightPanelWidth = useCallback((desired: number, containerW: number) => {
+    if (containerW <= 0) {
+      return Math.min(RIGHT_PANEL_MAX_PX, Math.max(RIGHT_PANEL_MIN_PX, desired));
+    }
+    const maxForPdf = containerW - PDF_COLUMN_MIN_PX - PANEL_SEPARATOR_PX;
+    const maxAllowed = Math.min(RIGHT_PANEL_MAX_PX, Math.max(RIGHT_PANEL_MIN_PX, maxForPdf));
+    return Math.min(maxAllowed, Math.max(RIGHT_PANEL_MIN_PX, desired));
+  }, []);
 
   useEffect(() => {
     const el = layoutContainerRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const update = () =>
-      setIsWideLayout(el.clientWidth >= WIDE_LAYOUT_MIN_CONTAINER_PX);
+    const update = () => {
+      const w = el.clientWidth;
+      containerWidthRef.current = w;
+      const wide = w >= WIDE_LAYOUT_MIN_CONTAINER_PX;
+      setIsWideLayout(wide);
+      if (wide) {
+        setRightPanelWidth((prev) => clampRightPanelWidth(prev, w));
+      }
+    };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [clampRightPanelWidth]);
 
   useEffect(() => {
     const saved = Number(window.localStorage.getItem(RIGHT_PANEL_STORAGE_KEY));
     if (Number.isFinite(saved) && saved >= RIGHT_PANEL_MIN_PX && saved <= RIGHT_PANEL_MAX_PX) {
-      setRightPanelWidth(saved);
+      setRightPanelWidth(clampRightPanelWidth(saved, containerWidthRef.current || window.innerWidth));
     }
-  }, []);
+  }, [clampRightPanelWidth]);
 
   const handlePanelResizeStart = useCallback(
     (e: React.PointerEvent) => {
@@ -378,21 +420,22 @@ export function PlanTakeoffWorkbench({
         if (!drag) return;
         // Panel sits on the right — dragging the handle LEFT (negative delta) widens it.
         const next = drag.startWidth + (drag.startX - ev.clientX);
-        setRightPanelWidth(Math.min(RIGHT_PANEL_MAX_PX, Math.max(RIGHT_PANEL_MIN_PX, next)));
+        setRightPanelWidth(clampRightPanelWidth(next, containerWidthRef.current));
       };
       const onUp = () => {
         panelResizeRef.current = null;
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
         setRightPanelWidth((w) => {
-          window.localStorage.setItem(RIGHT_PANEL_STORAGE_KEY, String(w));
-          return w;
+          const clamped = clampRightPanelWidth(w, containerWidthRef.current);
+          window.localStorage.setItem(RIGHT_PANEL_STORAGE_KEY, String(clamped));
+          return clamped;
         });
       };
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
     },
-    [rightPanelWidth]
+    [rightPanelWidth, clampRightPanelWidth]
   );
 
   // Fullscreen review mode — Escape exits, body scroll stays locked.
@@ -982,10 +1025,8 @@ export function PlanTakeoffWorkbench({
   }, []);
 
   /**
-   * "Pridať schválené do ponuky" — approved cable runs become quote takeoff
-   * items via the existing takeoffItems mechanism. Idempotent: item ids are
-   * deterministic per (cableType, installation, catalog) group, and stale
-   * cable-run items from a previous export are removed.
+   * "Pridať schválené do ponuky" — approved cable runs become takeoffItems
+   * and project quoteItems (CP). Idempotent per cable group.
    */
   const handleExportApprovedCableRuns = useCallback(() => {
     setCableExportBusy(true);
@@ -994,10 +1035,36 @@ export function PlanTakeoffWorkbench({
       try {
         const approved = cableRuns.filter((r) => r.status === "approved");
         const pages = [...new Set(approved.map((r) => r.pageNumber))];
+
+        // Company catalog (m) — carry unit price into the quote when linked.
+        let catalogById = new Map<string, { name: string; unitPrice: number }>();
+        if (activeWorkspace && user) {
+          try {
+            const wsKey = getWorkspaceStorageKey(activeWorkspace, user.id);
+            const catalog = await listCatalogItems(wsKey);
+            catalogById = new Map(
+              catalog
+                .filter((i) => (i.unit ?? "").trim().toLowerCase() === "m")
+                .map((i) => [i.id, { name: i.name, unitPrice: i.unitPrice }])
+            );
+          } catch {
+            /* pricing is optional */
+          }
+        }
+
         const items = pages.flatMap((pageNumber) =>
           convertCableRunsToTakeoffItems(
             approved.filter((r) => r.pageNumber === pageNumber),
-            { projectId, drawingId, pageNumber }
+            {
+              projectId,
+              drawingId,
+              pageNumber,
+              catalogItems: [...catalogById.entries()].map(([id, c]) => ({
+                id,
+                name: c.name,
+                unit: "m",
+              })),
+            }
           )
         );
         const newIds = new Set(items.map((i) => i.id));
@@ -1018,6 +1085,43 @@ export function PlanTakeoffWorkbench({
             await deleteTakeoffItem(projectId, stale.id).catch(() => undefined);
           }
         }
+
+        // Mirror into quote draft (CP) — this is what DraftQuoteItemsPanel reads.
+        // Prefer unitPrice stored on the cable run (electrical catalog pick);
+        // fall back to company catalog when linked.
+        const runById = new Map(cableRuns.map((r) => [r.id, r]));
+        const quoteRows = items.map((item) => {
+          const catalogId =
+            typeof item.metadata?.catalogItemId === "string"
+              ? item.metadata.catalogItemId
+              : null;
+          const catalog = catalogId ? catalogById.get(catalogId) : undefined;
+          const runIds = Array.isArray(item.metadata?.cableRunIds)
+            ? (item.metadata.cableRunIds as string[])
+            : [];
+          let fromRun: number | undefined;
+          for (const id of runIds) {
+            const u = runById.get(id)?.unitPrice;
+            if (typeof u === "number" && u > 0) {
+              fromRun = u;
+              break;
+            }
+          }
+          const unitPrice =
+            fromRun ??
+            (catalog && catalog.unitPrice > 0 ? catalog.unitPrice : undefined);
+          return {
+            name: item.name,
+            quantity: item.quantity,
+            unitPrice,
+          };
+        });
+        await syncExportedCableTakeoffItemsToQuote({
+          projectId,
+          drawingId,
+          items: quoteRows,
+        });
+
         const totalM = items.reduce((sum, i) => sum + i.quantity, 0);
         setCableExportMessage(
           t("takeoff.measure.exportDone", {
@@ -1031,7 +1135,16 @@ export function PlanTakeoffWorkbench({
         setCableExportBusy(false);
       }
     })();
-  }, [projectId, drawingId, cableRuns, takeoffItems, showToast, t]);
+  }, [
+    projectId,
+    drawingId,
+    cableRuns,
+    takeoffItems,
+    activeWorkspace,
+    user,
+    showToast,
+    t,
+  ]);
 
   const patchCandidateLocal = useCallback(
     (id: string, patch: Partial<AnalyzeRegionCandidateDto>) => {
@@ -1641,11 +1754,19 @@ export function PlanTakeoffWorkbench({
       const catalog = category.catalog
         ? {
             ...category.catalog,
+            // Keep prior photo if the new pick has none.
+            imageUrl: category.catalog.imageUrl ?? prev?.imageUrl,
             quoteItemId: category.catalog.quoteItemId ?? prev?.quoteItemId,
           }
         : prev;
       if (catalog) {
         catalogBindingsRef.current.set(category.key, catalog);
+        const img = catalog.imageUrl?.trim();
+        if (img) {
+          setCategoryImageUrls((m) =>
+            m[category.key] === img ? m : { ...m, [category.key]: img }
+          );
+        }
       }
       setActiveCategory({
         key: category.key,
@@ -1761,15 +1882,23 @@ export function PlanTakeoffWorkbench({
     [projectId, patchCandidateLocal, refreshTakeoffItems, showToast, t]
   );
 
-  /** Rename a position — relabels every confirmed mark in it (merge on clash). */
+  /**
+   * Rename a position — relabels every confirmed mark (merge on clash).
+   * Optional catalog binding replaces the linked product (price / image / quote).
+   */
   const handleRenameCategory = useCallback(
-    async (categoryKey: string, newLabel: string) => {
+    async (
+      categoryKey: string,
+      newLabel: string,
+      catalog?: Omit<CatalogMarkBinding, "quoteItemId"> & { quoteItemId?: string }
+    ) => {
       const targets = regionCandidates.filter(
         (c) =>
           c.status === "confirmed" &&
           categoryKeyForLabel(categoryLabelForCandidate(c)) === categoryKey
       );
       if (targets.length === 0) return;
+      const newKey = categoryKeyForLabel(newLabel);
       setReviewBusy(true);
       try {
         for (const c of targets) {
@@ -1786,13 +1915,120 @@ export function PlanTakeoffWorkbench({
             /* keep going — one bad row must not block the rest */
           }
         }
+
+        const prevBinding = catalogBindingsRef.current.get(categoryKey);
+        if (catalog) {
+          const next: CatalogMarkBinding = {
+            ...catalog,
+            quoteItemId: catalog.quoteItemId ?? prevBinding?.quoteItemId,
+          };
+          if (categoryKey !== newKey) {
+            catalogBindingsRef.current.delete(categoryKey);
+          }
+          catalogBindingsRef.current.set(newKey, next);
+          setCategoryImageUrls((m) => {
+            const out = { ...m };
+            if (categoryKey !== newKey) delete out[categoryKey];
+            const img = next.imageUrl?.trim();
+            if (img) out[newKey] = img;
+            else delete out[newKey];
+            return out;
+          });
+          try {
+            const quoteItemId = await syncCatalogMarkedQtyToQuote({
+              projectId,
+              drawingId,
+              name: newLabel,
+              qty: Math.max(1, targets.length),
+              unitPrice: next.unitPrice,
+              unit: next.unit || "ks",
+              note: next.note,
+              quoteItemId: next.quoteItemId,
+            });
+            if (quoteItemId) {
+              catalogBindingsRef.current.set(newKey, {
+                ...next,
+                quoteItemId,
+              });
+            }
+          } catch {
+            /* rename succeeded — quote sync is best-effort */
+          }
+        } else if (prevBinding && categoryKey !== newKey) {
+          catalogBindingsRef.current.delete(categoryKey);
+          catalogBindingsRef.current.set(newKey, prevBinding);
+          setCategoryImageUrls((m) => {
+            const img = m[categoryKey];
+            if (!img) return m;
+            const out = { ...m };
+            delete out[categoryKey];
+            out[newKey] = img;
+            return out;
+          });
+        }
+
+        if (categoryKey !== newKey) {
+          const oldColor = categoryColorForKey(categoryKey);
+          setCategoryColorOverride(newKey, oldColor);
+          setHighlightedCategoryKeys((prev) =>
+            prev.map((k) => (k === categoryKey ? newKey : k))
+          );
+          setActiveCategory((prev) =>
+            prev && prev.key === categoryKey
+              ? {
+                  ...prev,
+                  key: newKey,
+                  label: newLabel,
+                  ...(catalog
+                    ? {
+                        catalog: {
+                          ...catalog,
+                          quoteItemId:
+                            catalogBindingsRef.current.get(newKey)?.quoteItemId,
+                        },
+                      }
+                    : prev.catalog
+                      ? { catalog: catalogBindingsRef.current.get(newKey) }
+                      : {}),
+                }
+              : prev
+          );
+          setCategoryColorEpoch((n) => n + 1);
+        } else if (catalog) {
+          setActiveCategory((prev) =>
+            prev && prev.key === categoryKey
+              ? {
+                  ...prev,
+                  label: newLabel,
+                  catalog: {
+                    ...catalog,
+                    quoteItemId:
+                      catalogBindingsRef.current.get(newKey)?.quoteItemId,
+                  },
+                }
+              : prev
+          );
+        }
+
         await refreshTakeoffItems();
-        showToast(t("takeoff.toast.categoryRenamed", { label: newLabel }));
+        showToast(
+          catalog
+            ? t("takeoff.toast.categoryProductChanged", { label: newLabel })
+            : t("takeoff.toast.categoryRenamed", { label: newLabel })
+        );
       } finally {
         setReviewBusy(false);
       }
     },
-    [projectId, regionCandidates, patchCandidateLocal, refreshTakeoffItems, showToast, t]
+    [
+      projectId,
+      drawingId,
+      regionCandidates,
+      patchCandidateLocal,
+      refreshTakeoffItems,
+      showToast,
+      t,
+    ]
   );
 
   /**
@@ -2240,7 +2476,9 @@ export function PlanTakeoffWorkbench({
         isFullscreen
           ? // z-50 + later DOM order paints above the app sidebar (also z-50);
             // portaled dialogs (z-50, appended to <body>) still render on top.
-            "fixed inset-0 z-50 space-y-3 overflow-y-auto bg-background p-3 md:p-4"
+            // flex + 100dvh so half-width browser windows still fill the viewport
+            // without a squeezed PDF column and empty strip beside the panel.
+            "fixed inset-0 z-50 flex h-[100dvh] w-full flex-col gap-3 overflow-hidden bg-background p-2 sm:p-3"
           : "space-y-3"
       }
     >
@@ -2423,7 +2661,7 @@ export function PlanTakeoffWorkbench({
         </div>
       ) : null}
 
-      <div className="flex justify-end">
+      <div className="flex shrink-0 justify-end">
         <Button
           type="button"
           variant="outline"
@@ -2450,11 +2688,19 @@ export function PlanTakeoffWorkbench({
       <div
         ref={layoutContainerRef}
         className={
-          isWideLayout ? "flex flex-row items-start gap-3" : "flex flex-col gap-3"
+          isWideLayout
+            ? `flex min-h-0 w-full flex-row items-stretch gap-3${isFullscreen ? " flex-1" : ""}`
+            : `flex min-h-0 w-full flex-col gap-3${isFullscreen ? " flex-1 overflow-y-auto" : ""}`
         }
       >
         {/* Left: interactive PDF */}
-        <div className={isWideLayout ? "min-w-0 flex-1" : "min-w-0"}>
+        <div
+          className={
+            isWideLayout
+              ? `flex min-h-0 min-w-0 flex-1 flex-col${isFullscreen ? " overflow-hidden" : ""}`
+              : "min-w-0 w-full"
+          }
+        >
           {analyzeNotice ? (
             <div
               data-testid="analyze-inline-notice"
@@ -2493,6 +2739,7 @@ export function PlanTakeoffWorkbench({
           <DrawingPdfViewer
             fileUrl={fileUrl}
             fileName={fileName}
+            colorEpoch={categoryColorEpoch}
             occurrences={occurrences}
             selectedOccurrenceId={selectedId}
             onMarkerClick={(id) => setSelectedId(id)}
@@ -2502,7 +2749,11 @@ export function PlanTakeoffWorkbench({
             markerMode={markerMode}
             onMarkerModeChange={setMarkerMode}
             heightClassName={
-              isFullscreen ? "h-[calc(100vh-140px)]" : "h-[640px]"
+              isFullscreen
+                ? isWideLayout
+                  ? "h-full min-h-[280px]"
+                  : "h-[min(55dvh,520px)]"
+                : "h-[640px]"
             }
             regionCandidates={regionCandidates}
             selectedCandidateId={selectedCandidateId}
@@ -2606,9 +2857,21 @@ export function PlanTakeoffWorkbench({
           // once the column scrolls instead of letting panels paint over
           // each other.
           className={`flex min-w-0 flex-col gap-3 overflow-y-auto rounded-xl border border-border bg-card p-3 shadow-sm ${
-            isFullscreen ? "max-h-[calc(100vh-100px)]" : "max-h-[720px]"
-          }`}
-          style={isWideLayout ? { width: rightPanelWidth, flexShrink: 0 } : undefined}
+            isFullscreen
+              ? isWideLayout
+                ? "max-h-full"
+                : "max-h-none"
+              : "max-h-[720px]"
+          } ${isWideLayout ? "" : "w-full"}`}
+          style={
+            isWideLayout
+              ? {
+                  width: rightPanelWidth,
+                  maxWidth: "46%",
+                  flexShrink: 0,
+                }
+              : undefined
+          }
         >
           {loading ? (
             <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
@@ -2765,6 +3028,12 @@ export function PlanTakeoffWorkbench({
                     onApplyPrice={
                       perms.allowEdit ? handleApplyPrice : undefined
                     }
+                    onCategoryColorChange={
+                      perms.allowEdit
+                        ? () => setCategoryColorEpoch((n) => n + 1)
+                        : undefined
+                    }
+                    categoryImageUrls={categoryImageUrls}
                     persistKey={`${projectId}:${drawingId}`}
                   />
                 ) : (

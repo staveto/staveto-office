@@ -24,6 +24,7 @@ import {
   FolderInput,
   Sparkles,
   CircleDollarSign,
+  Library,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,7 +48,11 @@ import { cn } from "@/lib/utils";
 import { ElectricalCatalogPickerDialog } from "@/components/jobs/ElectricalCatalogPickerDialog";
 import { AiPriceLookupDialog } from "@/components/takeoff/AiPriceLookupDialog";
 import type { ElectricalCatalogProduct } from "@/lib/catalog/electrical/types";
-import { productUnitPriceEur } from "@/services/catalog/electricalCatalogReadService";
+import {
+  loadElectricalCatalog,
+  productUnitPriceEur,
+} from "@/services/catalog/electricalCatalogReadService";
+import { resolveCatalogProductImageUrl } from "@/lib/catalog/electrical/images";
 import { symbolTypeFromElectricalProduct } from "@/lib/takeoff/electricalProductSymbolType";
 import type { AnalyzeRegionCandidateDto } from "@/types/pdfTakeoff";
 import type { TakeoffItem } from "@/types/pdfTakeoff";
@@ -61,7 +66,9 @@ import {
   categoryKeyForLabel,
   categoryLabelForCandidate,
   groupConfirmedByCategory,
+  setCategoryColorOverride,
 } from "@/lib/takeoff/takeoffCategories";
+import { MarkColorPicker } from "@/components/takeoff/MarkColorPicker";
 import { LegendOnlyBadge } from "./LegendOnlyBadge";
 
 function sourceLabelKey(source: AnalyzeRegionCandidateDto["source"]): string {
@@ -184,8 +191,11 @@ type Props = {
       unitPrice: number;
       unit: string;
       note?: string;
+      imageUrl?: string | null;
     };
   }) => void;
+  /** Optional image URLs keyed by category key (from catalog bindings). */
+  categoryImageUrls?: Record<string, string>;
   onStopCategoryMarking?: () => void;
   /**
    * Categories whose marks currently glow on the plan. The highlighter
@@ -202,8 +212,21 @@ type Props = {
    * target position when it doesn't exist yet.
    */
   onMoveConfirmedToCategory?: (candidateId: string, label: string) => Promise<void>;
-  /** Rename a whole position (relabels every mark in it; merges on name clash). */
-  onRenameCategory?: (categoryKey: string, newLabel: string) => Promise<void>;
+  /**
+   * Rename a whole position (relabels every mark; merges on name clash).
+   * Optional `catalog` replaces the linked product (price, image, quote sync).
+   */
+  onRenameCategory?: (
+    categoryKey: string,
+    newLabel: string,
+    catalog?: {
+      productId: string;
+      unitPrice: number;
+      unit: string;
+      note?: string;
+      imageUrl?: string | null;
+    }
+  ) => Promise<void>;
   /** Delete every confirmed mark in a position/category (and sync quote). */
   onDeleteCategory?: (categoryKey: string) => Promise<void>;
   /**
@@ -215,6 +238,8 @@ type Props = {
     unitPrice: number;
     note?: string;
   }) => Promise<void>;
+  /** Called after the operator picks a new color for a mark category (plan refresh). */
+  onCategoryColorChange?: () => void;
   /**
    * Persist the panel's view state (open sections, expanded categories)
    * under this key — pass the canonical drawingId so the quote flow and the
@@ -287,12 +312,23 @@ export function SymbolCandidateReviewPanel({
   onRenameCategory,
   onDeleteCategory,
   onApplyPrice,
+  onCategoryColorChange,
+  categoryImageUrls = {},
   persistKey = null,
 }: Props) {
   const { t } = useI18n();
   // View state is restored per drawing (persistKey) so the SAME PDF shows
   // the SAME panel whether it's opened from the quote or from Documents.
   const [initialViewState] = useState(() => loadPanelViewState(persistKey));
+  const [colorPickerFor, setColorPickerFor] = useState<string | null>(null);
+  const [colorRevision, setColorRevision] = useState(0);
+  const [catalogImageByKey, setCatalogImageByKey] = useState<Record<string, string>>(
+    {}
+  );
+  const [imagePreview, setImagePreview] = useState<{
+    url: string;
+    label: string;
+  } | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(
     () => new Set(initialViewState?.collapsedGroups ?? [])
   );
@@ -320,11 +356,15 @@ export function SymbolCandidateReviewPanel({
     });
   }, [persistKey, showConfirmed, showRejected, showItems, expandedCategories, collapsed]);
   const [catalogPickerOpen, setCatalogPickerOpen] = useState(false);
+  /** `new` = start marking; `edit` = replace product on an existing category. */
+  const [catalogPickerPurpose, setCatalogPickerPurpose] = useState<"new" | "edit">(
+    "new"
+  );
   const [priceLookupFor, setPriceLookupFor] = useState<string | null>(null);
   const [newCategoryOpen, setNewCategoryOpen] = useState(false);
   const [newCategoryLabel, setNewCategoryLabel] = useState("");
   const [newCategoryType, setNewCategoryType] = useState("light");
-  // "Presunúť do inej položky" — one mark; "Premenovať" — whole category.
+  // "Presunúť do inej položky" — one mark; "Upraviť" — whole category.
   const [moveFor, setMoveFor] = useState<AnalyzeRegionCandidateDto | null>(null);
   const [moveNewLabel, setMoveNewLabel] = useState("");
   const [moveBusy, setMoveBusy] = useState(false);
@@ -394,8 +434,42 @@ export function SymbolCandidateReviewPanel({
   );
   const confirmedCategories = useMemo(
     () => groupConfirmedByCategory(confirmedCandidates),
-    [confirmedCandidates]
+    // colorRevision: re-read categoryColorForKey after operator override
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [confirmedCandidates, colorRevision]
   );
+
+  // Resolve product photos for confirmed positions (catalog name match).
+  useEffect(() => {
+    if (confirmedCategories.length === 0) return;
+    let cancelled = false;
+    void loadElectricalCatalog()
+      .then(({ products }) => {
+        if (cancelled) return;
+        const map: Record<string, string> = {};
+        for (const p of products) {
+          const url = resolveCatalogProductImageUrl(p);
+          if (!url) continue;
+          const key = categoryKeyForLabel(p.name);
+          if (!map[key]) map[key] = url;
+        }
+        setCatalogImageByKey(map);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [confirmedCategories.length]);
+
+  const imageUrlForCategory = (key: string, label: string): string | null => {
+    const fromProp = categoryImageUrls[key]?.trim();
+    if (fromProp) return fromProp;
+    const fromCatalog = catalogImageByKey[key]?.trim();
+    if (fromCatalog) return fromCatalog;
+    // Loose match — label may differ slightly from catalog name casing/spacing.
+    const loose = categoryKeyForLabel(label);
+    return catalogImageByKey[loose]?.trim() || null;
+  };
   const rejectedCandidates = useMemo(
     () => candidates.filter((c) => c.status === "rejected"),
     [candidates]
@@ -752,7 +826,10 @@ export function SymbolCandidateReviewPanel({
                   className="h-6 shrink-0 px-1.5 text-[10px]"
                   disabled={busy}
                   data-testid="new-category"
-                  onClick={() => setCatalogPickerOpen(true)}
+                  onClick={() => {
+                    setCatalogPickerPurpose("new");
+                    setCatalogPickerOpen(true);
+                  }}
                 >
                   <Plus className="mr-0.5 size-3" />
                   {t("takeoff.category.new")}
@@ -797,16 +874,17 @@ export function SymbolCandidateReviewPanel({
                             <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
                           )}
                         </button>
-                        {/* The color chip toggles the category's glow on the
-                            plan — the most direct "show me these" control. */}
+                        {/* Color chip opens RAL dialog (portal) — not clipped by panel overflow. */}
                         <button
                           type="button"
                           className={cn(
-                            "size-4 shrink-0 rounded-sm border transition-shadow",
+                            "size-4 shrink-0 rounded-full border transition-shadow",
                             isHighlighted
                               ? "border-transparent"
-                              : "border-black/10 opacity-80 hover:opacity-100",
-                            onHighlightCategory ? "cursor-pointer" : "cursor-default"
+                              : "border-black/15 opacity-90 hover:opacity-100",
+                            onCategoryColorChange || onHighlightCategory
+                              ? "cursor-pointer"
+                              : "cursor-default"
                           )}
                           style={{
                             backgroundColor: cat.color,
@@ -815,10 +893,45 @@ export function SymbolCandidateReviewPanel({
                               : undefined,
                           }}
                           data-testid="category-color-toggle"
-                          title={t("takeoff.category.highlight")}
-                          aria-pressed={isHighlighted}
-                          onClick={() => onHighlightCategory?.(cat.key)}
+                          title={
+                            onCategoryColorChange
+                              ? t("takeoff.category.changeColor")
+                              : t("takeoff.category.highlight")
+                          }
+                          aria-haspopup="dialog"
+                          onClick={() => {
+                            if (onCategoryColorChange) {
+                              setColorPickerFor(cat.key);
+                              return;
+                            }
+                            onHighlightCategory?.(cat.key);
+                          }}
                         />
+                        {(() => {
+                          const imgUrl = imageUrlForCategory(cat.key, cat.label);
+                          if (!imgUrl) return null;
+                          return (
+                            <button
+                              type="button"
+                              className="size-8 shrink-0 overflow-hidden rounded-md border border-border bg-white dark:bg-card"
+                              data-testid="category-product-image"
+                              title={t("takeoff.category.productImageHint")}
+                              onClick={() =>
+                                setImagePreview({ url: imgUrl, label: cat.label })
+                              }
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={imgUrl}
+                                alt=""
+                                loading="lazy"
+                                decoding="async"
+                                referrerPolicy="no-referrer"
+                                className="size-full object-contain"
+                              />
+                            </button>
+                          );
+                        })()}
                         <button
                           type="button"
                           className="flex min-w-0 flex-1 items-center gap-2 text-left hover:opacity-80"
@@ -865,7 +978,7 @@ export function SymbolCandidateReviewPanel({
                             className="shrink-0 rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
                             disabled={busy || renameBusy}
                             data-testid="category-rename"
-                            title={t("takeoff.category.rename")}
+                            title={t("takeoff.category.edit")}
                             onClick={() => {
                               setRenameValue(cat.label);
                               setRenameFor({ key: cat.key, label: cat.label });
@@ -1540,30 +1653,46 @@ export function SymbolCandidateReviewPanel({
         </DialogContent>
       </Dialog>
 
-      {/* Premenovať položku — relabels every mark; merges on name clash. */}
+      {/* Upraviť položku — premenovanie alebo výber iného komponentu z katalógu. */}
       <Dialog
-        open={!!renameFor}
+        open={!!renameFor && !catalogPickerOpen}
         onOpenChange={(open) => {
           if (!open) setRenameFor(null);
         }}
       >
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>{t("takeoff.category.renameTitle")}</DialogTitle>
+            <DialogTitle>{t("takeoff.category.editTitle")}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2">
+          <div className="space-y-3">
             <p className="text-xs text-muted-foreground">
-              {t("takeoff.category.renameHint")}
+              {t("takeoff.category.editHint")}
             </p>
-            <Label htmlFor="rename-category" className="text-xs text-muted-foreground">
-              {t("takeoff.category.nameLabel")}
-            </Label>
-            <Input
-              id="rename-category"
-              value={renameValue}
-              autoFocus
-              onChange={(e) => setRenameValue(e.target.value)}
-            />
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full justify-start"
+              disabled={renameBusy || !onRenameCategory}
+              data-testid="rename-category-pick-catalog"
+              onClick={() => {
+                setCatalogPickerPurpose("edit");
+                setCatalogPickerOpen(true);
+              }}
+            >
+              <Library className="mr-2 size-3.5" />
+              {t("takeoff.category.pickFromCatalog")}
+            </Button>
+            <div className="space-y-1.5">
+              <Label htmlFor="rename-category" className="text-xs text-muted-foreground">
+                {t("takeoff.category.nameLabel")}
+              </Label>
+              <Input
+                id="rename-category"
+                value={renameValue}
+                autoFocus
+                onChange={(e) => setRenameValue(e.target.value)}
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setRenameFor(null)}>
@@ -1610,31 +1739,101 @@ export function SymbolCandidateReviewPanel({
         />
       ) : null}
 
-      {/* Same catalog picker as cenová ponuka — pick product, then mark on PDF. */}
+      {onCategoryColorChange && colorPickerFor ? (
+        <MarkColorPicker
+          open
+          color={
+            confirmedCategories.find((c) => c.key === colorPickerFor)?.color ??
+            "#3B82F6"
+          }
+          label={
+            confirmedCategories.find((c) => c.key === colorPickerFor)?.label
+          }
+          onClose={() => setColorPickerFor(null)}
+          onChange={(hex) => {
+            setCategoryColorOverride(colorPickerFor, hex);
+            setColorRevision((n) => n + 1);
+            onCategoryColorChange();
+          }}
+        />
+      ) : null}
+
+      <Dialog
+        open={Boolean(imagePreview)}
+        onOpenChange={(open) => {
+          if (!open) setImagePreview(null);
+        }}
+      >
+        <DialogContent
+          className="sm:max-w-lg"
+          data-testid="category-product-image-preview"
+        >
+          <DialogHeader>
+            <DialogTitle className="text-base">
+              {imagePreview?.label ?? t("takeoff.category.productImage")}
+            </DialogTitle>
+          </DialogHeader>
+          {imagePreview ? (
+            <div className="flex items-center justify-center rounded-lg border border-border bg-white p-4 dark:bg-card">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={imagePreview.url}
+                alt={imagePreview.label}
+                referrerPolicy="no-referrer"
+                className="max-h-[min(70vh,28rem)] w-auto max-w-full object-contain"
+              />
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* Catalog picker — new position, or replace product on edit. */}
       <ElectricalCatalogPickerDialog
         open={catalogPickerOpen}
-        onOpenChange={setCatalogPickerOpen}
+        onOpenChange={(open) => {
+          setCatalogPickerOpen(open);
+          if (!open && catalogPickerPurpose === "edit") {
+            // Return to the edit dialog (renameFor still set).
+          }
+        }}
         onPick={(product: ElectricalCatalogProduct) => {
           const noteParts = [
             product.brand,
             product.series,
             product.supplierSku ? `kód ${product.supplierSku}` : null,
           ].filter(Boolean);
+          const catalog = {
+            productId: product.id,
+            unitPrice: productUnitPriceEur(product),
+            unit: product.unit || "ks",
+            note: noteParts.length ? noteParts.join(" · ") : undefined,
+            imageUrl: resolveCatalogProductImageUrl(product),
+          };
           setCatalogPickerOpen(false);
+          if (catalogPickerPurpose === "edit" && renameFor && onRenameCategory) {
+            const label = product.name.trim();
+            setRenameBusy(true);
+            void onRenameCategory(renameFor.key, label, catalog)
+              .then(() => {
+                setRenameFor(null);
+                setRenameValue("");
+              })
+              .finally(() => setRenameBusy(false));
+            return;
+          }
           onStartCategoryMarking?.({
             key: categoryKeyForLabel(product.name),
             label: product.name.trim(),
             symbolType: symbolTypeFromElectricalProduct(product),
-            catalog: {
-              productId: product.id,
-              unitPrice: productUnitPriceEur(product),
-              unit: product.unit || "ks",
-              note: noteParts.length ? noteParts.join(" · ") : undefined,
-            },
+            catalog,
           });
         }}
         onAddCustom={() => {
           setCatalogPickerOpen(false);
+          if (catalogPickerPurpose === "edit") {
+            // Keep edit dialog; operator can type a custom name there.
+            return;
+          }
           setNewCategoryLabel("");
           setNewCategoryType("light");
           setNewCategoryOpen(true);

@@ -25,7 +25,7 @@ const ROOT = resolve(__dirname, "../..");
 
 const DEFAULT_SOURCE = join(
   ROOT,
-  "scripts/catalog/data/SK/electrical/buco_scraper_state.json"
+  "scripts/catalog/data/SK/electrical/buco_katalog_strom.json"
 );
 const REPORT_PATH = join(
   ROOT,
