@@ -37,7 +37,11 @@ export type ExistingRect = {
   status?: string;
 };
 
-export const FIND_SIMILAR_DEFAULT_THRESHOLD = 0.75;
+/**
+ * Only high-confidence template matches go to human review.
+ * Below this, false positives dominate (operator feedback).
+ */
+export const FIND_SIMILAR_DEFAULT_THRESHOLD = 0.9;
 export const FIND_SIMILAR_MAX_RESULTS = 100;
 const EXCLUSION_IOU = 0.3;
 const DEDUPE_IOU = 0.5;
@@ -70,6 +74,12 @@ export function buildSimilarCandidates(params: {
     colorLayer: SymbolColorLayer;
     pageNumber: number;
     normalizedPosition: NormalizedRect;
+    /**
+     * Display / category name of the reference mark (e.g. catalog product).
+     * When set, similar hits join the same confirmed category instead of the
+     * generic type label ("zásuvka").
+     */
+    label?: string;
   };
   confirmedSymbols: ExistingRect[];
   existingCandidates: ExistingRect[];
@@ -93,7 +103,9 @@ export function buildSimilarCandidates(params: {
     pageHeightPt,
   } = params;
 
-  const label = defaultLabelForSymbolType(sourceSymbol.symbolType);
+  const label =
+    sourceSymbol.label?.trim() ||
+    defaultLabelForSymbolType(sourceSymbol.symbolType);
   const sourceRect: ExistingRect = {
     pageNumber: sourceSymbol.pageNumber,
     normalizedPosition: sourceSymbol.normalizedPosition,

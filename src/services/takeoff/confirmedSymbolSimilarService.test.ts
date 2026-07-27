@@ -8,8 +8,11 @@ import type { ConfirmedSymbol } from "@/types/pdfTakeoff";
 
 vi.mock("@/services/takeoff/pdfTakeoffRegionService", () => ({
   getConfirmedSymbol: vi.fn(),
+  getSymbolCandidate: vi.fn(),
   listConfirmedSymbolsForDrawing: vi.fn(),
   listSymbolCandidatesForDrawing: vi.fn(),
+  listTakeoffEvidenceForConfirmedSymbol: vi.fn(),
+  listTakeoffItems: vi.fn(),
   saveSymbolCandidates: vi.fn(),
   createConfirmedSymbol: vi.fn(),
   upsertTakeoffItem: vi.fn(),
@@ -32,8 +35,11 @@ import {
   createConfirmedSymbol,
   createTakeoffEvidence,
   getConfirmedSymbol,
+  getSymbolCandidate,
   listConfirmedSymbolsForDrawing,
   listSymbolCandidatesForDrawing,
+  listTakeoffEvidenceForConfirmedSymbol,
+  listTakeoffItems,
   saveSymbolCandidates,
   upsertTakeoffItem,
 } from "@/services/takeoff/pdfTakeoffRegionService";
@@ -72,6 +78,17 @@ const PARAMS = {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getConfirmedSymbol).mockResolvedValue(confirmedSymbol());
+  vi.mocked(getSymbolCandidate).mockResolvedValue({
+    id: "cand_0",
+    drawingId: "d1",
+    projectId: "p1",
+    pageNumber: 1,
+    labelSuggestions: [
+      { label: "Valena Zásuvka 230V S Detskou Ochranou, Biela", confidence: 1 },
+    ],
+  } as never);
+  vi.mocked(listTakeoffEvidenceForConfirmedSymbol).mockResolvedValue([]);
+  vi.mocked(listTakeoffItems).mockResolvedValue([]);
   vi.mocked(listConfirmedSymbolsForDrawing).mockResolvedValue([confirmedSymbol()]);
   vi.mocked(listSymbolCandidatesForDrawing).mockResolvedValue([]);
   vi.mocked(saveSymbolCandidates).mockImplementation(async () => []);
@@ -84,7 +101,7 @@ beforeEach(() => {
       },
       {
         pageNumber: 1,
-        matchScore: 0.85,
+        matchScore: 0.92,
         normalizedPosition: { x: 0.6, y: 0.6, width: 0.02, height: 0.02 },
       },
     ],
@@ -99,6 +116,13 @@ describe("findSimilarForConfirmedSymbol", () => {
     expect(result.candidates).toHaveLength(2);
     expect(result.candidates.every((c) => c.status === "probable")).toBe(true);
     expect(result.candidates.every((c) => c.source === "template_match")).toBe(true);
+    expect(
+      result.candidates.every(
+        (c) =>
+          c.label_suggestions[0]?.label ===
+          "Valena Zásuvka 230V S Detskou Ochranou, Biela"
+      )
+    ).toBe(true);
     expect(saveSymbolCandidates).toHaveBeenCalledTimes(1);
     // Persisted without a region (template-match origin), on the right page.
     expect(vi.mocked(saveSymbolCandidates).mock.calls[0]!.slice(0, 4)).toEqual([
@@ -258,5 +282,34 @@ describe("findSimilarForCandidate", () => {
     expect(result.unavailableReason).toBe("reference_too_small");
     expect(findSimilarSymbols).not.toHaveBeenCalled();
     expect(saveSymbolCandidates).not.toHaveBeenCalled();
+  });
+
+  it("applies labelOverride so proposals join the product category", async () => {
+    const result = await findSimilarForCandidate({
+      projectId: "p1",
+      drawingId: "d1",
+      candidate: pendingCandidate(),
+      fileUrl: "https://example.com/plan.pdf",
+      labelOverride: "Valena Zásuvka 230V",
+    });
+
+    expect(
+      result.candidates.every((c) => c.label_suggestions[0]?.label === "Valena Zásuvka 230V")
+    ).toBe(true);
+  });
+});
+
+describe("findSimilarForConfirmedSymbol labelOverride", () => {
+  it("prefers labelOverride over the Firestore candidate label", async () => {
+    const result = await findSimilarForConfirmedSymbol({
+      ...PARAMS,
+      labelOverride: "Vlastný názov pozície",
+    });
+
+    expect(
+      result.candidates.every(
+        (c) => c.label_suggestions[0]?.label === "Vlastný názov pozície"
+      )
+    ).toBe(true);
   });
 });

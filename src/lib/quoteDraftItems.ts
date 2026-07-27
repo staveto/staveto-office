@@ -33,6 +33,11 @@ export type QuoteDraftItemDoc = {
   evidenceCount?: number;
   /** Drawing the quantity evidence lives on — enables evidence deep links. */
   sourceDrawingId?: string;
+  /**
+   * Product photo (e.g. electrical catalog thumb). Copied at insert time —
+   * not a live link back to the catalog.
+   */
+  imageUrl?: string;
   takeoffStatus?:
     | "draft"
     | "needs_review"
@@ -65,6 +70,7 @@ export type QuoteDraftItemInput = {
   sourceOfQuantity?: QuoteDraftSourceOfQuantity;
   evidenceCount?: number;
   sourceDrawingId?: string;
+  imageUrl?: string;
   takeoffStatus?: QuoteDraftItemDoc["takeoffStatus"];
 };
 

@@ -25,7 +25,7 @@ const ROOT = resolve(__dirname, "../..");
 
 const DEFAULT_SOURCE = join(
   ROOT,
-  "scripts/catalog/data/SK/electrical/buco_katalog_strom.json"
+  "scripts/catalog/data/SK/electrical/buco_scraper_state.json"
 );
 const REPORT_PATH = join(
   ROOT,
@@ -149,23 +149,63 @@ function initAdmin() {
   return admin;
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(
+        new Error(
+          `${label} timed out after ${ms}ms. ADC/Firestore likely hung — run: npm run setup:firebase-admin`
+        )
+      );
+    }, ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      }
+    );
+  });
+}
+
+async function probeFirestore(admin: typeof import("firebase-admin")) {
+  const db = admin.firestore();
+  console.log("Probing Firestore connectivity…");
+  await withTimeout(
+    db.collection("catalogImports").limit(1).get(),
+    20_000,
+    "Firestore probe"
+  );
+  console.log("Firestore OK.");
+}
+
 async function commitToFirestore(
   admin: typeof import("firebase-admin"),
   categories: ElectricalCatalogCategory[],
   products: ElectricalCatalogProduct[],
   importDoc: ElectricalCatalogImport
 ) {
+  await probeFirestore(admin);
+
   const db = admin.firestore();
   const now = admin.firestore.FieldValue.serverTimestamp();
 
   importDoc.status = "importing";
-  await db.collection("catalogImports").doc(importDoc.id).set(
-    {
-      ...importDoc,
-      startedAt: now,
-      finishedAt: null,
-    },
-    { merge: true }
+  console.log(`Writing import marker catalogImports/${importDoc.id}…`);
+  await withTimeout(
+    db.collection("catalogImports").doc(importDoc.id).set(
+      {
+        ...importDoc,
+        startedAt: now,
+        finishedAt: null,
+      },
+      { merge: true }
+    ),
+    30_000,
+    "catalogImports write"
   );
 
   const writeBatch = async (
@@ -186,7 +226,11 @@ async function commitToFirestore(
           { merge: true }
         );
       }
-      await batch.commit();
+      await withTimeout(
+        batch.commit(),
+        60_000,
+        `${collection} batch @${i}`
+      );
       console.log(`  wrote ${collection} ${i + chunk.length}/${docs.length}`);
     }
   };
@@ -203,13 +247,18 @@ async function commitToFirestore(
     products as unknown as Array<{ id: string } & Record<string, unknown>>
   );
 
-  await db.collection("catalogImports").doc(importDoc.id).set(
-    {
-      ...importDoc,
-      status: "completed",
-      finishedAt: now,
-    },
-    { merge: true }
+  console.log("Marking import completed…");
+  await withTimeout(
+    db.collection("catalogImports").doc(importDoc.id).set(
+      {
+        ...importDoc,
+        status: "completed",
+        finishedAt: now,
+      },
+      { merge: true }
+    ),
+    30_000,
+    "catalogImports complete"
   );
 }
 

@@ -10,7 +10,10 @@
  * takeoffEvidence — review/confirm stays with the user.
  */
 
-import { buildSimilarCandidates } from "@/lib/takeoff/findSimilarFromConfirmed";
+import {
+  buildSimilarCandidates,
+  FIND_SIMILAR_DEFAULT_THRESHOLD,
+} from "@/lib/takeoff/findSimilarFromConfirmed";
 import {
   attachNearbyTextToCandidates,
   type OcrTextLine,
@@ -19,12 +22,16 @@ import { attachCandidatePreviewUrls, expandNormalizedRect } from "@/lib/takeoff/
 import type { AnalyzeRegionCandidateDto, SymbolColorLayer } from "@/types/pdfTakeoff";
 import {
   getConfirmedSymbol,
+  getSymbolCandidate,
   listConfirmedSymbolsForDrawing,
   listSymbolCandidatesForDrawing,
+  listTakeoffEvidenceForConfirmedSymbol,
+  listTakeoffItems,
   saveSymbolCandidates,
 } from "@/services/takeoff/pdfTakeoffRegionService";
 import { findSimilarSymbols } from "@/services/takeoff/similarSymbolDetectionService";
 import { listDrawingOccurrences } from "@/services/takeoff/drawingOccurrenceService";
+import { defaultSymbolTypeForCandidate } from "@/lib/takeoff/candidateReview";
 import {
   createCandidatePreviewImage,
   renderPageRaster,
@@ -40,6 +47,8 @@ export type FindSimilarForConfirmedParams = {
   scope?: "page" | "drawing";
   threshold?: number;
   maxResults?: number;
+  /** Prefer this category name over Firestore lookup (UI already knows it). */
+  labelOverride?: string;
 };
 
 export type FindSimilarForConfirmedResult = {
@@ -54,7 +63,35 @@ type SimilarReference = {
   colorLayer: SymbolColorLayer;
   pageNumber: number;
   normalizedPosition: AnalyzeRegionCandidateDto["normalized_position"];
+  /** Category / product name — similar hits inherit this for grouping. */
+  label?: string;
 };
+
+/**
+ * Resolve the operator-facing category name for a confirmed mark so
+ * "find similar" proposals join the same bucket (not generic "zásuvka").
+ */
+async function resolveConfirmedSymbolLabel(
+  projectId: string,
+  drawingId: string,
+  symbol: { id: string; candidateId: string | null; symbolType: string }
+): Promise<string | undefined> {
+  if (symbol.candidateId) {
+    const cand = await getSymbolCandidate(projectId, symbol.candidateId).catch(
+      () => null
+    );
+    const fromCand = cand?.labelSuggestions?.[0]?.label?.trim();
+    if (fromCand) return fromCand;
+  }
+  const evidence = await listTakeoffEvidenceForConfirmedSymbol(
+    projectId,
+    symbol.id
+  ).catch(() => []);
+  const itemId = evidence[0]?.takeoffItemId;
+  if (!itemId) return undefined;
+  const items = await listTakeoffItems(projectId, drawingId).catch(() => []);
+  return items.find((i) => i.id === itemId)?.name?.trim() || undefined;
+}
 
 /** Color layer for a confirmed symbol (stored candidates carry it; symbols don't). */
 export function colorLayerForSymbolType(symbolType: string): SymbolColorLayer {
@@ -70,13 +107,25 @@ export function colorLayerForSymbolType(symbolType: string): SymbolColorLayer {
 export async function findSimilarForConfirmedSymbol(
   params: FindSimilarForConfirmedParams
 ): Promise<FindSimilarForConfirmedResult> {
-  const { projectId, drawingId, symbolId, fileUrl, scope = "page", threshold, maxResults } =
-    params;
+  const {
+    projectId,
+    drawingId,
+    symbolId,
+    fileUrl,
+    scope = "page",
+    threshold,
+    maxResults,
+    labelOverride,
+  } = params;
 
   const symbol = await getConfirmedSymbol(projectId, symbolId);
   if (!symbol) {
     return { candidates: [], pagesScanned: 0, unavailableReason: "symbol_not_found" };
   }
+
+  const label =
+    labelOverride?.trim() ||
+    (await resolveConfirmedSymbolLabel(projectId, drawingId, symbol));
 
   return runFindSimilarFromReference({
     projectId,
@@ -91,6 +140,7 @@ export async function findSimilarForConfirmedSymbol(
       colorLayer: colorLayerForSymbolType(symbol.symbolType),
       pageNumber: symbol.pageNumber,
       normalizedPosition: symbol.normalizedPosition,
+      label,
     },
   });
 }
@@ -104,6 +154,11 @@ export type FindSimilarForCandidateParams = {
   scope?: "page" | "drawing";
   threshold?: number;
   maxResults?: number;
+  /**
+   * Force the category/product name on every proposal (e.g. catalog position
+   * name). When omitted, uses the candidate's first label suggestion.
+   */
+  labelOverride?: string;
 };
 
 /**
@@ -116,12 +171,25 @@ export type FindSimilarForCandidateParams = {
 export async function findSimilarForCandidate(
   params: FindSimilarForCandidateParams
 ): Promise<FindSimilarForConfirmedResult> {
-  const { projectId, drawingId, candidate, fileUrl, scope = "page", threshold, maxResults } =
-    params;
+  const {
+    projectId,
+    drawingId,
+    candidate,
+    fileUrl,
+    scope = "page",
+    threshold,
+    maxResults,
+    labelOverride,
+  } = params;
 
   if (!candidate.normalized_position || candidate.page_number == null) {
     return { candidates: [], pagesScanned: 0, unavailableReason: "reference_too_small" };
   }
+
+  const label =
+    labelOverride?.trim() ||
+    candidate.label_suggestions[0]?.label?.trim() ||
+    undefined;
 
   return runFindSimilarFromReference({
     projectId,
@@ -132,11 +200,11 @@ export async function findSimilarForCandidate(
     maxResults,
     reference: {
       id: candidate.id,
-      symbolType:
-        candidate.label_suggestions[0]?.label ?? colorLayerForSymbolType(candidate.color_layer),
+      symbolType: defaultSymbolTypeForCandidate(candidate),
       colorLayer: candidate.color_layer,
       pageNumber: candidate.page_number,
       normalizedPosition: candidate.normalized_position,
+      label,
     },
   });
 }
@@ -150,7 +218,15 @@ async function runFindSimilarFromReference(params: {
   maxResults?: number;
   reference: SimilarReference;
 }): Promise<FindSimilarForConfirmedResult> {
-  const { projectId, drawingId, fileUrl, scope, threshold, maxResults, reference } = params;
+  const {
+    projectId,
+    drawingId,
+    fileUrl,
+    scope,
+    threshold = FIND_SIMILAR_DEFAULT_THRESHOLD,
+    maxResults,
+    reference,
+  } = params;
 
   // Matching itself is color-aware: the shape matcher keys on the reference
   // symbol's dominant ink color, so sameColorOnly is inherent.

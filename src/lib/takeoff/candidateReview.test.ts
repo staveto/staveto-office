@@ -7,6 +7,7 @@ import {
   findDuplicateConfirmedSymbol,
   groupCandidatesForReview,
   isActiveReviewCandidate,
+  nextReviewCandidateId,
   normalizedRectOverlapRatio,
   sanitizeTakeoffItemForWrite,
   translateBboxPdfForMove,
@@ -129,6 +130,17 @@ describe("applyConfirmToTakeoffItems", () => {
 
   it("rejected candidates are not active for review", () => {
     expect(isActiveReviewCandidate(cand({ id: "x", status: "rejected" }))).toBe(false);
+  });
+
+  it("nextReviewCandidateId advances in panel order and wraps", () => {
+    const list = [
+      cand({ id: "a", color_layer: "green" }),
+      cand({ id: "b", color_layer: "green" }),
+      cand({ id: "c", color_layer: "green" }),
+    ];
+    expect(nextReviewCandidateId(list, "a")).toBe("b");
+    expect(nextReviewCandidateId(list, "c")).toBe("a");
+    expect(nextReviewCandidateId([cand({ id: "only" })], "only")).toBeNull();
   });
 
   it("keeps two positions of the SAME symbol type as separate items (name-based buckets)", () => {

@@ -640,7 +640,7 @@ describe("moveCandidateOrConfirmedSymbol — drag-to-reposition on the plan", ()
     expect(updateConfirmedSymbolPosition).not.toHaveBeenCalled();
   });
 
-  it("updates the confirmedSymbol position (not the candidate row) for a confirmed row", async () => {
+  it("updates both confirmedSymbol and candidate position for a confirmed row", async () => {
     vi.mocked(getSymbolCandidate).mockResolvedValue({
       ...candidateRow(),
       status: "confirmed",
@@ -658,7 +658,11 @@ describe("moveCandidateOrConfirmedSymbol — drag-to-reposition on the plan", ()
       "csym_existing",
       expect.objectContaining({ normalizedPosition: NEW_POSITION })
     );
-    expect(updateSymbolCandidatePosition).not.toHaveBeenCalled();
+    expect(updateSymbolCandidatePosition).toHaveBeenCalledWith(
+      "p1",
+      "cand_1",
+      expect.objectContaining({ normalizedPosition: NEW_POSITION })
+    );
   });
 
   it("throws if a confirmed candidate has no backing confirmedSymbol row", async () => {

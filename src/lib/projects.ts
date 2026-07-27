@@ -343,6 +343,10 @@ function toQuoteDraftItemDoc(
       typeof data.sourceDrawingId === "string" && data.sourceDrawingId
         ? data.sourceDrawingId
         : undefined,
+    imageUrl:
+      typeof data.imageUrl === "string" && data.imageUrl.trim()
+        ? data.imageUrl.trim()
+        : undefined,
     takeoffStatus,
     ...parseQuoteItemSnapshots(data),
     createdAt: toStr(data.createdAt),
@@ -1060,6 +1064,7 @@ export async function createQuoteDraftItem(
     ...(input.sourceOfQuantity ? { sourceOfQuantity: input.sourceOfQuantity } : {}),
     ...(typeof input.evidenceCount === "number" ? { evidenceCount: input.evidenceCount } : {}),
     ...(input.sourceDrawingId ? { sourceDrawingId: input.sourceDrawingId } : {}),
+    ...(input.imageUrl?.trim() ? { imageUrl: input.imageUrl.trim() } : {}),
     ...(input.takeoffStatus ? { takeoffStatus: input.takeoffStatus } : {}),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
@@ -1104,6 +1109,9 @@ export async function updateQuoteDraftItem(
   }
   if (data.sourceDrawingId !== undefined) {
     update.sourceDrawingId = data.sourceDrawingId || null;
+  }
+  if (data.imageUrl !== undefined) {
+    update.imageUrl = data.imageUrl.trim() || null;
   }
   if (data.takeoffStatus !== undefined) {
     update.takeoffStatus = data.takeoffStatus || null;

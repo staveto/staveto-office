@@ -112,15 +112,22 @@ import {
 import {
   buildManualCandidateDto,
   defaultLabelForSymbolType,
+  defaultSymbolTypeForCandidate,
   dtoFromSymbolCandidate,
+  isActiveReviewCandidate,
+  nextReviewCandidateId,
+  translateBboxPdfForMove,
 } from "@/lib/takeoff/candidateReview";
 import {
   categoryColorForKey,
   categoryKeyForLabel,
   categoryLabelForCandidate,
+  moveCategoryNoteOverride,
   setActiveCategoryColorProject,
   setCategoryColorOverride,
 } from "@/lib/takeoff/takeoffCategories";
+import { updateQuoteDraftItem } from "@/lib/projects";
+import { findConfirmedPeersToAssign } from "@/lib/takeoff/similarCategoryAssign";
 import {
   addTakeoffLinesToQuoteDraft,
   reconcileDrawingQuoteItemsFromConfirmedMarks,
@@ -183,6 +190,8 @@ type CatalogMarkBinding = {
   quoteItemId?: string;
   /** Product photo URL (BUCO / catalog) for the panel thumb. */
   imageUrl?: string | null;
+  /** Own work item → quote line category "work"; otherwise material. */
+  quoteCategory?: "material" | "work";
 };
 
 type Props = {
@@ -345,6 +354,10 @@ export function PlanTakeoffWorkbench({
   const [categoryImageUrls, setCategoryImageUrls] = useState<Record<string, string>>(
     {}
   );
+  /** Unit prices shown on confirmed category rows (binding / Doplniť cenu). */
+  const [categoryPrices, setCategoryPrices] = useState<
+    Record<string, { unitPrice: number; unit: string }>
+  >({});
   // "Zvýrazniť" on category rows — each toggles independently, so any
   // combination of positions can glow on the plan at once. Mark ids are
   // derived (not stored) so marks added later to a highlighted category
@@ -503,8 +516,24 @@ export function PlanTakeoffWorkbench({
         if (cancelled) return;
         setOccurrences(list);
         const dtos = candidates.map(dtoFromSymbolCandidate);
-        if (dtos.length) {
-          setRegionCandidates(dtos);
+        // Drop below-threshold template matches that the review panel already
+        // hides — they used to linger as unmarked overlays on the plan.
+        const ghosts = dtos.filter(
+          (c) =>
+            c.status !== "confirmed" &&
+            c.status !== "rejected" &&
+            !isActiveReviewCandidate(c)
+        );
+        if (ghosts.length > 0) {
+          for (const g of ghosts) {
+            void deleteCandidate({ projectId, candidateId: g.id }).catch(() => undefined);
+          }
+        }
+        const visible = ghosts.length
+          ? dtos.filter((c) => !ghosts.some((g) => g.id === c.id))
+          : dtos;
+        if (visible.length) {
+          setRegionCandidates(visible);
           setRightTab("candidates");
         } else {
           setRegionCandidates([]);
@@ -516,7 +545,7 @@ export function PlanTakeoffWorkbench({
           await reconcileDrawingQuoteItemsFromConfirmedMarks({
             projectId,
             drawingId,
-            confirmedLabels: dtos
+            confirmedLabels: visible
               .filter((c) => c.status === "confirmed")
               .map((c) => categoryLabelForCandidate(c)),
           });
@@ -1162,6 +1191,8 @@ export function PlanTakeoffWorkbench({
       dtoOverride?: AnalyzeRegionCandidateDto
     ) => {
       const dto = dtoOverride ?? regionCandidates.find((c) => c.id === candidateId);
+      // Capture next BEFORE local status flip — confirmed leaves the review queue.
+      const nextId = nextReviewCandidateId(regionCandidates, candidateId);
       setReviewBusy(true);
       try {
         const result = await confirmSymbolCandidate({
@@ -1177,6 +1208,7 @@ export function PlanTakeoffWorkbench({
           id: result.confirmedSymbolId,
           label: dto?.label_suggestions[0]?.label ?? symbolType,
         });
+        setSelectedCandidateId(nextId);
         await refreshTakeoffItems();
         showToast(t("takeoff.toast.candidateConfirmed"));
       } catch (err) {
@@ -1208,10 +1240,12 @@ export function PlanTakeoffWorkbench({
 
   const handleRejectCandidate = useCallback(
     async (candidateId: string) => {
+      const nextId = nextReviewCandidateId(regionCandidates, candidateId);
       setReviewBusy(true);
       try {
         await rejectSymbolCandidate({ projectId, candidateId });
         patchCandidateLocal(candidateId, { status: "rejected" });
+        setSelectedCandidateId(nextId);
         showToast(t("takeoff.toast.candidateRejected"));
       } catch {
         showToast(t("takeoff.toast.reviewFailed"));
@@ -1219,7 +1253,7 @@ export function PlanTakeoffWorkbench({
         setReviewBusy(false);
       }
     },
-    [projectId, patchCandidateLocal, showToast, t]
+    [projectId, regionCandidates, patchCandidateLocal, showToast, t]
   );
 
   const removeCandidateLocal = useCallback((id: string) => {
@@ -1333,6 +1367,8 @@ export function PlanTakeoffWorkbench({
             ...(binding ? { unitPrice: binding.unitPrice } : {}),
             note: binding?.note,
             quoteItemId: binding?.quoteItemId,
+            quoteCategory: binding?.quoteCategory,
+            imageUrl: binding?.imageUrl,
           });
           if (quoteItemId && binding) {
             catalogBindingsRef.current.set(key, { ...binding, quoteItemId });
@@ -1392,8 +1428,22 @@ export function PlanTakeoffWorkbench({
             ...(binding ? { unitPrice: binding.unitPrice } : {}),
             note: binding?.note,
             quoteItemId: binding?.quoteItemId,
+            quoteCategory: binding?.quoteCategory,
+            imageUrl: binding?.imageUrl,
           });
           catalogBindingsRef.current.delete(categoryKey);
+          setCategoryPrices((m) => {
+            if (!(categoryKey in m)) return m;
+            const out = { ...m };
+            delete out[categoryKey];
+            return out;
+          });
+          setCategoryImageUrls((m) => {
+            if (!(categoryKey in m)) return m;
+            const out = { ...m };
+            delete out[categoryKey];
+            return out;
+          });
         } catch {
           /* category cleared — quote sync is best-effort */
         }
@@ -1443,7 +1493,19 @@ export function PlanTakeoffWorkbench({
   const handleMoveCandidate = useCallback(
     (candidateId: string, normalized: NormalizedRect) => {
       const dto = regionCandidates.find((c) => c.id === candidateId);
-      patchCandidateLocal(candidateId, { normalized_position: normalized });
+      const bboxPdf = dto
+        ? translateBboxPdfForMove(
+            dto.bbox_pdf,
+            dto.normalized_position,
+            normalized
+          )
+        : undefined;
+      patchCandidateLocal(candidateId, {
+        normalized_position: normalized,
+        ...(bboxPdf ? { bbox_pdf: bboxPdf } : {}),
+      });
+      // Pass dto with the PRE-move position so the service computes the same
+      // bbox translation (local state already has the new position).
       moveCandidateOrConfirmedSymbol({
         projectId,
         candidateId,
@@ -1585,11 +1647,61 @@ export function PlanTakeoffWorkbench({
     [projectId, takeoffItems, showToast, t]
   );
 
+  /**
+   * Pull already-confirmed generic type matches ("zásuvka") into the product
+   * category used as the find-similar template (e.g. Valena…). Fixes the
+   * split bucket after an earlier search that stored the generic label.
+   */
+  const reassignGenericPeersToCategory = useCallback(
+    async (params: {
+      targetLabel: string;
+      symbolType: string;
+      excludeCandidateId?: string;
+      candidatesSnapshot: AnalyzeRegionCandidateDto[];
+    }): Promise<number> => {
+      const peers = findConfirmedPeersToAssign({
+        candidates: params.candidatesSnapshot,
+        targetLabel: params.targetLabel,
+        symbolType: params.symbolType,
+        excludeCandidateId: params.excludeCandidateId,
+      });
+      if (peers.length === 0) return 0;
+      let moved = 0;
+      for (const peer of peers) {
+        try {
+          await moveConfirmedSymbolToCategory({
+            projectId,
+            candidateId: peer.id,
+            label: params.targetLabel,
+          });
+          patchCandidateLocal(peer.id, {
+            label_suggestions: [{ label: params.targetLabel, confidence: 1 }],
+          });
+          moved++;
+        } catch {
+          /* keep going — one bad row must not block the rest */
+        }
+      }
+      if (moved > 0) await refreshTakeoffItems();
+      return moved;
+    },
+    [projectId, patchCandidateLocal, refreshTakeoffItems]
+  );
+
   // Phase 3A — find visually similar symbols from a confirmed symbol.
   // Results are PROBABLE candidates only; quantities change after confirm.
   const handleFindSimilarFromConfirmed = useCallback(
     async (symbolId: string, scope: "page" | "drawing") => {
       if (!fileUrl || similarFromConfirmedBusy) return;
+      const targetLabel = lastConfirmedSymbol?.label?.trim() || "";
+      const refCandidate = targetLabel
+        ? regionCandidates.find(
+            (c) =>
+              c.status === "confirmed" &&
+              categoryKeyForLabel(categoryLabelForCandidate(c)) ===
+                categoryKeyForLabel(targetLabel)
+          )
+        : undefined;
       setSimilarFromConfirmedBusy(true);
       try {
         const result = await findSimilarForConfirmedSymbol({
@@ -1598,28 +1710,54 @@ export function PlanTakeoffWorkbench({
           symbolId,
           fileUrl,
           scope,
+          labelOverride: targetLabel || undefined,
         });
         if (result.unavailableReason) {
           showToast(t("takeoff.toast.similarUnavailable"));
           return;
         }
-        if (result.candidates.length === 0) {
+
+        let assigned = 0;
+        if (targetLabel && refCandidate) {
+          assigned = await reassignGenericPeersToCategory({
+            targetLabel,
+            symbolType: defaultSymbolTypeForCandidate(refCandidate),
+            excludeCandidateId: refCandidate.id,
+            candidatesSnapshot: regionCandidates,
+          });
+        }
+
+        if (result.candidates.length === 0 && assigned === 0) {
           showToast(t("takeoff.toast.noSimilarFound"));
           return;
         }
-        setRegionCandidates((prev) => {
-          const known = new Set(prev.map((c) => c.id));
-          return [...prev, ...result.candidates.filter((c) => !known.has(c.id))];
-        });
-        setRightTab("candidates");
-        showToast(t("takeoff.toast.similarFound", { count: result.candidates.length }));
+        if (result.candidates.length > 0) {
+          setRegionCandidates((prev) => {
+            const known = new Set(prev.map((c) => c.id));
+            return [...prev, ...result.candidates.filter((c) => !known.has(c.id))];
+          });
+          setRightTab("candidates");
+          showToast(t("takeoff.toast.similarFound", { count: result.candidates.length }));
+        } else if (assigned > 0) {
+          showToast(t("takeoff.toast.markMoved", { label: targetLabel }));
+        }
       } catch {
         showToast(t("takeoff.toast.similarUnavailable"));
       } finally {
         setSimilarFromConfirmedBusy(false);
       }
     },
-    [fileUrl, similarFromConfirmedBusy, projectId, drawingId, showToast, t]
+    [
+      fileUrl,
+      similarFromConfirmedBusy,
+      projectId,
+      drawingId,
+      showToast,
+      t,
+      lastConfirmedSymbol,
+      regionCandidates,
+      reassignGenericPeersToCategory,
+    ]
   );
 
   // "Find similar" straight from a pending/unconfirmed candidate — a manual
@@ -1633,6 +1771,7 @@ export function PlanTakeoffWorkbench({
       if (!fileUrl || similarFromConfirmedBusy) return;
       const candidate = regionCandidates.find((c) => c.id === candidateId);
       if (!candidate) return;
+      const targetLabel = categoryLabelForCandidate(candidate);
       setSimilarFromConfirmedBusy(true);
       try {
         const result = await findSimilarForCandidate({
@@ -1641,27 +1780,49 @@ export function PlanTakeoffWorkbench({
           candidate,
           fileUrl,
           scope,
+          labelOverride: targetLabel,
         });
         if (result.unavailableReason) {
           showToast(t("takeoff.toast.similarUnavailable"));
           return;
         }
-        if (result.candidates.length === 0) {
+
+        const assigned = await reassignGenericPeersToCategory({
+          targetLabel,
+          symbolType: defaultSymbolTypeForCandidate(candidate),
+          excludeCandidateId: candidate.id,
+          candidatesSnapshot: regionCandidates,
+        });
+
+        if (result.candidates.length === 0 && assigned === 0) {
           showToast(t("takeoff.toast.noSimilarFound"));
           return;
         }
-        setRegionCandidates((prev) => {
-          const known = new Set(prev.map((c) => c.id));
-          return [...prev, ...result.candidates.filter((c) => !known.has(c.id))];
-        });
-        showToast(t("takeoff.toast.similarFound", { count: result.candidates.length }));
+        if (result.candidates.length > 0) {
+          setRegionCandidates((prev) => {
+            const known = new Set(prev.map((c) => c.id));
+            return [...prev, ...result.candidates.filter((c) => !known.has(c.id))];
+          });
+          showToast(t("takeoff.toast.similarFound", { count: result.candidates.length }));
+        } else if (assigned > 0) {
+          showToast(t("takeoff.toast.markMoved", { label: targetLabel }));
+        }
       } catch {
         showToast(t("takeoff.toast.similarUnavailable"));
       } finally {
         setSimilarFromConfirmedBusy(false);
       }
     },
-    [fileUrl, similarFromConfirmedBusy, projectId, drawingId, regionCandidates, showToast, t]
+    [
+      fileUrl,
+      similarFromConfirmedBusy,
+      projectId,
+      drawingId,
+      regionCandidates,
+      showToast,
+      t,
+      reassignGenericPeersToCategory,
+    ]
   );
 
   /** "Nájsť podobné" on an already-confirmed row — always scans every page. */
@@ -1722,6 +1883,8 @@ export function PlanTakeoffWorkbench({
               unit: binding.unit,
               note: binding.note,
               quoteItemId: binding.quoteItemId,
+              quoteCategory: binding.quoteCategory,
+              imageUrl: binding.imageUrl,
             });
             if (!quoteItemId) return;
             const next: CatalogMarkBinding = { ...binding, quoteItemId };
@@ -1767,6 +1930,16 @@ export function PlanTakeoffWorkbench({
             m[category.key] === img ? m : { ...m, [category.key]: img }
           );
         }
+        if (typeof catalog.unitPrice === "number" && catalog.unitPrice >= 0) {
+          const unit = catalog.unit?.trim() || "ks";
+          setCategoryPrices((m) => {
+            const prev = m[category.key];
+            if (prev?.unitPrice === catalog.unitPrice && prev.unit === unit) {
+              return m;
+            }
+            return { ...m, [category.key]: { unitPrice: catalog.unitPrice, unit } };
+          });
+        }
       }
       setActiveCategory({
         key: category.key,
@@ -1784,6 +1957,24 @@ export function PlanTakeoffWorkbench({
     setActiveCategory(null);
     setMarkerMode("select");
   }, []);
+
+  /** Category comment → quote line note when the position is already linked. */
+  const handleCategoryNoteChange = useCallback(
+    (categoryKey: string, note: string) => {
+      const binding = catalogBindingsRef.current.get(categoryKey);
+      if (!binding?.quoteItemId) return;
+      catalogBindingsRef.current.set(categoryKey, {
+        ...binding,
+        note: note || undefined,
+      });
+      void updateQuoteDraftItem(projectId, binding.quoteItemId, {
+        note: note || undefined,
+      }).catch(() => {
+        /* local note is already saved — quote sync is best-effort */
+      });
+    },
+    [projectId]
+  );
 
   /** Catalog / AI price → quote draft (confirm happens in AiPriceLookupDialog). */
   const handleApplyPrice = useCallback(
@@ -1808,6 +1999,8 @@ export function PlanTakeoffWorkbench({
           unit: binding?.unit ?? "ks",
           note: input.note ?? binding?.note,
           quoteItemId: binding?.quoteItemId,
+          quoteCategory: binding?.quoteCategory,
+          imageUrl: binding?.imageUrl,
         });
         if (!quoteItemId) {
           throw new Error("Quote item missing after price apply");
@@ -1815,10 +2008,19 @@ export function PlanTakeoffWorkbench({
         catalogBindingsRef.current.set(key, {
           productId: binding?.productId ?? `price:${key}`,
           unitPrice: input.unitPrice,
+          quoteCategory: binding?.quoteCategory,
+          imageUrl: binding?.imageUrl,
           unit: binding?.unit ?? "ks",
           note: input.note ?? binding?.note,
           quoteItemId,
         });
+        setCategoryPrices((m) => ({
+          ...m,
+          [key]: {
+            unitPrice: input.unitPrice,
+            unit: binding?.unit?.trim() || "ks",
+          },
+        }));
         showToast(t("takeoff.priceLookup.toastApplied"));
       } catch (err) {
         const message = err instanceof Error ? err.message : "";
@@ -1934,6 +2136,19 @@ export function PlanTakeoffWorkbench({
             else delete out[newKey];
             return out;
           });
+          setCategoryPrices((m) => {
+            const out = { ...m };
+            if (categoryKey !== newKey) delete out[categoryKey];
+            if (typeof next.unitPrice === "number" && next.unitPrice >= 0) {
+              out[newKey] = {
+                unitPrice: next.unitPrice,
+                unit: next.unit?.trim() || "ks",
+              };
+            } else {
+              delete out[newKey];
+            }
+            return out;
+          });
           try {
             const quoteItemId = await syncCatalogMarkedQtyToQuote({
               projectId,
@@ -1944,6 +2159,8 @@ export function PlanTakeoffWorkbench({
               unit: next.unit || "ks",
               note: next.note,
               quoteItemId: next.quoteItemId,
+              quoteCategory: next.quoteCategory,
+              imageUrl: next.imageUrl,
             });
             if (quoteItemId) {
               catalogBindingsRef.current.set(newKey, {
@@ -1965,11 +2182,20 @@ export function PlanTakeoffWorkbench({
             out[newKey] = img;
             return out;
           });
+          setCategoryPrices((m) => {
+            const price = m[categoryKey];
+            if (price === undefined) return m;
+            const out = { ...m };
+            delete out[categoryKey];
+            out[newKey] = price;
+            return out;
+          });
         }
 
         if (categoryKey !== newKey) {
           const oldColor = categoryColorForKey(categoryKey);
           setCategoryColorOverride(newKey, oldColor);
+          moveCategoryNoteOverride(categoryKey, newKey);
           setHighlightedCategoryKeys((prev) =>
             prev.map((k) => (k === categoryKey ? newKey : k))
           );
@@ -2918,7 +3144,7 @@ export function PlanTakeoffWorkbench({
               {regionAnalyzerEnabled &&
               perms.allowAnalyze &&
               rightTab === "candidates" &&
-              lastConfirmedSymbol ? (
+              lastConfirmedSymbol && !activeCategory ? (
                 <div
                   className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5"
                   data-testid="find-similar-confirmed-bar"
@@ -2992,12 +3218,16 @@ export function PlanTakeoffWorkbench({
                     onEvidenceThumbClick={handleEvidenceThumbClick}
                     canReview={perms.allowConfirm}
                     onFindSimilar={
-                      perms.allowAnalyze
+                      // While click-counting a position, never start find-similar
+                      // from a stray click — only after the operator stops marking.
+                      perms.allowAnalyze && !activeCategory
                         ? (id) => void handleFindSimilarFromCandidate(id)
                         : undefined
                     }
                     onFindSimilarConfirmed={
-                      perms.allowAnalyze ? handleFindSimilarConfirmedRow : undefined
+                      perms.allowAnalyze && !activeCategory
+                        ? handleFindSimilarConfirmedRow
+                        : undefined
                     }
                     findSimilarBusy={similarFromConfirmedBusy}
                     onIdentifySymbol={
@@ -3033,7 +3263,11 @@ export function PlanTakeoffWorkbench({
                         ? () => setCategoryColorEpoch((n) => n + 1)
                         : undefined
                     }
+                    onCategoryNoteChange={
+                      perms.allowEdit ? handleCategoryNoteChange : undefined
+                    }
                     categoryImageUrls={categoryImageUrls}
+                    categoryPrices={categoryPrices}
                     persistKey={`${projectId}:${drawingId}`}
                   />
                 ) : (

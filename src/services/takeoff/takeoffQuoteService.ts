@@ -129,6 +129,10 @@ export async function syncCatalogMarkedQtyToQuote(params: {
   unit?: string;
   note?: string;
   quoteItemId?: string;
+  /** Own work items → quote "work"; catalog products / electrical → "material". */
+  quoteCategory?: "material" | "work";
+  /** Catalog product photo — set on create; fill-in on update when missing. */
+  imageUrl?: string | null;
 }): Promise<string | null> {
   const unit = params.unit?.trim() || "ks";
   const qty = Math.max(0, Math.round(params.qty));
@@ -158,19 +162,22 @@ export async function syncCatalogMarkedQtyToQuote(params: {
     quoteItemId: params.quoteItemId,
   });
 
+  const imageUrl = params.imageUrl?.trim() || undefined;
+
   if (match) {
     await updateQuoteDraftItem(params.projectId, match.id, {
       qty,
       evidenceCount: qty,
       ...(unitPrice !== undefined ? { unitPrice } : {}),
       ...(params.drawingId ? { sourceDrawingId: params.drawingId } : {}),
+      ...(imageUrl && !match.imageUrl ? { imageUrl } : {}),
       sourceOfQuantity: match.sourceOfQuantity ?? "symbol_detection",
     });
     return match.id;
   }
 
   return createQuoteDraftItem(params.projectId, {
-    category: "material",
+    category: params.quoteCategory === "work" ? "work" : "material",
     name: params.name.trim(),
     qty,
     unit,
@@ -179,6 +186,7 @@ export async function syncCatalogMarkedQtyToQuote(params: {
     sourceOfQuantity: "symbol_detection",
     evidenceCount: qty,
     ...(params.drawingId ? { sourceDrawingId: params.drawingId } : {}),
+    ...(imageUrl ? { imageUrl } : {}),
     takeoffStatus: "draft",
   });
 }

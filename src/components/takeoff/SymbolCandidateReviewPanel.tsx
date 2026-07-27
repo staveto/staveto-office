@@ -24,11 +24,14 @@ import {
   FolderInput,
   Sparkles,
   CircleDollarSign,
+  Hammer,
   Library,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -45,7 +48,9 @@ import {
 } from "@/components/ui/dialog";
 import { useI18n } from "@/i18n/I18nContext";
 import { cn } from "@/lib/utils";
+import { formatMoney } from "@/lib/format";
 import { ElectricalCatalogPickerDialog } from "@/components/jobs/ElectricalCatalogPickerDialog";
+import { CatalogItemPickerDialog } from "@/components/projects/setup/CatalogItemPickerDialog";
 import { AiPriceLookupDialog } from "@/components/takeoff/AiPriceLookupDialog";
 import type { ElectricalCatalogProduct } from "@/lib/catalog/electrical/types";
 import {
@@ -54,6 +59,7 @@ import {
 } from "@/services/catalog/electricalCatalogReadService";
 import { resolveCatalogProductImageUrl } from "@/lib/catalog/electrical/images";
 import { symbolTypeFromElectricalProduct } from "@/lib/takeoff/electricalProductSymbolType";
+import type { CatalogItemDoc } from "@/services/materials";
 import type { AnalyzeRegionCandidateDto } from "@/types/pdfTakeoff";
 import type { TakeoffItem } from "@/types/pdfTakeoff";
 import {
@@ -65,8 +71,15 @@ import { SELECTED_HIGHLIGHT_COLOR } from "@/lib/takeoff/selectionHighlight";
 import {
   categoryKeyForLabel,
   categoryLabelForCandidate,
+  categoryMarkerScaleForKey,
+  CATEGORY_MARKER_SCALE_MAX,
+  CATEGORY_MARKER_SCALE_MIN,
   groupConfirmedByCategory,
+  categoryNoteForKey,
   setCategoryColorOverride,
+  setCategoryMarkerScaleOverride,
+  setCategoryNoteOverride,
+  uniquifyCategoryLabel,
 } from "@/lib/takeoff/takeoffCategories";
 import { MarkColorPicker } from "@/components/takeoff/MarkColorPicker";
 import { LegendOnlyBadge } from "./LegendOnlyBadge";
@@ -192,10 +205,13 @@ type Props = {
       unit: string;
       note?: string;
       imageUrl?: string | null;
+      quoteCategory?: "material" | "work";
     };
   }) => void;
   /** Optional image URLs keyed by category key (from catalog bindings). */
   categoryImageUrls?: Record<string, string>;
+  /** Optional unit prices keyed by category key (catalog pick / Doplniť cenu). */
+  categoryPrices?: Record<string, { unitPrice: number; unit: string }>;
   onStopCategoryMarking?: () => void;
   /**
    * Categories whose marks currently glow on the plan. The highlighter
@@ -225,6 +241,7 @@ type Props = {
       unit: string;
       note?: string;
       imageUrl?: string | null;
+      quoteCategory?: "material" | "work";
     }
   ) => Promise<void>;
   /** Delete every confirmed mark in a position/category (and sync quote). */
@@ -240,6 +257,11 @@ type Props = {
   }) => Promise<void>;
   /** Called after the operator picks a new color for a mark category (plan refresh). */
   onCategoryColorChange?: () => void;
+  /**
+   * Persist / sync a category comment (e.g. into the quote line note).
+   * Local storage is always updated; this hook is optional extra sync.
+   */
+  onCategoryNoteChange?: (categoryKey: string, note: string) => void;
   /**
    * Persist the panel's view state (open sections, expanded categories)
    * under this key — pass the canonical drawingId so the quote flow and the
@@ -313,7 +335,9 @@ export function SymbolCandidateReviewPanel({
   onDeleteCategory,
   onApplyPrice,
   onCategoryColorChange,
+  onCategoryNoteChange,
   categoryImageUrls = {},
+  categoryPrices = {},
   persistKey = null,
 }: Props) {
   const { t } = useI18n();
@@ -328,6 +352,13 @@ export function SymbolCandidateReviewPanel({
   const [imagePreview, setImagePreview] = useState<{
     url: string;
     label: string;
+  } | null>(null);
+  /** Enlarged crop preview while hovering a candidate thumbnail. */
+  const [cropHover, setCropHover] = useState<{
+    url: string;
+    label: string;
+    left: number;
+    top: number;
   } | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(
     () => new Set(initialViewState?.collapsedGroups ?? [])
@@ -355,7 +386,10 @@ export function SymbolCandidateReviewPanel({
       collapsedGroups: [...collapsed],
     });
   }, [persistKey, showConfirmed, showRejected, showItems, expandedCategories, collapsed]);
-  const [catalogPickerOpen, setCatalogPickerOpen] = useState(false);
+  /** Supplier catalog with product photos (BUCO). */
+  const [electricalCatalogOpen, setElectricalCatalogOpen] = useState(false);
+  /** Own price list — products + work items. */
+  const [companyCatalogOpen, setCompanyCatalogOpen] = useState(false);
   /** `new` = start marking; `edit` = replace product on an existing category. */
   const [catalogPickerPurpose, setCatalogPickerPurpose] = useState<"new" | "edit">(
     "new"
@@ -363,7 +397,7 @@ export function SymbolCandidateReviewPanel({
   const [priceLookupFor, setPriceLookupFor] = useState<string | null>(null);
   const [newCategoryOpen, setNewCategoryOpen] = useState(false);
   const [newCategoryLabel, setNewCategoryLabel] = useState("");
-  const [newCategoryType, setNewCategoryType] = useState("light");
+  const [newCategoryType, setNewCategoryType] = useState("generic");
   // "Presunúť do inej položky" — one mark; "Upraviť" — whole category.
   const [moveFor, setMoveFor] = useState<AnalyzeRegionCandidateDto | null>(null);
   const [moveNewLabel, setMoveNewLabel] = useState("");
@@ -371,6 +405,10 @@ export function SymbolCandidateReviewPanel({
   const [renameFor, setRenameFor] = useState<{ key: string; label: string } | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [renameBusy, setRenameBusy] = useState(false);
+  const [noteFor, setNoteFor] = useState<{ key: string; label: string } | null>(null);
+  const [noteValue, setNoteValue] = useState("");
+  /** Bump to re-read localStorage notes after save. */
+  const [noteRevision, setNoteRevision] = useState(0);
   const [deleteCategoryFor, setDeleteCategoryFor] = useState<{
     key: string;
     label: string;
@@ -438,6 +476,34 @@ export function SymbolCandidateReviewPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [confirmedCandidates, colorRevision]
   );
+
+  /** Keys already used as positions — new "+ Nová položka" must not collide. */
+  const existingCategoryKeys = useMemo(() => {
+    const keys = confirmedCategories.map((c) => c.key);
+    if (activeCategoryKey) keys.push(activeCategoryKey);
+    return keys;
+  }, [confirmedCategories, activeCategoryKey]);
+
+  const startNewPositionCategory = (params: {
+    label: string;
+    symbolType: string;
+    catalog?: {
+      productId: string;
+      unitPrice: number;
+      unit: string;
+      note?: string;
+      imageUrl?: string | null;
+      quoteCategory?: "material" | "work";
+    };
+  }) => {
+    const label = uniquifyCategoryLabel(params.label, existingCategoryKeys);
+    onStartCategoryMarking?.({
+      key: categoryKeyForLabel(label),
+      label,
+      symbolType: params.symbolType,
+      ...(params.catalog ? { catalog: params.catalog } : {}),
+    });
+  };
 
   // Resolve product photos for confirmed positions (catalog name match).
   useEffect(() => {
@@ -619,8 +685,30 @@ export function SymbolCandidateReviewPanel({
                               alt={label}
                               loading="lazy"
                               data-testid="candidate-preview-thumb"
+                              title={t("takeoff.review.previewHoverHint")}
                               className="mt-0.5 size-10 shrink-0 rounded border border-border object-contain bg-white"
                               style={{ borderLeftColor: accent, borderLeftWidth: 3 }}
+                              onMouseEnter={(e) => {
+                                const r = e.currentTarget.getBoundingClientRect();
+                                const width = 220;
+                                const height = 220;
+                                const pad = 8;
+                                let left = r.right + pad;
+                                if (left + width > window.innerWidth - pad) {
+                                  left = Math.max(pad, r.left - width - pad);
+                                }
+                                let top = r.top;
+                                if (top + height > window.innerHeight - pad) {
+                                  top = Math.max(pad, window.innerHeight - height - pad);
+                                }
+                                setCropHover({
+                                  url: c.preview_image_url!,
+                                  label,
+                                  left,
+                                  top,
+                                });
+                              }}
+                              onMouseLeave={() => setCropHover(null)}
                             />
                           ) : (
                             <span
@@ -773,68 +861,72 @@ export function SymbolCandidateReviewPanel({
             className="overflow-hidden rounded-lg border border-emerald-600/30 bg-card"
             data-testid="section-confirmed"
           >
-            <div className="flex w-full items-center gap-2 px-2.5 py-1.5">
+            <div className="flex w-full flex-wrap items-center gap-1.5 px-2.5 py-1.5">
               <button
                 type="button"
-                className="flex min-w-0 flex-1 items-center gap-2 text-left text-xs font-semibold text-foreground hover:bg-muted/50"
+                className="flex min-w-0 flex-1 basis-[8rem] items-center gap-2 text-left text-xs font-semibold text-foreground hover:bg-muted/50"
                 onClick={() => setShowConfirmed((v) => !v)}
               >
                 {showConfirmed ? (
-                  <ChevronDown className="size-3.5 text-muted-foreground" />
+                  <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
                 ) : (
-                  <ChevronRight className="size-3.5 text-muted-foreground" />
+                  <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
                 )}
-                <span>{t("takeoff.review.sectionConfirmed")}</span>
-                <span className="tabular-nums text-muted-foreground">
+                <span className="min-w-0 truncate">
+                  {t("takeoff.review.sectionConfirmed")}
+                </span>
+                <span className="shrink-0 tabular-nums text-muted-foreground">
                   {confirmedCandidates.length}
                 </span>
               </button>
-              {onSetHighlightedCategories && confirmedCategories.length > 0 ? (
-                (() => {
-                  const allOn =
-                    highlightedCategoryKeys.length > 0 &&
-                    confirmedCategories.every((c) =>
-                      highlightedCategoryKeys.includes(c.key)
+              <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
+                {onSetHighlightedCategories && confirmedCategories.length > 0 ? (
+                  (() => {
+                    const allOn =
+                      highlightedCategoryKeys.length > 0 &&
+                      confirmedCategories.every((c) =>
+                        highlightedCategoryKeys.includes(c.key)
+                      );
+                    return (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={allOn ? "default" : "outline"}
+                        className="h-6 shrink-0 px-1.5 text-[10px]"
+                        data-testid="highlight-all-categories"
+                        title={t("takeoff.category.highlightAllHint")}
+                        onClick={() =>
+                          onSetHighlightedCategories(
+                            allOn ? [] : confirmedCategories.map((c) => c.key)
+                          )
+                        }
+                      >
+                        <Highlighter className="mr-0.5 size-3" />
+                        {allOn
+                          ? t("takeoff.category.highlightAllOff")
+                          : t("takeoff.category.highlightAll")}
+                      </Button>
                     );
-                  return (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={allOn ? "default" : "outline"}
-                      className="h-6 shrink-0 px-1.5 text-[10px]"
-                      data-testid="highlight-all-categories"
-                      title={t("takeoff.category.highlightAllHint")}
-                      onClick={() =>
-                        onSetHighlightedCategories(
-                          allOn ? [] : confirmedCategories.map((c) => c.key)
-                        )
-                      }
-                    >
-                      <Highlighter className="mr-0.5 size-3" />
-                      {allOn
-                        ? t("takeoff.category.highlightAllOff")
-                        : t("takeoff.category.highlightAll")}
-                    </Button>
-                  );
-                })()
-              ) : null}
-              {canReview && onStartCategoryMarking ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-6 shrink-0 px-1.5 text-[10px]"
-                  disabled={busy}
-                  data-testid="new-category"
-                  onClick={() => {
-                    setCatalogPickerPurpose("new");
-                    setCatalogPickerOpen(true);
-                  }}
-                >
-                  <Plus className="mr-0.5 size-3" />
-                  {t("takeoff.category.new")}
-                </Button>
-              ) : null}
+                  })()
+                ) : null}
+                {canReview && onStartCategoryMarking ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-6 shrink-0 px-1.5 text-[10px]"
+                    disabled={busy}
+                    data-testid="new-category"
+                    onClick={() => {
+                      setCatalogPickerPurpose("new");
+                      setElectricalCatalogOpen(true);
+                    }}
+                  >
+                    <Plus className="mr-0.5 size-3" />
+                    {t("takeoff.category.new")}
+                  </Button>
+                ) : null}
+              </div>
             </div>
             {showConfirmed && confirmedCategories.length === 0 ? (
               <p className="border-t border-border/70 px-2.5 py-2 text-[11px] text-muted-foreground">
@@ -848,211 +940,323 @@ export function SymbolCandidateReviewPanel({
                   const isHighlighted = highlightedCategoryKeys.includes(cat.key);
                   return (
                     <div key={cat.key} className="border-t border-border/70">
+                      {/* Stacked row — stays readable when the side panel is narrow. */}
                       <div
                         className={cn(
-                          "flex items-center gap-1.5 px-2.5 py-1.5 text-xs",
+                          "flex flex-col gap-1.5 px-2.5 py-2 text-xs",
                           isActive && "bg-primary/10"
                         )}
                         data-testid="category-row"
                       >
-                        <button
-                          type="button"
-                          className="flex min-w-0 items-center gap-1 text-left hover:opacity-80"
-                          onClick={() =>
-                            setExpandedCategories((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(cat.key)) next.delete(cat.key);
-                              else next.add(cat.key);
-                              return next;
-                            })
-                          }
-                          title={t("takeoff.category.expandHint")}
-                        >
-                          {expanded ? (
-                            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
-                          ) : (
-                            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
-                          )}
-                        </button>
-                        {/* Color chip opens RAL dialog (portal) — not clipped by panel overflow. */}
-                        <button
-                          type="button"
-                          className={cn(
-                            "size-4 shrink-0 rounded-full border transition-shadow",
-                            isHighlighted
-                              ? "border-transparent"
-                              : "border-black/15 opacity-90 hover:opacity-100",
-                            onCategoryColorChange || onHighlightCategory
-                              ? "cursor-pointer"
-                              : "cursor-default"
-                          )}
-                          style={{
-                            backgroundColor: cat.color,
-                            boxShadow: isHighlighted
-                              ? `0 0 0 2px white, 0 0 0 4px ${cat.color}`
-                              : undefined,
-                          }}
-                          data-testid="category-color-toggle"
-                          title={
-                            onCategoryColorChange
-                              ? t("takeoff.category.changeColor")
-                              : t("takeoff.category.highlight")
-                          }
-                          aria-haspopup="dialog"
-                          onClick={() => {
-                            if (onCategoryColorChange) {
-                              setColorPickerFor(cat.key);
-                              return;
+                        <div className="flex min-w-0 items-start gap-1.5">
+                          <button
+                            type="button"
+                            className="mt-0.5 flex shrink-0 items-center text-left hover:opacity-80"
+                            onClick={() =>
+                              setExpandedCategories((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(cat.key)) next.delete(cat.key);
+                                else next.add(cat.key);
+                                return next;
+                              })
                             }
-                            onHighlightCategory?.(cat.key);
-                          }}
-                        />
-                        {(() => {
-                          const imgUrl = imageUrlForCategory(cat.key, cat.label);
-                          if (!imgUrl) return null;
-                          return (
-                            <button
-                              type="button"
-                              className="size-8 shrink-0 overflow-hidden rounded-md border border-border bg-white dark:bg-card"
-                              data-testid="category-product-image"
-                              title={t("takeoff.category.productImageHint")}
-                              onClick={() =>
-                                setImagePreview({ url: imgUrl, label: cat.label })
-                              }
-                            >
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={imgUrl}
-                                alt=""
-                                loading="lazy"
-                                decoding="async"
-                                referrerPolicy="no-referrer"
-                                className="size-full object-contain"
-                              />
-                            </button>
-                          );
-                        })()}
-                        <button
-                          type="button"
-                          className="flex min-w-0 flex-1 items-center gap-2 text-left hover:opacity-80"
-                          onClick={() =>
-                            setExpandedCategories((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(cat.key)) next.delete(cat.key);
-                              else next.add(cat.key);
-                              return next;
-                            })
-                          }
-                          title={t("takeoff.category.expandHint")}
-                        >
-                          <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-                            {cat.label}
-                          </span>
-                          <span className="shrink-0 tabular-nums font-semibold text-foreground">
-                            {t("takeoff.category.pieces", { count: cat.candidates.length })}
-                          </span>
-                        </button>
-                        {onHighlightCategory ? (
+                            title={t("takeoff.category.expandHint")}
+                          >
+                            {expanded ? (
+                              <ChevronDown className="size-3.5 text-muted-foreground" />
+                            ) : (
+                              <ChevronRight className="size-3.5 text-muted-foreground" />
+                            )}
+                          </button>
+                          {/* Color chip opens RAL dialog (portal) — not clipped by panel overflow. */}
                           <button
                             type="button"
                             className={cn(
-                              "shrink-0 rounded p-1",
-                              !isHighlighted &&
-                                "text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                            )}
-                            style={
+                              "mt-1 size-4 shrink-0 rounded-full border transition-shadow",
                               isHighlighted
-                                ? { color: cat.color, backgroundColor: `${cat.color}22` }
-                                : undefined
-                            }
-                            data-testid="category-highlight"
-                            title={t("takeoff.category.highlight")}
-                            onClick={() => onHighlightCategory(cat.key)}
-                          >
-                            <Highlighter className="size-3.5" />
-                          </button>
-                        ) : null}
-                        {canReview && onRenameCategory ? (
-                          <button
-                            type="button"
-                            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
-                            disabled={busy || renameBusy}
-                            data-testid="category-rename"
-                            title={t("takeoff.category.edit")}
-                            onClick={() => {
-                              setRenameValue(cat.label);
-                              setRenameFor({ key: cat.key, label: cat.label });
+                                ? "border-transparent"
+                                : "border-black/15 opacity-90 hover:opacity-100",
+                              onCategoryColorChange || onHighlightCategory
+                                ? "cursor-pointer"
+                                : "cursor-default"
+                            )}
+                            style={{
+                              backgroundColor: cat.color,
+                              boxShadow: isHighlighted
+                                ? `0 0 0 2px white, 0 0 0 4px ${cat.color}`
+                                : undefined,
                             }}
-                          >
-                            <Pencil className="size-3.5" />
-                          </button>
-                        ) : null}
-                        {canReview && onDeleteCategory ? (
+                            data-testid="category-color-toggle"
+                            title={
+                              onCategoryColorChange
+                                ? t("takeoff.category.changeColor")
+                                : t("takeoff.category.highlight")
+                            }
+                            aria-haspopup="dialog"
+                            onClick={() => {
+                              if (onCategoryColorChange) {
+                                setColorPickerFor(cat.key);
+                                return;
+                              }
+                              onHighlightCategory?.(cat.key);
+                            }}
+                          />
+                          {(() => {
+                            const imgUrl = imageUrlForCategory(cat.key, cat.label);
+                            if (!imgUrl) return null;
+                            return (
+                              <button
+                                type="button"
+                                className="size-8 shrink-0 overflow-hidden rounded-md border border-border bg-white dark:bg-card"
+                                data-testid="category-product-image"
+                                title={t("takeoff.category.productImageHint")}
+                                onClick={() =>
+                                  setImagePreview({ url: imgUrl, label: cat.label })
+                                }
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={imgUrl}
+                                  alt=""
+                                  loading="lazy"
+                                  decoding="async"
+                                  referrerPolicy="no-referrer"
+                                  className="size-full object-contain"
+                                />
+                              </button>
+                            );
+                          })()}
                           <button
                             type="button"
-                            className="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                            disabled={busy || deleteCategoryBusy}
-                            data-testid="category-delete"
-                            title={t("takeoff.category.delete")}
+                            className="min-w-0 flex-1 text-left hover:opacity-80"
                             onClick={() =>
-                              setDeleteCategoryFor({
-                                key: cat.key,
-                                label: cat.label,
-                                count: cat.candidates.length,
+                              setExpandedCategories((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(cat.key)) next.delete(cat.key);
+                                else next.add(cat.key);
+                                return next;
                               })
                             }
+                            title={t("takeoff.category.expandHint")}
                           >
-                            <Trash2 className="size-3.5" />
+                            <span className="line-clamp-2 font-medium leading-snug text-foreground">
+                              {cat.label}
+                            </span>
                           </button>
-                        ) : null}
-                        {onApplyPrice ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-6 shrink-0 px-1.5 text-[10px]"
-                            disabled={busy}
-                            data-testid="category-add-price"
-                            title={t("takeoff.priceLookup.buttonHint")}
-                            onClick={() => setPriceLookupFor(cat.label)}
-                          >
-                            <CircleDollarSign className="mr-0.5 size-3" />
-                            {t("takeoff.priceLookup.button")}
-                          </Button>
-                        ) : null}
-                        {canReview && onStartCategoryMarking ? (
-                          isActive ? (
-                            <Button
+                          <div className="flex shrink-0 items-center gap-0.5">
+                            {onHighlightCategory ? (
+                              <button
+                                type="button"
+                                className={cn(
+                                  "rounded p-1",
+                                  !isHighlighted &&
+                                    "text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                                )}
+                                style={
+                                  isHighlighted
+                                    ? {
+                                        color: cat.color,
+                                        backgroundColor: `${cat.color}22`,
+                                      }
+                                    : undefined
+                                }
+                                data-testid="category-highlight"
+                                title={t("takeoff.category.highlight")}
+                                onClick={() => onHighlightCategory(cat.key)}
+                              >
+                                <Highlighter className="size-3.5" />
+                              </button>
+                            ) : null}
+                            {canReview && onRenameCategory ? (
+                              <button
+                                type="button"
+                                className="rounded p-1 text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                                disabled={busy || renameBusy}
+                                data-testid="category-rename"
+                                title={t("takeoff.category.edit")}
+                                onClick={() => {
+                                  setRenameValue(cat.label);
+                                  setRenameFor({ key: cat.key, label: cat.label });
+                                }}
+                              >
+                                <Pencil className="size-3.5" />
+                              </button>
+                            ) : null}
+                            {canReview ? (
+                              (() => {
+                                // noteRevision forces re-read after save in this session.
+                                void noteRevision;
+                                const hasNote = Boolean(categoryNoteForKey(cat.key));
+                                return (
+                                  <button
+                                    type="button"
+                                    className={cn(
+                                      "rounded p-1",
+                                      hasNote
+                                        ? "text-[#e06737] hover:bg-[#e06737]/10"
+                                        : "text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                                    )}
+                                    disabled={busy}
+                                    data-testid="category-note"
+                                    title={
+                                      hasNote
+                                        ? t("takeoff.category.noteEditHint")
+                                        : t("takeoff.category.noteAddHint")
+                                    }
+                                    onClick={() => {
+                                      setNoteValue(categoryNoteForKey(cat.key));
+                                      setNoteFor({ key: cat.key, label: cat.label });
+                                    }}
+                                  >
+                                    <MessageSquare
+                                      className={cn(
+                                        "size-3.5",
+                                        hasNote && "fill-current"
+                                      )}
+                                    />
+                                  </button>
+                                );
+                              })()
+                            ) : null}
+                            {canReview && onDeleteCategory ? (
+                              <button
+                                type="button"
+                                className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                disabled={busy || deleteCategoryBusy}
+                                data-testid="category-delete"
+                                title={t("takeoff.category.delete")}
+                                onClick={() =>
+                                  setDeleteCategoryFor({
+                                    key: cat.key,
+                                    label: cat.label,
+                                    count: cat.candidates.length,
+                                  })
+                                }
+                              >
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pl-5">
+                          <span className="tabular-nums font-semibold text-foreground">
+                            {t("takeoff.category.pieces", {
+                              count: cat.candidates.length,
+                            })}
+                          </span>
+                          {onApplyPrice ? (
+                            <button
                               type="button"
-                              size="sm"
-                              className="h-6 shrink-0 px-1.5 text-[10px]"
-                              data-testid="category-stop-marking"
-                              onClick={() => onStopCategoryMarking?.()}
+                              className={cn(
+                                "inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[11px] tabular-nums font-medium",
+                                categoryPrices[cat.key]
+                                  ? "text-[#e06737] hover:bg-[#e06737]/10"
+                                  : "text-muted-foreground hover:bg-primary/10 hover:text-primary"
+                              )}
+                              disabled={busy}
+                              data-testid="category-add-price"
+                              title={t("takeoff.priceLookup.buttonHint")}
+                              onClick={() => setPriceLookupFor(cat.label)}
                             >
-                              {t("takeoff.category.stopMarking")}
-                            </Button>
-                          ) : (
+                              <CircleDollarSign className="size-3.5 shrink-0" />
+                              {categoryPrices[cat.key] ? (
+                                <span data-testid="category-unit-price">
+                                  {formatMoney(
+                                    categoryPrices[cat.key]!.unitPrice,
+                                    "EUR"
+                                  )}
+                                  <span className="font-normal text-muted-foreground">
+                                    /
+                                    {(() => {
+                                      const u = categoryPrices[cat.key]!.unit;
+                                      const key = `materials.unit.${u}`;
+                                      const labeled = t(key);
+                                      return labeled === key ? u : labeled;
+                                    })()}
+                                  </span>
+                                </span>
+                              ) : (
+                                <span className="text-[10px]">
+                                  {t("takeoff.priceLookup.buttonShort")}
+                                </span>
+                              )}
+                            </button>
+                          ) : categoryPrices[cat.key] ? (
+                            <span
+                              className="inline-flex items-center gap-1 tabular-nums text-[11px] font-medium text-[#e06737]"
+                              data-testid="category-unit-price"
+                              title={t("takeoff.priceLookup.unitPriceHint")}
+                            >
+                              <CircleDollarSign className="size-3.5 shrink-0" />
+                              {formatMoney(
+                                categoryPrices[cat.key]!.unitPrice,
+                                "EUR"
+                              )}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-1 pl-5">
+                          {canReview && onStartCategoryMarking ? (
+                            isActive ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="h-6 px-1.5 text-[10px]"
+                                data-testid="category-stop-marking"
+                                onClick={() => onStopCategoryMarking?.()}
+                              >
+                                {t("takeoff.category.stopMarking")}
+                              </Button>
+                            ) : (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="h-6 px-1.5 text-[10px]"
+                                disabled={busy}
+                                data-testid="category-add-marks"
+                                title={t("takeoff.category.addMarksHint")}
+                                onClick={() =>
+                                  onStartCategoryMarking({
+                                    key: cat.key,
+                                    label: cat.label,
+                                    symbolType: cat.symbolType,
+                                  })
+                                }
+                              >
+                                <MousePointerClick className="mr-0.5 size-3" />
+                                {t("takeoff.category.addMarks")}
+                              </Button>
+                            )
+                          ) : null}
+                          {/* Find-similar only when NOT actively click-counting —
+                              sitting next to Doznačiť/Ukončiť caused accidental
+                              whole-drawing searches while placing marks. */}
+                          {canReview &&
+                          onFindSimilarConfirmed &&
+                          cat.candidates[0] &&
+                          !isActive ? (
                             <Button
                               type="button"
                               size="sm"
                               variant="outline"
-                              className="h-6 shrink-0 px-1.5 text-[10px]"
-                              disabled={busy}
-                              data-testid="category-add-marks"
-                              title={t("takeoff.category.addMarksHint")}
+                              className="h-6 px-1.5 text-[10px]"
+                              disabled={busy || findSimilarBusy}
+                              data-testid="category-find-similar"
+                              title={t("takeoff.review.findSimilarConfirmedHint")}
                               onClick={() =>
-                                onStartCategoryMarking({
-                                  key: cat.key,
-                                  label: cat.label,
-                                  symbolType: cat.symbolType,
-                                })
+                                onFindSimilarConfirmed(cat.candidates[0]!.id)
                               }
                             >
-                              <MousePointerClick className="mr-0.5 size-3" />
-                              {t("takeoff.category.addMarks")}
+                              <Copy className="mr-0.5 size-3" />
+                              {findSimilarBusy
+                                ? t("takeoff.action.findSimilarBusy")
+                                : t("takeoff.action.findSimilar")}
                             </Button>
-                          )
-                        ) : null}
+                          ) : null}
+                        </div>
                       </div>
                       {expanded
                         ? cat.candidates.map((c) => (
@@ -1655,7 +1859,9 @@ export function SymbolCandidateReviewPanel({
 
       {/* Upraviť položku — premenovanie alebo výber iného komponentu z katalógu. */}
       <Dialog
-        open={!!renameFor && !catalogPickerOpen}
+        open={
+          !!renameFor && !electricalCatalogOpen && !companyCatalogOpen
+        }
         onOpenChange={(open) => {
           if (!open) setRenameFor(null);
         }}
@@ -1676,11 +1882,25 @@ export function SymbolCandidateReviewPanel({
               data-testid="rename-category-pick-catalog"
               onClick={() => {
                 setCatalogPickerPurpose("edit");
-                setCatalogPickerOpen(true);
+                setElectricalCatalogOpen(true);
               }}
             >
               <Library className="mr-2 size-3.5" />
               {t("takeoff.category.pickFromCatalog")}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full justify-start"
+              disabled={renameBusy || !onRenameCategory}
+              data-testid="rename-category-pick-own"
+              onClick={() => {
+                setCatalogPickerPurpose("edit");
+                setCompanyCatalogOpen(true);
+              }}
+            >
+              <Hammer className="mr-2 size-3.5" />
+              {t("takeoff.category.pickFromOwnWorks")}
             </Button>
             <div className="space-y-1.5">
               <Label htmlFor="rename-category" className="text-xs text-muted-foreground">
@@ -1725,6 +1945,78 @@ export function SymbolCandidateReviewPanel({
         </DialogContent>
       </Dialog>
 
+      {/* Category comment — icon-only in the row; edit here so it takes no panel space. */}
+      <Dialog
+        open={!!noteFor}
+        onOpenChange={(open) => {
+          if (!open) setNoteFor(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageSquare className="size-4 text-[#e06737]" />
+              {t("takeoff.category.noteTitle")}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              {t("takeoff.category.noteHint", {
+                label: noteFor?.label ?? "",
+              })}
+            </p>
+            <Textarea
+              value={noteValue}
+              onChange={(e) => setNoteValue(e.target.value)}
+              placeholder={t("takeoff.category.notePlaceholder")}
+              rows={4}
+              autoFocus
+              data-testid="category-note-input"
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:justify-between">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={!noteValue.trim()}
+              data-testid="category-note-clear"
+              onClick={() => {
+                if (!noteFor) return;
+                setCategoryNoteOverride(noteFor.key, "");
+                onCategoryNoteChange?.(noteFor.key, "");
+                setNoteRevision((n) => n + 1);
+                setNoteFor(null);
+              }}
+            >
+              {t("takeoff.category.noteClear")}
+            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setNoteFor(null)}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                type="button"
+                data-testid="category-note-save"
+                onClick={() => {
+                  if (!noteFor) return;
+                  const next = noteValue.trim();
+                  setCategoryNoteOverride(noteFor.key, next);
+                  onCategoryNoteChange?.(noteFor.key, next);
+                  setNoteRevision((n) => n + 1);
+                  setNoteFor(null);
+                }}
+              >
+                {t("common.save")}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {onApplyPrice && priceLookupFor ? (
         <AiPriceLookupDialog
           open={Boolean(priceLookupFor)}
@@ -1755,7 +2047,34 @@ export function SymbolCandidateReviewPanel({
             setColorRevision((n) => n + 1);
             onCategoryColorChange();
           }}
+          markerSize={{
+            value: categoryMarkerScaleForKey(colorPickerFor),
+            min: CATEGORY_MARKER_SCALE_MIN,
+            max: CATEGORY_MARKER_SCALE_MAX,
+            onChange: (scale) => {
+              setCategoryMarkerScaleOverride(colorPickerFor, scale);
+              setColorRevision((n) => n + 1);
+              onCategoryColorChange();
+            },
+          }}
         />
+      ) : null}
+
+      {cropHover ? (
+        <div
+          className="pointer-events-none fixed z-[80] overflow-hidden rounded-lg border border-border bg-white p-2 shadow-xl dark:bg-card"
+          style={{ left: cropHover.left, top: cropHover.top, width: 220, height: 220 }}
+          data-testid="candidate-preview-hover"
+          role="presentation"
+          aria-hidden
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={cropHover.url}
+            alt=""
+            className="size-full object-contain"
+          />
+        </div>
       ) : null}
 
       <Dialog
@@ -1787,15 +2106,10 @@ export function SymbolCandidateReviewPanel({
         </DialogContent>
       </Dialog>
 
-      {/* Catalog picker — new position, or replace product on edit. */}
+      {/* 1) Supplier catalog with photos — primary entry for Nová položka. */}
       <ElectricalCatalogPickerDialog
-        open={catalogPickerOpen}
-        onOpenChange={(open) => {
-          setCatalogPickerOpen(open);
-          if (!open && catalogPickerPurpose === "edit") {
-            // Return to the edit dialog (renameFor still set).
-          }
-        }}
+        open={electricalCatalogOpen}
+        onOpenChange={setElectricalCatalogOpen}
         onPick={(product: ElectricalCatalogProduct) => {
           const noteParts = [
             product.brand,
@@ -1808,8 +2122,9 @@ export function SymbolCandidateReviewPanel({
             unit: product.unit || "ks",
             note: noteParts.length ? noteParts.join(" · ") : undefined,
             imageUrl: resolveCatalogProductImageUrl(product),
+            quoteCategory: "material" as const,
           };
-          setCatalogPickerOpen(false);
+          setElectricalCatalogOpen(false);
           if (catalogPickerPurpose === "edit" && renameFor && onRenameCategory) {
             const label = product.name.trim();
             setRenameBusy(true);
@@ -1821,26 +2136,71 @@ export function SymbolCandidateReviewPanel({
               .finally(() => setRenameBusy(false));
             return;
           }
-          onStartCategoryMarking?.({
-            key: categoryKeyForLabel(product.name),
+          startNewPositionCategory({
             label: product.name.trim(),
             symbolType: symbolTypeFromElectricalProduct(product),
             catalog,
           });
         }}
         onAddCustom={() => {
-          setCatalogPickerOpen(false);
+          setElectricalCatalogOpen(false);
           if (catalogPickerPurpose === "edit") {
-            // Keep edit dialog; operator can type a custom name there.
             return;
           }
           setNewCategoryLabel("");
-          setNewCategoryType("light");
+          setNewCategoryType("generic");
+          setNewCategoryOpen(true);
+        }}
+        onOpenCompanyCatalog={() => {
+          setElectricalCatalogOpen(false);
+          setCompanyCatalogOpen(true);
+        }}
+      />
+
+      {/* 2) Own items (products + work) — from electrical footer or custom dialog. */}
+      <CatalogItemPickerDialog
+        open={companyCatalogOpen}
+        onOpenChange={setCompanyCatalogOpen}
+        onPick={(item: CatalogItemDoc) => {
+          const catalog = {
+            productId: item.id,
+            unitPrice: item.unitPrice,
+            unit: item.unit || "ks",
+            note: item.description,
+            quoteCategory: (item.kind === "work" ? "work" : "material") as
+              | "work"
+              | "material",
+          };
+          setCompanyCatalogOpen(false);
+          if (catalogPickerPurpose === "edit" && renameFor && onRenameCategory) {
+            const label = item.name.trim();
+            setRenameBusy(true);
+            void onRenameCategory(renameFor.key, label, catalog)
+              .then(() => {
+                setRenameFor(null);
+                setRenameValue("");
+              })
+              .finally(() => setRenameBusy(false));
+            return;
+          }
+          startNewPositionCategory({
+            label: item.name.trim(),
+            symbolType: "generic",
+            catalog,
+          });
+        }}
+        onAddCustom={() => {
+          setCompanyCatalogOpen(false);
+          if (catalogPickerPurpose === "edit") {
+            return;
+          }
+          setNewCategoryLabel("");
+          setNewCategoryType("generic");
           setNewCategoryOpen(true);
         }}
       />
 
-      {/* Custom name fallback — create a category and start click-counting it. */}
+      {/* New position — custom name fallback (from Pridať vlastnú položku). */}
       <Dialog open={newCategoryOpen} onOpenChange={setNewCategoryOpen}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -1848,6 +2208,44 @@ export function SymbolCandidateReviewPanel({
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-xs text-muted-foreground">{t("takeoff.category.newHint")}</p>
+            <Button
+              type="button"
+              variant="default"
+              className="w-full justify-start"
+              data-testid="new-category-pick-catalog"
+              onClick={() => {
+                setNewCategoryOpen(false);
+                setCatalogPickerPurpose("new");
+                setElectricalCatalogOpen(true);
+              }}
+            >
+              <Library className="mr-2 size-3.5" />
+              {t("takeoff.category.pickFromCatalog")}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full justify-start"
+              data-testid="new-category-pick-own"
+              onClick={() => {
+                setNewCategoryOpen(false);
+                setCatalogPickerPurpose("new");
+                setCompanyCatalogOpen(true);
+              }}
+            >
+              <Hammer className="mr-2 size-3.5" />
+              {t("takeoff.category.pickFromOwnWorks")}
+            </Button>
+            <div className="relative py-1">
+              <div className="absolute inset-0 flex items-center" aria-hidden>
+                <div className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center">
+                <span className="bg-background px-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+                  {t("takeoff.category.orCustomName")}
+                </span>
+              </div>
+            </div>
             <div className="space-y-1.5">
               <Label htmlFor="new-category-label" className="text-xs text-muted-foreground">
                 {t("takeoff.category.nameLabel")}
@@ -1862,8 +2260,7 @@ export function SymbolCandidateReviewPanel({
                   if (e.key === "Enter" && newCategoryLabel.trim()) {
                     e.preventDefault();
                     setNewCategoryOpen(false);
-                    onStartCategoryMarking?.({
-                      key: categoryKeyForLabel(newCategoryLabel),
+                    startNewPositionCategory({
                       label: newCategoryLabel.trim(),
                       symbolType: newCategoryType,
                     });
@@ -1914,8 +2311,7 @@ export function SymbolCandidateReviewPanel({
               data-testid="new-category-start"
               onClick={() => {
                 setNewCategoryOpen(false);
-                onStartCategoryMarking?.({
-                  key: categoryKeyForLabel(newCategoryLabel),
+                startNewPositionCategory({
                   label: newCategoryLabel.trim(),
                   symbolType: newCategoryType,
                 });

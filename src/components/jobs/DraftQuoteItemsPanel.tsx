@@ -61,7 +61,15 @@ import { ElectricalCatalogPickerDialog } from "@/components/jobs/ElectricalCatal
 import { AiPriceLookupDialog } from "@/components/takeoff/AiPriceLookupDialog";
 import type { CatalogItemDoc } from "@/services/materials";
 import type { ElectricalCatalogProduct } from "@/lib/catalog/electrical/types";
-import { productUnitPriceEur } from "@/services/catalog/electricalCatalogReadService";
+import {
+  isCatalogImageFailed,
+  markCatalogImageFailed,
+  resolveCatalogProductImageUrl,
+} from "@/lib/catalog/electrical/images";
+import {
+  loadElectricalCatalog,
+  productUnitPriceEur,
+} from "@/services/catalog/electricalCatalogReadService";
 import {
   catalogUnitToQuoteDraftUnit,
   mergeQuoteDraftDocumentMeta,
@@ -105,6 +113,44 @@ function toRowDraft(item: QuoteDraftItemDoc): RowDraft {
   };
 }
 
+function QuoteItemThumb({
+  url,
+  label,
+}: {
+  url: string;
+  label: string;
+}) {
+  const [failed, setFailed] = useState(() => isCatalogImageFailed(url));
+
+  useEffect(() => {
+    setFailed(isCatalogImageFailed(url));
+  }, [url]);
+
+  if (failed) return null;
+
+  return (
+    <div
+      className="size-11 shrink-0 overflow-hidden rounded-md border border-border bg-white dark:bg-card"
+      data-testid="quote-item-thumb"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={url}
+        alt=""
+        title={label}
+        loading="lazy"
+        decoding="async"
+        referrerPolicy="no-referrer"
+        className="size-full object-contain"
+        onError={() => {
+          markCatalogImageFailed(url);
+          setFailed(true);
+        }}
+      />
+    </div>
+  );
+}
+
 function CategoryTable({
   category,
   items,
@@ -145,6 +191,35 @@ function CategoryTable({
     (priceLookupItemId && rows[priceLookupItemId]?.name) ||
     priceLookupItem?.name ||
     "";
+
+  /** Resolve thumbs for older quote lines that never stored imageUrl. */
+  const [catalogImageByName, setCatalogImageByName] = useState<
+    Record<string, string>
+  >({});
+
+  useEffect(() => {
+    const needsLookup = items.some((i) => !i.imageUrl?.trim());
+    if (!needsLookup) return;
+    let cancelled = false;
+    void loadElectricalCatalog()
+      .then(({ products }) => {
+        if (cancelled) return;
+        const map: Record<string, string> = {};
+        for (const p of products) {
+          const url = resolveCatalogProductImageUrl(p);
+          if (!url) continue;
+          const key = p.name.trim().toLowerCase();
+          if (key && !map[key]) map[key] = url;
+        }
+        setCatalogImageByName(map);
+      })
+      .catch(() => {
+        /* thumbs are optional */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [items]);
 
   useEffect(() => {
     setRows((prev) => {
@@ -377,43 +452,59 @@ function CategoryTable({
               {items.map((item) => {
                 const row = rows[item.id] ?? toRowDraft(item);
                 const total = computeItemTotal(row.qty, row.unitPrice);
+                const imageUrl =
+                  item.imageUrl?.trim() ||
+                  catalogImageByName[row.name.trim().toLowerCase()] ||
+                  catalogImageByName[item.name.trim().toLowerCase()] ||
+                  null;
                 return (
                   <TableRow key={item.id} data-testid="quote-draft-row">
                     <TableCell className="min-w-0 whitespace-normal align-top">
-                      <div className="flex min-w-0 flex-col gap-1">
-                        <Input
-                          value={row.name}
-                          onChange={(e) => patchRow(item.id, { name: e.target.value })}
-                          onBlur={() => flushSave(item.id)}
-                          className="h-8 w-full min-w-0"
-                          aria-label={t("projects.draft.quoteItem.name")}
-                        />
-                        <Input
-                          value={row.note}
-                          onChange={(e) => patchRow(item.id, { note: e.target.value })}
-                          onBlur={() => flushSave(item.id)}
-                          className="h-7 w-full min-w-0 text-xs"
-                          placeholder={t("projects.draft.quoteItem.lineNotePlaceholder")}
-                          aria-label={t("projects.draft.quoteItem.lineNote")}
-                        />
-                        {item.sourceDrawingId &&
-                        item.sourceOfQuantity === "symbol_detection" &&
-                        (item.evidenceCount ?? 0) > 0 ? (
-                          <Link
-                            href={takeoffRoute({
-                              projectId,
-                              drawingId: item.sourceDrawingId,
-                              mode: "quote",
-                            })}
-                            className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
-                            data-testid="quote-item-evidence-link"
-                          >
-                            <Ruler className="size-3" aria-hidden />
-                            {t("takeoff.quote.evidenceLink", {
-                              count: item.evidenceCount ?? 0,
-                            })}
-                          </Link>
+                      <div className="flex min-w-0 items-start gap-2.5">
+                        {imageUrl ? (
+                          <QuoteItemThumb url={imageUrl} label={row.name || item.name} />
                         ) : null}
+                        <div className="flex min-w-0 flex-1 flex-col gap-1">
+                          <Input
+                            value={row.name}
+                            onChange={(e) =>
+                              patchRow(item.id, { name: e.target.value })
+                            }
+                            onBlur={() => flushSave(item.id)}
+                            className="h-8 w-full min-w-0"
+                            aria-label={t("projects.draft.quoteItem.name")}
+                          />
+                          <Input
+                            value={row.note}
+                            onChange={(e) =>
+                              patchRow(item.id, { note: e.target.value })
+                            }
+                            onBlur={() => flushSave(item.id)}
+                            className="h-7 w-full min-w-0 text-xs"
+                            placeholder={t(
+                              "projects.draft.quoteItem.lineNotePlaceholder"
+                            )}
+                            aria-label={t("projects.draft.quoteItem.lineNote")}
+                          />
+                          {item.sourceDrawingId &&
+                          item.sourceOfQuantity === "symbol_detection" &&
+                          (item.evidenceCount ?? 0) > 0 ? (
+                            <Link
+                              href={takeoffRoute({
+                                projectId,
+                                drawingId: item.sourceDrawingId,
+                                mode: "quote",
+                              })}
+                              className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                              data-testid="quote-item-evidence-link"
+                            >
+                              <Ruler className="size-3" aria-hidden />
+                              {t("takeoff.quote.evidenceLink", {
+                                count: item.evidenceCount ?? 0,
+                              })}
+                            </Link>
+                          ) : null}
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell className="align-top whitespace-normal">
@@ -751,6 +842,7 @@ export function DraftQuoteItemsPanel({
         product.series,
         product.supplierSku ? `kód ${product.supplierSku}` : null,
       ].filter(Boolean);
+      const imageUrl = resolveCatalogProductImageUrl(product);
       await createQuoteDraftItem(project.id, {
         category: catalogPreferredCategory,
         name: product.name,
@@ -758,6 +850,7 @@ export function DraftQuoteItemsPanel({
         unit: "ks",
         unitPrice: productUnitPriceEur(product),
         note: noteParts.length ? noteParts.join(" · ") : undefined,
+        ...(imageUrl ? { imageUrl } : {}),
       });
       await loadSilent();
       setSaveStatus("saved");

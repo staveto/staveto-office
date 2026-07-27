@@ -29,7 +29,7 @@ function match(
 describe("buildSimilarCandidates", () => {
   it("returns probable template_match candidates with source symbol label", () => {
     const out = buildSimilarCandidates({
-      matches: [match(0.3, 0.3), match(0.5, 0.5, 0.8)],
+      matches: [match(0.3, 0.3), match(0.5, 0.5, 0.95)],
       sourceSymbol: SOURCE,
       confirmedSymbols: [],
       existingCandidates: [],
@@ -40,10 +40,37 @@ describe("buildSimilarCandidates", () => {
       expect(c.status).toBe("probable");
       expect(c.color_layer).toBe("green");
       expect(c.label_suggestions[0]!.label).toBe("zásuvka");
-      expect(c.confidence).toBeGreaterThan(0);
+      expect(c.confidence).toBeGreaterThanOrEqual(0.9);
     }
     // Sorted by score.
     expect(out[0]!.confidence).toBeGreaterThanOrEqual(out[1]!.confidence);
+  });
+
+  it("inherits a custom category label from the reference mark", () => {
+    const out = buildSimilarCandidates({
+      matches: [match(0.3, 0.3, 0.95)],
+      sourceSymbol: {
+        ...SOURCE,
+        label: "Valena Zásuvka 230V S Detskou Ochranou, Biela",
+      },
+      confirmedSymbols: [],
+      existingCandidates: [],
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0]!.label_suggestions[0]!.label).toBe(
+      "Valena Zásuvka 230V S Detskou Ochranou, Biela"
+    );
+  });
+
+  it("drops matches below the 90% default threshold", () => {
+    const out = buildSimilarCandidates({
+      matches: [match(0.3, 0.3, 0.89), match(0.5, 0.5, 0.9)],
+      sourceSymbol: SOURCE,
+      confirmedSymbols: [],
+      existingCandidates: [],
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0]!.confidence).toBeCloseTo(0.9);
   });
 
   it("excludes matches overlapping existing confirmed symbols", () => {

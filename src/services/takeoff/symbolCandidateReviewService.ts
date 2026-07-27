@@ -475,6 +475,15 @@ export async function moveCandidateOrConfirmedSymbol(input: {
     newNormalizedPosition
   );
 
+  // Always update the candidate row — the workbench reloads overlays from
+  // symbolCandidates on refresh. Confirmed marks also keep confirmedSymbols
+  // in sync (quantity / evidence), but skipping the candidate used to lose
+  // the drag position after reload.
+  await updateSymbolCandidatePosition(projectId, candidateId, {
+    normalizedPosition: newNormalizedPosition,
+    bboxPdf: newBboxPdf,
+  });
+
   if (dto.status === "confirmed") {
     const confirmed = await getConfirmedSymbolByCandidateId(projectId, candidateId);
     if (!confirmed) throw new Error("CONFIRMED_SYMBOL_NOT_FOUND");
@@ -482,12 +491,7 @@ export async function moveCandidateOrConfirmedSymbol(input: {
       normalizedPosition: newNormalizedPosition,
       bboxPdf: newBboxPdf,
     });
-    return;
   }
-  await updateSymbolCandidatePosition(projectId, candidateId, {
-    normalizedPosition: newNormalizedPosition,
-    bboxPdf: newBboxPdf,
-  });
 }
 
 /**

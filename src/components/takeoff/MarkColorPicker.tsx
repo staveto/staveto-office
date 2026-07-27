@@ -2,13 +2,16 @@
 
 /**
  * Classic color-picker popover for takeoff mark colors
- * (hex + swatch grid + opacity + presets), rendered in a portal so it
- * is never clipped by the review panel overflow.
+ * (hex + swatch grid + opacity + optional size/stroke), rendered in a portal.
+ *
+ * Edits are previewed live on the plan; Zrušiť restores the opening values,
+ * Potvrdiť keeps the preview and closes.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Pipette, Plus, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/I18nContext";
 
@@ -123,6 +126,14 @@ type StrokeOptions = {
   onChange: (width: number) => void;
 };
 
+type MarkerSizeOptions = {
+  /** Scale relative to detection bbox (1 = original). */
+  value: number;
+  min: number;
+  max: number;
+  onChange: (scale: number) => void;
+};
+
 type Props = {
   open: boolean;
   color: string;
@@ -131,6 +142,8 @@ type Props = {
   onChange: (hex: string) => void;
   /** Optional line thickness (e.g. cable routes) — shown under colors. */
   strokeWidth?: StrokeOptions;
+  /** Optional highlight-frame size on the plan (symbol categories). */
+  markerSize?: MarkerSizeOptions;
 };
 
 export function MarkColorPicker({
@@ -140,47 +153,101 @@ export function MarkColorPicker({
   onClose,
   onChange,
   strokeWidth,
+  markerSize,
 }: Props) {
   const { t } = useI18n();
   const initial = normalizeHex(color) ?? "#3B82F6";
   const [hexDraft, setHexDraft] = useState(initial);
   const [opacity, setOpacity] = useState(100);
   const [strokeDraft, setStrokeDraft] = useState(strokeWidth?.value ?? 3);
+  const [sizeDraft, setSizeDraft] = useState(markerSize?.value ?? 1);
   const [presets, setPresets] = useState<string[]>(DEFAULT_PRESETS);
   const [eyeDropperSupported] = useState(
     () => typeof window !== "undefined" && "EyeDropper" in window
   );
 
-  useEffect(() => {
-    if (!open) return;
-    setHexDraft(normalizeHex(color) ?? "#3B82F6");
-    setOpacity(100);
-    if (strokeWidth) setStrokeDraft(strokeWidth.value);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync when dialog opens / color changes
-  }, [open, color, strokeWidth?.value]);
+  /** Values at dialog open — Cancel restores these. */
+  const baselineRef = useRef<{
+    color: string;
+    stroke?: number;
+    size?: number;
+  }>({ color: initial });
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+    const baseColor = normalizeHex(color) ?? "#3B82F6";
+    setHexDraft(baseColor);
+    setOpacity(100);
+    if (strokeWidth) setStrokeDraft(strokeWidth.value);
+    if (markerSize) setSizeDraft(markerSize.value);
+    baselineRef.current = {
+      color: baseColor,
+      stroke: strokeWidth?.value,
+      size: markerSize?.value,
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshot only when dialog opens
+  }, [open]);
 
   const preview = useMemo(
     () => applyOpacity(hexDraft, opacity),
     [hexDraft, opacity]
   );
 
-  if (!open || typeof document === "undefined") return null;
-
-  const commit = (hex: string, nextOpacity = opacity) => {
+  const previewColor = (hex: string, nextOpacity = opacity) => {
     const n = normalizeHex(hex);
     if (!n) return;
     setHexDraft(n);
     onChange(applyOpacity(n, nextOpacity));
   };
+
+  const previewSize = (scale: number) => {
+    setSizeDraft(scale);
+    markerSize?.onChange(scale);
+  };
+
+  const previewStroke = (width: number) => {
+    setStrokeDraft(width);
+    strokeWidth?.onChange(width);
+  };
+
+  const cancel = () => {
+    const base = baselineRef.current;
+    onChange(base.color);
+    if (strokeWidth && typeof base.stroke === "number") {
+      strokeWidth.onChange(base.stroke);
+    }
+    if (markerSize && typeof base.size === "number") {
+      markerSize.onChange(base.size);
+    }
+    onClose();
+  };
+
+  const confirm = () => {
+    // Live preview already applied — just close.
+    const n = normalizeHex(hexDraft);
+    if (n) onChange(applyOpacity(n, opacity));
+    if (markerSize) markerSize.onChange(sizeDraft);
+    if (strokeWidth) strokeWidth.onChange(strokeDraft);
+    onClose();
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        cancel();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        confirm();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- bind to open session
+  }, [open, hexDraft, opacity, sizeDraft, strokeDraft]);
+
+  if (!open || typeof document === "undefined") return null;
 
   const pickEyeDropper = async () => {
     try {
@@ -188,7 +255,7 @@ export function MarkColorPicker({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const dropper = new (window as any).EyeDropper();
       const result = await dropper.open();
-      if (result?.sRGBHex) commit(result.sRGBHex);
+      if (result?.sRGBHex) previewColor(result.sRGBHex);
     } catch {
       /* user cancelled */
     }
@@ -199,7 +266,7 @@ export function MarkColorPicker({
       className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4"
       role="presentation"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) cancel();
       }}
     >
       <div
@@ -228,7 +295,7 @@ export function MarkColorPicker({
             type="button"
             className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
             aria-label={t("common.close")}
-            onClick={onClose}
+            onClick={cancel}
           >
             <X className="size-4" />
           </button>
@@ -247,17 +314,14 @@ export function MarkColorPicker({
           onChange={(e) => setHexDraft(e.target.value)}
           onBlur={() => {
             const n = normalizeHex(hexDraft);
-            if (n) commit(n);
+            if (n) previewColor(n);
             else setHexDraft(preview);
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
               const n = normalizeHex(hexDraft);
-              if (n) {
-                commit(n);
-                onClose();
-              }
+              if (n) previewColor(n);
             }
           }}
         />
@@ -268,7 +332,7 @@ export function MarkColorPicker({
               key={`g-${hex}`}
               hex={hex}
               active={preview.toLowerCase() === hex.toLowerCase()}
-              onPick={() => commit(hex)}
+              onPick={() => previewColor(hex)}
             />
           ))}
         </div>
@@ -278,7 +342,7 @@ export function MarkColorPicker({
               key={hex}
               hex={hex}
               active={preview.toLowerCase() === hex.toLowerCase()}
-              onPick={() => commit(hex)}
+              onPick={() => previewColor(hex)}
             />
           ))}
         </div>
@@ -295,7 +359,7 @@ export function MarkColorPicker({
             onChange={(e) => {
               const next = Number(e.target.value);
               setOpacity(next);
-              commit(hexDraft, next);
+              previewColor(hexDraft, next);
             }}
           />
           <span className="w-10 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
@@ -322,11 +386,7 @@ export function MarkColorPicker({
               className="h-2 w-full cursor-pointer accent-emerald-600"
               aria-label={t("takeoff.measure.lineThickness")}
               data-testid="color-picker-stroke"
-              onChange={(e) => {
-                const next = Number(e.target.value);
-                setStrokeDraft(next);
-                strokeWidth.onChange(next);
-              }}
+              onChange={(e) => previewStroke(Number(e.target.value))}
             />
             <div className="flex items-center gap-1">
               {strokeWidth.presets.map((w) => {
@@ -343,10 +403,7 @@ export function MarkColorPicker({
                     )}
                     title={`${w} px`}
                     aria-pressed={active}
-                    onClick={() => {
-                      setStrokeDraft(w);
-                      strokeWidth.onChange(w);
-                    }}
+                    onClick={() => previewStroke(w)}
                   >
                     <span
                       className="block w-full rounded-full"
@@ -362,19 +419,86 @@ export function MarkColorPicker({
           </div>
         ) : null}
 
-        <div className="flex items-center gap-2">
+        {markerSize ? (
+          <div className="mb-3 space-y-1.5 border-t border-border pt-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-medium text-muted-foreground">
+                {t("takeoff.category.markerSize")}
+              </span>
+              <span className="text-[11px] tabular-nums text-foreground">
+                {Math.round(sizeDraft * 100)}%
+              </span>
+            </div>
+            <input
+              type="range"
+              min={markerSize.min}
+              max={markerSize.max}
+              step={0.05}
+              value={sizeDraft}
+              className="h-2 w-full cursor-pointer accent-sky-500"
+              aria-label={t("takeoff.category.markerSize")}
+              data-testid="color-picker-marker-size"
+              onChange={(e) => previewSize(Number(e.target.value))}
+            />
+            <div className="flex items-center gap-1">
+              {[0.4, 0.6, 1, 1.5, 2].map((s) => {
+                const active = Math.abs(sizeDraft - s) < 0.03;
+                return (
+                  <button
+                    key={s}
+                    type="button"
+                    className={cn(
+                      "flex h-8 flex-1 items-center justify-center rounded-md border",
+                      active
+                        ? "border-sky-500 bg-sky-50 dark:bg-sky-950/40"
+                        : "border-border bg-background hover:bg-muted/60"
+                    )}
+                    title={`${Math.round(s * 100)}%`}
+                    aria-pressed={active}
+                    data-testid={`color-picker-marker-size-${s}`}
+                    onClick={() => previewSize(s)}
+                  >
+                    <span
+                      className="rounded-sm border-2"
+                      style={{
+                        width: 6 + s * 10,
+                        height: 6 + s * 10,
+                        borderColor: preview,
+                        backgroundColor: `${preview}33`,
+                      }}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="mb-3 flex items-center gap-2">
           <span
             className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border"
             style={{ backgroundColor: `${preview}22` }}
             title={preview}
           >
-            <span
-              className="block w-7 rounded-full"
-              style={{
-                height: strokeWidth ? Math.max(2, strokeDraft) : 10,
-                backgroundColor: preview,
-              }}
-            />
+            {markerSize ? (
+              <span
+                className="rounded-sm border-2"
+                style={{
+                  width: Math.max(4, 4 + sizeDraft * 10),
+                  height: Math.max(4, 4 + sizeDraft * 10),
+                  borderColor: preview,
+                  backgroundColor: `${preview}44`,
+                }}
+              />
+            ) : (
+              <span
+                className="block w-7 rounded-full"
+                style={{
+                  height: strokeWidth ? Math.max(2, strokeDraft) : 10,
+                  backgroundColor: preview,
+                }}
+              />
+            )}
           </span>
           <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
             {presets.map((hex) => (
@@ -390,7 +514,7 @@ export function MarkColorPicker({
                 style={{ backgroundColor: hex }}
                 title={hex}
                 aria-label={hex}
-                onClick={() => commit(hex)}
+                onClick={() => previewColor(hex)}
               />
             ))}
             <button
@@ -409,6 +533,28 @@ export function MarkColorPicker({
               <Plus className="size-3.5" />
             </button>
           </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-border pt-3">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8"
+            data-testid="color-picker-cancel"
+            onClick={cancel}
+          >
+            {t("common.cancel")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            className="h-8"
+            data-testid="color-picker-confirm"
+            onClick={confirm}
+          >
+            {t("takeoff.category.confirmStyle")}
+          </Button>
         </div>
       </div>
     </div>,

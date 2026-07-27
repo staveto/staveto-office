@@ -67,8 +67,18 @@
   "materials.catalog.saveError": "Speichern fehlgeschlagen. Bitte erneut versuchen.",
   "materials.catalog.pickerButton": "Aus eigenen Positionen",
   "materials.catalog.pickerTitle": "Aus eigenen Positionen hinzufügen",
+  "materials.catalog.pickerTitleWork": "Eigene Leistungspositionen",
+  "materials.catalog.pickerTitleProduct": "Eigene Produkte",
   "materials.catalog.pickerEmpty": "Ihre Preisliste ist leer. Legen Sie zuerst Positionen unter Material → Eigene Positionen an.",
+  "materials.catalog.pickerEmptyWork":
+    "Noch keine Leistungspositionen. Legen Sie Arbeiten unter Eigene Positionen an und wählen Sie sie hier.",
+  "materials.catalog.pickerEmptyProduct":
+    "Noch keine Produkte. Legen Sie Produkte unter Eigene Positionen an und wählen Sie sie hier.",
   "materials.catalog.pickerOpenCatalog": "Eigene Positionen öffnen",
+  "materials.catalog.pickerExpandCatalog": "Zur Preisliste hinzufügen",
+  "materials.catalog.pickerCreateHint":
+    "Wird unter Eigene Positionen gespeichert — wiederverwendbar in jedem Angebot.",
+  "materials.catalog.pickerSaveAndAdd": "Speichern und hinzufügen",
   "materials.catalog.pickerAdd": "Hinzufügen",
   "materials.catalog.pickerAddedCount": "Zum Angebot hinzugefügt: {{count}}",
   "materials.catalog.sourceNote": "Eigene Position",

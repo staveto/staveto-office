@@ -98,7 +98,13 @@ import {
 } from "@/lib/takeoff/drawingTakeoff";
 import { loadPdfJsDocument, pdfJsWorkerSrc } from "@/lib/takeoff/loadPdfJsDocument";
 import { SELECTED_HIGHLIGHT_COLOR } from "@/lib/takeoff/selectionHighlight";
-import { categoryColorForKey, categoryKeyForLabel } from "@/lib/takeoff/takeoffCategories";
+import {
+  categoryColorForKey,
+  categoryKeyForLabel,
+  categoryMarkerScaleForKey,
+  scaleNormalizedRectAboutCenter,
+} from "@/lib/takeoff/takeoffCategories";
+import { isActiveReviewCandidate } from "@/lib/takeoff/candidateReview";
 
 type PdfDocument = {
   numPages: number;
@@ -787,7 +793,10 @@ export function DrawingPdfViewer({
       hideMarks
         ? []
         : occurrences.filter(
-            (o) => o.pageNumber === page && !hiddenLayers.has(occurrenceLayer(o))
+            (o) =>
+              o.pageNumber === page &&
+              o.status !== "rejected" &&
+              !hiddenLayers.has(occurrenceLayer(o))
           ),
     [occurrences, page, hiddenLayers, hideMarks]
   );
@@ -1739,8 +1748,9 @@ export function DrawingPdfViewer({
     [highlightedCandidateIds]
   );
 
-  // Confirmed candidates STAY on the map (solid, checkmarked) so a counted
-  // symbol never visually "disappears" — only rejected ones are hidden.
+  // Map markers must match the review panel: confirmed counts stay visible;
+  // active review candidates stay visible; rejected / below-threshold
+  // template matches (hidden from "Kandidáti na kontrolu") stay off the plan.
   const pageCandidates = useMemo(
     () =>
       hideMarks
@@ -1749,7 +1759,7 @@ export function DrawingPdfViewer({
             (c) =>
               (c.page_number == null || c.page_number === page) &&
               Boolean(c.normalized_position) &&
-              c.status !== "rejected"
+              (c.status === "confirmed" || isActiveReviewCandidate(c))
           ),
     // colorEpoch: re-paint when category colors are overridden
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1887,12 +1897,25 @@ export function DrawingPdfViewer({
           c.status === "confirmed" && catLabel
             ? categoryColorForKey(categoryKeyForLabel(catLabel))
             : CANDIDATE_LAYER_COLORS[c.color_layer] ?? CANDIDATE_LAYER_COLORS.unknown;
-        const r = normalizedToScreenRect(toView(c.normalized_position), canvasSize);
+        const scale = catLabel
+          ? categoryMarkerScaleForKey(categoryKeyForLabel(catLabel))
+          : 1;
+        const displayNorm = scaleNormalizedRectAboutCenter(
+          c.normalized_position,
+          scale
+        );
+        const r = normalizedToScreenRect(toView(displayNorm), canvasSize);
+        const minPx = Math.max(
+          3,
+          Math.round(CANDIDATE_MARKER_MIN_PX * Math.min(1, scale))
+        );
+        const width = Math.max(minPx, r.width);
+        const height = Math.max(minPx, r.height);
         const box = {
-          x: r.x,
-          y: r.y,
-          width: Math.max(CANDIDATE_MARKER_MIN_PX, r.width),
-          height: Math.max(CANDIDATE_MARKER_MIN_PX, r.height),
+          x: r.x + r.width / 2 - width / 2,
+          y: r.y + r.height / 2 - height / 2,
+          width,
+          height,
         };
         if (screenRectContainsPoint(box, point, MARKER_HIT_PADDING_PX)) {
           hits.push({
@@ -3093,6 +3116,9 @@ export function DrawingPdfViewer({
             const color = confirmed && categoryLabel
               ? categoryColorForKey(categoryKeyForLabel(categoryLabel))
               : CANDIDATE_LAYER_COLORS[c.color_layer] ?? CANDIDATE_LAYER_COLORS.unknown;
+            const markerScale = categoryLabel
+              ? categoryMarkerScaleForKey(categoryKeyForLabel(categoryLabel))
+              : 1;
             const isPicked = c.id === selectedCandidateId;
             const selected = highlightAll || isPicked || highlightedIdSet.has(c.id);
             // Group highlights ("Zvýrazniť všetko" / category toggles) glow in
@@ -3100,7 +3126,7 @@ export function DrawingPdfViewer({
             // distinguishable; magenta is reserved for the single picked mark.
             const glowColor = isPicked ? SELECTED_HIGHLIGHT_COLOR : color;
             const isDragging = markerDrag?.kind === "candidate" && markerDrag.id === c.id;
-            const viewRect = isDragging
+            const baseNorm = isDragging
               ? {
                   x: clamp01(markerDrag.originViewRect.x + markerDrag.dxPx / (canvasSize.width || 1)),
                   y: clamp01(markerDrag.originViewRect.y + markerDrag.dyPx / (canvasSize.height || 1)),
@@ -3108,9 +3134,18 @@ export function DrawingPdfViewer({
                   height: markerDrag.originViewRect.height,
                 }
               : toView(c.normalized_position);
+            const viewRect = scaleNormalizedRectAboutCenter(baseNorm, markerScale);
             const rect = normalizedToScreenRect(viewRect, canvasSize);
-            const w = Math.max(CANDIDATE_MARKER_MIN_PX, rect.width);
-            const h = Math.max(CANDIDATE_MARKER_MIN_PX, rect.height);
+            // Allow shrink below the default 10px floor — otherwise 40–60%
+            // scales look identical on already-small detection boxes.
+            const minPx = Math.max(
+              3,
+              Math.round(CANDIDATE_MARKER_MIN_PX * Math.min(1, markerScale))
+            );
+            const w = Math.max(minPx, rect.width);
+            const h = Math.max(minPx, rect.height);
+            const left = rect.x + rect.width / 2 - w / 2;
+            const top = rect.y + rect.height / 2 - h / 2;
             const label = c.label_suggestions[0]?.label ?? c.color_layer;
             return (
               <Fragment key={c.id}>
@@ -3128,8 +3163,8 @@ export function DrawingPdfViewer({
                   (isRectDrawMode || panActive || isMeasureMode) && "pointer-events-none"
                 )}
                 style={{
-                  left: rect.x,
-                  top: rect.y,
+                  left,
+                  top,
                   width: w,
                   height: h,
                   border: selected
@@ -3163,13 +3198,13 @@ export function DrawingPdfViewer({
                 ) : null}
               </button>
               {isPicked && !isDragging ? (
-                <SelectedLocatorPing centerX={rect.x + w / 2} centerY={rect.y + h / 2} />
+                <SelectedLocatorPing centerX={left + w / 2} centerY={top + h / 2} />
               ) : null}
               {isPicked && !isDragging && markerMode === "select" && onCandidateDelete ? (
                 <button
                   type="button"
                   className="absolute z-40 flex size-5 items-center justify-center rounded-full border border-white bg-red-600 text-white shadow hover:bg-red-700"
-                  style={{ left: rect.x + w - 9, top: rect.y - 9 }}
+                  style={{ left: left + w - 9, top: top - 9 }}
                   onPointerDown={(e) => e.stopPropagation()}
                   onPointerUp={(e) => e.stopPropagation()}
                   onClick={(e) => {

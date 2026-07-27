@@ -45,11 +45,21 @@ const GROUP_LABEL_KEYS: Record<CandidateReviewGroupId, string> = {
   ignored: "takeoff.review.group.ignored",
 };
 
-/** Active review = not rejected/confirmed (confirmed leave the review list). */
+/**
+ * Active review = not rejected/confirmed.
+ * Template-match proposals below the find-similar confidence floor stay
+ * out of the review list (operator only wants ≥90% pattern matches).
+ */
 export function isActiveReviewCandidate(
-  c: Pick<AnalyzeRegionCandidateDto, "status" | "kind">
+  c: Pick<AnalyzeRegionCandidateDto, "status" | "kind" | "source" | "confidence">
 ): boolean {
   if (c.status === "rejected" || c.status === "confirmed") return false;
+  if (
+    (c.source === "template_match" || c.source === "mixed") &&
+    c.confidence < 0.9
+  ) {
+    return false;
+  }
   return true;
 }
 
@@ -172,6 +182,37 @@ export function groupCandidatesForReview(
     labelKey: GROUP_LABEL_KEYS[id],
     candidates: buckets.get(id) ?? [],
   })).filter((g) => g.candidates.length > 0);
+}
+
+/** Flat review-panel order of active candidates (same grouping as the UI). */
+export function orderedReviewCandidateIds(
+  candidates: AnalyzeRegionCandidateDto[]
+): string[] {
+  return groupCandidatesForReview(candidates).flatMap((g) =>
+    g.candidates.map((c) => c.id)
+  );
+}
+
+/**
+ * After confirm/reject, pick the next active candidate in panel order
+ * (wrap to the first remaining). Returns null when the queue is empty.
+ */
+export function nextReviewCandidateId(
+  candidates: AnalyzeRegionCandidateDto[],
+  currentId: string
+): string | null {
+  const ordered = orderedReviewCandidateIds(candidates).filter(
+    (id) => id !== currentId
+  );
+  if (ordered.length === 0) return null;
+  const full = orderedReviewCandidateIds(candidates);
+  const idx = full.indexOf(currentId);
+  if (idx < 0) return ordered[0] ?? null;
+  for (let i = idx + 1; i < full.length; i++) {
+    const id = full[i]!;
+    if (id !== currentId) return id;
+  }
+  return ordered[0] ?? null;
 }
 
 export function dtoFromSymbolCandidate(c: SymbolCandidate): AnalyzeRegionCandidateDto {

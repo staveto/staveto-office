@@ -1,12 +1,13 @@
 "use client";
 
 /**
- * Look up a realistic unit price (catalog first, then Gemini + Google Search).
- * User must confirm before the price is written to the quote.
+ * Confirm a unit price for a takeoff / quote line.
+ * Prefills from the electrical catalog when possible; for other prices the
+ * operator opens Google with the article name and types the value in.
  */
 
-import { useEffect, useState } from "react";
-import { ExternalLink, Loader2, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ExternalLink, Loader2, CircleDollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,10 +21,7 @@ import {
 import { useI18n } from "@/i18n/I18nContext";
 import { formatMoney } from "@/lib/format";
 import type { ProductPriceLookupResult } from "@/lib/ai/productPriceLookup";
-import {
-  lookupProductPrice,
-  lookupProductPriceOnWeb,
-} from "@/services/ai/productPriceLookupService";
+import { findCatalogPriceForProduct } from "@/services/ai/productPriceLookupService";
 
 type Props = {
   open: boolean;
@@ -36,6 +34,12 @@ type Props = {
     source: ProductPriceLookupResult["source"];
   }) => Promise<void> | void;
 };
+
+/** Open Google with the article name (+ "cena" for SK price results). */
+export function googlePriceSearchUrl(productName: string): string {
+  const q = `${productName.trim()} cena`;
+  return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+}
 
 export function AiPriceLookupDialog({
   open,
@@ -50,6 +54,11 @@ export function AiPriceLookupDialog({
   const [result, setResult] = useState<ProductPriceLookupResult | null>(null);
   const [priceText, setPriceText] = useState("");
 
+  const googleUrl = useMemo(
+    () => googlePriceSearchUrl(productName || ""),
+    [productName]
+  );
+
   useEffect(() => {
     if (!open || !productName.trim()) return;
     let cancelled = false;
@@ -57,22 +66,43 @@ export function AiPriceLookupDialog({
     setError(null);
     setResult(null);
     setPriceText("");
-    void lookupProductPrice({ productName: productName.trim(), countryCode: "SK" })
+    // Catalog only — no AI web call (unreliable / often unconfigured).
+    void findCatalogPriceForProduct(productName.trim())
       .then((r) => {
         if (cancelled) return;
-        setResult(r);
-        if (r.unitPrice != null && r.unitPrice > 0) {
-          setPriceText(String(r.unitPrice));
+        if (r?.found) {
+          setResult(r);
+          if (r.unitPrice != null && r.unitPrice > 0) {
+            setPriceText(String(r.unitPrice));
+          }
+        } else {
+          setResult({
+            found: false,
+            source: "not_found",
+            productName: productName.trim(),
+            unitPrice: null,
+            currency: "EUR",
+            unit: "ks",
+            sourceUrls: [],
+            indicative: false,
+            confidence: "low",
+          });
         }
       })
-      .catch((e) => {
-        if (cancelled) return;
-        const msg = e instanceof Error ? e.message : "";
-        setError(
-          msg === "GEMINI_NOT_CONFIGURED" || msg.includes("GEMINI_API_KEY")
-            ? t("takeoff.priceLookup.geminiMissing")
-            : msg || t("takeoff.priceLookup.error")
-        );
+      .catch(() => {
+        if (!cancelled) {
+          setResult({
+            found: false,
+            source: "not_found",
+            productName: productName.trim(),
+            unitPrice: null,
+            currency: "EUR",
+            unit: "ks",
+            sourceUrls: [],
+            indicative: false,
+            confidence: "low",
+          });
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -80,31 +110,7 @@ export function AiPriceLookupDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, productName, t]);
-
-  const runWebSearch = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const r = await lookupProductPriceOnWeb({
-        productName: productName.trim(),
-        countryCode: "SK",
-      });
-      setResult(r);
-      if (r.unitPrice != null && r.unitPrice > 0) {
-        setPriceText(String(r.unitPrice));
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "";
-      setError(
-        msg === "GEMINI_NOT_CONFIGURED" || msg.includes("GEMINI_API_KEY")
-          ? t("takeoff.priceLookup.geminiMissing")
-          : msg || t("takeoff.priceLookup.error")
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [open, productName]);
 
   const parsedPrice = Number.parseFloat(priceText.replace(",", "."));
   const canApply = Number.isFinite(parsedPrice) && parsedPrice > 0;
@@ -114,7 +120,7 @@ export function AiPriceLookupDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-base">
-            <Sparkles className="size-4 text-[#e06737]" />
+            <CircleDollarSign className="size-4 text-[#e06737]" />
             {t("takeoff.priceLookup.title")}
           </DialogTitle>
         </DialogHeader>
@@ -145,9 +151,7 @@ export function AiPriceLookupDialog({
               <p className="text-xs font-medium text-muted-foreground">
                 {result.source === "electrical_catalog"
                   ? t("takeoff.priceLookup.sourceCatalog")
-                  : result.source === "web_search_ai"
-                    ? t("takeoff.priceLookup.sourceWeb")
-                    : t("takeoff.priceLookup.sourceNone")}
+                  : t("takeoff.priceLookup.sourceNone")}
               </p>
               {result.matchedName ? (
                 <p className="text-sm">{result.matchedName}</p>
@@ -158,15 +162,10 @@ export function AiPriceLookupDialog({
               {result.found && result.unitPrice != null ? (
                 <p className="text-sm font-semibold tabular-nums">
                   {formatMoney(result.unitPrice, result.currency || "EUR")}
-                  {result.indicative ? (
-                    <span className="ml-2 text-xs font-normal text-amber-700 dark:text-amber-400">
-                      {t("takeoff.priceLookup.indicative")}
-                    </span>
-                  ) : null}
                 </p>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  {t("takeoff.priceLookup.notFound")}
+                  {t("takeoff.priceLookup.notFoundCatalog")}
                 </p>
               )}
               {result.sourceUrls.length > 0 ? (
@@ -205,15 +204,16 @@ export function AiPriceLookupDialog({
         </div>
 
         <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={loading || applying}
-            onClick={() => void runWebSearch()}
-          >
-            <Sparkles className="mr-1 size-3.5" />
-            {t("takeoff.priceLookup.searchWeb")}
+          <Button type="button" variant="ghost" size="sm" asChild>
+            <a
+              href={googleUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="price-lookup-google"
+            >
+              <ExternalLink className="mr-1 size-3.5" />
+              {t("takeoff.priceLookup.searchGoogle")}
+            </a>
           </Button>
           <div className="flex gap-2">
             <Button
@@ -232,11 +232,9 @@ export function AiPriceLookupDialog({
                 setApplying(true);
                 try {
                   const noteParts = [
-                    result?.source === "web_search_ai"
-                      ? t("takeoff.priceLookup.noteAi")
-                      : result?.source === "electrical_catalog"
-                        ? t("takeoff.priceLookup.noteCatalog")
-                        : null,
+                    result?.source === "electrical_catalog"
+                      ? t("takeoff.priceLookup.noteCatalog")
+                      : t("takeoff.priceLookup.noteManual"),
                     result?.supplierName,
                     result?.summary,
                   ].filter(Boolean);

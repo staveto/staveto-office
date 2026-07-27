@@ -18,6 +18,7 @@ import {
 } from "@/lib/ai/visualSymbolCounter";
 import type { VisualColorHint, VisualSymbolDetection, VisualSymbolTemplate } from "@/types/visualSymbols";
 import type { NormalizedRect } from "@/types/drawingTakeoff";
+import { FIND_SIMILAR_DEFAULT_THRESHOLD } from "@/lib/takeoff/findSimilarFromConfirmed";
 
 export type SimilarSymbolCandidate = {
   /** Normalized (0..1) position on the page. */
@@ -35,7 +36,7 @@ export type FindSimilarSymbolsParams = {
   pageNumber: number;
   /** Normalized (0..1) bbox of the reference symbol. */
   referenceBbox: NormalizedRect;
-  /** NCC threshold 0..1 (default 0.78). */
+  /** NCC threshold 0..1 (default FIND_SIMILAR_DEFAULT_THRESHOLD = 0.9). */
   threshold?: number;
   /**
    * When true, scan every page of the PDF with the same reference template.
@@ -891,7 +892,7 @@ export async function findSimilarSymbols(
     fileUrl,
     pageNumber,
     referenceBbox,
-    threshold = 0.78,
+    threshold = FIND_SIMILAR_DEFAULT_THRESHOLD,
     scanAllPages = false,
     drawingId,
   } = params;

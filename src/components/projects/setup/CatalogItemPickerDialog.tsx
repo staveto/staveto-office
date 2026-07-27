@@ -5,6 +5,9 @@
  * (workspaces/{wsKey}/catalogItems) and copy them into quote draft lines.
  * Items are copied (name/unit/price); the quote row keeps no live link
  * back to the catalog, so quote edits never mutate catalogItems.
+ *
+ * Operators can also create a new catalog item here (same fields as
+ * /app/materials/catalog) so they don't leave the quote / takeoff flow.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -28,12 +31,26 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/I18nContext";
 import { useAuth } from "@/context/AuthContext";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { getWorkspaceStorageKey } from "@/lib/workspaceStorage";
-import { listCatalogItems, type CatalogItemDoc } from "@/services/materials";
+import { MATERIAL_UNITS } from "@/lib/materialCatalog";
+import {
+  createCatalogItem,
+  listCatalogItems,
+  type CatalogItemDoc,
+  type CatalogItemKind,
+  type MaterialUnit,
+} from "@/services/materials";
 
 type Props = {
   open: boolean;
@@ -42,6 +59,18 @@ type Props = {
   onPick: (item: CatalogItemDoc) => void;
   /** Optional: leave catalog and insert a blank custom quote line. */
   onAddCustom?: () => void;
+  /** When set, only show products or only works (vlastné položky výkonu). */
+  kindFilter?: CatalogItemKind;
+  /** Optional dialog title override (defaults by kindFilter / company catalog). */
+  title?: string;
+};
+
+type CreateForm = {
+  kind: CatalogItemKind;
+  name: string;
+  description: string;
+  unit: MaterialUnit;
+  price: string;
 };
 
 function unitLabel(t: (k: string) => string, unit: string): string {
@@ -62,11 +91,23 @@ function formatPrice(value: number, currency: string): string {
   }
 }
 
+function emptyCreateForm(kind: CatalogItemKind): CreateForm {
+  return {
+    kind,
+    name: "",
+    description: "",
+    unit: kind === "work" ? "hour" : "pcs",
+    price: "",
+  };
+}
+
 export function CatalogItemPickerDialog({
   open,
   onOpenChange,
   onPick,
   onAddCustom,
+  kindFilter,
+  title,
 }: Props) {
   const { t } = useI18n();
   const { user } = useAuth();
@@ -82,6 +123,12 @@ export function CatalogItemPickerDialog({
   const [justAddedId, setJustAddedId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [wasOpen, setWasOpen] = useState(open);
+  const [createForm, setCreateForm] = useState<CreateForm | null>(null);
+  const [savingCreate, setSavingCreate] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
+  /** Match catalog page default (Produkt); respect work/product filter when set. */
+  const defaultKind: CatalogItemKind = kindFilter ?? "product";
 
   // Reset picker session when the dialog opens (adjust state during render).
   if (open !== wasOpen) {
@@ -91,6 +138,9 @@ export function CatalogItemPickerDialog({
       setJustAddedId(null);
       setSearch("");
       setItems(null);
+      setCreateForm(null);
+      setCreateError(null);
+      setSavingCreate(false);
     }
   }
 
@@ -117,20 +167,85 @@ export function CatalogItemPickerDialog({
     return () => window.clearTimeout(timer);
   }, [justAddedId]);
 
+  const scoped = useMemo(() => {
+    const list = items ?? [];
+    return kindFilter ? list.filter((i) => i.kind === kindFilter) : list;
+  }, [items, kindFilter]);
+
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (items ?? []).filter(
+    return scoped.filter(
       (i) =>
         !q ||
         i.name.toLowerCase().includes(q) ||
         (i.description ?? "").toLowerCase().includes(q)
     );
-  }, [items, search]);
+  }, [scoped, search]);
+
+  const dialogTitle =
+    title ??
+    (kindFilter === "work"
+      ? t("materials.catalog.pickerTitleWork")
+      : kindFilter === "product"
+        ? t("materials.catalog.pickerTitleProduct")
+        : t("materials.catalog.pickerTitle"));
+
+  const emptyMessage =
+    kindFilter === "work"
+      ? t("materials.catalog.pickerEmptyWork")
+      : kindFilter === "product"
+        ? t("materials.catalog.pickerEmptyProduct")
+        : t("materials.catalog.pickerEmpty");
+
+  const expandCatalogLabel =
+    kindFilter === "product"
+      ? t("materials.catalog.addProduct")
+      : kindFilter === "work"
+        ? t("materials.catalog.addWork")
+        : t("materials.catalog.newTitle");
+
+  const priceNumber = createForm ? Number(createForm.price) : 0;
+  const createValid =
+    !!createForm &&
+    createForm.name.trim().length > 0 &&
+    Number.isFinite(priceNumber) &&
+    priceNumber >= 0;
+
+  const openCreateForm = () => {
+    setCreateError(null);
+    setCreateForm(emptyCreateForm(defaultKind));
+  };
 
   const handlePick = (item: CatalogItemDoc) => {
     onPick(item);
     setAddedCount((c) => c + 1);
     setJustAddedId(item.id);
+  };
+
+  const handleCreateSave = async () => {
+    if (!createForm || !createValid || !workspaceKey || !user || savingCreate) return;
+    setSavingCreate(true);
+    setCreateError(null);
+    try {
+      const created = await createCatalogItem(workspaceKey, user.id, {
+        kind: createForm.kind,
+        name: createForm.name.trim(),
+        description: createForm.description.trim() || undefined,
+        unit: createForm.unit,
+        unitPrice: priceNumber,
+      });
+      setItems((prev) =>
+        [...(prev ?? []), created].sort((a, b) => a.name.localeCompare(b.name))
+      );
+      setCreateForm(null);
+      handlePick(created);
+    } catch (e) {
+      setCreateError(
+        e instanceof Error ? e.message : t("materials.catalog.saveError")
+      );
+    } finally {
+      setSavingCreate(false);
+    }
   };
 
   const gridClass = expanded
@@ -142,44 +257,200 @@ export function CatalogItemPickerDialog({
       <DialogContent
         className={cn(
           "flex flex-col gap-4 transition-[max-width,height,max-height] duration-200",
-          expanded
-            ? "h-[min(92vh,56rem)] max-h-[92vh] w-[calc(100%-1.5rem)] sm:max-w-[min(96rem,calc(100%-1.5rem))]"
-            : "max-h-[90vh] sm:max-w-4xl"
+          createForm
+            ? "sm:max-w-md"
+            : expanded
+              ? "h-[min(92vh,56rem)] max-h-[92vh] w-[calc(100%-1.5rem)] sm:max-w-[min(96rem,calc(100%-1.5rem))]"
+              : "max-h-[90vh] sm:max-w-4xl"
         )}
       >
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          className="absolute top-2 right-10 z-10"
-          onClick={() => setExpanded((v) => !v)}
-          aria-pressed={expanded}
-          aria-label={
-            expanded
-              ? t("materials.catalog.pickerShrink")
-              : t("materials.catalog.pickerExpand")
-          }
-          title={
-            expanded
-              ? t("materials.catalog.pickerShrink")
-              : t("materials.catalog.pickerExpand")
-          }
-        >
-          {expanded ? (
-            <Minimize2 className="size-4" aria-hidden />
-          ) : (
-            <Maximize2 className="size-4" aria-hidden />
-          )}
-        </Button>
+        {!createForm ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="absolute top-2 right-10 z-10"
+            onClick={() => setExpanded((v) => !v)}
+            aria-pressed={expanded}
+            aria-label={
+              expanded
+                ? t("materials.catalog.pickerShrink")
+                : t("materials.catalog.pickerExpand")
+            }
+            title={
+              expanded
+                ? t("materials.catalog.pickerShrink")
+                : t("materials.catalog.pickerExpand")
+            }
+          >
+            {expanded ? (
+              <Minimize2 className="size-4" aria-hidden />
+            ) : (
+              <Maximize2 className="size-4" aria-hidden />
+            )}
+          </Button>
+        ) : null}
 
-        <DialogHeader className="pr-16">
+        <DialogHeader className={createForm ? undefined : "pr-16"}>
           <DialogTitle className="flex items-center gap-2">
-            <BookOpen className="size-4 text-[#1D376A]" />
-            {t("materials.catalog.pickerTitle")}
+            {createForm ? (
+              t("materials.catalog.newTitle")
+            ) : kindFilter === "work" ? (
+              <>
+                <Hammer className="size-4 text-[#1D376A]" />
+                {dialogTitle}
+              </>
+            ) : (
+              <>
+                <BookOpen className="size-4 text-[#1D376A]" />
+                {dialogTitle}
+              </>
+            )}
           </DialogTitle>
         </DialogHeader>
 
-        {items === null ? (
+        {createForm ? (
+          /* Same fields as /app/materials/catalog → Nová položka */
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              {(
+                [
+                  {
+                    kind: "product" as const,
+                    labelKey: "materials.catalog.kindProduct",
+                    icon: Package,
+                  },
+                  {
+                    kind: "work" as const,
+                    labelKey: "materials.catalog.kindWork",
+                    icon: Hammer,
+                  },
+                ] as const
+              ).map(({ kind, labelKey, icon: Icon }) => (
+                <button
+                  key={kind}
+                  type="button"
+                  className={cn(
+                    "flex flex-1 items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors",
+                    createForm.kind === kind
+                      ? "border-[#1D376A] bg-[#1D376A]/10 text-[#1D376A]"
+                      : "border-border text-muted-foreground hover:border-[#1D376A]/40"
+                  )}
+                  onClick={() =>
+                    setCreateForm((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            kind,
+                            // Works default to hourly; keep an explicit user choice.
+                            unit:
+                              prev.unit === (kind === "work" ? "pcs" : "hour")
+                                ? kind === "work"
+                                  ? "hour"
+                                  : "pcs"
+                                : prev.unit,
+                          }
+                        : prev
+                    )
+                  }
+                  aria-pressed={createForm.kind === kind}
+                >
+                  <Icon className="size-4" />
+                  {t(labelKey)}
+                </button>
+              ))}
+            </div>
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold text-muted-foreground">
+                {t("materials.catalog.fieldName")}
+              </span>
+              <Input
+                value={createForm.name}
+                onChange={(e) =>
+                  setCreateForm((prev) =>
+                    prev ? { ...prev, name: e.target.value } : prev
+                  )
+                }
+                placeholder={
+                  createForm.kind === "work"
+                    ? t("materials.catalog.namePlaceholderWork")
+                    : t("materials.catalog.namePlaceholderProduct")
+                }
+                autoFocus
+                data-testid="catalog-picker-create-name"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && createValid) {
+                    e.preventDefault();
+                    void handleCreateSave();
+                  }
+                }}
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block space-y-1">
+                <span className="text-xs font-semibold text-muted-foreground">
+                  {t("materials.catalog.colUnit")}
+                </span>
+                <Select
+                  value={createForm.unit}
+                  onValueChange={(v) =>
+                    setCreateForm((prev) =>
+                      prev ? { ...prev, unit: v as MaterialUnit } : prev
+                    )
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MATERIAL_UNITS.map((u) => (
+                      <SelectItem key={u} value={u}>
+                        {unitLabel(t, u)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </label>
+              <label className="block space-y-1">
+                <span className="text-xs font-semibold text-muted-foreground">
+                  {t("materials.catalog.fieldPrice")}
+                </span>
+                <Input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  value={createForm.price}
+                  onChange={(e) =>
+                    setCreateForm((prev) =>
+                      prev ? { ...prev, price: e.target.value } : prev
+                    )
+                  }
+                  placeholder="0.00"
+                  data-testid="catalog-picker-create-price"
+                />
+              </label>
+            </div>
+            <label className="block space-y-1">
+              <span className="text-xs font-semibold text-muted-foreground">
+                {t("materials.catalog.fieldDescription")}
+              </span>
+              <Input
+                value={createForm.description}
+                onChange={(e) =>
+                  setCreateForm((prev) =>
+                    prev ? { ...prev, description: e.target.value } : prev
+                  )
+                }
+                placeholder={t("materials.catalog.descriptionPlaceholder")}
+              />
+            </label>
+            {createError ? (
+              <p className="text-sm text-destructive" role="alert">
+                {createError}
+              </p>
+            ) : null}
+          </div>
+        ) : items === null ? (
           <div
             className={cn("grid flex-1 gap-3", gridClass)}
             role="status"
@@ -189,17 +460,26 @@ export function CatalogItemPickerDialog({
               <div key={i} className="h-36 animate-pulse rounded-xl bg-muted/50" />
             ))}
           </div>
-        ) : items.length === 0 ? (
+        ) : scoped.length === 0 ? (
           <div className="space-y-3 py-8 text-center">
-            <p className="text-sm text-muted-foreground">
-              {t("materials.catalog.pickerEmpty")}
-            </p>
-            <Button asChild variant="outline" size="sm">
-              <Link href="/app/materials/catalog" target="_blank">
-                <BookOpen className="mr-1.5 size-3.5" />
-                {t("materials.catalog.pickerOpenCatalog")}
-              </Link>
-            </Button>
+            <p className="text-sm text-muted-foreground">{emptyMessage}</p>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                onClick={openCreateForm}
+                data-testid="catalog-picker-expand-empty"
+              >
+                <Plus className="mr-1.5 size-3.5" />
+                {expandCatalogLabel}
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <Link href="/app/materials/catalog" target="_blank">
+                  <BookOpen className="mr-1.5 size-3.5" />
+                  {t("materials.catalog.pickerOpenCatalog")}
+                </Link>
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -311,31 +591,70 @@ export function CatalogItemPickerDialog({
             )}
 
             {addedCount > 0 ? (
-              <p className="shrink-0 text-xs font-medium text-emerald-700 dark:text-emerald-400" role="status">
+              <p
+                className="shrink-0 text-xs font-medium text-emerald-700 dark:text-emerald-400"
+                role="status"
+              >
                 {t("materials.catalog.pickerAddedCount", { count: String(addedCount) })}
               </p>
             ) : null}
           </div>
         )}
 
-        <DialogFooter className="gap-2 sm:justify-between">
-          {onAddCustom ? (
-            <Button
-              type="button"
-              variant="ghost"
-              className="sm:mr-auto"
-              onClick={onAddCustom}
-              data-testid="catalog-picker-add-custom"
-            >
-              <Plus className="mr-1 size-3.5" />
-              {t("projects.draft.quoteItem.addCustom")}
-            </Button>
+        <DialogFooter className={cn("gap-2", !createForm && "sm:justify-between")}>
+          {createForm ? (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={savingCreate}
+                onClick={() => {
+                  setCreateForm(null);
+                  setCreateError(null);
+                }}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button
+                type="button"
+                disabled={!createValid || savingCreate}
+                onClick={() => void handleCreateSave()}
+                data-testid="catalog-picker-create-save"
+              >
+                {savingCreate
+                  ? t("common.loading")
+                  : t("materials.catalog.pickerSaveAndAdd")}
+              </Button>
+            </>
           ) : (
-            <span />
+            <>
+              <div className="flex flex-wrap gap-1 sm:mr-auto">
+                <Button
+                  type="button"
+                  variant="default"
+                  disabled={!workspaceKey}
+                  onClick={openCreateForm}
+                  data-testid="catalog-picker-expand"
+                >
+                  <Plus className="mr-1 size-3.5" />
+                  {expandCatalogLabel}
+                </Button>
+                {onAddCustom ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={onAddCustom}
+                    data-testid="catalog-picker-add-custom"
+                  >
+                    {t("projects.draft.quoteItem.addCustom")}
+                  </Button>
+                ) : null}
+              </div>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                {addedCount > 0 ? t("common.close") : t("common.cancel")}
+              </Button>
+            </>
           )}
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            {addedCount > 0 ? t("common.close") : t("common.cancel")}
-          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
