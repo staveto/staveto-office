@@ -15,9 +15,8 @@ export type CreateProjectMemberInviteInput = {
 };
 
 /**
- * B2C / external email invites only — not for active org member assignment.
- * Business team members get instant access via assignMemberToBusinessProject
- * and a users/{uid}/notifications PROJECT_ASSIGNED entry.
+ * Optional inbox row under users/{uid}/projectInvites.
+ * Primary invite path writes projects/.../members status=invited + PROJECT_INVITED.
  */
 export async function createProjectMemberInviteNotification(
   input: CreateProjectMemberInviteInput

@@ -115,6 +115,9 @@ export type ProjectOverviewViewModel = {
     textParams?: Record<string, string | number>;
     detail?: string;
     timeLabel: string;
+    /** Opens document/photo preview when the row is clicked. */
+    previewDocument?: ProjectDocumentRecord;
+    taskId?: string;
   }>;
 };
 
@@ -475,11 +478,13 @@ export function buildProjectOverviewViewModel(input: {
       actor:
         typeof event.params?.actor === "string" && event.params.actor.trim()
           ? event.params.actor.trim()
-          : "—",
+          : "",
       textKey: event.titleKey,
       textParams: event.params,
       detail: event.detail,
       timeLabel: formatActivityTime(event.date),
+      previewDocument: event.document,
+      taskId: event.taskId,
     }));
 
   const docCounts = countDocuments(documents);

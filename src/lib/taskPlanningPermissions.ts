@@ -1,16 +1,25 @@
 import type { ProjectDoc, TaskDoc } from "./projects";
 import type { WorkspaceRole } from "@/types/workspace";
-import { canManageCompanyOperations } from "./workspaceProduct";
+import { canManageCompanyOperations, isFieldRole } from "./workspaceProduct";
 import type { ProjectMemberRecord } from "@/services/projects/taskPlanningTypes";
 
+/**
+ * Who may add/edit/delete phases & tasks.
+ * Field roles (worker/client) need explicit canEditProject — matches org role matrix
+ * (worker default: canEditProject=false) and mobile useProjectAccess gating.
+ */
 export function canManageTaskPlanning(
   project: ProjectDoc,
   userId: string,
   role?: WorkspaceRole,
-  memberRecord?: ProjectMemberRecord | null
+  memberRecord?: ProjectMemberRecord | null,
+  options?: { canEditProject?: boolean }
 ): boolean {
   if (project.ownerId === userId) return true;
   if (canManageCompanyOperations(role)) return true;
+  if (isFieldRole(role) && options?.canEditProject !== true) {
+    return false;
+  }
   if (
     memberRecord &&
     memberRecord.userId === userId &&

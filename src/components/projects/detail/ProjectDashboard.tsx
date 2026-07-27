@@ -20,7 +20,10 @@ import {
   resolveProjectDefaultTabForProject,
 } from "@/lib/projectDefaultTab";
 import { useEnabledModules } from "@/context/EnabledModulesContext";
-import { listProjectDocuments, type ProjectDocumentRecord } from "@/services/projects/projectDocuments";
+import {
+  listProjectDocumentsAndWorkPhotos,
+  type ProjectDocumentRecord,
+} from "@/services/projects/projectDocuments";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { listAssignableProjectMembers } from "@/services/projects/projectMembersService";
 import {
@@ -62,6 +65,8 @@ import {
 } from "@/services/projects/projectProblemsReadService";
 import { isOpenProblem } from "@/services/projects/projectProblemsService";
 import { PlanningNotifyDialog } from "@/components/planning/PlanningScheduleFeedback";
+import { ProjectMembersQuickAssignDialog } from "@/components/projects/ProjectMembersQuickAssignDialog";
+import { canManageCrewAssignments } from "@/lib/operationsPermissions";
 import { useI18n } from "@/i18n/I18nContext";
 
 function todayYmd(): string {
@@ -106,6 +111,7 @@ export function ProjectDashboard({
   const [openProblemsCount, setOpenProblemsCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [notifyDialogOpen, setNotifyDialogOpen] = useState(false);
+  const [crewDialogOpen, setCrewDialogOpen] = useState(false);
   const selectedProblemId = searchParams.get("problemId");
   const { t } = useI18n();
 
@@ -170,7 +176,7 @@ export function ProjectDashboard({
             return [] as TaskDoc[];
           }),
           listProjectQuoteDraftItems(project.id),
-          listProjectDocuments(project.id),
+          listProjectDocumentsAndWorkPhotos(project.id),
           listProjectPhases(project.id),
           listAssignableProjectMembers(freshProject).catch(() => [] as ProjectMemberRecord[]),
           listTimeEntriesForProjects([project.id], "1970-01-01", todayYmd()).catch(
@@ -287,6 +293,25 @@ export function ProjectDashboard({
     router.replace(`/app/projects/${project.id}?${params.toString()}`, { scroll: false });
   };
 
+  const openCrewManager = () => {
+    setCrewDialogOpen(true);
+  };
+
+  const refreshCrew = async () => {
+    try {
+      const fresh = (await getProject(project.id)) ?? project;
+      onProjectUpdated(fresh);
+      const memberList = await listAssignableProjectMembers(fresh);
+      setMembers(memberList);
+      const timers = await loadActiveTimers(memberList.map((m) => m.userId)).catch(
+        () => new Map<string, ActiveTimerState>()
+      );
+      setActiveTimers(timers);
+    } catch {
+      /* ignore */
+    }
+  };
+
   const handleProblemIdChange = (problemId: string | null) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", "problems");
@@ -324,6 +349,11 @@ export function ProjectDashboard({
           onProjectUpdated={onProjectUpdated}
           onActionToast={handleActionToast}
           onNavigate={handleTabChange}
+          onManageCrew={
+            canManageCrewAssignments(role) || project.ownerId === userId
+              ? openCrewManager
+              : undefined
+          }
         />
       </div>
 
@@ -382,6 +412,11 @@ export function ProjectDashboard({
             health={health}
             onProjectUpdated={onProjectUpdated}
             onNavigate={handleTabChange}
+            onManageCrew={
+              canManageCrewAssignments(role) || project.ownerId === userId
+                ? openCrewManager
+                : undefined
+            }
           />
         ) : activeTab === "tasks" ? (
           <ProjectTasksTab
@@ -400,6 +435,13 @@ export function ProjectDashboard({
             userId={userId}
             role={role}
             onTasksChange={setTasks}
+            onProjectUpdated={onProjectUpdated}
+            onManageCrew={
+              canManageCrewAssignments(role) || project.ownerId === userId
+                ? openCrewManager
+                : undefined
+            }
+            onCrewChanged={() => void refreshCrew()}
           />
         ) : activeTab === "problems" ? (
           <ProjectProblemsTab
@@ -429,6 +471,7 @@ export function ProjectDashboard({
             tasks={tasks}
             timeEntries={timeEntries}
             documents={documents}
+            onOpenTask={() => handleTabChange("tasks")}
           />
         ) : null}
       </div>
@@ -438,6 +481,18 @@ export function ProjectDashboard({
         onOpenChange={setNotifyDialogOpen}
         taskTitle={overviewVm?.todayFocus.criticalTask?.title}
         onConfirm={() => handleActionToast("planning.notify.placeholder")}
+        t={t}
+      />
+
+      {/* Same assign/remove dialog as projects list — available on any project tab */}
+      <ProjectMembersQuickAssignDialog
+        open={crewDialogOpen}
+        project={project}
+        onOpenChange={setCrewDialogOpen}
+        onSaved={() => {
+          handleActionToast("projects.membersQuick.savedToast");
+          void refreshCrew();
+        }}
         t={t}
       />
     </div>

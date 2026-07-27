@@ -8,6 +8,7 @@ import {
 } from "@/lib/firebase";
 import type { ProjectDoc } from "@/lib/projects";
 import { listOrgMembers } from "@/lib/organizations";
+import { getAssignedMemberIds } from "@/lib/projectOwnership";
 import {
   listOrgMemberProfilesViaCallable,
   orgMemberProfileLookup,
@@ -82,53 +83,66 @@ export async function listProjectMembers(projectId: string): Promise<ProjectMemb
   return [];
 }
 
+/**
+ * Active project crew for overview / task assignment.
+ * Only owner + assigned members + active member docs — never the whole company roster.
+ * Pending invites (status=invited) stay out of this list until accepted.
+ */
 export async function listAssignableProjectMembers(
   project: ProjectDoc
 ): Promise<ProjectMemberRecord[]> {
   const fromSub = await listProjectMembers(project.id);
-  if (fromSub.length > 0) {
-    return enrichMemberDisplayNames(project, fromSub);
-  }
+  const activeFromSub = fromSub.filter((m) => m.status !== "invited");
 
-  const members: ProjectMemberRecord[] = [];
-  const seen = new Set<string>();
+  const byUid = new Map<string, ProjectMemberRecord>();
 
-  const add = (userId: string, name?: string, email?: string, role: "owner" | "member" = "member") => {
-    if (!userId || seen.has(userId)) return;
-    seen.add(userId);
-    members.push({
-      id: userId,
-      userId,
-      name,
-      email,
-      role,
+  const put = (row: ProjectMemberRecord) => {
+    const uid = row.userId?.trim();
+    if (!uid) return;
+    const existing = byUid.get(uid);
+    if (!existing) {
+      byUid.set(uid, { ...row, userId: uid, id: row.id || uid });
+      return;
+    }
+    byUid.set(uid, {
+      ...existing,
+      ...row,
+      userId: uid,
+      id: row.id || existing.id || uid,
+      name: row.name?.trim() || existing.name,
+      email: row.email?.trim() || existing.email,
+      role: row.role === "owner" || existing.role === "owner" ? "owner" : row.role || existing.role,
+    });
+  };
+
+  if (project.ownerId?.trim()) {
+    put({
+      id: project.ownerId,
+      userId: project.ownerId,
+      role: "owner",
       status: "active",
       permissionLevel: "editor",
       sharedItems: { tasks: true },
     });
-  };
-
-  if (project.ownerId) {
-    add(project.ownerId, undefined, undefined, "owner");
   }
 
-  for (const uid of project.assignedMemberIds ?? []) {
-    add(uid);
+  for (const uid of getAssignedMemberIds(project)) {
+    if (!uid || uid === project.ownerId) continue;
+    put({
+      id: uid,
+      userId: uid,
+      role: "member",
+      status: "active",
+      permissionLevel: "editor",
+      sharedItems: { tasks: true },
+    });
   }
 
-  if (project.orgId) {
-    try {
-      const orgMembers = await listOrgMembers(project.orgId);
-      for (const om of orgMembers) {
-        if (om.status === "removed") continue;
-        add(om.uid, om.displayName ?? undefined, om.email);
-      }
-    } catch {
-      /* ignore */
-    }
+  for (const row of activeFromSub) {
+    put(row);
   }
 
-  return enrichMemberDisplayNames(project, members);
+  return enrichMemberDisplayNames(project, [...byUid.values()]);
 }
 
 function dedupeMembers(members: ProjectMemberRecord[]): ProjectMemberRecord[] {

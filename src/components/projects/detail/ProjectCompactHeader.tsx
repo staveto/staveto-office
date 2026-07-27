@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRef } from "react";
 import {
   ArrowLeft,
   ChevronDown,
@@ -50,6 +51,8 @@ type Props = {
   onProjectUpdated: (project: ProjectDoc) => void;
   onActionToast: (key: string) => void;
   onNavigate: (tab: ProjectDashboardTab) => void;
+  /** Open project crew add/remove dialog */
+  onManageCrew?: () => void;
 };
 
 function KpiStat({
@@ -89,38 +92,67 @@ function KpiStat({
 
 function SecondaryActionsMenu({
   onNavigate,
+  onManageCrew,
   t,
   className,
 }: {
   onNavigate: (tab: ProjectDashboardTab) => void;
+  onManageCrew?: () => void;
   t: (key: string) => string;
   className?: string;
 }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+
+  const close = () => {
+    if (detailsRef.current) detailsRef.current.open = false;
+  };
+
+  const go = (tab: ProjectDashboardTab) => {
+    close();
+    onNavigate(tab);
+  };
+
+  const manageCrew = () => {
+    close();
+    if (onManageCrew) {
+      onManageCrew();
+      return;
+    }
+    onNavigate("workplan");
+  };
+
   return (
-    <details className={cn("group relative", className)}>
+    <details ref={detailsRef} className={cn("group relative z-30", className)}>
       <summary
         className={cn(
           po.btnOutline,
-          "flex min-h-10 cursor-pointer list-none items-center justify-center gap-1 rounded-md border px-3 text-sm font-medium"
+          "flex min-h-10 cursor-pointer list-none items-center justify-center gap-1 rounded-md border px-3 text-sm font-medium",
+          "[&::-webkit-details-marker]:hidden"
         )}
       >
         {t("projects.cockpit.actionsMenu")}
         <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
       </summary>
-      <div className="absolute right-0 z-20 mt-1 flex min-w-[220px] flex-col gap-0.5 rounded-lg border border-[var(--po-card-border)] bg-[var(--po-card-bg)] p-1.5 shadow-lg">
-        <Button size="sm" variant="ghost" className="justify-start" onClick={() => onNavigate("tasks")}>
+      <div
+        className={cn(
+          "absolute left-0 right-0 top-full z-50 mt-1 flex min-w-[220px] flex-col gap-0.5 sm:left-auto sm:right-0",
+          "rounded-lg border border-[var(--po-card-border)] bg-[var(--po-card-bg)] p-1.5 shadow-lg"
+        )}
+        role="menu"
+      >
+        <Button size="sm" variant="ghost" className="justify-start" onClick={() => go("tasks")}>
           <Plus className="mr-2 size-4" />
           {t("projects.addTask")}
         </Button>
-        <Button size="sm" variant="ghost" className="justify-start" onClick={() => onNavigate("workplan")}>
+        <Button size="sm" variant="ghost" className="justify-start" onClick={manageCrew}>
           <UserPlus className="mr-2 size-4" />
-          {t("projects.workPlan.assignWorker")}
+          {t("projects.workPlan.manageCrew")}
         </Button>
-        <Button size="sm" variant="ghost" className="justify-start" onClick={() => onNavigate("workplan")}>
+        <Button size="sm" variant="ghost" className="justify-start" onClick={() => go("workplan")}>
           <ClipboardList className="mr-2 size-4" />
           {t("projects.header.openWorkPlan")}
         </Button>
-        <Button size="sm" variant="ghost" className="justify-start" onClick={() => onNavigate("documents")}>
+        <Button size="sm" variant="ghost" className="justify-start" onClick={() => go("documents")}>
           <FileText className="mr-2 size-4" />
           {t("projects.header.createReport")}
         </Button>
@@ -142,6 +174,7 @@ export function ProjectCompactHeader({
   onProjectUpdated,
   onActionToast,
   onNavigate,
+  onManageCrew,
 }: Props) {
   const { t } = useI18n();
   const customer = getCustomerDisplayName(project);
@@ -186,7 +219,8 @@ export function ProjectCompactHeader({
         : "projects.cockpit.header.summaryOk";
 
   return (
-    <header className={cn(po.infoCard, "overflow-hidden")}>
+    // overflow-visible: action menus must not be clipped by the card
+    <header className={cn(po.infoCard, "overflow-visible")}>
       <div className="px-4 pt-2.5 sm:px-5">
         <Link
           href="/app/projects"
@@ -289,7 +323,7 @@ export function ProjectCompactHeader({
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-2 border-t border-[var(--po-card-border)]/50 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 sm:px-5">
+      <div className="relative z-20 flex flex-col gap-2 overflow-visible border-t border-[var(--po-card-border)]/50 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 sm:px-5">
         {previewQuoteHref ? (
           <Button
             size="lg"
@@ -314,7 +348,12 @@ export function ProjectCompactHeader({
             {primaryLabel}
           </Button>
         )}
-        <SecondaryActionsMenu onNavigate={onNavigate} t={t} className="w-full sm:w-auto" />
+        <SecondaryActionsMenu
+          onNavigate={onNavigate}
+          onManageCrew={onManageCrew}
+          t={t}
+          className="w-full sm:w-auto"
+        />
       </div>
     </header>
   );

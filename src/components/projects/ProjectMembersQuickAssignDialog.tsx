@@ -25,10 +25,11 @@ import {
   type UpsertProjectMemberInput,
 } from "@/services/projects/projectMembersService";
 import {
-  createProjectAssignedNotification,
+  createProjectInvitedNotification,
 } from "@/services/notifications/userNotificationService";
 import {
   assignMemberToBusinessProject,
+  inviteMemberToBusinessProject,
   unassignMemberFromBusinessProject,
 } from "@/services/projects/businessProjectAssignmentService";
 import { inviteProjectMemberByEmail } from "@/services/projects/inviteProjectMemberByEmail";
@@ -51,6 +52,7 @@ type Candidate = {
   name?: string;
   email?: string;
   locked?: boolean;
+  pendingInvite?: boolean;
 };
 
 export function ProjectMembersQuickAssignDialog({
@@ -69,7 +71,10 @@ export function ProjectMembersQuickAssignDialog({
   const [search, setSearch] = useState("");
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [previousIds, setPreviousIds] = useState<string[]>([]);
+  /** Members who already have project access (active / assigned). */
+  const [previousActiveIds, setPreviousActiveIds] = useState<string[]>([]);
+  /** Members with a pending invite (status invited). */
+  const [previousInvitedIds, setPreviousInvitedIds] = useState<string[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviting, setInviting] = useState(false);
   const [inviteMessage, setInviteMessage] = useState<string | null>(null);
@@ -144,30 +149,35 @@ export function ProjectMembersQuickAssignDialog({
           });
         }
 
+        const activeFromMembers = existingMembers
+          .filter((m) => m.status !== "invited" && m.status !== "removed")
+          .map((m) => m.userId);
+        const invitedFromMembers = existingMembers
+          .filter((m) => m.status === "invited")
+          .map((m) => m.userId);
+
+        const activeIds = new Set<string>([
+          ...activeFromMembers,
+          ...(project.assignedMemberIds ?? []),
+          ...(project.ownerId ? [project.ownerId] : []),
+        ]);
+        const invitedIds = new Set<string>(
+          invitedFromMembers.filter((uid) => !activeIds.has(uid))
+        );
+
         const list = [...byId.values()].map((c) => ({
           ...c,
           locked: c.userId === project.ownerId || c.locked,
+          pendingInvite: invitedIds.has(c.userId),
         }));
 
-        const initial =
-          existingMembers.length > 0
-            ? new Set(existingMembers.map((m) => m.userId))
-            : new Set<string>([
-                ...(project.assignedMemberIds ?? []),
-                ...(project.ownerId ? [project.ownerId] : []),
-              ]);
-
+        const initial = new Set<string>([...activeIds, ...invitedIds]);
         if (project.ownerId) initial.add(project.ownerId);
 
         setCandidates(list.sort((a, b) => (a.name ?? a.email ?? a.userId).localeCompare(b.name ?? b.email ?? b.userId)));
         setSelectedIds(initial);
-        setPreviousIds([
-          ...new Set([
-            ...existingMembers.map((m) => m.userId),
-            ...(project.assignedMemberIds ?? []),
-            ...(project.ownerId ? [project.ownerId] : []),
-          ]),
-        ]);
+        setPreviousActiveIds([...activeIds]);
+        setPreviousInvitedIds([...invitedIds]);
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : String(e));
@@ -233,7 +243,8 @@ export function ProjectMembersQuickAssignDialog({
     setSaving(true);
     setError(null);
     try {
-      const previousSet = new Set(previousIds);
+      const activeSet = new Set(previousActiveIds);
+      const invitedSet = new Set(previousInvitedIds);
       const selected: UpsertProjectMemberInput[] = candidates
         .filter((c) => selectedIds.has(c.userId))
         .map((c) => ({
@@ -244,16 +255,31 @@ export function ProjectMembersQuickAssignDialog({
         }));
 
       const selectedUidSet = new Set(selected.map((s) => s.userId));
-      const newlyAdded = selected.filter((s) => !previousSet.has(s.userId));
-      const removedIds = previousIds.filter((uid) => !selectedUidSet.has(uid));
+      const actorName =
+        [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ||
+        user.email ||
+        undefined;
+
+      // New checkbox selections → pending invite (must accept on mobile/web).
+      const toInvite = selected.filter(
+        (s) =>
+          s.userId !== project.ownerId &&
+          !activeSet.has(s.userId)
+      );
+      // Already active → heal membership only (never re-invite / re-activate invited).
+      const toHeal = selected.filter(
+        (s) => s.userId !== project.ownerId && activeSet.has(s.userId)
+      );
+      const removedActiveIds = previousActiveIds.filter(
+        (uid) => uid !== project.ownerId && !selectedUidSet.has(uid)
+      );
+      const cancelledInviteIds = previousInvitedIds.filter(
+        (uid) => !selectedUidSet.has(uid)
+      );
 
       if (effectiveOrgId) {
-        // Re-assert ALL selected members (idempotent writes) — this self-heals
-        // projects where a previous save created the member doc but failed to
-        // update assignedMemberIds on the project document.
-        const toEnsure = selected.filter((s) => s.userId !== project.ownerId);
         await Promise.all([
-          ...toEnsure.map((member) =>
+          ...toHeal.map((member) =>
             assignMemberToBusinessProject({
               projectId: project.id,
               uid: member.userId,
@@ -262,33 +288,51 @@ export function ProjectMembersQuickAssignDialog({
               actorUid: user.id,
             })
           ),
-          ...removedIds
-            .filter((uid) => uid !== project.ownerId)
-            .map((uid) =>
-              unassignMemberFromBusinessProject({ projectId: project.id, uid })
-            ),
+          ...[...removedActiveIds, ...cancelledInviteIds].map((uid) =>
+            unassignMemberFromBusinessProject({ projectId: project.id, uid })
+          ),
         ]);
+
+        const inviteResults = await Promise.all(
+          toInvite.map(async (member) => {
+            const result = await inviteMemberToBusinessProject({
+              projectId: project.id,
+              uid: member.userId,
+              name: member.name,
+              email: member.email,
+              orgId: effectiveOrgId,
+              actorUid: user.id,
+            });
+            return { member, result };
+          })
+        );
+
+        const notifyTargets = inviteResults.filter(
+          (row) =>
+            row.member.userId !== user.id &&
+            (row.result === "invited" ||
+              // Fresh checkbox on an invite that already existed (e.g. email path)
+              (row.result === "already_invited" && !invitedSet.has(row.member.userId)))
+        );
+
         await Promise.all(
-          newlyAdded
-            .filter((member) => member.userId !== user.id)
-            .map((member) =>
-              createProjectAssignedNotification({
-                targetUserId: member.userId,
-                projectId: project.id,
-                projectName: project.name?.trim() || project.id,
-                assignedBy: user.id,
-                assignedByName:
-                  [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ||
-                  user.email ||
-                  undefined,
-                orgId: effectiveOrgId,
-              }).catch((err) => {
-                console.warn("[membersQuick] createProjectAssignedNotification failed:", err);
-              })
-            )
+          notifyTargets.map(({ member }) =>
+            createProjectInvitedNotification({
+              targetUserId: member.userId,
+              projectId: project.id,
+              projectName: project.name?.trim() || project.id,
+              assignedBy: user.id,
+              assignedByName: actorName,
+              orgId: effectiveOrgId,
+            }).catch((err) => {
+              console.warn("[membersQuick] createProjectInvitedNotification failed:", err);
+            })
+          )
         );
       } else {
-        await upsertProjectMembers(project.id, selected, previousIds, user.id);
+        // Personal projects: new members stay invited until accept; keep actives.
+        const personalPrevious = [...activeSet, ...invitedSet];
+        await upsertProjectMembers(project.id, selected, personalPrevious, user.id);
       }
 
       onSaved();
@@ -318,11 +362,63 @@ export function ProjectMembersQuickAssignDialog({
     setError(null);
     setInviteMessage(null);
     try {
-      await inviteProjectMemberByEmail({
-        projectId: project.id,
-        email,
-        invitedByUid: user.id,
-      });
+      const workspaceOrgId =
+        activeWorkspace?.type === "company"
+          ? (activeWorkspace.orgId ?? activeWorkspace.id)
+          : undefined;
+      const effectiveOrgId = project.orgId?.trim() || workspaceOrgId?.trim();
+      const known = candidates.find(
+        (c) => (c.email ?? "").trim().toLowerCase() === email
+      );
+      const actorName =
+        [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ||
+        user.email ||
+        undefined;
+
+      let notifyUserId: string | null = null;
+
+      if (known?.userId && effectiveOrgId) {
+        // Prefer uid-keyed invite so checkbox save and acceptProjectInvite stay aligned.
+        const inviteResult = await inviteMemberToBusinessProject({
+          projectId: project.id,
+          uid: known.userId,
+          name: known.name,
+          email,
+          orgId: effectiveOrgId,
+          actorUid: user.id,
+        });
+        if (inviteResult === "already_active") {
+          setError(t("projectInvites.alreadyMember"));
+          return;
+        }
+        notifyUserId = known.userId;
+        setSelectedIds((prev) => new Set(prev).add(known.userId));
+        setPreviousInvitedIds((prev) =>
+          prev.includes(known.userId) ? prev : [...prev, known.userId]
+        );
+      } else {
+        const result = await inviteProjectMemberByEmail({
+          projectId: project.id,
+          email,
+          name: known?.name,
+          invitedByUid: user.id,
+        });
+        notifyUserId = result.targetUserId;
+      }
+
+      if (notifyUserId && notifyUserId !== user.id && effectiveOrgId) {
+        await createProjectInvitedNotification({
+          targetUserId: notifyUserId,
+          projectId: project.id,
+          projectName: project.name?.trim() || project.id,
+          assignedBy: user.id,
+          assignedByName: actorName,
+          orgId: effectiveOrgId,
+        }).catch((err) => {
+          console.warn("[membersQuick] email invite notification failed:", err);
+        });
+      }
+
       setInviteEmail("");
       setInviteMessage(t("projectInvites.inviteSent"));
     } catch (e) {
@@ -383,7 +479,11 @@ export function ProjectMembersQuickAssignDialog({
                             </span>
                             <span className="block truncate text-xs text-muted-foreground">
                               {candidate.email || candidate.userId}
-                              {candidate.locked ? ` - ${t("projects.membersQuick.ownerLocked")}` : ""}
+                              {candidate.locked
+                                ? ` - ${t("projects.membersQuick.ownerLocked")}`
+                                : candidate.pendingInvite
+                                  ? ` - ${t("members.status.invited")}`
+                                  : ""}
                             </span>
                           </span>
                         </label>

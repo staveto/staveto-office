@@ -14,15 +14,22 @@ export type InviteProjectMemberInput = {
   name?: string;
   invitedByUid: string;
   permissionLevel?: "viewer" | "editor";
+  /** When known (org member), set so invite appears without claim-by-email. */
+  targetUserId?: string;
+};
+
+export type InviteProjectMemberResult = {
+  memberId: string;
+  targetUserId: string | null;
 };
 
 /**
  * Mobile-aligned project invite: creates projects/{id}/members doc with
- * status=invited. Invitee sees it in profile via listPendingInvites callable.
+ * status=invited. Invitee sees it via listPendingInvites after claim/login.
  */
 export async function inviteProjectMemberByEmail(
   input: InviteProjectMemberInput
-): Promise<void> {
+): Promise<InviteProjectMemberResult> {
   const db = getFirestoreInstance();
   if (!db) throw new Error("Firestore not configured");
 
@@ -40,8 +47,10 @@ export async function inviteProjectMemberByEmail(
     throw new Error("ALREADY_MEMBER");
   }
 
-  await addDoc(membersRef, {
-    userId: null,
+  const targetUserId = input.targetUserId?.trim() || null;
+
+  const ref = await addDoc(membersRef, {
+    userId: targetUserId,
     email,
     emailLower: email,
     name: input.name?.trim() || null,
@@ -60,4 +69,6 @@ export async function inviteProjectMemberByEmail(
     },
     sharedPhaseIds: [],
   });
+
+  return { memberId: ref.id, targetUserId };
 }

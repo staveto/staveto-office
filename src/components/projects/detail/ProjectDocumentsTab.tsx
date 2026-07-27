@@ -19,7 +19,7 @@ import type { ProjectDoc } from "@/lib/projects";
 import { getProject } from "@/lib/projects";
 import type { ProjectDocumentRecord } from "@/services/projects/projectDocuments";
 import {
-  listProjectDocuments,
+  listProjectDocumentsAndWorkPhotos,
   uploadProjectDocument,
 } from "@/services/projects/projectDocuments";
 import { importAiWizardAttachmentsToProjectDetailed } from "@/services/projects/projectAiAttachmentsService";
@@ -163,7 +163,7 @@ export function ProjectDocumentsTab({
     setError(null);
 
     const pollForDocuments = window.setInterval(() => {
-      void listProjectDocuments(project.id).then((listed) => {
+      void listProjectDocumentsAndWorkPhotos(project.id).then((listed) => {
         if (listed.length > 0) {
           window.clearInterval(pollForDocuments);
           onDocumentsChange(listed);
@@ -173,7 +173,7 @@ export function ProjectDocumentsTab({
     }, 2000);
 
     try {
-      const listed = await listProjectDocuments(project.id);
+      const listed = await listProjectDocumentsAndWorkPhotos(project.id);
       if (listed.length > 0) {
         onDocumentsChange(listed);
         return;
@@ -188,11 +188,12 @@ export function ProjectDocumentsTab({
       });
 
       if (imported.length > 0) {
-        onDocumentsChange(imported);
+        const merged = await listProjectDocumentsAndWorkPhotos(project.id);
+        onDocumentsChange(merged.length > 0 ? merged : imported);
         return;
       }
 
-      const afterImport = await listProjectDocuments(project.id);
+      const afterImport = await listProjectDocumentsAndWorkPhotos(project.id);
       if (afterImport.length > 0) {
         onDocumentsChange(afterImport);
         return;

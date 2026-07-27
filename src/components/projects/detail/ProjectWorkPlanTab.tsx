@@ -10,7 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { ProjectDoc, TaskDoc } from "@/lib/projects";
-import { updateTaskStatus } from "@/lib/projects";
+import { getProject, updateTaskStatus } from "@/lib/projects";
 import {
   canManageTaskPlanning,
   canWorkerToggleTaskStatus,
@@ -40,6 +40,8 @@ import {
   updateTaskPlannedDate,
 } from "@/services/projects/taskAssignmentService";
 import { updateTaskTools } from "@/services/projects/taskToolsService";
+import { unassignMemberFromBusinessProject } from "@/services/projects/businessProjectAssignmentService";
+import { canManageCrewAssignments } from "@/lib/operationsPermissions";
 import type { ProjectMemberRecord, ProjectPhaseRecord, TaskToolSnapshot } from "@/services/projects/taskPlanningTypes";
 import type { WorkspaceRole } from "@/types/workspace";
 import { ProjectPlanningKpis } from "./ProjectPlanningKpis";
@@ -63,6 +65,10 @@ type Props = {
   userId: string;
   role?: WorkspaceRole;
   onTasksChange: (tasks: TaskDoc[]) => void;
+  onProjectUpdated?: (project: ProjectDoc) => void;
+  /** Opens shared assign/remove dialog (hosted by ProjectDashboard) */
+  onManageCrew?: () => void;
+  onCrewChanged?: () => void;
 };
 
 type PickerMode = "single" | "bulk";
@@ -74,6 +80,9 @@ export function ProjectWorkPlanTab({
   userId,
   role,
   onTasksChange,
+  onProjectUpdated,
+  onManageCrew,
+  onCrewChanged,
 }: Props) {
   const { t, locale } = useI18n();
   const [members, setMembers] = useState<ProjectMemberRecord[]>([]);
@@ -91,6 +100,7 @@ export function ProjectWorkPlanTab({
   const [pickerMode, setPickerMode] = useState<PickerMode>("single");
   const [dateDialogOpen, setDateDialogOpen] = useState(false);
   const [bulkDate, setBulkDate] = useState("");
+  const [removingWorkerId, setRemovingWorkerId] = useState<string | null>(null);
 
   const myMemberRecord = useMemo(
     () => members.find((m) => m.userId === userId) ?? null,
@@ -100,6 +110,8 @@ export function ProjectWorkPlanTab({
     () => canManageTaskPlanning(project, userId, role, myMemberRecord),
     [project, userId, role, myMemberRecord]
   );
+  const canManageCrew =
+    canManageCrewAssignments(role) || project.ownerId === userId;
   const localeTag =
     locale === "de" ? "de-DE" : locale === "en" ? "en-GB" : "sk-SK";
 
@@ -117,6 +129,32 @@ export function ProjectWorkPlanTab({
     setTools(toolList);
     setAvailableTools(avail);
     setProjectTools(assigned);
+  };
+
+  const reloadCrew = async () => {
+    const fresh = (await getProject(project.id)) ?? project;
+    const m = await listAssignableProjectMembers(fresh);
+    setMembers(m);
+    const timers = await loadActiveTimers(m.map((x) => x.userId));
+    setActiveTimers(timers);
+    onProjectUpdated?.(fresh);
+    onCrewChanged?.();
+  };
+
+  const handleRemoveWorker = async (memberUid: string) => {
+    if (!canManageCrew || memberUid === project.ownerId) return;
+    setRemovingWorkerId(memberUid);
+    try {
+      await unassignMemberFromBusinessProject({
+        projectId: project.id,
+        uid: memberUid,
+      });
+      await reloadCrew();
+    } catch {
+      /* ignore — dialog path surfaces errors */
+    } finally {
+      setRemovingWorkerId(null);
+    }
   };
 
   useEffect(() => {
@@ -366,6 +404,10 @@ export function ProjectWorkPlanTab({
           setToolsTask(task);
         }}
         canToggleStatus={(task) => canWorkerToggleTaskStatus(task, userId, canManage)}
+        onManageCrew={canManageCrew ? onManageCrew : undefined}
+        onRemoveWorker={canManageCrew ? (uid) => void handleRemoveWorker(uid) : undefined}
+        removingWorkerId={removingWorkerId}
+        ownerId={project.ownerId}
       />
 
       {canManage ? (

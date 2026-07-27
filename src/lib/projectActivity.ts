@@ -20,6 +20,10 @@ export type ProjectActivityEvent = {
   titleKey: string;
   params?: Record<string, string | number>;
   detail?: string;
+  /** When set, the activity row opens this document/photo preview. */
+  document?: ProjectDocumentRecord;
+  /** When set, the activity row can jump to the related task. */
+  taskId?: string;
 };
 
 function durationLabel(minutes: number): string {
@@ -84,6 +88,7 @@ export function buildProjectActivity(input: {
         actor: task.assigneeName?.trim() || "—",
         title: task.title || "—",
       },
+      taskId: task.id,
     });
   }
 
@@ -104,15 +109,33 @@ export function buildProjectActivity(input: {
     });
   }
 
-  // Documents
+  // Documents + site photos (mobile work_photo attachments are merged into documents)
   for (const docRec of documents) {
     if (!docRec.createdAt) continue;
+    const isPhoto =
+      docRec.kind === "work_photo" ||
+      (docRec.mimeType?.startsWith("image/") ?? false);
+    const actor =
+      (typeof docRec.uploadedByName === "string" && docRec.uploadedByName.trim()) ||
+      "—";
     events.push({
       id: `doc-${docRec.id}`,
       type: "document",
       date: docRec.createdAt,
-      titleKey: "projects.activity.documentUploaded",
-      params: { name: docRec.fileName },
+      titleKey: isPhoto
+        ? "projects.activity.photoUploaded"
+        : "projects.activity.documentUploaded",
+      params: isPhoto
+        ? {
+            actor,
+            name: docRec.fileName,
+          }
+        : { name: docRec.fileName },
+      detail:
+        typeof docRec.comment === "string" && docRec.comment.trim()
+          ? docRec.comment.trim()
+          : undefined,
+      document: docRec,
     });
   }
 

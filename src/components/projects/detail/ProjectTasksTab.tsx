@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { ProjectDoc, TaskDoc } from "@/lib/projects";
-import { createTask, updateTaskStatus } from "@/lib/projects";
+import { createTask, updateTaskStatus, updateTaskTitle } from "@/lib/projects";
 import {
   getTaskPlanDate,
   taskMissingAssignee,
@@ -310,6 +310,22 @@ export function ProjectTasksTab({
       /* ignore */
     } finally {
       setTogglingTaskId(null);
+    }
+  };
+
+  const handleTitleChange = async (task: TaskDoc, title: string) => {
+    if (!canManage || savingTaskId) return;
+    const trimmed = title.trim();
+    if (!trimmed) return;
+    const previous = task.title;
+    setSavingTaskId(task.id);
+    patchTask(task.id, { title: trimmed });
+    try {
+      await updateTaskTitle(project.id, task.id, trimmed);
+    } catch {
+      patchTask(task.id, { title: previous });
+    } finally {
+      setSavingTaskId(null);
     }
   };
 
@@ -663,6 +679,7 @@ export function ProjectTasksTab({
                 }}
                 onOpenTools={setToolsTask}
                 onPlanDateChange={(task, date) => void handlePlanDateChange(task, date)}
+                onTitleChange={(task, title) => void handleTitleChange(task, title)}
                 onQuickAddTask={(phaseId, title) => void handleQuickAdd(phaseId, title)}
                 quickAddBusy={quickAddBusy}
               />
@@ -720,6 +737,7 @@ export function ProjectTasksTab({
                 }}
                 onOpenTools={setToolsTask}
                 onPlanDateChange={(task, date) => void handlePlanDateChange(task, date)}
+                onTitleChange={(task, title) => void handleTitleChange(task, title)}
                 onQuickAddTask={(phaseId, title) => void handleQuickAdd(phaseId, title)}
                 quickAddBusy={quickAddBusy}
               />

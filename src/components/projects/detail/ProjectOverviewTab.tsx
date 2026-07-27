@@ -41,6 +41,7 @@ type ProjectOverviewTabProps = {
   onProjectUpdated: (project: ProjectDoc) => void;
   onNavigate: (tab: ProjectDashboardTab) => void;
   onPhaseOpen?: (phaseId: string) => void;
+  onManageCrew?: () => void;
 };
 
 export function ProjectOverviewTab({
@@ -56,6 +57,7 @@ export function ProjectOverviewTab({
   health,
   onProjectUpdated,
   onNavigate,
+  onManageCrew,
 }: ProjectOverviewTabProps) {
   const phaseLabels = useMemo(() => buildPhaseLabelMap(phases), [phases]);
 
@@ -113,7 +115,11 @@ export function ProjectOverviewTab({
 
         <div className="flex flex-col gap-7 lg:col-start-2">
           <ProjectHealthCard progress={vm.progress} />
-          <ProjectTeamCard team={vm.team} onNavigate={onNavigate} />
+          <ProjectTeamCard
+            team={vm.team}
+            onNavigate={onNavigate}
+            onManageCrew={onManageCrew}
+          />
           <ProjectTimeCard time={vm.time} />
           <ProjectDocumentsProofCard documents={vm.documents} onNavigate={onNavigate} />
           <ProjectContactCard

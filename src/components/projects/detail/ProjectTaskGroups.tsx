@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CalendarClock,
   CheckCircle2,
   ChevronDown,
   Circle,
   Loader2,
+  Pencil,
   UserRound,
   Wrench,
 } from "lucide-react";
@@ -32,6 +33,7 @@ type Handlers = {
   onOpenAssignee: (task: TaskDoc) => void;
   onOpenTools: (task: TaskDoc) => void;
   onPlanDateChange: (task: TaskDoc, date: string) => void;
+  onTitleChange?: (task: TaskDoc, title: string) => void | Promise<void>;
   onQuickAddTask?: (phaseId: string | null, title: string) => void;
   quickAddBusy?: boolean;
 };
@@ -192,6 +194,7 @@ function TaskRow({
     onOpenAssignee,
     onOpenTools,
     onPlanDateChange,
+    onTitleChange,
   } = handlers;
 
   const isDone = task.status === "DONE";
@@ -200,6 +203,32 @@ function TaskRow({
   const planDate = getTaskPlanDate(task);
   const canToggle = canToggleStatus(task);
   const saving = savingTaskId === task.id;
+  const canEditTitle = canManage && Boolean(onTitleChange);
+
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(task.title ?? "");
+  const [titleError, setTitleError] = useState(false);
+
+  useEffect(() => {
+    if (!editingTitle) setTitleDraft(task.title ?? "");
+  }, [task.title, editingTitle]);
+
+  const commitTitle = async () => {
+    if (!onTitleChange) return;
+    const next = titleDraft.trim();
+    if (!next) {
+      setTitleError(true);
+      return;
+    }
+    if (next === (task.title ?? "").trim()) {
+      setEditingTitle(false);
+      setTitleError(false);
+      return;
+    }
+    setTitleError(false);
+    setEditingTitle(false);
+    await onTitleChange(task, next);
+  };
 
   return (
     <li className="flex flex-col gap-2 px-3 py-2.5 transition-colors hover:bg-muted/20 sm:flex-row sm:items-center">
@@ -219,14 +248,66 @@ function TaskRow({
         )}
       </button>
 
-      <span
-        className={cn(
-          "min-w-0 flex-1 truncate text-sm font-medium",
-          isDone && "text-muted-foreground line-through"
-        )}
-      >
-        {task.title || t("projects.noName")}
-      </span>
+      {editingTitle ? (
+        <Input
+          autoFocus
+          value={titleDraft}
+          disabled={saving}
+          onChange={(e) => {
+            setTitleDraft(e.target.value);
+            if (titleError && e.target.value.trim()) setTitleError(false);
+          }}
+          onBlur={() => void commitTitle()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void commitTitle();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              setTitleDraft(task.title ?? "");
+              setTitleError(false);
+              setEditingTitle(false);
+            }
+          }}
+          aria-label={t("projects.tasks.editTitle")}
+          aria-invalid={titleError || undefined}
+          className={cn(
+            "h-8 min-w-0 flex-1 text-sm font-medium",
+            titleError && "border-destructive focus-visible:ring-destructive"
+          )}
+        />
+      ) : canEditTitle ? (
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => setEditingTitle(true)}
+          className={cn(
+            "group flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1 py-0.5 text-left",
+            "hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1D376A]/30"
+          )}
+          title={t("projects.tasks.editTitle")}
+          aria-label={t("projects.tasks.editTitle")}
+        >
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate text-sm font-medium",
+              isDone && "text-muted-foreground line-through"
+            )}
+          >
+            {task.title || t("projects.noName")}
+          </span>
+          <Pencil className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+        </button>
+      ) : (
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate text-sm font-medium",
+            isDone && "text-muted-foreground line-through"
+          )}
+        >
+          {task.title || t("projects.noName")}
+        </span>
+      )}
 
       <div className="flex flex-wrap items-center gap-1.5">
         {canManage ? (

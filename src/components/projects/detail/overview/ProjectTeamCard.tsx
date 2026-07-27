@@ -11,11 +11,17 @@ import { po } from "./poStyles";
 type Props = {
   team: ProjectOverviewViewModel["team"];
   onNavigate: (tab: ProjectDashboardTab) => void;
+  /** Same dialog as projects list — add/remove crew on this project */
+  onManageCrew?: () => void;
 };
 
-export function ProjectTeamCard({ team, onNavigate }: Props) {
+export function ProjectTeamCard({ team, onNavigate, onManageCrew }: Props) {
   const { t } = useI18n();
   const activeCount = team.filter((m) => m.activeNow).length;
+  const openCrew = () => {
+    if (onManageCrew) onManageCrew();
+    else onNavigate("workplan");
+  };
 
   return (
     <section className={cn(po.cardCalm, "p-4 sm:p-5")}>
@@ -24,19 +30,22 @@ export function ProjectTeamCard({ team, onNavigate }: Props) {
           <Users className="size-4 text-[var(--po-text-muted)]" aria-hidden />
           {t("projects.crew.title")}
         </h2>
-        <button
-          type="button"
-          className={po.linkAction}
-          onClick={() => onNavigate("workplan")}
-        >
-          {t("projects.workPlan.assignWorker")}
+        <button type="button" className={po.linkAction} onClick={openCrew}>
+          {t("projects.membersQuick.addButton")}
         </button>
       </div>
 
       {team.length === 0 ? (
-        <p className={cn(po.body, "rounded-lg border border-dashed border-[var(--po-card-border)] px-3 py-4 text-center")}>
-          {t("projects.crew.empty")}
-        </p>
+        <div className="space-y-3">
+          <p className={cn(po.body, "rounded-lg border border-dashed border-[var(--po-card-border)] px-3 py-4 text-center")}>
+            {t("projects.crew.empty")}
+          </p>
+          {onManageCrew ? (
+            <Button type="button" size="sm" className="w-full" onClick={openCrew}>
+              {t("projects.membersQuick.addButton")}
+            </Button>
+          ) : null}
+        </div>
       ) : (
         <>
           <p className={cn(po.muted, "mb-2")}>

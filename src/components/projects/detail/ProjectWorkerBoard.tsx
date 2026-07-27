@@ -9,6 +9,7 @@ import {
   Loader2,
   Pause,
   Play,
+  Trash2,
   UserPlus,
   UserRound,
   Wrench,
@@ -49,6 +50,12 @@ type Props = {
   onOpenAssignee: (task: TaskDoc) => void;
   onOpenTools: (task: TaskDoc) => void;
   canToggleStatus: (task: TaskDoc) => boolean;
+  /** Open add/remove crew dialog */
+  onManageCrew?: () => void;
+  /** Remove worker from project crew (not task unassign) */
+  onRemoveWorker?: (userId: string) => void;
+  removingWorkerId?: string | null;
+  ownerId?: string | null;
 };
 
 function dayStatusOf(
@@ -76,9 +83,14 @@ export function ProjectWorkerBoard({
   onOpenAssignee,
   onOpenTools,
   canToggleStatus,
+  onManageCrew,
+  onRemoveWorker,
+  removingWorkerId,
+  ownerId,
 }: Props) {
   const { t } = useI18n();
   const phaseLabels = useMemo(() => buildPhaseLabelMap(phases), [phases]);
+  const canEditCrew = Boolean(onManageCrew);
 
   const { byWorker, unassigned } = useMemo(() => {
     const map = new Map<string, TaskDoc[]>();
@@ -114,17 +126,37 @@ export function ProjectWorkerBoard({
     <div className="space-y-4">
       {/* Row 1: Team capacity */}
       <section className="space-y-2">
-        <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
-          {t("projects.workPlan.teamCapacity")}
-        </h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+            {t("projects.workPlan.teamCapacity")}
+          </h3>
+          {canEditCrew ? (
+            <Button type="button" size="sm" variant="outline" className="h-8" onClick={onManageCrew}>
+              <UserPlus className="mr-1.5 size-3.5" />
+              {t("projects.workPlan.manageCrew")}
+            </Button>
+          ) : null}
+        </div>
         {workloads.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border/70 px-4 py-3 text-sm text-muted-foreground">
-            {t("projects.workPlan.noTeam")}
-          </p>
+          <div className="rounded-xl border border-dashed border-border/70 px-4 py-4 text-center">
+            <p className="text-sm text-muted-foreground">{t("projects.workPlan.noTeam")}</p>
+            {canEditCrew ? (
+              <Button type="button" size="sm" className="mt-3" onClick={onManageCrew}>
+                <UserPlus className="mr-1.5 size-3.5" />
+                {t("projects.workPlan.assignWorker")}
+              </Button>
+            ) : null}
+          </div>
         ) : (
           <div className="flex gap-2 overflow-x-auto pb-1">
             {workloads.map((w) => {
               const status = dayStatusOf(w.userId, activeTimers);
+              const canRemove =
+                canEditCrew &&
+                !!onRemoveWorker &&
+                w.userId !== ownerId &&
+                w.userId !== "unassigned";
+              const removing = removingWorkerId === w.userId;
               return (
                 <div
                   key={w.userId}
@@ -140,7 +172,27 @@ export function ProjectWorkerBoard({
                         {w.name}
                       </span>
                     </span>
-                    <DayStatusPill status={status} t={t} />
+                    <span className="flex shrink-0 items-center gap-1">
+                      <DayStatusPill status={status} t={t} />
+                      {canRemove ? (
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="size-7 text-muted-foreground hover:text-destructive"
+                          disabled={removing}
+                          aria-label={t("projects.workPlan.removeWorker")}
+                          title={t("projects.workPlan.removeWorker")}
+                          onClick={() => onRemoveWorker?.(w.userId)}
+                        >
+                          {removing ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="size-3.5" />
+                          )}
+                        </Button>
+                      ) : null}
+                    </span>
                   </div>
                   <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
                     <div

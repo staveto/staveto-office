@@ -1012,6 +1012,26 @@ export async function updateTaskStatus(
   });
 }
 
+/** Rename a task (trim, max 200 chars). */
+export async function updateTaskTitle(
+  projectId: string,
+  taskId: string,
+  title: string
+): Promise<void> {
+  const db = getFirestoreInstance();
+  if (!db) throw new Error("Firestore not configured");
+
+  const trimmed = title.trim().slice(0, 200);
+  if (!trimmed) throw new Error("Task title is required");
+
+  const ref = doc(db, "projects", projectId, "tasks", taskId);
+  await updateDoc(ref, {
+    title: trimmed,
+    updatedAt: serverTimestamp(),
+  });
+  await updateProjectUpdatedAt(projectId);
+}
+
 /**
  * List quote draft line items (materials + work) for a draft zákazka.
  * No composite index — sorted in memory.

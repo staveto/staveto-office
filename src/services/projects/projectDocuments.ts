@@ -21,6 +21,10 @@ import type { UploadedAiDraftFile } from "@/services/ai/aiDraftFiles";
 export type ProjectDocumentRecord = UploadedAiDraftFile & {
   projectId: string;
   createdAt?: string;
+  /** Set for mobile work photos (`projects/{id}/attachments`). */
+  uploadedByName?: string;
+  comment?: string;
+  kind?: string;
 };
 
 import { ATTACHMENT_SIZE_POLICY } from "@/lib/attachmentSizePolicy";
@@ -70,6 +74,80 @@ export async function listProjectDocuments(
       };
     })
     .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+}
+
+/**
+ * Site / work photos from mobile (`projects/{id}/attachments`, kind work_photo or image).
+ * Office overview historically only read `documents/` — without this, quick-add photos never appear.
+ */
+export async function listProjectWorkPhotos(
+  projectId: string
+): Promise<ProjectDocumentRecord[]> {
+  const db = getFirestoreInstance();
+  if (!db) return [];
+
+  try {
+    const snap = await getDocs(collection(db, "projects", projectId, "attachments"));
+    const rows: ProjectDocumentRecord[] = [];
+    for (const d of snap.docs) {
+      const data = d.data() as Record<string, unknown>;
+      const expenseId = typeof data.expenseId === "string" ? data.expenseId.trim() : "";
+      if (expenseId) continue; // receipt scans stay out of site photo gallery
+
+      const kind = typeof data.kind === "string" ? data.kind.trim().toLowerCase() : "";
+      const fileType = typeof data.fileType === "string" ? data.fileType.trim().toLowerCase() : "";
+      const mime =
+        (typeof data.mimeType === "string" && data.mimeType) ||
+        (typeof data.contentType === "string" && data.contentType) ||
+        "";
+      const isImage =
+        kind === "work_photo" ||
+        fileType === "image" ||
+        mime.startsWith("image/");
+      if (!isImage) continue;
+
+      const storagePath =
+        (typeof data.storagePath === "string" && data.storagePath) ||
+        (typeof data.filePath === "string" && data.filePath) ||
+        "";
+      if (!storagePath.trim()) continue;
+
+      rows.push({
+        id: `att-${d.id}`,
+        projectId,
+        fileName: (typeof data.fileName === "string" && data.fileName) || "photo.jpg",
+        mimeType: mime.startsWith("image/") ? mime : "image/jpeg",
+        storagePath,
+        createdAt: toIso(data.createdAt),
+        uploadedByName:
+          typeof data.uploadedByName === "string" ? data.uploadedByName : undefined,
+        comment: typeof data.comment === "string" ? data.comment : undefined,
+        kind: kind || "work_photo",
+      });
+    }
+    return rows.sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+  } catch (err) {
+    console.warn("[projectDocuments] listProjectWorkPhotos failed", projectId, err);
+    return [];
+  }
+}
+
+/** Documents tab + overview photos: office uploads + mobile work photos. */
+export async function listProjectDocumentsAndWorkPhotos(
+  projectId: string
+): Promise<ProjectDocumentRecord[]> {
+  const [docs, photos] = await Promise.all([
+    listProjectDocuments(projectId),
+    listProjectWorkPhotos(projectId),
+  ]);
+  const byPath = new Map<string, ProjectDocumentRecord>();
+  for (const row of [...docs, ...photos]) {
+    const key = row.storagePath?.trim() || row.id;
+    if (!byPath.has(key)) byPath.set(key, row);
+  }
+  return [...byPath.values()].sort((a, b) =>
+    (b.createdAt ?? "").localeCompare(a.createdAt ?? "")
+  );
 }
 
 export async function uploadProjectDocument(

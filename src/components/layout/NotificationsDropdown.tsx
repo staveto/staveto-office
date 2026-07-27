@@ -78,6 +78,24 @@ function notificationMessage(
         ? t("notifications.fieldNoteShared", { title })
         : t("notifications.fieldNoteSharedGeneric");
     }
+    case "PHOTO_ADDED": {
+      const title = n.subject?.trim();
+      return title
+        ? t("notifications.photoAdded", { title })
+        : t("notifications.photoAddedGeneric");
+    }
+    case "MEMBER_JOINED": {
+      const title = n.subject?.trim();
+      return title
+        ? t("notifications.memberJoined", { title })
+        : t("notifications.generic");
+    }
+    case "ABSENCE_REQUESTED": {
+      const title = n.subject?.trim();
+      return title
+        ? t("notifications.absenceRequested", { title })
+        : t("notifications.absenceRequestedGeneric");
+    }
     case "TIMER_STARTED":
       return n.subject?.trim() || t("notifications.timerStartedGeneric");
     case "TIMER_PAUSED":
@@ -89,7 +107,8 @@ function notificationMessage(
         ? t("notifications.incomingEmail", { subject: n.subject })
         : t("notifications.incomingEmailGeneric");
     default:
-      return t("notifications.generic");
+      // Prefer stored message/subject over opaque "New notification".
+      return n.subject?.trim() || t("notifications.generic");
   }
 }
 
@@ -157,7 +176,7 @@ export function NotificationsDropdown() {
   const handleMarkRead = async (notification: UserNotification) => {
     if (!user.id || notification.read) return;
     try {
-      await markNotificationRead(user.id, notification.id);
+      await markNotificationRead(user.id, notification.id, notification);
     } catch {
       /* ignore */
     }

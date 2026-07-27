@@ -73,12 +73,22 @@ export function ProjectDocumentPreviewDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[92vh] w-full max-w-5xl flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl">
         <DialogHeader className="border-b px-4 py-3 pr-12">
-          <DialogTitle className="truncate text-base">{doc?.fileName ?? "—"}</DialogTitle>
-          {doc?.createdAt ? (
-            <p className="text-xs text-muted-foreground">
-              {new Date(doc.createdAt).toLocaleString()}
-            </p>
-          ) : null}
+          <DialogTitle className="truncate text-base">
+            {doc?.comment?.trim() || doc?.fileName || "—"}
+          </DialogTitle>
+          <div className="space-y-0.5">
+            {doc?.comment?.trim() && doc.fileName ? (
+              <p className="truncate text-xs text-muted-foreground">{doc.fileName}</p>
+            ) : null}
+            {doc?.uploadedByName?.trim() ? (
+              <p className="text-xs text-muted-foreground">{doc.uploadedByName.trim()}</p>
+            ) : null}
+            {doc?.createdAt ? (
+              <p className="text-xs text-muted-foreground">
+                {new Date(doc.createdAt).toLocaleString()}
+              </p>
+            ) : null}
+          </div>
         </DialogHeader>
 
         <div className="min-h-[240px] flex-1 overflow-auto bg-muted/20 p-4">
