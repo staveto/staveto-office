@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   FolderKanban,
   Users,
+  ContactRound,
   Wallet,
   Settings,
   CalendarDays,
@@ -99,6 +100,20 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
       },
       { id: "jobs-tasks", labelKey: "sidebar.item.jobs.tasks", comingSoon: true },
       { id: "jobs-issues", labelKey: "sidebar.item.jobs.issues", comingSoon: true, moduleKey: "issues", hideForFieldWorker: true },
+    ],
+  },
+  {
+    id: "customers",
+    labelKey: "sidebar.section.customers",
+    icon: ContactRound,
+    defaultHref: "/app/customers",
+    items: [
+      {
+        id: "customers-all",
+        labelKey: "sidebar.item.customers.all",
+        href: "/app/customers",
+        hideForFieldWorker: true,
+      },
     ],
   },
   {
@@ -336,9 +351,8 @@ export const SIDEBAR_NAV_SECTIONS: NavSectionConfig[] = [
   },
 ];
 
-/** Quiet “Demnächst” items — customers & contracts not yet in main modules. */
+/** Quiet “Demnächst” items — routes not yet in main modules. */
 export const SIDEBAR_LATER_ITEMS: NavItemConfig[] = [
-  { id: "later-customers", labelKey: "sidebar.item.more.customers", comingSoon: true },
   { id: "later-documents-contracts", labelKey: "sidebar.item.documents.contracts", comingSoon: true },
 ];
 

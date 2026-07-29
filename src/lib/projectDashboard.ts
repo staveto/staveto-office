@@ -12,8 +12,9 @@ import {
   defaultCalculation,
   parseAiSetupMeta,
   resolveSetupMaterialRows,
-  workEstimateFromQuoteItems,
+  resolveWorkEstimateForQuoteItems,
 } from "@/components/projects/setup/aiSetupHelpers";
+import { computeEstimateTotals, computeItemTotal } from "@/lib/estimateUtils";
 import {
   type EnabledModulesMap,
   isModuleEnabled,
@@ -492,11 +493,24 @@ export function computeQuoteSummary(
   const meta = parseAiSetupMeta(project.quoteDraftNotes);
   const calc = meta?.calculation ?? defaultCalculation(project.quoteDraftVatPercent);
   const materials = resolveSetupMaterialRows(quoteItems, [], []);
-  const work = meta?.workEstimate ?? workEstimateFromQuoteItems(quoteItems, tasks);
+  const work = resolveWorkEstimateForQuoteItems(quoteItems, tasks, meta?.workEstimate);
   const totals = computeAiSetupTotals(materials, work, calc);
 
   const hasItems = quoteItems.length > 0;
   const hasQuote = qs !== "none" || hasItems;
+
+  // Manual / takeoff lines are SoT — never show a KPI total below live line sum.
+  const lineMaterial = quoteItems
+    .filter((i) => i.category === "material")
+    .reduce((s, i) => s + computeItemTotal(i.qty, i.unitPrice), 0);
+  const lineWork = quoteItems
+    .filter((i) => i.category === "work")
+    .reduce((s, i) => s + computeItemTotal(i.qty, i.unitPrice), 0);
+  const lineTotals = computeEstimateTotals(
+    quoteItems.map((i) => ({ total: computeItemTotal(i.qty, i.unitPrice) })),
+    calc.vatPercent
+  );
+  const useLineTotals = hasItems && lineTotals.subtotal > totals.netTotal + 0.009;
 
   let statusKey = "none";
   if (qs !== "none") statusKey = qs;
@@ -505,9 +519,9 @@ export function computeQuoteSummary(
   return {
     hasQuote,
     statusKey,
-    grossTotal: hasQuote ? totals.grossTotal : null,
-    materialTotal: totals.materialCost,
-    workTotal: totals.workCost,
+    grossTotal: hasQuote ? (useLineTotals ? lineTotals.grandTotal : totals.grossTotal) : null,
+    materialTotal: useLineTotals ? lineMaterial : totals.materialCost,
+    workTotal: useLineTotals ? lineWork : totals.workCost,
     workHours: work.hours > 0 ? work.hours : null,
     currency: resolveQuoteCurrency(),
   };

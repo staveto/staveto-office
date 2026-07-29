@@ -1,4 +1,4 @@
-import { computeItemTotal } from "@/lib/estimateUtils";
+import { computeEstimateTotals, computeItemTotal } from "@/lib/estimateUtils";
 import type { QuoteDoc } from "@/lib/quotes";
 import type { ProjectDoc } from "@/lib/projects";
 import type { QuoteDraftItemDoc } from "@/lib/quoteDraftItems";
@@ -8,7 +8,7 @@ import {
   plainNotesFromQuoteDraft,
   resolveAiSetupCalculation,
   resolveSetupMaterialRows,
-  workEstimateFromQuoteItems,
+  resolveWorkEstimateForQuoteItems,
 } from "@/components/projects/setup/aiSetupHelpers";
 import { resolveQuoteCurrency } from "@/lib/workspace/countryConfig";
 import type { TaskDoc } from "@/lib/projects";
@@ -36,7 +36,11 @@ export function buildQuoteDocFromProjectDraft(
   countryCode?: string | null
 ): QuoteDoc {
   const meta = parseAiSetupMeta(project.quoteDraftNotes);
-  const workEstimate = meta?.workEstimate ?? workEstimateFromQuoteItems(quoteItems, tasks);
+  const workEstimate = resolveWorkEstimateForQuoteItems(
+    quoteItems,
+    tasks,
+    meta?.workEstimate
+  );
   const calculation = resolveAiSetupCalculation(
     meta?.calculation,
     project.quoteDraftVatPercent,
@@ -51,7 +55,7 @@ export function buildQuoteDocFromProjectDraft(
     tasks,
     suggestions
   );
-  const totals = computeAiSetupTotals(materialRows, workEstimate, calculation);
+  const setupTotals = computeAiSetupTotals(materialRows, workEstimate, calculation);
 
   const quoteStatus = project.quoteStatus ?? "draft";
   const status: QuoteDoc["status"] =
@@ -75,6 +79,15 @@ export function buildQuoteDocFromProjectDraft(
     total: computeItemTotal(item.qty, item.unitPrice),
   }));
 
+  // Footer must match visible lines (incl. manually added items). Prefer live
+  // line sum over stale AI freeze; keep setup totals only when lines are empty
+  // (flat-rate / summary-only drafts).
+  const lineTotals = computeEstimateTotals(items, calculation.vatPercent);
+  const useLineTotals = items.some((i) => i.total > 0);
+  const subtotal = useLineTotals ? lineTotals.subtotal : setupTotals.netTotal;
+  const vatAmount = useLineTotals ? lineTotals.vatAmount : setupTotals.vatAmount;
+  const grandTotal = useLineTotals ? lineTotals.grandTotal : setupTotals.grossTotal;
+
   const clientName =
     project.customerCompanyName?.trim() ||
     project.customerName?.trim() ||
@@ -92,10 +105,10 @@ export function buildQuoteDocFromProjectDraft(
     clientEmail: project.customerEmail,
     status,
     items,
-    subtotal: totals.netTotal,
+    subtotal,
     vatPercent: calculation.vatPercent,
-    vatAmount: totals.vatAmount,
-    grandTotal: totals.grossTotal,
+    vatAmount,
+    grandTotal,
     currency: resolvedCurrency,
     notes: plainNotesFromQuoteDraft(project.quoteDraftNotes),
     orgId: project.orgId,

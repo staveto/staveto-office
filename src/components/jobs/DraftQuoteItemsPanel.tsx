@@ -85,6 +85,7 @@ import {
 import { plainNotesFromQuoteDraft } from "@/components/projects/setup/aiSetupHelpers";
 import { parseQuoteDocumentMeta } from "@/lib/quoteDocumentMeta";
 import { restoreProjectQuoteDraftItemsIfEmpty } from "@/services/takeoff/restoreProjectQuoteDraftItems";
+import { AssignProjectCustomerDialog } from "@/components/jobs/AssignProjectCustomerDialog";
 
 type SaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -659,6 +660,7 @@ export function DraftQuoteItemsPanel({
     () => parseQuoteDocumentMeta(project.quoteDraftNotes).scopeOfWork ?? ""
   );
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [customerDialogOpen, setCustomerDialogOpen] = useState(false);
   const quoteDraftNotesRef = useRef(project.quoteDraftNotes);
   const metaTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -956,15 +958,25 @@ export function DraftQuoteItemsPanel({
             <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-600" aria-hidden />
             <div className="min-w-0">
               <p>{t("projects.draft.quoteItem.customerHint")}</p>
-              <Link
-                href={`/app/projects/${project.id}?tab=overview`}
+              <button
+                type="button"
                 className="mt-1 inline-block text-sm font-medium text-[#e06737] hover:underline"
+                onClick={() => setCustomerDialogOpen(true)}
+                data-testid="quote-open-customer"
               >
                 {t("projects.draft.quoteItem.openCustomer")}
-              </Link>
+              </button>
             </div>
           </div>
         ) : null}
+
+        <AssignProjectCustomerDialog
+          open={customerDialogOpen}
+          onOpenChange={setCustomerDialogOpen}
+          project={project}
+          userId={userId}
+          onProjectUpdated={onProjectUpdated}
+        />
 
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">

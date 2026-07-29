@@ -350,6 +350,25 @@ export function workEstimateFromQuoteItems(
   };
 }
 
+/**
+ * Prefer live work lines when the user added/edited quote items after AI freeze.
+ * Frozen meta.workEstimate alone under-counts new "Práce" rows.
+ */
+export function resolveWorkEstimateForQuoteItems(
+  items: QuoteDraftItemDoc[],
+  tasks: TaskDoc[],
+  metaWork?: AiSetupWorkEstimate | null
+): AiSetupWorkEstimate {
+  const fromItems = workEstimateFromQuoteItems(items, tasks);
+  const workCount = items.filter((i) => i.category === "work").length;
+  if (!metaWork || workCount === 0) return fromItems;
+
+  const live = computeWorkSubtotal(fromItems);
+  const frozen = computeWorkSubtotal(metaWork);
+  if (workCount > 1 || live > frozen + 0.009) return fromItems;
+  return metaWork;
+}
+
 export function defaultCalculation(
   vatPercent?: number,
   countryCode?: string | null
@@ -423,12 +442,17 @@ export function computeAiSetupTotals(
   };
 }
 
-/** Ignore frozen 0 overrides when line items now have real totals. */
+/**
+ * Frozen AI overrides must not under-count after the user adds priced lines
+ * ("Pridať položku"). Keep an override only when it is still ≥ live line sum
+ * (intentional bump / same freeze); otherwise use the live computed total.
+ */
 function resolveFrozenOverride(
   override: number | null | undefined,
   computed: number
 ): number {
   if (override == null) return computed;
   if (override === 0 && computed > 0) return computed;
+  if (computed > override + 0.009) return computed;
   return override;
 }

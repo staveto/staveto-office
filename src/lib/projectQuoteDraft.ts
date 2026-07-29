@@ -11,8 +11,9 @@ import {
   defaultCalculation,
   parseAiSetupMeta,
   resolveSetupMaterialRows,
-  workEstimateFromQuoteItems,
+  resolveWorkEstimateForQuoteItems,
 } from "@/components/projects/setup/aiSetupHelpers";
+import { computeItemTotal } from "@/lib/estimateUtils";
 
 export async function resolveProjectQuoteLineItems(
   project: ProjectDoc
@@ -26,7 +27,7 @@ export async function resolveProjectQuoteLineItems(
   const meta = parseAiSetupMeta(project.quoteDraftNotes);
   const calc = meta?.calculation ?? defaultCalculation(project.quoteDraftVatPercent);
   const materials = resolveSetupMaterialRows(quoteItems, suggestions, []);
-  const work = meta?.workEstimate ?? workEstimateFromQuoteItems(quoteItems, tasks);
+  const work = resolveWorkEstimateForQuoteItems(quoteItems, tasks, meta?.workEstimate);
   const totals = computeAiSetupTotals(materials, work, calc);
 
   const lines: QuoteItemInput[] = [];
@@ -42,7 +43,18 @@ export async function resolveProjectQuoteLineItems(
     });
   }
 
-  if (work.hours > 0 && work.hourlyRate > 0) {
+  const workItems = quoteItems.filter((i) => i.category === "work" && i.name.trim());
+  if (workItems.length > 0) {
+    for (const w of workItems) {
+      lines.push({
+        category: "work",
+        name: w.name.trim(),
+        qty: w.qty > 0 ? w.qty : 1,
+        unit: w.unit || "ks",
+        unitPrice: w.unitPrice >= 0 ? w.unitPrice : 0,
+      });
+    }
+  } else if (work.hours > 0 && work.hourlyRate > 0) {
     lines.push({
       category: "work",
       name: "Práca",
@@ -139,7 +151,7 @@ export function buildProjectQuoteDisplayLines(
   const L = { ...DEFAULT_DISPLAY_LABELS, ...labels };
   const meta = parseAiSetupMeta(project.quoteDraftNotes);
   const materials = resolveSetupMaterialRows(quoteItems, suggestions, []);
-  const work = meta?.workEstimate ?? workEstimateFromQuoteItems(quoteItems, tasks);
+  const work = resolveWorkEstimateForQuoteItems(quoteItems, tasks, meta?.workEstimate);
   const lines: ProjectQuoteDisplayLine[] = [];
 
   for (const m of materials) {
@@ -153,11 +165,26 @@ export function buildProjectQuoteDisplayLines(
       qty,
       unit: m.unit,
       unitPrice,
-      lineTotal: qty * unitPrice,
+      lineTotal: computeItemTotal(qty, unitPrice),
     });
   }
 
-  if (work.hours > 0 && work.hourlyRate > 0) {
+  const workItems = quoteItems.filter((i) => i.category === "work" && i.name.trim());
+  if (workItems.length > 0) {
+    for (const w of workItems) {
+      const qty = w.qty > 0 ? w.qty : 1;
+      const unitPrice = w.unitPrice >= 0 ? w.unitPrice : 0;
+      lines.push({
+        id: w.id,
+        category: "work",
+        name: w.name.trim(),
+        qty,
+        unit: w.unit || "ks",
+        unitPrice,
+        lineTotal: computeItemTotal(qty, unitPrice),
+      });
+    }
+  } else if (work.hours > 0 && work.hourlyRate > 0) {
     lines.push({
       id: work.quoteItemId ?? "work-line",
       category: "work",
@@ -165,7 +192,7 @@ export function buildProjectQuoteDisplayLines(
       qty: work.hours,
       unit: "h",
       unitPrice: work.hourlyRate,
-      lineTotal: work.hours * work.hourlyRate,
+      lineTotal: computeItemTotal(work.hours, work.hourlyRate),
     });
   }
 

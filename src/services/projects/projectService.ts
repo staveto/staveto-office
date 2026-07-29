@@ -171,7 +171,10 @@ export async function updateDraftJobFields(
       ProjectDoc,
       | "name"
       | "customerRequest"
+      | "customerId"
       | "customerName"
+      | "customerCompanyName"
+      | "customerContactPersonName"
       | "customerEmail"
       | "customerPhone"
       | "addressText"
@@ -192,7 +195,14 @@ export async function updateDraftJobFields(
   if (fields.customerRequest !== undefined) {
     update.customerRequest = fields.customerRequest.trim();
   }
+  if (fields.customerId !== undefined) update.customerId = fields.customerId.trim() || null;
   if (fields.customerName !== undefined) update.customerName = fields.customerName.trim() || null;
+  if (fields.customerCompanyName !== undefined) {
+    update.customerCompanyName = fields.customerCompanyName.trim() || null;
+  }
+  if (fields.customerContactPersonName !== undefined) {
+    update.customerContactPersonName = fields.customerContactPersonName.trim() || null;
+  }
   if (fields.customerEmail !== undefined) update.customerEmail = fields.customerEmail.trim() || null;
   if (fields.customerPhone !== undefined) update.customerPhone = fields.customerPhone.trim() || null;
   if (fields.addressText !== undefined) update.addressText = fields.addressText.trim() || null;

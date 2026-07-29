@@ -11,7 +11,7 @@ import {
   parseAiSetupMeta,
   resolveAiSetupCalculation,
   resolveSetupMaterialRows,
-  workEstimateFromQuoteItems,
+  resolveWorkEstimateForQuoteItems,
 } from "@/components/projects/setup/aiSetupHelpers";
 import type { AiSetupTotals } from "@/components/projects/setup/aiSetupTypes";
 import { resolveQuoteCurrency } from "@/lib/workspace/countryConfig";
@@ -226,22 +226,36 @@ export function buildPriceSummaryFromQuote(quote: QuoteDoc): QuotePrintPriceSumm
       return cat !== "material" && cat !== "work";
     })
     .reduce((s, i) => s + i.total, 0);
-  const lineSubtotal = materialTotal + workTotal + otherTotal;
+  const lineSubtotal = Math.round((materialTotal + workTotal + otherTotal) * 100) / 100;
   const hasPricedLines = quote.items.some((i) => i.total > 0);
   const isFlatRate =
     !hasPricedLines && quote.grandTotal > 0 && quote.subtotal === 0;
+
+  // Stale header totals (frozen AI) must not win over richer line items.
+  const headerUnderCountsLines =
+    hasPricedLines && lineSubtotal > (quote.subtotal ?? 0) + 0.009;
+  const netTotal = headerUnderCountsLines
+    ? lineSubtotal
+    : quote.subtotal > 0
+      ? quote.subtotal
+      : lineSubtotal;
+  const vatAmount = headerUnderCountsLines
+    ? Math.round(netTotal * (quote.vatPercent / 100) * 100) / 100
+    : quote.vatAmount;
+  const grossTotal = headerUnderCountsLines
+    ? Math.round((netTotal + vatAmount) * 100) / 100
+    : quote.grandTotal > 0
+      ? quote.grandTotal
+      : Math.round((lineSubtotal + quote.vatAmount) * 100) / 100;
 
   return {
     materialTotal,
     workTotal,
     otherTotal,
-    netTotal: quote.subtotal > 0 ? quote.subtotal : lineSubtotal,
+    netTotal,
     vatPercent: quote.vatPercent,
-    vatAmount: quote.vatAmount,
-    grossTotal:
-      quote.grandTotal > 0
-        ? quote.grandTotal
-        : Math.round((lineSubtotal + quote.vatAmount) * 100) / 100,
+    vatAmount,
+    grossTotal,
     isComplete: hasPricedLines || quote.grandTotal > 0,
     isFlatRate,
   };
@@ -326,7 +340,11 @@ export function buildQuotePrintContext(params: {
     countryCode
   );
   const materialRows = resolveSetupMaterialRows(quoteItems, suggestions, []);
-  const work = setupMeta?.workEstimate ?? workEstimateFromQuoteItems(quoteItems, tasks);
+  const work = resolveWorkEstimateForQuoteItems(
+    quoteItems,
+    tasks,
+    setupMeta?.workEstimate
+  );
 
   const visibleItems = filterCustomerQuoteItems(quoteItems, materialRows);
   const displayLines = buildProjectQuoteDisplayLines(
@@ -342,10 +360,36 @@ export function buildQuotePrintContext(params: {
     displayLines.some((l) => l.lineTotal > 0) || quote.items.some((i) => i.total > 0);
   const totals = computeAiSetupTotals(materialRows, work, calc);
   const quotePriceSummary = buildPriceSummaryFromQuote(quote);
-  const useQuotePricing = shouldPreferQuoteDocumentPricing(quote, totals);
+  const displayLineSubtotal = displayLines.reduce((sum, l) => sum + l.lineTotal, 0);
+  const useQuotePricing =
+    shouldPreferQuoteDocumentPricing(quote, totals) ||
+    (hasPricedLines && displayLineSubtotal > totals.netTotal + 0.009);
 
   const priceSummary: QuotePrintPriceSummary = useQuotePricing
-    ? quotePriceSummary
+    ? {
+        ...quotePriceSummary,
+        // When display lines are richer than the quote header, align footer to lines.
+        ...(displayLineSubtotal > quotePriceSummary.netTotal + 0.009
+          ? {
+              materialTotal: displayLines
+                .filter((l) => l.category === "material")
+                .reduce((s, l) => s + l.lineTotal, 0),
+              workTotal: displayLines
+                .filter((l) => l.category === "work")
+                .reduce((s, l) => s + l.lineTotal, 0),
+              netTotal: Math.round(displayLineSubtotal * 100) / 100,
+              vatAmount:
+                Math.round(displayLineSubtotal * (calc.vatPercent / 100) * 100) / 100,
+              grossTotal:
+                Math.round(
+                  (displayLineSubtotal +
+                    Math.round(displayLineSubtotal * (calc.vatPercent / 100) * 100) /
+                      100) *
+                    100
+                ) / 100,
+            }
+          : {}),
+      }
     : {
         materialTotal: totals.materialCost,
         workTotal: totals.workCost,
