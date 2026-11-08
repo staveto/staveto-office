@@ -16,6 +16,7 @@ export default defineConfig({
       "src/lib/quoteDraftAutosave.test.ts",
       "src/lib/projectDashboard.quoteHref.test.ts",
       "src/lib/projectDefaultTab.test.ts",
+      "src/lib/marketingHost.test.ts",
       "src/components/jobs/new/newJobWizardTypes.test.ts",
       "src/lib/planningSummaryMetrics.test.ts",
       "src/lib/planningDateRange.test.ts",

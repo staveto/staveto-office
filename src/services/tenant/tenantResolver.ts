@@ -10,8 +10,9 @@ import {
 } from "@/services/organization/organizationService";
 import { normalizeWorkspaceSlug } from "@/lib/workspaceSlug";
 import { normalizeOrganizationToWorkspace } from "@/services/workspace/workspaceService";
+import { isMarketingHost } from "@/lib/marketingHost";
 
-export type TenantHostMode = "app" | "tenant";
+export type TenantHostMode = "app" | "tenant" | "marketing";
 
 export type TenantFromHostname = {
   mode: TenantHostMode;
@@ -36,7 +37,8 @@ export type TenantWorkspaceResolution = {
 const DEFAULT_BASE_DOMAIN =
   process.env.NEXT_PUBLIC_STAVETO_BASE_DOMAIN ?? "staveto.com";
 
-const APP_SUBDOMAINS = new Set(["app", "www"]);
+/** `www` is the public marketing site, not the office app. */
+const APP_SUBDOMAINS = new Set(["app"]);
 
 function stripPort(hostname: string): string {
   return hostname.split(":")[0].toLowerCase();
@@ -56,7 +58,11 @@ export function getTenantFromHostname(hostname: string): TenantFromHostname {
     return { mode: "app", hostname: host };
   }
 
-  if (host === DEFAULT_BASE_DOMAIN || host === `app.${DEFAULT_BASE_DOMAIN}`) {
+  if (isMarketingHost(host)) {
+    return { mode: "marketing", hostname: host };
+  }
+
+  if (host === `app.${DEFAULT_BASE_DOMAIN}`) {
     return { mode: "app", hostname: host };
   }
 
